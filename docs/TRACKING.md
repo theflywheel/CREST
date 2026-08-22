@@ -61,10 +61,12 @@ Gates are issues, not calendar entries, because they have acceptance criteria an
 
 ## Project board
 
-Not created — the CLI token lacks the `project` scope. To add one:
+**[CREST Delivery](https://github.com/orgs/theflywheel/projects/2)** — all 39 issues, with three single-select fields:
 
-```sh
-gh auth refresh -s project,read:project
-```
+- **Phase** — mirrors the milestones (P0 … P4).
+- **Kind** — Epic / Spike / Spec / Build / Decision / Gate.
+- **Status** — Todo / In Progress / **Blocked** / Done. `Blocked` means a *recorded* dependency is unmet, nothing else; if work is stuck for a different reason, that reason belongs in a comment or a new issue.
 
-Then create a **CREST Delivery** board at the org level and add all issues with `gh issue list -R theflywheel/CREST --limit 100`. Milestones and sub-issue links already carry the structure, so the board is a view, not a second source of truth.
+Nine items start Blocked (#4, #12, #15, #16, #22, #25, #26, #30, #33) — every one of them waiting on something real, not on capacity.
+
+The board is a **view**, not a second source of truth. Milestones, epics and dependencies live on the issues; if the board and an issue disagree, the issue wins.
