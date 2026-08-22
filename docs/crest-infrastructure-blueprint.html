@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CREST Infrastructure Blueprint</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>*,*::before,*::after{box-sizing:border-box}body{margin:0}img,svg{max-width:100%}</style>
+</head>
+<body>
+<style>
+:root{
+  --paper:#F6F7F5; --ink:#22282A; --muted:#5C686B; --line:#D8DDD9;
+  --card:#FFFFFF; --accent:#1E6B52; --accent-soft:#E3EEE8;
+  --amber:#A9731C; --amber-soft:#F4EBDB;
+  --inji:#3A5F85; --inji-soft:#E4EBF2;
+  --dedi:#6B4FA0; --dedi-soft:#ECE6F4;
+  --code-bg:#EDF0EE;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#171B1A; --ink:#E4E8E5; --muted:#93A09B; --line:#313A37;
+    --card:#1F2523; --accent:#5FB392; --accent-soft:#1E3A30;
+    --amber:#D6A254; --amber-soft:#3A2F1B;
+    --inji:#7FA8CE; --inji-soft:#20303F;
+    --dedi:#B49AD9; --dedi-soft:#2E2540;
+    --code-bg:#242B29;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#171B1A; --ink:#E4E8E5; --muted:#93A09B; --line:#313A37;
+  --card:#1F2523; --accent:#5FB392; --accent-soft:#1E3A30;
+  --amber:#D6A254; --amber-soft:#3A2F1B;
+  --inji:#7FA8CE; --inji-soft:#20303F;
+  --dedi:#B49AD9; --dedi-soft:#2E2540;
+  --code-bg:#242B29;
+}
+*{box-sizing:border-box}
+body{background:var(--paper); color:var(--ink); font:400 16px/1.65 "Public Sans",system-ui,sans-serif; margin:0;}
+main{max-width:800px; margin:0 auto; padding:56px 24px 96px;}
+h1,h2,h3,h4{font-family:"Source Serif 4",Georgia,serif; text-wrap:balance; line-height:1.2;}
+h1{font-size:2.3rem; font-weight:700; margin:0 0 8px;}
+h2{font-size:1.55rem; font-weight:600; margin:60px 0 12px; padding-top:26px; border-top:1px solid var(--line);}
+h3{font-size:1.12rem; font-weight:600; margin:30px 0 8px;}
+h4{font-size:.95rem; font-weight:600; margin:20px 0 6px; font-family:"Public Sans",sans-serif;}
+p{margin:0 0 14px; max-width:70ch;}
+.kicker{font:600 .72rem/1 "Public Sans",sans-serif; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin-bottom:14px;}
+.lede{font-size:1.08rem; color:var(--muted); max-width:64ch;}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.85em; background:var(--code-bg); padding:1px 5px; border-radius:3px;}
+pre{background:var(--code-bg); padding:16px 18px; border-radius:6px; overflow-x:auto; font-family:"IBM Plex Mono",monospace; font-size:.79rem; line-height:1.55;}
+pre code{background:none; padding:0;}
+table{border-collapse:collapse; width:100%; font-size:.88rem; margin:16px 0;}
+.tblwrap{overflow-x:auto;}
+th{text-align:left; font-weight:600; font-size:.7rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); padding:8px 12px 6px; border-bottom:2px solid var(--line);}
+td{padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top;}
+.tag{display:inline-block; font:500 .66rem/1 "Public Sans",sans-serif; letter-spacing:.06em; text-transform:uppercase; padding:3px 8px; border-radius:99px; white-space:nowrap;}
+.tag.inji{background:var(--inji-soft); color:var(--inji);}
+.tag.crest{background:var(--accent-soft); color:var(--accent);}
+.tag.dedi{background:var(--dedi-soft); color:var(--dedi);}
+.tag.open{background:var(--amber-soft); color:var(--amber);}
+.callout{border-left:3px solid var(--accent); background:var(--card); padding:14px 18px; margin:18px 0; border-radius:0 6px 6px 0;}
+.callout.warn{border-left-color:var(--amber);}
+.callout p:last-child{margin-bottom:0;}
+.inv{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 18px; margin:10px 0;}
+.inv b{color:var(--accent);}
+ol,ul{padding-left:22px; margin:0 0 14px;}
+li{margin-bottom:7px; max-width:66ch;}
+.toc{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px 22px; margin:26px 0; font-size:.9rem; columns:2; column-gap:32px;}
+.toc a{color:var(--accent); text-decoration:none;}
+.toc a:hover{text-decoration:underline;}
+.toc div{break-inside:avoid; margin-bottom:5px;}
+.footer{margin-top:64px; padding-top:18px; border-top:1px solid var(--line); font-size:.8rem; color:var(--muted);}
+figure{margin:26px 0; overflow-x:auto;}
+figure svg{max-width:100%; height:auto; display:block;}
+figcaption{font-size:.82rem; color:var(--muted); margin-top:10px; max-width:70ch;}
+.db{fill:var(--card); stroke:var(--line); stroke-width:1.2; rx:6;}
+.dz{fill:none; stroke:var(--line); stroke-width:1.2; stroke-dasharray:5 4;}
+.di{fill:var(--inji-soft); stroke:var(--inji); stroke-width:1.2;}
+.dd{fill:var(--dedi-soft); stroke:var(--dedi); stroke-width:1.2;}
+.dc{fill:var(--accent-soft); stroke:var(--accent); stroke-width:1.2;}
+.dt{font:600 12.5px "Public Sans",sans-serif; fill:var(--ink);}
+.ds{font:400 10.5px "Public Sans",sans-serif; fill:var(--muted);}
+.dl{font:500 10.5px "IBM Plex Mono",monospace; fill:var(--muted);}
+.dh{font:600 10px "Public Sans",sans-serif; fill:var(--muted); letter-spacing:.09em; text-transform:uppercase;}
+.da{stroke:var(--ink); stroke-width:1.3; fill:none;}
+.dg{stroke:var(--accent); stroke-width:1.5; fill:none;}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+@media (max-width:600px){.toc{columns:1;}}
+</style>
+
+<main>
+<div class="kicker">L1 · The layer that cannot bend</div>
+<h1>CREST Infrastructure Blueprint</h1>
+<p class="lede">The complete infrastructure-layer design: the objects, registries, contracts and invariants that must hold in every deployment for a decade — specified so that the configuration and product layers become thin, replaceable work on top. Substrate choices: <span class="tag inji">Inji</span> for the credential lifecycle, <span class="tag dedi">DeDi</span> for tamper-evident public directories, <span class="tag crest">CREST services</span> for everything that knows about work.</p>
+
+<div class="toc">
+<div><a href="#s1">1 · Scope and the L1 test</a></div>
+<div><a href="#s2">2 · Object model</a></div>
+<div><a href="#s3">3 · Registry architecture on DeDi</a></div>
+<div><a href="#s4">4 · Identity and the worker record</a></div>
+<div><a href="#s5">5 · Credential substrate on Inji</a></div>
+<div><a href="#s6">6 · Trust strength: facts stored, judgement derived</a></div>
+<div><a href="#s7">7 · Work definition lifecycle</a></div>
+<div><a href="#s8">8 · Evidence ingestion contract</a></div>
+<div><a href="#s9">9 · Consent, confirmation, withdrawal</a></div>
+<div><a href="#s10">10 · The payments boundary</a></div>
+<div><a href="#s11">11 · Invariants (W1–W10 → mechanisms)</a></div>
+<div><a href="#s12">12 · Why config and product stay easy</a></div>
+<div><a href="#s13">13 · API surface</a></div>
+<div><a href="#s14">14 · Open decisions and defaults</a></div>
+<div><a href="#s15">15 · Scope map: the twelve journeys</a></div>
+<div><a href="#s16">16 · Cross-journey gap register</a></div>
+</div>
+
+<h2 id="s1">1 · Scope and the L1 test</h2>
+<p>The actor-journeys model gives the admission test: <em>if two deployments could reasonably disagree about it and both still be CREST, it is not infrastructure.</em> Everything in this document passes that test — it is the set of things that must be identical everywhere so that a credential issued in one country verifies in another, a work definition means the same thing to every adapter, and a worker's guarantees hold regardless of which products a deployment runs.</p>
+<p>Three substrates carry it. <strong>Inji</strong> (Certify, Wallet, Verify, eSignet) is the credential lifecycle — issuance, holding, presentation, verification. <strong>DeDi</strong> is the directory substrate — every registry whose records are public facts gets tamper-evidence, inclusion proofs, signed checkpoints and witnessing for free. <strong>CREST's own services</strong> hold what neither knows about: work, evidence, strength, consent, and personal data. Nothing below invents cryptography, wallets, or directory infrastructure.</p>
+
+<figure>
+<svg viewBox="0 0 940 640" role="img" aria-label="High-level design: external identity providers, source systems and payment rails connect to CREST services inside a national deployment; CREST services write public records to a national DeDi node and PII to a private store, and drive Inji Certify for issuance and Inji Verify for verification; credentials flow to the worker's wallet and are presented to verifiers; the national DeDi node mirrors to and is witnessed by the global DeDi node.">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--ink)"/></marker></defs>
+<rect class="dd" x="640" y="16" width="284" height="112" rx="6"/>
+<text class="dh" x="656" y="40">Global layer</text>
+<text class="dt" x="656" y="66">Global DeDi node</text>
+<text class="ds" x="656" y="86">deployment keys · schemas · skill taxonomy</text>
+<text class="ds" x="656" y="102">signed definition mirror — no personal data</text>
+<rect class="dz" x="170" y="160" width="530" height="340" rx="8"/>
+<text class="dh" x="186" y="182">National deployment · in-country</text>
+<rect class="dc" x="196" y="196" width="220" height="134" rx="6"/>
+<text class="dh" x="212" y="218" style="fill:var(--accent)">CREST services</text>
+<text class="ds" x="212" y="242">registry · definitions · evidence</text>
+<text class="ds" x="212" y="260">confirmation · verification</text>
+<text class="ds" x="212" y="278">payments (profile runtime)</text>
+<rect class="db" x="196" y="360" width="220" height="56" rx="6"/>
+<text class="dt" x="212" y="384">Private store</text>
+<text class="ds" x="212" y="402">workers · consent · disputes</text>
+<rect class="di" x="466" y="196" width="210" height="52" rx="6"/>
+<text class="dt" x="482" y="218">Inji Certify</text>
+<text class="ds" x="482" y="236">OpenID4VCI · status list</text>
+<rect class="di" x="466" y="262" width="210" height="52" rx="6"/>
+<text class="dt" x="482" y="284">Inji Verify</text>
+<text class="ds" x="482" y="302">OpenID4VP · offline QR</text>
+<rect class="dd" x="466" y="360" width="210" height="64" rx="6"/>
+<text class="dt" x="482" y="384">National DeDi node</text>
+<text class="ds" x="482" y="402">public registries · inclusion proofs</text>
+<rect class="db" x="16" y="196" width="130" height="52" rx="6"/>
+<text class="dt" x="81" y="218" text-anchor="middle">Identity provider</text>
+<text class="ds" x="81" y="236" text-anchor="middle">eSignet / OIDC</text>
+<rect class="db" x="16" y="272" width="130" height="52" rx="6"/>
+<text class="dt" x="81" y="294" text-anchor="middle">Source systems</text>
+<text class="ds" x="81" y="312" text-anchor="middle">DHIS2 · HCM · batch</text>
+<rect class="db" x="16" y="360" width="130" height="52" rx="6"/>
+<text class="dt" x="81" y="382" text-anchor="middle">Payment rails</text>
+<text class="ds" x="81" y="400" text-anchor="middle">bank · mobile money</text>
+<rect class="di" x="240" y="560" width="200" height="52" rx="6"/>
+<text class="dt" x="340" y="582" text-anchor="middle">Worker wallet</text>
+<text class="ds" x="340" y="600" text-anchor="middle">Inji Wallet · printed card</text>
+<rect class="db" x="520" y="560" width="180" height="52" rx="6"/>
+<text class="dt" x="610" y="582" text-anchor="middle">Verifier</text>
+<text class="ds" x="610" y="600" text-anchor="middle">pass or institution</text>
+<line class="da" x1="146" y1="222" x2="196" y2="222" marker-end="url(#ah)"/><text class="dl" x="150" y="212">assertion</text>
+<line class="da" x1="146" y1="298" x2="196" y2="298" marker-end="url(#ah)"/><text class="dl" x="150" y="288">evidence</text>
+<line class="da" x1="196" y1="386" x2="146" y2="386" marker-start="url(#ah)" marker-end="url(#ah)"/><text class="dl" x="118" y="432">instruct / confirm</text>
+<line class="da" x1="416" y1="222" x2="466" y2="222" marker-end="url(#ah)"/><text class="dl" x="424" y="212">issue</text>
+<line class="da" x1="416" y1="288" x2="466" y2="288" marker-end="url(#ah)"/><text class="dl" x="424" y="278">wraps</text>
+<line class="da" x1="306" y1="330" x2="306" y2="360" marker-end="url(#ah)"/><text class="dl" x="314" y="350">PII</text>
+<line class="da" x1="416" y1="322" x2="466" y2="372" marker-end="url(#ah)"/><text class="dl" x="384" y="352">public records</text>
+<line class="da" x1="560" y1="314" x2="560" y2="360" marker-end="url(#ah)"/><text class="dl" x="568" y="342">trust walk</text>
+<polyline class="da" points="676,392 800,392 800,132" marker-end="url(#ah)"/><text class="dl" x="808" y="270">mirror · witness ring</text>
+<polyline class="dg" points="676,222 730,222 730,540 340,540 340,560" marker-end="url(#ah)"/><text class="dl" x="600" y="532" style="fill:var(--accent)">OpenID4VCI · card</text>
+<line class="da" x1="440" y1="586" x2="520" y2="586" marker-end="url(#ah)"/><text class="dl" x="444" y="630">QR / OpenID4VP</text>
+<line class="da" x1="610" y1="560" x2="610" y2="314" marker-end="url(#ah)"/><text class="dl" x="618" y="470">verify</text>
+</svg>
+<figcaption>High-level design. Everything inside the dashed boundary is sovereign and in-country; the global node holds only non-personal facts and cannot be bypassed silently because national and global DeDi nodes witness each other. The green path is the one that ends in the worker's hands.</figcaption>
+</figure>
+
+<h2 id="s2">2 · Object model: primitives and profiles</h2>
+<p>An earlier draft put <code>Worker</code>, <code>ProjectGrant</code> and <code>CompensationRecord</code> in the core — the payments use case leaking into the layer that must outlive it. The strategy note's own warning applies: Aadhaar did not anticipate Jan Dhan; the core must not anticipate payroll. So the model is now two-tier: <strong>eleven generic primitives</strong> that know nothing about work or money, and <strong>profiles</strong> that instantiate them per domain. The generic pattern the primitives encode: <em>a defined activity, an attested event, an owned claim, and trust derived from provenance.</em></p>
+<div class="tblwrap"><table>
+<tr><th>Primitive</th><th>What it asserts</th><th>Genericity note</th></tr>
+<tr><td><code>Party</code></td><td>An actor exists — person or organisation. Persons need only a name and one contact route; identity binds late (§4)</td><td>"Worker" is a role a Party holds, not a type</td></tr>
+<tr><td><code>Terms</code></td><td>A published, versioned permission set a Party may qualify under</td><td>Domain-neutral: permission names come from profiles</td></tr>
+<tr><td><code>Authorization</code></td><td>Party X may exercise functions F, in scope G, for period T, per authority A — evidenced, approved, never transferable</td><td>One object at two scopes: instance-wide (the old Qualification) and context-bound (the old ProjectGrant); a context grant is always a strict subset of an instance one</td></tr>
+<tr><td><code>Context</code></td><td>A bounded operational scope with its own configuration and activation gates</td><td>"Project" and "campaign" are what profiles call it; a training cohort is one too</td></tr>
+<tr><td><code>Definition</code></td><td>What counts as a completed instance of an activity, what evidence proves it at which strength, who may attest — versioned, immutable once ACTIVE, three faces (§7)</td><td>Any attestable activity: work, training, service delivery, certification</td></tr>
+<tr><td><code>Unit</code></td><td>An instance of a defined activity happened — independent of who did it</td><td>definition@version + evidence provenance</td></tr>
+<tr><td><code>Claim</code></td><td>Party P performed (part of) Unit U — zero, one or many per unit</td><td>The only place actor and activity meet</td></tr>
+<tr><td><code>Credential</code></td><td>A signed, holder-owned projection of an accepted Claim (§5)</td><td>Format-independent of the claim store</td></tr>
+<tr><td><code>Consent</code></td><td>One of the three consent moments occurred, with scope (§9)</td><td>Subject-generic: any Party can be a data subject</td></tr>
+<tr><td><code>Contest</code></td><td>A challenge to a Claim, Credential or LinkedRecord exists and where it stands — never destroys the Unit</td><td>—</td></tr>
+<tr><td><code>LinkedRecord</code></td><td>A typed, versioned attachment keyed to a Unit, Claim or Definition by identifier — carrying its own lifecycle so the core object is never hostage to it</td><td>The extension point: compensation, obligations, endorsements, scores all live here, never in the core</td></tr>
+</table></div>
+
+<figure>
+<svg viewBox="0 0 780 430" role="img" aria-label="Primitive relationships: a Unit is measured under a Definition version; a Claim asserts a Party performed a Unit; an accepted Claim issues as a Credential; Authorization permits submission within a Context; Consent gates issuance and disclosure; Contest challenges a Claim; LinkedRecords attach by reference.">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--ink)"/></marker></defs>
+<rect class="db" x="310" y="18" width="160" height="44" rx="6"/><text class="dt" x="390" y="44" text-anchor="middle">Definition @v</text>
+<rect class="db" x="310" y="128" width="160" height="44" rx="6"/><text class="dt" x="390" y="154" text-anchor="middle">Unit</text>
+<rect class="db" x="310" y="238" width="160" height="44" rx="6"/><text class="dt" x="390" y="264" text-anchor="middle">Claim</text>
+<rect class="db" x="60" y="238" width="150" height="44" rx="6"/><text class="dt" x="135" y="264" text-anchor="middle">Party</text>
+<rect class="db" x="60" y="128" width="150" height="44" rx="6"/><text class="dt" x="135" y="148" text-anchor="middle">Authorization</text><text class="ds" x="135" y="163" text-anchor="middle">scoped to Context</text>
+<rect class="dc" x="310" y="358" width="160" height="44" rx="6"/><text class="dt" x="390" y="384" text-anchor="middle">Credential</text>
+<rect class="db" x="60" y="358" width="150" height="44" rx="6"/><text class="dt" x="135" y="384" text-anchor="middle">Consent</text>
+<rect class="db" x="580" y="238" width="140" height="44" rx="6"/><text class="dt" x="650" y="264" text-anchor="middle">Contest</text>
+<rect class="db" x="580" y="128" width="160" height="44" rx="6"/><text class="dt" x="660" y="148" text-anchor="middle">LinkedRecord</text><text class="ds" x="660" y="163" text-anchor="middle">typed · own lifecycle</text>
+<line class="da" x1="390" y1="128" x2="390" y2="62" marker-end="url(#ar)"/><text class="dl" x="398" y="99">measured under</text>
+<line class="da" x1="390" y1="238" x2="390" y2="172" marker-end="url(#ar)"/><text class="dl" x="398" y="209">about</text>
+<line class="da" x1="310" y1="260" x2="210" y2="260" marker-end="url(#ar)"/><text class="dl" x="222" y="250">by</text>
+<line class="dg" x1="390" y1="282" x2="390" y2="358" marker-end="url(#ar)"/><text class="dl" x="398" y="324" style="fill:var(--accent)">accepted → issued as</text>
+<line class="da" x1="210" y1="150" x2="332" y2="238" marker-end="url(#ar)"/><text class="dl" x="200" y="196">permits submission</text>
+<line class="da" x1="210" y1="380" x2="310" y2="380" marker-end="url(#ar)"/><text class="dl" x="214" y="370">gates issue + disclose</text>
+<line class="da" x1="580" y1="260" x2="470" y2="260" marker-end="url(#ar)"/><text class="dl" x="482" y="250">contests</text>
+<line class="da" x1="580" y1="150" x2="470" y2="150" marker-end="url(#ar)"/><text class="dl" x="478" y="140">keyed by id</text>
+</svg>
+<figcaption>The primitive graph. Everything is reference-by-versioned-identifier; the only generative edge (green) is Claim → Credential, and Consent sits on it. A Contest touches the Claim, never the Unit — the record that work happened survives every dispute about who did it.</figcaption>
+</figure>
+
+<div class="callout"><p><strong>The unit/claim split stays load-bearing.</strong> A context can count delivery without resolving who delivered; one unit can carry several claims (team work); a disputed claim leaves the unit intact. The credential is always about a <em>claim</em>. Every API below preserves this: nothing accepts "activity + actor" as one write.</p></div>
+
+<h3>2.1 · Profiles prove the genericity</h3>
+<p>A profile is L2-adjacent specification: it names the roles, defines the LinkedRecord types, and supplies definition taxonomies — touching no core schema. The test of the model is that the second and third profiles need nothing new:</p>
+<div class="tblwrap"><table>
+<tr><th>Primitive</th><th>Trusted Payments profile</th><th>Training &amp; skilling profile</th><th>Lending (verifier-side)</th></tr>
+<tr><td>Party (subject role)</td><td>Worker</td><td>Trainee</td><td>Applicant</td></tr>
+<tr><td>Context</td><td>Project / campaign</td><td>Cohort / programme</td><td>—</td></tr>
+<tr><td>Definition</td><td>Work definition</td><td>Curriculum module + assessment rule</td><td>—</td></tr>
+<tr><td>Unit / Claim</td><td>Work unit / work claim</td><td>Session or assessment / attendance-completion claim</td><td>—</td></tr>
+<tr><td>Credential</td><td>WorkEventCredential</td><td>CompletionCredential</td><td>reads both, issues none</td></tr>
+<tr><td>LinkedRecord types</td><td><code>payment-setup</code> (rate, on Definition) · <code>payment-instruction</code> · <code>compensation</code> (on Unit, keyed by event_id)</td><td><code>certificate-artefact</code> · <code>assessor-endorsement</code></td><td>none — decisioning stays outside CREST, per the "not a credit scorer" boundary</td></tr>
+</table></div>
+<p>Everything §10 says about payments is unchanged in substance — it is now formally the Trusted Payments profile: <code>Rate</code> and <code>PaymentSetUp</code> are LinkedRecords on a Definition, <code>PaymentInstruction</code> and <code>CompensationRecord</code> are LinkedRecords on a Unit. The payments <em>service</em> (§13) is the profile's runtime; a deployment that never pays anyone simply doesn't run it.</p>
+
+<h2 id="s3">3 · Registry architecture on DeDi</h2>
+<p>The ten registries split by one criterion: <strong>is the record a public fact or personal data?</strong> Public facts go on the deployment's DeDi node — append-only, inclusion-provable, checkpoint-signed, witnessable by peer nodes (including the global layer's node, giving cross-border verification a cryptographic rather than institutional basis). Personal data stays in the deployment's private store, in-country, forever.</p>
+<div class="tblwrap"><table>
+<tr><th>Registry</th><th>Substrate</th><th>Why</th></tr>
+<tr><td>Organisations, Terms, Qualifications</td><td><span class="tag dedi">DeDi</span></td><td>A verifier must be able to prove which org held which terms at issuance time — that is exactly an inclusion proof at a log position</td></tr>
+<tr><td>Work Definitions (all versions)</td><td><span class="tag dedi">DeDi</span></td><td>Immutability and permanent resolvability of every version are native properties of a transparency log</td></tr>
+<tr><td>Skill list, Credential shapes, Adapters</td><td><span class="tag dedi">DeDi</span></td><td>Published releases, adopted by deployments; the global node carries the canonical copy, national nodes mirror</td></tr>
+<tr><td>Projects (metadata + grants)</td><td><span class="tag dedi">DeDi</span></td><td>A grant is part of the trust chain a verifier walks</td></tr>
+<tr><td>Workers, Consent, Disputes</td><td><span class="tag crest">Private store</span></td><td>Personal data; never leaves the country; never in a log anyone can mirror</td></tr>
+<tr><td>Credentials</td><td><em>nowhere</em></td><td>Deliberately no register — the worker's wallet is the only complete copy; the status list (§9) is the single central fact</td></tr>
+</table></div>
+<p><strong>Global vs national.</strong> One DeDi node per national deployment, plus one global node holding only: deployment public keys, credential schemas, skill taxonomy, and signed work-definition mirrors (no personal data by construction — nothing personal is ever on any DeDi node). National and global nodes witness each other, so neither can rewrite history unobserved. DeDi-node's current operator-gated onboarding matches the recommended org-onboarding default (§14): governance decisions as log entries.</p>
+
+<h2 id="s4">4 · Identity and the worker record</h2>
+<p>The worker record is deliberately minimal and the binding deliberately late:</p>
+<ul>
+<li><strong>Existence:</strong> a name and one contact route. No document, no phone, no literacy (W1). Assisted registration writes exactly the same record, marked with the registering agent's identity — it "counts the same" (W2) because there is literally no other kind of record.</li>
+<li><strong>Identifier:</strong> a pairwise, deployment-local <code>did:crest:worker:…</code>. Pairwise so that presenting credentials never leaks a global correlatable identifier (W8).</li>
+<li><strong>Identity binding:</strong> attached only when a credential first requires it, via eSignet as the single L0 interface (national ID / MOSIP / OTP behind one OIDC broker). CREST never talks to a national ID directly and never re-creates identity.</li>
+<li><strong>Deduplication:</strong> candidate duplicates are <em>held, never merged</em>; only the registry custodian merges, only with the worker's confirmation (W4). Merge is a private-store operation that re-points claims; issued credentials are untouched (they reference the surviving DID via a recorded alias).</li>
+</ul>
+
+<h3>4.1 · The identity-provider integration contract</h3>
+<p>"Binds to existing identity infrastructure" has to be a concrete interface, not a slogan. The contract has five parts:</p>
+<h4>Provider classes, like adapter classes</h4>
+<p>Identity providers are integrated once per <em>class</em>, configured per deployment — mirroring §8's evidence adapters. Four classes cover the target geographies: <strong>eSignet</strong> (MOSIP's OIDC broker — the preferred front door wherever a MOSIP or eSignet-fronted national ID exists), <strong>MOSIP IDA</strong> (direct authentication where eSignet isn't deployed), <strong>generic OIDC/eKYC</strong> (non-MOSIP national systems, e.g. eCitizen-style portals), and <strong>mobile OTP</strong> (the floor — proves control of a contact route, not legal identity). A deployment configures one or more providers; CREST core sees only the uniform interface below, never a provider's own API.</p>
+<h4>What CREST consumes, and what it stores</h4>
+<p>A binding event consumes a signed assertion and keeps three things only: an opaque <strong>subject reference</strong> (the provider's pairwise/pseudonymous subject identifier — with eSignet this is a per-relying-party PSUT, so CREST never holds a correlatable national ID), a <strong>salted hash of the national identifier</strong> for matching (below), and the <strong>assertion record</strong> (provider, class, assurance method, timestamp, expiry of validity if the provider states one). The raw ID number, biometrics, and demographic payload are never persisted — resolved at binding time, discarded after match. This closes the J12 gap ("whether CREST stores the raw ID number is unresolved"): it does not.</p>
+<h4>Identity assurance levels</h4>
+<p>Every worker record carries a derived <strong>identity assurance level</strong>, computed like tier strength — from facts, never asserted: <strong>IA-3</strong> anchor-verified (biometric or eKYC against a national system), <strong>IA-2</strong> document-seen (agent captured an ID document; checksum-valid but not authenticated online), <strong>IA-1</strong> contact-verified (OTP on a reachable route), <strong>IA-0</strong> asserted (name only, assisted enrolment). IA feeds the confidence score (S-3), duplicate detection (S-2), and — critically — the tier function of §6: Tier 1's stated primary risk is <em>identity mapping error</em>, so a Tier-1 outcome record claimed by an IA-0 worker resolves to a visibly weaker verdict than the same record at IA-3. Assurance and evidence strength stay separate axes; verifiers see both.</p>
+<h4>Matching: how evidence finds a worker</h4>
+<p>Source systems send whatever worker-joining identifier they have — national ID, phone, program roster ID. The resolution service (S-1) matches via the salted identifier hashes and registered contact routes, in declared precedence order, and records <em>which</em> key matched and at what confidence on the claim itself — provenance the tier function reads. No match → the unclear queue, never a silent guess. Roster IDs match only through a project-scoped mapping table loaded at project setup (L2 data).</p>
+<h4>Lifecycle: late binding, re-binding, migration</h4>
+<p>Binding is monotonic and late (W1): a worker starts at IA-0/IA-1, and attaching an anchor later retroactively upgrades the assurance read of <em>already-issued</em> credentials — no reissuance, because assurance is derived, not stored (same mechanism as J7's retroactive credentialing). Re-binding (new phone, re-issued national ID) appends a new assertion record; history is never rewritten. Anchor <em>migration</em> — a deployment switching providers, the J2 open gap — is now specified: bindings are per-provider records under a stable worker DID, so a new provider is added alongside the old, workers re-bind opportunistically at next authentication, and the old provider's assertions remain valid history rather than orphaned state. Inji Wallet's own activation uses eSignet directly where available; where not, wallet binding rides on the deployment's configured provider via the same interface.</p>
+
+<h2 id="s5">5 · Credential substrate on Inji</h2>
+<p>One credential type, one schema lineage, everywhere: <code>WorkEventCredential</code>, W3C VC issued by the deployment's Inji Certify over OpenID4VCI, signed with the deployment key (single-key custody per §14/D3 — the specifier/issuer split is structural in the data, cryptographic later if federation demands it).</p>
+<pre><code>credentialSubject:
+  workerId:       did:crest:worker:…          # pairwise (§4)
+  claimId:        urn:crest:claim:…
+  workUnitId:     urn:crest:unit:…
+  skillCode:      CREST-SKILL:chw.bednet-distribution.v2
+  definitionRef:  { urn, version, dediLogIndex }   # provable pin (§3)
+  period:         { start, end }
+  quantity:       { value, unit }              # unit from the definition
+  evidence:                                    # provenance FACTS only (§6)
+    sourceClass:    DHIS2 | HCM | COMMCARE | BATCH | SUPERVISOR_ENTRY | WORKER_ASSERTED
+    captureMethod:  SYSTEM_RECORD | FORM_ENTRY | SELF_REPORT
+    adapterRef:     { urn, version }
+  issuerAuthority:  { orgId, qualificationRef, grantRef }  # walkable on DeDi
+credentialStatus:   BitstringStatusList entry  (§9)</code></pre>
+<p>Holding is Inji Wallet in three modes (mobile app; web at assisted-access points; printed PixelPass QR card from enrolment) — same credential, no custodial wallet service. Presentation is OpenID4VP online and PixelPass QR/NFC offline; the offline payload carries the full signed VC, so a bare scan verifies signature and schema with no network, and proves validity-at-issuance only (status needs signal — accepted, per the journeys' bare-scan semantics). Format: JSON-LD/Ed25519 day one; SD-JWT is the planned selective-disclosure upgrade and the schema above is field-compatible with it.</p>
+
+<h2 id="s6">6 · Trust strength: facts stored, judgement derived</h2>
+<p>This resolves the contradiction between the concept note ("tier is a first-class property of every credential") and the journeys ("strength is never stored"). The rule, stated as infrastructure:</p>
+<div class="callout"><p><strong>The credential stores provenance facts. The tier is a pure function, evaluated at presentation time:</strong> <code>tier = f(evidence facts, definition@version's evidence-to-tier map, current source-assessment)</code>. It is always <em>displayed</em> — to worker and verifier alike — never <em>written</em>.</p></div>
+<p>Consequences that make this the right L1 rule: re-assessing a compromised source system downgrades every affected credential's tier instantly, without reissuance; versioning a definition never strands old credentials (they resolve against their pinned version); no attester can inflate strength by asserting it — strength is derived from <em>how evidence arrived</em>, and transport never affects it. The function <code>f</code> itself is L1 (identical everywhere); the evidence-to-tier <em>mappings</em> are L2 data inside each definition.</p>
+
+<h2 id="s7">7 · Work definition lifecycle</h2>
+<p>The definition is the object every other component reads, so its lifecycle is infrastructure even though its contents are pure configuration:</p>
+<ul>
+<li><strong>States:</strong> DRAFT → RATIFIED → ACTIVE → SUPERSEDED. Immutable from ACTIVE; every change is a new version; every version resolvable forever (a DeDi log entry, so this is enforced by substrate, not policy).</li>
+<li><strong>Separation of duties:</strong> author ≠ approver on the same version — an L1 rule, enforced in the definition service, not left to product UI.</li>
+<li><strong>Three faces, one signed record:</strong> worker face (plain-language evidence requirements + tier ceiling), platform face (source systems, required fields, outcome unit, tier map, schema pointer), verifier face (authorised issuer references, evidence-to-tier map, specifier signature, timestamp). One record, three projections — never three documents.</li>
+<li><strong>Payment set-ups link by reference</strong>, never embed: a definition is complete and usable with no rate attached, because recognition is a use of its own.</li>
+</ul>
+
+<h2 id="s8">8 · Evidence ingestion contract</h2>
+<p>CREST absorbs heterogeneity; source systems change nothing. The L1 artefact is the <strong>canonical work-evidence record</strong> — what every class adapter must emit:</p>
+<pre><code>mandatory core:            optional enrichment:
+  activity                  geography (coarse only — raw location never stored)
+  outcome { value, unit }   beneficiary counts, session metadata,
+  workerJoiningIdentifier   supervisor identity, device attestation, …
+  period { start, end }
+  sourceExposure            # where/how the source exposes this record
+provenance (adapter-attached, never source-asserted):
+  sourceClass · captureMethod · adapterRef · receivedAt · sourceRecordRef</code></pre>
+<p>Rules that cannot bend: adapters are written per <em>system class</em> (one DHIS2 adapter, one CommCare, one HCM, one batch-file), configured per deployment; a record providing only the core is valid Tier-1-capable evidence; the four transports (push API, consent-triggered pull, signed batch, supervised manual upload) never influence strength; provenance is attached by the adapter and validated by the pipeline — whatever the source asserts about its own trustworthiness is ignored. The adapter registry (DeDi) records which adapter versions are recognised, so a verifier can walk evidence back to a known translator.</p>
+
+<figure>
+<svg viewBox="0 0 960 330" role="img" aria-label="Information flow: a source system's native record passes through a class adapter into a unit and claim, is validated against the pinned definition version, enters the seven-day confirmation window, is issued as a credential by Certify into the worker's wallet, and is presented to a verifier. Acceptance also branches to the payments service, which emits a payment instruction to a rail; the rail's confirmation lands in a compensation record linked by event id only.">
+<defs><marker id="af" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--ink)"/></marker></defs>
+<rect class="db" x="10" y="54" width="90" height="48" rx="6"/><text class="dt" x="55" y="82" text-anchor="middle">Source</text>
+<rect class="dc" x="132" y="54" width="90" height="48" rx="6"/><text class="dt" x="177" y="82" text-anchor="middle">Adapter</text>
+<rect class="dc" x="254" y="54" width="90" height="48" rx="6"/><text class="dt" x="299" y="76" text-anchor="middle">Unit +</text><text class="dt" x="299" y="92" text-anchor="middle">Claim</text>
+<rect class="dc" x="376" y="54" width="90" height="48" rx="6"/><text class="dt" x="421" y="82" text-anchor="middle">Validate</text>
+<rect class="dc" x="498" y="54" width="90" height="48" rx="6"/><text class="dt" x="543" y="76" text-anchor="middle">Confirm</text><text class="ds" x="543" y="93" text-anchor="middle">T = 7 days</text>
+<rect class="di" x="620" y="54" width="90" height="48" rx="6"/><text class="dt" x="665" y="82" text-anchor="middle">Certify</text>
+<rect class="di" x="742" y="54" width="90" height="48" rx="6"/><text class="dt" x="787" y="82" text-anchor="middle">Wallet</text>
+<rect class="db" x="864" y="54" width="90" height="48" rx="6"/><text class="dt" x="909" y="82" text-anchor="middle">Verifier</text>
+<line class="da" x1="100" y1="78" x2="132" y2="78" marker-end="url(#af)"/><text class="dl" x="80" y="42">native record</text>
+<line class="da" x1="222" y1="78" x2="254" y2="78" marker-end="url(#af)"/><text class="dl" x="186" y="42">canonical evidence</text>
+<line class="da" x1="344" y1="78" x2="376" y2="78" marker-end="url(#af)"/><text class="dl" x="322" y="42">against def@v</text>
+<line class="da" x1="466" y1="78" x2="498" y2="78" marker-end="url(#af)"/><text class="dl" x="444" y="42">draft + notify</text>
+<line class="da" x1="588" y1="78" x2="620" y2="78" marker-end="url(#af)"/><text class="dl" x="574" y="42">accepted</text>
+<line class="da" x1="710" y1="78" x2="742" y2="78" marker-end="url(#af)"/><text class="dl" x="686" y="42">issue VC</text>
+<line class="da" x1="832" y1="78" x2="864" y2="78" marker-end="url(#af)"/><text class="dl" x="812" y="42">QR / VP</text>
+<line class="dg" x1="543" y1="102" x2="543" y2="192" marker-end="url(#af)"/><text class="dl" x="551" y="152" style="fill:var(--accent)">accepted claim</text>
+<rect class="dc" x="468" y="192" width="150" height="48" rx="6"/><text class="dt" x="543" y="220" text-anchor="middle">payments service</text>
+<line class="da" x1="618" y1="216" x2="690" y2="216" marker-end="url(#af)"/><text class="dl" x="600" y="206">instruction</text>
+<rect class="db" x="690" y="192" width="90" height="48" rx="6"/><text class="dt" x="735" y="220" text-anchor="middle">Rail</text>
+<line class="da" x1="780" y1="216" x2="822" y2="216" marker-end="url(#af)"/><text class="dl" x="770" y="206">confirms</text>
+<rect class="db" x="822" y="192" width="132" height="48" rx="6"/><text class="dt" x="888" y="214" text-anchor="middle">Compensation</text><text class="ds" x="888" y="230" text-anchor="middle">record</text>
+<text class="ds" x="543" y="290" text-anchor="middle">payment branch is linked to the work event by event_id only — never inside the credential;</text>
+<text class="ds" x="543" y="308" text-anchor="middle">reconciliation compares instructed vs confirmed and gives every gap one reason and one owner</text>
+</svg>
+<figcaption>The information flow, end to end. The top row is the credential path — it completes whether or not money moves. The branch below is the Trusted Payments profile acting on the same acceptance event.</figcaption>
+</figure>
+
+<h2 id="s9">9 · Consent, confirmation, withdrawal</h2>
+<p>Consent happens exactly three times, and the three moments are distinct objects, never collapsed:</p>
+<ol>
+<li><strong>Enrolment consent</strong> — the right to fetch and hold evidence about the worker. Recorded once, revocable; voice recording is a valid capture for non-literate workers.</li>
+<li><strong>Issuance confirmation</strong> — is the draft record <em>true</em>? Draft credential → notify (SMS/USSD/supervisor-assisted) → confirm, dispute, or auto-confirm at T=7 days. Three parallel routes (self, auto, assisted) all lead to issuance and all release payment; the credential flow can never block payment indefinitely.</li>
+<li><strong>Disclosure consent</strong> — who may see <em>what</em>, per presentation. Showing the bare QR is itself consent for the non-identifying payload; anything more requires an explicit, scoped, recorded grant naming who asked and why. Enforced by the verification service, recorded in the private consent store.</li>
+</ol>
+<p><strong>Withdrawal</strong> is the single central fact about credentials: a Bitstring Status List per deployment, maintained by Certify, one bit meaning "still stands" and carrying nothing else. No credential register exists; the list is unlinkable bulk data by design.</p>
+
+<h2 id="s10">10 · The payments boundary</h2>
+<p>CREST never holds or moves money. The infrastructure commitment is precisely two contracts:</p>
+<ul>
+<li><strong>Outbound — the payment trigger:</strong> on claim acceptance (confirmed or auto-confirmed), if a rate exists in the linked payment set-up, emit a <code>PaymentInstruction</code> (event_id, worker payment handle, amount/currency, mode) to the configured rail connector. Rails are L2 configuration; the instruction shape is L1.</li>
+<li><strong>Inbound — the confirmation intake:</strong> rails report outcomes into the <code>CompensationRecord</code> (event_id, amount, mode, payment_ref, status PENDING/PAID/DISPUTED, date). Reconciliation compares instructed vs confirmed; every unmatched amount resolves to one reason with one owner — including the previously ownerless gap, which this design closes: <em>accepted claims with no instruction after the set-up's deadline surface to the project administrator by rule.</em></li>
+</ul>
+<p>The compensation record is linked to the credential only by <code>event_id</code> — the work record is never hostage to the payment system.</p>
+
+<h2 id="s11">11 · Invariants: W1–W10 as enforced mechanisms</h2>
+<p>The worker guarantees are the acceptance tests of this whole layer. Each maps to a mechanism above — if a mechanism disappears, its guarantee names what breaks:</p>
+<div class="inv"><b>W1–W2</b> exist without document/phone/literacy; assisted counts the same → minimal worker record, late identity binding, voice consent, agent-marked same-shape record (§4, §9)</div>
+<div class="inv"><b>W3</b> work recorded without a device → evidence arrives from source systems and supervisors, never requires worker hardware (§8)</div>
+<div class="inv"><b>W4</b> found next campaign → dedup held-never-merged + custodian merge with worker confirmation (§4)</div>
+<div class="inv"><b>W5–W6</b> can see what was done, owed, and why things bounced → confirmation window with stated reasons; compensation record readable by its subject (§9, §10)</div>
+<div class="inv"><b>W7</b> provable to a stranger in a minute, offline → full signed VC in PixelPass QR/NFC, printed card path (§5)</div>
+<div class="inv"><b>W8</b> proving work ≠ surrendering identity → pairwise DIDs, non-identifying bare-scan payload, scoped disclosure consent, SD-JWT roadmap (§4, §5, §9)</div>
+<div class="inv"><b>W9</b> keeps everything when the employer ends → wallet holds the only complete copy; no credential register; Certify re-fetch always available (§3, §9)</div>
+<div class="inv"><b>W10</b> a reachable person looks at problems → dispute record is L1; a project cannot activate without a named support contact (gate lives in the project registry, not in product)</div>
+
+<h2 id="s12">12 · Why config and product stay easy</h2>
+<p>The test of this layer is what building on it looks like. <strong>Configuration (L2)</strong> becomes pure data: a new project is registry rows (project, grants, definitions, payment set-ups, adapter configs) — no code. A new country is a deployment of the same three substrates plus registry seeding. A new work type is a definition version. A new source system of a known class is adapter <em>configuration</em>. <strong>Product (L3)</strong> becomes replaceable clients of the API surface below: any worker app, any supervisor tool, any funder dashboard — a deployment may replace all of it and still be CREST, because every rule that matters is enforced beneath the product. And the extensibility claims the strategy note cares about fall out structurally: new use cases (matching, credit, skilling) are new <em>verifiers</em> of existing credentials, not new schemas; federation is a key-custody upgrade, not a data-model change; new credential formats are new projections of the same claim object.</p>
+
+<h2 id="s13">13 · API surface</h2>
+<p>Six service boundaries, named by what they answer:</p>
+<div class="tblwrap"><table>
+<tr><th>Service</th><th>Answers</th><th>Substrate beneath</th></tr>
+<tr><td><code>registry</code></td><td>Who exists, under what terms, on which projects?</td><td>DeDi (public) + private store</td></tr>
+<tr><td><code>definitions</code></td><td>What counts as done, in which version, per which face?</td><td>DeDi</td></tr>
+<tr><td><code>evidence</code></td><td>What happened? (adapters in → units + claims out, validation, unclear-queue)</td><td>Private store</td></tr>
+<tr><td><code>confirmation</code></td><td>Is it true? (T=7 window → Certify issuance)</td><td>Private store + Inji Certify</td></tr>
+<tr><td><code>verification</code></td><td>Does it stand, how strongly, on whose authority? (wraps Inji Verify + strength function + consent)</td><td>Inji Verify + DeDi walks</td></tr>
+<tr><td><code>payments</code></td><td>What should be paid, what was, and where is the difference?</td><td>Private store + rail connectors</td></tr>
+</table></div>
+
+<h2 id="s14">14 · Open decisions and chosen defaults</h2>
+<div class="tblwrap"><table>
+<tr><th>Decision</th><th>Default this blueprint assumes</th><th>Status</th></tr>
+<tr><td>Org onboarding (five options)</td><td>Self-registration with automated national-register check; human decides only where the check can't run — recorded as DeDi log entries</td><td><span class="tag open">Open — governance call</span></td></tr>
+<tr><td>Key custody</td><td>Single deployment signing key; specifier/issuer split structural; per-org DIDs deferred to federation</td><td><span class="tag crest">Default, reversible</span></td></tr>
+<tr><td>Credential format</td><td>JSON-LD/Ed25519 now; SD-JWT for selective disclosure in phase 2</td><td><span class="tag crest">Default, staged</span></td></tr>
+<tr><td>Tier semantics</td><td>Facts stored, tier derived (§6) — needs sign-off since it reconciles two docs</td><td><span class="tag open">Needs team ratification</span></td></tr>
+<tr><td>Review window T</td><td>7 days, per the readout; configurable per definition within L1 bounds (min/max are L1)</td><td><span class="tag crest">Default</span></td></tr>
+<tr><td>Global steward</td><td>Global DeDi node operated by CREST now; witness ring makes later handover to a multilateral body a key ceremony, not a migration</td><td><span class="tag open">Open — strategy call</span></td></tr>
+</table></div>
+
+<div class="callout"><p><strong>Definition of done for this layer:</strong> the eleven primitive schemas, the Trusted Payments profile (roles + LinkedRecord types), and the canonical evidence record published as versioned JSON Schemas; the <code>WorkEventCredential</code> schema live in Certify; the strength function specified as executable spec with test vectors; the six API boundaries as OpenAPI stubs; one fully-worked definition (bednet distribution, three faces, tier map) resolvable on a DeDi node. That bundle is what makes L2 "just data" and L3 "just clients."</p></div>
+
+<h2 id="s15">15 · Scope map: the twelve journeys</h2>
+<p>Every screen journey in the Actor Journeys document (17 Aug), mapped to what it demands of this layer. Format per journey: what L1 must provide (build scope), what is pure L2 data, what stays L3 product. The journeys name an S-1…S-25 taxonomy of automated system services; those map onto the six API boundaries of §13 and are noted where the screens invoke them. Journey-specific open points are consolidated in §16.</p>
+
+<h3>J1 · Onboarding an organisation <span class="tag crest">G-2 · 11 screens</span></h3>
+<p><strong>L1:</strong> org self-registration write + searchable listing; versioned terms catalogue; terms-request → evidence upload → approval state machine; external business-register lookup; key issuance with one-time reveal, withdrawal/reissue (never reinstatement); project→org invitation object carrying a scoped grant (functions × places × period) with accept/decline; role assignment gating whether granted functions are live. <strong>L2:</strong> the published terms sets and their document requirements; approval-queue routing; sector/country taxonomies. <strong>L3:</strong> the register/browse/request/invitation screens.</p>
+
+<h3>J2 · Setting up the instance <span class="tag crest">G-1 · 8 screens</span></h3>
+<p><strong>L1:</strong> Instance object as the DeDi log root (name, jurisdiction, residency, languages); one-time binding to the Layer-0 identity anchor (S-4 via S-1); instance-level <em>consent floor</em> that no project may loosen (S-12); first-organisation admission; notification delivery (S-25). <strong>L2:</strong> the actual consent-rule values, anchor choice, language list, DPO appointment. <strong>L3:</strong> the guided setup wizard.</p>
+
+<h3>J3 · Setting up a project <span class="tag crest">P-1 + P-2 · 24 screens</span></h3>
+<p><strong>L1:</strong> project/role/grant objects with terms-as-ceiling semantics; the five independent compositability switches as first-class project state; adapter framework bindings (source-system pull and finance-system pull); spreadsheet template generation pinned to a definition version with row-level conformance and partial accept/hold; validation routing (S-8/S-9); the two activation gates enforced beneath product — named support contact, and signed work definition before any credential issues (S-5). <strong>L2:</strong> every switch value, sourcing mode, intake schedule, payment posture, role invitations, partner grants, finance codes. <strong>L3:</strong> the console wizards and dashboards.</p>
+
+<h3>J4 · Defining the work <span class="tag crest">P-3 · 28 screens</span></h3>
+<p><strong>L1:</strong> definition registry with sector/counting-basis/category/unit/tier-ceiling structure; publish as <em>two linked signed records</em> (Work Definition + Payment Set-Up) under one signature, mirrored globally; dry-run execution against live records that writes nothing; adapter registration and binding per definition version; tier-ceiling enforcement (a credential can never exceed its source's ceiling); author ≠ approver; ratification-with-pending-fields and delegate alerts; extension-field namespacing. <strong>L2:</strong> taxonomies, tier acceptance rules, mapping templates, rates/tranches/deductions, delegation rules. <strong>L3:</strong> the authoring console.</p>
+
+<h3>J5 · Payment, and putting it right <span class="tag crest">F-1 + F-2 · 15 screens</span></h3>
+<p><strong>L1:</strong> Rate as a versioned, effective-dated object separate from the definition; PaymentInstruction emission with idempotency per validated event (S-16); rail-connector interface with sandbox/live separation and a test-transaction lifecycle; reconciliation-file ingestion matched on instruction reference (S-24); account/beneficiary validation (S-18); retry/exception queue (S-23); per-instruction status tracking (S-22). <strong>L2:</strong> rates, pathway choice (advisory vs instruction+rail), rails, batching/triggers, dispute holds, reconciliation cadence. <strong>L3:</strong> rate publishing and rail-connection wizards.</p>
+
+<h3>J6 · Registering a worker in the field <span class="tag crest">W-2 · 5 screens</span></h3>
+<p><strong>L1:</strong> offline-first registration queue reconciling into single identities on sync (S-1); scan-or-manual ID capture validated against the anchor when reachable; duplicate detection with confidence scoring, hold-never-merge, custodian-only authority (S-2/S-3); voice consent as a stored audio artefact bound to agent + timestamp (S-12); DID issuance + wallet provisioning feeding on-the-spot card printing (S-10). <strong>L2:</strong> consent scripts per language, pathway assignment, reprint policy, custodian routing. <strong>L3:</strong> the supervisor Android field app.</p>
+
+<h3>J7 · A worker, end to end <span class="tag crest">W-1 · 22 screens</span></h3>
+<p><strong>L1:</strong> layered consent ledger (enrolment / per-credential / per-verification); T=7 confirm/dispute/auto-confirm state machine with a 14-day issuer response defaulting in the worker's favour; 2-of-3 social recovery with recovery-contact nomination; selective-disclosure share objects with per-field consent, time-limited links, and a worker-visible audit log; aggregate earnings view across projects with held-payment reason attribution; <em>retroactive credentialing</em> — attaching an identity document later upgrades already-validated work into issuable credentials. <strong>L2:</strong> tier ceilings, validation mode, payment posture, accepted document types. <strong>L3:</strong> the wallet app/USSD experience itself.</p>
+
+<h3>J8 · From attestation to credential <span class="tag crest">W-4 + P-10 · 8 screens</span></h3>
+<p><strong>L1:</strong> attestation/correction accepted as evidence with original + correction both retained (S-11); batch roster close producing per-worker events, never merged records, with SMS dispute windows; scoped expiring request links for external institutions whose returns enter the same intake path; issuance on acceptance with <em>no human signature</em> — the org signs. <strong>L2:</strong> whether a manual validator step exists per project; window lengths; batch pathway enablement. <strong>L3:</strong> mostly outside CREST — the delivery platform's own supervisor UI and the institution's web template.</p>
+
+<h3>J9 · Checking a credential <span class="tag crest">V-1 + V-2 · 6 screens</span></h3>
+<p><strong>L1:</strong> pass issuance (name + reachable contact, no account, no vetting); disclosure-level resolution = min(verifier accreditation ceiling, worker-granted fields); refusals rendered as explicit values, never silent omission; status-list check at read time with offline freshness timestamp; batch verification jobs with per-row asynchronous worker consent; no-worker-data receipts; check audit trail visible to the worker. <strong>L2:</strong> accreditation levels and per-level field ceilings; consent-required field lists; batch limits. <strong>L3:</strong> pass sign-up and institutional check consoles.</p>
+
+<h3>J10 · When something stalls <span class="tag crest">W-3 + W-5 · 6 screens</span></h3>
+<p><strong>L1:</strong> five-key worker lookup with confidence ranking (QR, phone, national ID, biometric, fuzzy name+DOB+district); payment trace exposing rail state read-only — support can escalate, never retry or release money; escalation handoff object with SLA; SMS 2-of-3 recovery protocol issuing a new key, invalidating the old, preserving credential history. <strong>L2:</strong> SLAs, routing targets, nominee thresholds, message templates. <strong>L3:</strong> support console and SMS reply interface.</p>
+
+<h3>J11 · Seeing where it stands <span class="tag crest">P-2 + V-4 + G-4 · 12 screens</span></h3>
+<p><strong>L1:</strong> the metrics contracts are infrastructure objects, not report queries — straight-through funnel with per-stage counts, ages, and an <em>owning role per stuck cause</em>; tier-mix tagged capped-by-source vs fell-short with a ceiling-changed flag; the payment-delay taxonomy with every reason bound to a role; registry coverage computed as <em>payable</em> (verified ID + valid payment details) against an external universe estimate; duplicate-merge protocol with the monitored invariant <code>merges_without_worker_confirmation = 0</code>; reuse/freshness aggregation distinguishing verified update from re-save. <strong>L2:</strong> thresholds/targets, assignment routing. <strong>L3:</strong> the three consoles (project, funder portfolio, custodian) are views over the same metric objects.</p>
+
+<h3>J12 · Systems CREST does not own <span class="tag crest">EXT · 4 screens</span></h3>
+<p><strong>L1:</strong> the four boundary contracts — identity assertion consumption (anchor → S-1 binding, creating a record if none); the class-adapter contract (one per system class, all deployments) plus a manual add path for unmapped sources; one payment instruction per validated work unit out to a rail with status read-back and reconciliation; and account-free verification — trust carried entirely by the credential signature, so a next employer needs no CREST relationship at all. <strong>L2:</strong> field mappings (a registry-maintainer judgement, not automatic), schedules, failure-alert thresholds, withholdable fields. <strong>L3:</strong> the four illustrative external screens.</p>
+
+<h2 id="s16">16 · Cross-journey gap register</h2>
+<p>Recurring or systemic gaps the journey screens surface — the ones that belong to this layer rather than to any one product. Deduplicated across all twelve analyses:</p>
+<div class="tblwrap"><table>
+<tr><th>Gap</th><th>Surfaced in</th><th>Disposition</th></tr>
+<tr><td>Cleared work never turned into a payment instruction has no owning role</td><td>J5, J11 (and the process maps)</td><td>Closed by §10: deadline rule surfaces it to the project administrator</td></tr>
+<tr><td>Tier for external-institution evidence (P-10) undefined — Tier 1 by provenance, capped at 2, or a fourth tier</td><td>J8</td><td><span class="tag open">Decide</span> — §6's derived-tier function makes this a mapping entry, not a schema change; recommend cap at Tier 2 until source-class accreditation exists</td></tr>
+<tr><td>Adapter/rail credential custody (who holds provider secrets) unowned</td><td>J4, J5</td><td><span class="tag open">Decide</span> — needs a key-custody rule alongside §14's signing-key decision</td></tr>
+<tr><td>Silent evidence source — a connected system that stops sending raises no alarm</td><td>J3, J12</td><td>Add: source heartbeat + expected-volume watermark to the adapter contract (§8)</td></tr>
+<tr><td>Recovery dead-end: 2-of-3 never met → permanent lockout, no institutional override</td><td>J10</td><td><span class="tag open">Decide</span> — any override must be custodian-held and audit-logged; W9 at stake either way</td></tr>
+<tr><td>Duplicate-confidence thresholds uncalibrated; no measured false-match rate</td><td>J6, J11</td><td>Add: calibration set + monitored invariant to registry service acceptance tests</td></tr>
+<tr><td>Batch/aggregate verification unbounded — re-identification risk at small populations</td><td>J9, J11</td><td><span class="tag open">Decide</span> — per-batch purpose + size caps as L1 consent policy, not verifier goodwill</td></tr>
+<tr><td>Terms/qualifications never expire or get re-reviewed; settlement accounts never re-verified</td><td>J1, J5</td><td>Add: review-by dates on Qualification and rail-connection objects</td></tr>
+<tr><td>Decline-work consequences (and decline history as a scoring signal) undefined</td><td>J7</td><td><span class="tag open">Decide</span> — anti-profiling stance suggests: never recorded beyond the offer</td></tr>
+<tr><td>Compositability switch-off after workers are live; grant narrowing after go-live</td><td>J3</td><td><span class="tag open">Decide</span> — needs an L1 rule for in-flight work under a narrowed grant</td></tr>
+<tr><td>Raw national-ID storage assumed away; disclosure of matched records to field agents flagged by DPO</td><td>J6, J12</td><td>Add: store only the anchor's assertion reference, never the ID number; duplicate-hold screens show existence, not content</td></tr>
+<tr><td>Offline verification when <em>neither</em> party has signal: pass, consent, and status checks all fail</td><td>J9</td><td>Accepted limit of the bare-scan payload (§5); document as such</td></tr>
+</table></div>
+
+<div class="footer">Sources: CREST Trusted Payments readout · Actor Journeys (17 Aug) · A DPI for Livelihoods v1.6 · docs.inji.io · theflywheel/DeDi-node — drafted 21 Aug 2026. Companion: “CREST on Inji” (component mapping and build phases).</div>
+</main>
+</body>
+</html>
