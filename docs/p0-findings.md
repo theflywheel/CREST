@@ -49,15 +49,35 @@ The image audit is complete and it changed the picture. The issuance demo is not
 
 ---
 
-## Identity — eSignet (#3) · Blueprint §4 · **not started**
+## Identity — eSignet (#3) · Blueprint §4 · **partial — deployed and answering**
 
-The image is pulled and the tag is confirmed (C3), and C6 means it will be brought up alongside Certify. Nothing has been verified about the thing #3 actually asks:
+~~None of that can be answered against a local mock.~~ **That claim was wrong, and worth correcting rather than quietly dropping.** It conflated two different questions. Whether the subject identifier is pairwise is a property of eSignet's *code*, and self-hosted eSignet is the same code a sandbox runs — so it is answerable by anyone willing to deploy it. What genuinely needs an outside party is only the second half of #3's "done when": production access, who to talk to, and lead time. That half is still open, and like the rail sandbox (#19) it is a conversation to start now.
 
-- whether the subject identifier is **pairwise per relying party** and stable across sessions — §4.1 assumes both;
-- which claims come back, and which of them CREST must never persist (W9);
-- what production access requires and how long it takes.
+eSignet 1.8.0 and mock-identity 0.13.0 now run on Railway against their own logical databases. Discovery is public:
 
-None of that can be answered against a local mock: a mock identity system will return whatever its fixtures say, including a pairwise subject, whether or not the real deployment does. **#3 needs a real sandbox and a relying-party registration**, and that is a conversation with a lead time, not a task. Like the rail sandbox (#19), it should be opened now rather than when the phase reaches it.
+    https://crest-esignet-production.up.railway.app/v1/esignet/oidc/.well-known/openid-configuration
+
+**E1 — `subject_types_supported` is `["pairwise"]`, and only that.** eSignet advertises no `public` option, which is stronger than §4.1 assumed: pairwise is not a mode CREST selects and could misconfigure, it is the only mode on offer. **This is not yet the confirmation #3 asks for.** What a relying party is *told* is supported and what it *receives* across two sessions are different claims, and only the second one is evidence. The OIDC round-trip is the remaining work.
+
+**E2 — `claims_supported` includes `individual_id`.** The claim set is `name, address, gender, birthdate, picture, email, phone_number, individual_id, phone_number_verified, registration_type, updated_at`. `individual_id` is a national identifier: **requesting it would put CREST one careless persist away from breaking W9.** The scope-to-claim mapping is configuration, so this belongs in the relying-party registration as an explicit exclusion, not in a code review later. §4.1 should name the claims CREST requests and say plainly that `individual_id` is not one of them.
+
+**E3 — the issuer is whatever `mosip.esignet.host` says, and it defaults to `localhost:8088`.** The local profile hard-codes it, so a deployment that does not override it publishes a discovery document advertising `http://localhost:8088` as its issuer — served over a public HTTPS URL, and self-consistent enough to look fine. Same shape as R6 for DeDi: **an identity that defaults to a development value and is not checked against where the service actually is.** Set `MOSIP_ESIGNET_HOST` and `MOSIP_ESIGNET_DOMAIN_URL` before first boot; verifying deployment means fetching the discovery document and comparing `issuer` to the host you fetched it from.
+
+**E4 — keys are minted on first boot and the alias survives a keystore change.** eSignet and mock-identity both write `key_alias` rows on startup and load the material from the configured keystore. Change the keystore backend and the aliases persist while the material does not, and every subsequent boot dies on `Key in DBStore does not exist for this alias. So fetching the certificate from HSM.` — which names HSM even when no HSM is configured, so it reads like a missing dependency rather than the stale row it is. Recovery is truncating `key_alias` and `key_store`. **A third instance of the same class as R6 and E3**: substrate components mint an identity at first boot and give you no signal that it no longer matches the configuration around it. Worth stating as a rule — *for anything that mints its own identity, set the identity before first boot and verify it from outside afterwards.*
+
+**E5 — the deployed stack uses a PKCS12 keystore, and says so.** The log carries `IT IS SUGGESTED NOT TO USE PKCS12 KEYSTORE TYPE IN PRODUCTION ENVIRONMENT`. That is fine for a spike and **not fine for a pilot**; it is the same question as G1 #7 (key custody), and the deployed environment is now a concrete argument for settling it. Recorded here so that no one later mistakes "it worked in the spike" for "the key handling was reviewed".
+
+### C7 — the published eSignet quickstart cannot start on any host that is not root
+
+Both images share an entrypoint (`configure_start.sh`) that installs a PKCS#11 HSM client. It skips that step only when the profile is **exactly** the string `local`:
+
+    if [ "$active_profile_env" != "local" ]; then   # ... install HSM client ...
+
+Every published quickstart, including MOSIP's own `docker-compose.yml`, sets `default,local`. That is not equal to `local`, so **the skip never fires and the installer always runs.** It ends in `sudo ./install.sh`, which needs a terminal; MOSIP's compose gets away with it only by running `user: root`. On any platform that will not let you override the container user — Railway among them — the container fails, and because `mv` collides with the directory the previous attempt left behind, it fails differently on each restart and never with a clear cause.
+
+Dodging it by setting the profile to `local` alone does not work either: `application-local.properties` is a 55-line overlay on a 460-line `application-default.properties`, so `local` by itself is missing most of eSignet's configuration. It boots far enough to look promising and dies on the first `@Value` with no default (`mosip.esignet.header-filter.paths-to-validate`). **The profile CREST needs is the profile that triggers the bug**, so the entrypoint is what had to go: `infra/compose/Dockerfile.esignet` rebuilds both images with `esignet-start.sh`, which keeps the plugin-loading step and drops the HSM installer.
+
+This is upstream's bug, not ours, and it is worth reporting. It also means **CREST is running eSignet in a configuration its maintainers do not test**, which is a thing to say out loud before a pilot rather than after.
 
 ---
 

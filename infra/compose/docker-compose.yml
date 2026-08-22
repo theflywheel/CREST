@@ -145,16 +145,67 @@ services:
     ports: ["${INJI_WEB_PORT:-58093}:3000"]
     profiles: ["full"]
 
+  # Both eSignet images are rebuilt with our own entrypoint. The stock one runs
+  # an HSM-client installer that cannot succeed here and leaves the container
+  # looping — see infra/compose/esignet-start.sh and docs/p0-findings.md (C7).
   esignet:
-    image: ${ESIGNET_IMAGE:-mosipid/esignet:1.8.0}
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.esignet
+      args:
+        ESIGNET_IMAGE: ${ESIGNET_IMAGE:-mosipid/esignet-with-plugins:1.8.0}
     ports: ["${ESIGNET_PORT:-58088}:8088"]
     environment:
-      SPRING_PROFILES_ACTIVE: local
+      # Not SPRING_PROFILES_ACTIVE: the image passes this one to the JVM itself.
+      active_profile_env: default,local
+      plugin_name_env: esignet-mock-plugin.jar
+      MOSIP_ESIGNET_DATABASE_URL: jdbc:postgresql://postgres:5432/mosip_esignet?currentSchema=esignet
+      MOSIP_ESIGNET_DATABASE_USERNAME: ${POSTGRES_USER:-crest}
+      MOSIP_ESIGNET_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-crest}
+      MOSIP_ESIGNET_MOCK_DOMAIN_URL: http://esignet-mock-identity:8082
+      MOSIP_ESIGNET_INTEGRATION_KEY_BINDER: MockKeyBindingWrapperService
+      MOSIP_ESIGNET_HOST: localhost:${ESIGNET_PORT:-58088}
+      MOSIP_ESIGNET_DOMAIN_URL: http://localhost:${ESIGNET_PORT:-58088}
+      SPRING_CACHE_TYPE: redis
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      KAFKA_ENABLED: "false"
+      SPRING_AUTOCONFIGURE_EXCLUDE: org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     profiles: ["substrate", "full"]
 
   esignet-mock-identity:
-    image: ${ESIGNET_MOCK_IMAGE:-mosipid/mock-identity-system:0.13.0}
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.mock-identity
+      args:
+        ESIGNET_MOCK_IMAGE: ${ESIGNET_MOCK_IMAGE:-mosipid/mock-identity-system:0.13.0}
     ports: ["${ESIGNET_MOCK_PORT:-58082}:8082"]
+    environment:
+      active_profile_env: default,local
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/mosip_mockidentitysystem?currentSchema=mockidentitysystem
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-crest}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-crest}
+      MOSIP_MOCK_IDA_KYC_TRANSACTION_TIMEOUT_SECS: "900"
+      MOSIP_ESIGNET_HOST: localhost:${ESIGNET_PORT:-58088}
+      redis.host: redis
+      redis.port: "6379"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    profiles: ["substrate", "full"]
+
+  # eSignet caches sessions here. Only the substrate profile needs it; CREST's
+  # own services do not use Redis and should not learn to.
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    ports: ["${REDIS_PORT:-56379}:6379"]
     profiles: ["substrate", "full"]
 
   # ── Mocks: ours, so the stack is usable without paid externals ───────────

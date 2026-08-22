@@ -1,0 +1,13 @@
+# The mock identity system, with the upstream entrypoint replaced.
+#
+# Same HSM-installer problem as Dockerfile.esignet — the two images share the
+# configure_start.sh pattern, so they share the bug. This one has no plugins;
+# the shared start script skips that step when plugin_name_env is unset.
+ARG ESIGNET_MOCK_IMAGE=mosipid/mock-identity-system:0.13.0
+FROM ${ESIGNET_MOCK_IMAGE}
+
+COPY --chmod=0755 infra/compose/esignet-start.sh /home/mosip/esignet-start.sh
+
+ENV JAR_NAME=mock-identity-system.jar
+
+ENTRYPOINT ["/bin/bash", "/home/mosip/esignet-start.sh"]
