@@ -33,4 +33,17 @@ A **work event** is the atomic unit. A `Unit` exists independent of who performe
 
 ## Status
 
-Design complete, pre-implementation. Phase 0 (substrate spike) is the next work. Open decisions are tracked as issues labelled `decision` and are gated on the G1 session.
+Design complete, pre-implementation. **Phase 0 (substrate spike) is the next work** — nothing in it blocks on a decision, so it starts immediately.
+
+Work is tracked as six phase epics with thirty-three sub-issues across five milestones; see [docs/TRACKING.md](docs/TRACKING.md) for the conventions, the gates and the blocking dependencies.
+
+| Phase | Epic | Due |
+|---|---|---|
+| P0 · Substrate spike | [#34](../../issues/34) | 2026-09-04 |
+| G1 · The six decisions | [#35](../../issues/35) | week 4 |
+| P1 · Specification bundle | [#36](../../issues/36) | 2026-09-25 |
+| P2 · Core loop slice | [#37](../../issues/37) | 2026-10-30 |
+| P3 · Payments + verification | [#38](../../issues/38) | 2026-12-11 |
+| P4 · Inclusion, oversight, federation | [#39](../../issues/39) | 2027-02-05 |
+
+Three things sit on the critical path this week: book the G1 session for week 4, start P0, and open the mobile-money sandbox conversation ([#19](../../issues/19)) — that lead time is external and lands on P3.
