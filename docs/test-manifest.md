@@ -50,6 +50,19 @@ The scaffolding. These are `covered` because the code exists and the checks run 
 | Mock rail injects real failure modes | — | `timeout` mode: caller sees 504 while the rail recorded `cleared` — the cleared-but-never-confirmed case W10 must survive | Contract | covered |
 | Mock SMS records messages | — | Sent messages readable per recipient, so "the worker was notified" (W2) is assertable without a phone | Contract | covered |
 
+## P0 spikes
+
+Spikes prove things about **other people's software**, so they live outside the harness and are marked `spike` rather than `covered` — they are run deliberately, not in CI, and they retire when the thing they de-risked is wrapped by CREST code. Findings: [p0-findings.md](p0-findings.md).
+
+| Feature | Issue | How it is proven | Layer | Status |
+|---|---|---|---|---|
+| DeDi publish → inclusion proof | [#2](../../issues/2) | `make spike-dedi`: record published, fetched with `?proof=inclusion` | Spike | spike |
+| Inclusion proof validates independently | [#2](../../issues/2) | `tools/spikes/dediproof` — a second implementation, stdlib only. Proven by **tampering**: altered leaf digest, rewritten `created_by`, flipped audit-path step and wrong verifier key are each rejected | Spike | spike |
+| Definition versions are immutable | [#2](../../issues/2) | v2 published; v1 still resolves by `version_id` **and its original proof still validates** — a credential issued under v1 stays verifiable | Spike | spike |
+| Upstream image tags exist and match our platform | [#1](../../issues/1), [#3](../../issues/3) | Every tag in `.env.example` checked against the registry and pulled. Found `inji-verify:0.11.0` does not exist and the component is two images | Spike | spike |
+| Credential issuance → wallet → printed card → offline verify | [#1](../../issues/1) | Recorded demo; offline leg needs a real device with radios off | E2E | planned |
+| eSignet pairwise subject identifier | [#3](../../issues/3) | Round-trip against a **real sandbox** — a mock returns whatever its fixtures say, so it cannot answer this | E2E | planned |
+
 ## Infrastructure layer
 
 | Feature | Issue | How it is proven | Layer | Status |
@@ -112,6 +125,8 @@ The scaffolding. These are `covered` because the code exists and the checks run 
 
 Recorded rather than quietly carried:
 
-- **Nothing is `covered` yet** — the code does not exist. This file is the specification of proof, written before the thing it proves, which is the intended order.
+- **Nothing in the product is `covered` yet** — only the foundations and the P0 spikes are. This file is the specification of proof, written before the thing it proves, which is the intended order.
+- **A `spike` row is not a regression test.** Nothing re-runs `make spike-dedi` automatically, so a DeDi upgrade could break an assumption here without anything going red. That is accepted deliberately for now and closes when #20 puts DeDi behind a CREST interface with contract tests of its own.
+- **Two P0 claims cannot be settled locally at all**: offline verification (#1) needs a device with its radios off, and pairwise subject identity (#3) needs a real eSignet sandbox, because a mock will happily return a pairwise subject whether or not production does.
 - **Offline verification (W6) needs real hardware.** A container asserting it has no network is weaker evidence than a phone in a field with no signal. The plan schedules a field simulation in week 12; W6's status stays `partial` until that happens, however green CI is.
 - **Rail behaviour is only ever proven against a sandbox** until production. Sandboxes lie about failure modes — treat the first real payment run as a test, with someone watching.

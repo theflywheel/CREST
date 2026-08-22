@@ -11,7 +11,7 @@ GO ?= go
 
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
-        harness-logs verify-deploy clean todo
+        harness-logs verify-deploy clean todo dedi-image dedi-keys spike-dedi
 
 help: ## Show available targets
 	@grep -E '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t26
@@ -61,8 +61,36 @@ test-invariants: ## W1-W10 as executable acceptance tests
 # ── Local stack ─────────────────────────────────────────────────────────────
 
 substrate-up: ## Substrate only (Postgres, object store, DeDi, Inji, eSignet) — what P0 needs
-	$(COMPOSE) --profile substrate up -d postgres objectstore dedi inji-certify inji-verify esignet esignet-mock-identity
+	$(COMPOSE) --profile substrate up -d postgres objectstore dedi-postgres dedi \
+		inji-certify inji-verify-service inji-verify-ui esignet esignet-mock-identity
 	@echo "substrate starting; check with: $(COMPOSE) ps"
+
+# DeDi-node publishes no image (P0 finding, #2), so the node is built from a
+# checkout. DEDI_SRC points at it.
+DEDI_SRC ?= ../DeDi-node
+
+dedi-image: ## Build the DeDi node image from a checkout (DEDI_SRC=/path/to/DeDi-node)
+	@test -f "$(DEDI_SRC)/Dockerfile" || { \
+		echo "no Dockerfile at $(DEDI_SRC) — clone theflywheel/DeDi-node and pass DEDI_SRC=<path>"; exit 1; }
+	docker build -t crest/dedi-node:local "$(DEDI_SRC)"
+
+# The node's signing key and the publisher key are secrets. They are generated
+# into infra/compose/dedi-keys/, which is gitignored — a signing key in the
+# repository is a signing key on someone's laptop forever.
+dedi-keys: ## Generate the DeDi node key and a CREST publisher key
+	@test -d "$(DEDI_SRC)" || { echo "set DEDI_SRC=/path/to/DeDi-node"; exit 1; }
+	@mkdir -p infra/compose/dedi-keys
+	@cd $(DEDI_SRC) && go build -o "$(CURDIR)/infra/compose/dedi-keys/dedid" ./cmd/dedid
+	@cd infra/compose/dedi-keys && ./dedid keygen -out dedid.key && \
+		./dedid pubkeygen -out publisher.key -kid crest -namespace crest.local
+	@echo
+	@echo "Put the printed DEDI_PUBLISHER_KEYS line and the verifier key into infra/compose/.env"
+
+spike-dedi: ## Run the P0 registry spike against a running node (#2)
+	DEDI_CLI=$(CURDIR)/infra/compose/dedi-keys/dedid \
+	DEDI_KEY_FILE=$(CURDIR)/infra/compose/dedi-keys/publisher.key \
+	DEDI_KID=crest \
+	./tools/spikes/dedi-spike.sh
 
 substrate-down: ## Stop the substrate
 	$(COMPOSE) --profile substrate down
