@@ -12,9 +12,11 @@ The layering test: *if two deployments could reasonably disagree and both still 
 
 | Document | What it covers |
 |---|---|
-| [Implementation Plan](docs/crest-implementation-plan.html) | Five phases (P0 substrate spike → P4 pilot readiness), gates G1–G3, workstreams, risks |
-| [Infrastructure Blueprint](https://claude.ai/code/artifact/04962876-5cb3-4a5d-9093-fd77ce0c9772) | The design of record: 11 primitives + profiles, registry/identity/credential/evidence/payments contracts, W1–W10 invariants, twelve-journey scope map, open decisions |
-| [CREST on Inji](https://claude.ai/code/artifact/7e15432b-d7ad-4d4a-b040-d7001c6b4b3a) | How the Inji stack maps onto CREST's credential lifecycle |
+| [Infrastructure Blueprint](docs/crest-infrastructure-blueprint.html) | **The design of record.** 11 primitives + profiles, registry/identity/credential/evidence/payments contracts, W1–W10 worker invariants, twelve-journey scope map, gap register, open decisions. Includes HLD, primitive-graph and information-flow diagrams |
+| [Implementation Plan](docs/crest-implementation-plan.html) | Five phases (P0 substrate spike → P4 pilot readiness), gates G1–G3, workstreams, binding dependencies, risks |
+| [CREST on Inji](docs/crest-inji-architecture.html) | How the Inji stack maps onto CREST's credential lifecycle |
+
+Each is a self-contained HTML page — clone and open in a browser.
 
 Source material sits in [`reference/`](reference/).
 

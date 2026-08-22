@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CREST on Inji</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>*,*::before,*::after{box-sizing:border-box}body{margin:0}img,svg{max-width:100%}</style>
+</head>
+<body>
+<style>
+:root{
+  --paper:#F6F7F5; --ink:#22282A; --muted:#5C686B; --line:#D8DDD9;
+  --card:#FFFFFF; --accent:#1E6B52; --accent-soft:#E3EEE8;
+  --amber:#A9731C; --amber-soft:#F4EBDB;
+  --inji:#3A5F85; --inji-soft:#E4EBF2;
+  --code-bg:#EDF0EE;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#171B1A; --ink:#E4E8E5; --muted:#93A09B; --line:#313A37;
+    --card:#1F2523; --accent:#5FB392; --accent-soft:#1E3A30;
+    --amber:#D6A254; --amber-soft:#3A2F1B;
+    --inji:#7FA8CE; --inji-soft:#20303F;
+    --code-bg:#242B29;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#171B1A; --ink:#E4E8E5; --muted:#93A09B; --line:#313A37;
+  --card:#1F2523; --accent:#5FB392; --accent-soft:#1E3A30;
+  --amber:#D6A254; --amber-soft:#3A2F1B;
+  --inji:#7FA8CE; --inji-soft:#20303F;
+  --code-bg:#242B29;
+}
+*{box-sizing:border-box}
+body{background:var(--paper); color:var(--ink); font:400 16px/1.65 "Public Sans",system-ui,sans-serif; margin:0; padding:0;}
+main{max-width:760px; margin:0 auto; padding:56px 24px 96px;}
+h1,h2,h3{font-family:"Source Serif 4",Georgia,serif; text-wrap:balance; line-height:1.2;}
+h1{font-size:2.3rem; font-weight:700; margin:0 0 8px;}
+h2{font-size:1.5rem; font-weight:600; margin:56px 0 12px; padding-top:24px; border-top:1px solid var(--line);}
+h3{font-size:1.1rem; font-weight:600; margin:28px 0 8px;}
+p{margin:0 0 14px; max-width:68ch;}
+.kicker{font:600 .72rem/1 "Public Sans",sans-serif; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin-bottom:14px;}
+.lede{font-size:1.08rem; color:var(--muted); max-width:62ch;}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.85em; background:var(--code-bg); padding:1px 5px; border-radius:3px;}
+pre{background:var(--code-bg); padding:16px 18px; border-radius:6px; overflow-x:auto; font-family:"IBM Plex Mono",monospace; font-size:.8rem; line-height:1.55;}
+pre code{background:none; padding:0;}
+table{border-collapse:collapse; width:100%; font-size:.9rem; margin:16px 0;}
+.tblwrap{overflow-x:auto;}
+th{text-align:left; font-weight:600; font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); padding:8px 12px 6px; border-bottom:2px solid var(--line);}
+td{padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top;}
+.tag{display:inline-block; font:500 .68rem/1 "Public Sans",sans-serif; letter-spacing:.06em; text-transform:uppercase; padding:3px 8px; border-radius:99px; white-space:nowrap;}
+.tag.inji{background:var(--inji-soft); color:var(--inji);}
+.tag.crest{background:var(--accent-soft); color:var(--accent);}
+.tag.open{background:var(--amber-soft); color:var(--amber);}
+.callout{border-left:3px solid var(--accent); background:var(--card); padding:14px 18px; margin:18px 0; border-radius:0 6px 6px 0;}
+.callout.warn{border-left-color:var(--amber);}
+.callout p:last-child{margin-bottom:0;}
+.legend{display:flex; gap:16px; flex-wrap:wrap; margin:12px 0 4px; font-size:.85rem; color:var(--muted); align-items:center;}
+.decision{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:18px 20px; margin:16px 0;}
+.decision h3{margin:0 0 6px;}
+.decision .rec{font-weight:600; color:var(--accent);}
+.stack{display:flex; flex-direction:column; gap:6px; margin:20px 0;}
+.layer{display:flex; gap:0; border:1px solid var(--line); border-radius:6px; overflow:hidden; background:var(--card);}
+.layer .lbl{flex:0 0 148px; padding:10px 14px; font:600 .72rem/1.4 "Public Sans",sans-serif; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); border-right:1px solid var(--line); display:flex; align-items:center;}
+.layer .cells{flex:1; display:flex; flex-wrap:wrap; gap:6px; padding:8px 10px;}
+.cell{font-size:.78rem; padding:5px 10px; border-radius:4px; line-height:1.35;}
+.cell.inji{background:var(--inji-soft); color:var(--inji); font-weight:500;}
+.cell.crest{background:var(--accent-soft); color:var(--accent); font-weight:500;}
+.cell.ext{background:var(--code-bg); color:var(--muted);}
+ol,ul{padding-left:22px; margin:0 0 14px;}
+li{margin-bottom:6px; max-width:64ch;}
+.footer{margin-top:64px; padding-top:18px; border-top:1px solid var(--line); font-size:.8rem; color:var(--muted);}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+@media (max-width:560px){ .layer{flex-direction:column} .layer .lbl{border-right:none; border-bottom:1px solid var(--line); flex-basis:auto;} }
+</style>
+
+<main>
+<div class="kicker">Architecture starting point · Trusted Payments use case</div>
+<h1>CREST on Inji</h1>
+<p class="lede">How CREST's five-layer architecture maps onto the Inji stack (Certify, Wallet, Verify) and MOSIP's eSignet — what Inji gives us for free, what CREST must build, and the six decisions to settle before the first line of code.</p>
+
+<h2>1 · The one-paragraph shape</h2>
+<p>Inji is a complete <em>credential lifecycle</em> stack: issue (Certify, over OpenID4VCI), hold (Wallet — mobile and web), present and verify (Verify, over OpenID4VP, including offline QR). That covers CREST's Layer&nbsp;3 (Wallet) and the credential halves of Layers&nbsp;2 and&nbsp;4 almost entirely. What Inji deliberately does <em>not</em> know about is <strong>work</strong>: it has no concept of a work definition, an evidence adapter, a trust tier, a claim, a dispute, or a payment trigger. That is CREST's actual product surface. The design consequence: <strong>CREST is a work-evidence pipeline that terminates in an Inji issuance call, plus a verification service that wraps Inji Verify with trust-chain and strength resolution.</strong> We build no crypto, no wallet, no VC plumbing.</p>
+
+<h2>2 · Layer map</h2>
+<div class="legend">
+  <span class="tag inji">Inji / MOSIP provides</span>
+  <span class="tag crest">CREST builds</span>
+  <span style="font-size:.8rem">grey = existing external systems</span>
+</div>
+<div class="stack">
+  <div class="layer"><div class="lbl">L5 · Experience</div><div class="cells">
+    <span class="cell crest">Worker app / WhatsApp / USSD</span><span class="cell crest">Supervisor app</span><span class="cell crest">Specifier authoring UI</span><span class="cell crest">Employer &amp; funder portals</span><span class="cell inji">Inji Wallet (mobile + web)</span>
+  </div></div>
+  <div class="layer"><div class="lbl">L4 · Verification</div><div class="cells">
+    <span class="cell inji">Inji Verify (OpenID4VP, offline QR)</span><span class="cell crest">Trust-chain &amp; strength resolver</span><span class="cell crest">Consent ledger</span><span class="cell crest">Verification API / widget</span>
+  </div></div>
+  <div class="layer"><div class="lbl">L3 · Wallet</div><div class="cells">
+    <span class="cell inji">Inji Mobile</span><span class="cell inji">Inji Web</span><span class="cell inji">PixelPass offline QR</span><span class="cell crest">Printed-card &amp; assisted-holding path</span>
+  </div></div>
+  <div class="layer"><div class="lbl">L2 · Attestation</div><div class="cells">
+    <span class="cell crest">Class adapters (DHIS2 / CommCare / HCM / batch)</span><span class="cell crest">Work-unit &amp; claim store</span><span class="cell crest">Validation engine</span><span class="cell crest">Confirm / dispute window (T=7)</span><span class="cell inji">Inji Certify (OpenID4VCI issuance, signing, status)</span>
+  </div></div>
+  <div class="layer"><div class="lbl">L1 · Registry</div><div class="cells">
+    <span class="cell crest">Work Definition Registry</span><span class="cell crest">Org / project / terms registries</span><span class="cell crest">Skill taxonomy</span><span class="cell inji">Credential schemas &amp; DID/key registry (Certify)</span>
+  </div></div>
+  <div class="layer"><div class="lbl">L0 · Identity</div><div class="cells">
+    <span class="cell inji">eSignet (OIDC broker)</span><span class="cell ext">National ID / MOSIP</span><span class="cell ext">Mobile OTP</span>
+  </div></div>
+  <div class="layer"><div class="lbl">Payments</div><div class="cells">
+    <span class="cell crest">Payment trigger + compensation record + reconciliation</span><span class="cell ext">Rails: mobile money, bank, G2P connectors</span>
+  </div></div>
+</div>
+<p>The credential path end to end: source system → class adapter → work unit + claim → validation against the work definition → worker confirmation window → <span class="mono">Inji Certify issues WorkEventCredential</span> → worker's wallet → presented via QR / OpenID4VP → <span class="mono">Inji Verify</span> checks signature and status → CREST resolver answers "how strong, under which definition, per whose authority."</p>
+
+<h2>3 · The credential itself</h2>
+<p>One credential type to start: <code>WorkEventCredential</code>, a W3C Verifiable Credential issued by Certify. The subject is the <em>claim</em> (worker ⟷ work unit), not the bare unit — matching the journeys doc's unit/claim split. Sketch of the subject block:</p>
+<pre><code>credentialSubject:
+  workerId:        did:crest:worker:…      # pairwise per deployment, binds to L0 anchor
+  workUnitId:      urn:crest:unit:…        # the unit exists independently
+  skillCode:       CREST-SKILL:chw.bednet-distribution.v2
+  definitionRef:   urn:crest:def:mw-moh:bednet-dist:v3   # immutable version pin
+  period:          { start, end }
+  quantity:        { value: 214, unit: "households_visited" }
+  evidence:                                 # provenance FACTS, not judgements
+    sourceClass:   DHIS2 | HCM | SUPERVISOR_ENTRY | WORKER_ASSERTED
+    captureMethod: SYSTEM_RECORD | FORM_ENTRY | SELF_REPORT
+    adapterRef:    urn:crest:adapter:dhis2:v1
+  issuerAuthority: ref → org registry entry + project grant</code></pre>
+<p>Compensation stays out of this credential by design — it's a separate linked record keyed by <code>event_id</code>, exactly as the concept note specifies. The credential must survive a payment dispute untouched.</p>
+
+<div class="callout warn">
+<p><strong>A tension in your own docs to resolve first.</strong> The concept note says the trust tier is "a first-class, visible property of every credential — never a hidden metadata field." The actor-journeys doc says "strength is never stored — it is resolved at the moment somebody asks." These contradict each other. Recommendation: <strong>store the facts, derive the judgement</strong>. The credential carries immutable provenance facts (source class, capture method, definition version — see <code>evidence</code> above); the verification layer derives Tier 1/2/3 at query time from those facts plus the definition's current evidence-to-tier mapping. The tier is still always <em>visible</em> to worker and verifier — it's just computed, so re-assessing a source system or versioning a definition doesn't strand old credentials with frozen judgements. Both documents' intent survives.</p>
+</div>
+
+<h2>4 · Six decisions to make now</h2>
+
+<div class="decision">
+<h3>D1 — Credential format: JSON-LD first, SD-JWT for selective disclosure later</h3>
+<p><span class="rec">Recommend:</span> start with W3C VC (JSON-LD, Ed25519) — Certify's most mature path and what PixelPass offline QR is proven on. Worker requirement W8 ("showing my work doesn't hand over my identity") ultimately wants field-level selective disclosure, which SD-JWT does properly; Certify and Wallet both support SD-JWT, so plan it as a phase-2 format migration rather than a day-1 constraint. Day 1, W8 is approximated with purpose-scoped presentations (OpenID4VP presentation definitions requesting only skill + strength fields).</p>
+</div>
+
+<div class="decision">
+<h3>D2 — The phoneless worker: Inji Web + printed PixelPass card, not a custom wallet</h3>
+<p>W1–W3 say a worker must exist and be paid with no phone and no literacy. Inji Mobile assumes a smartphone. <span class="rec">Recommend:</span> three holding modes, all the same credential: (a) Inji Mobile for smartphone owners; (b) Inji Web accessed at enrolment desks / via the registering agent for assisted access; (c) a printed QR card (PixelPass-encoded, offline-verifiable) issued at registration — the journeys doc already draws "a card printed on the spot." The deployment's Certify instance remains the source the worker can always re-fetch from; no custodial wallet service to build or secure.</p>
+</div>
+
+<div class="decision">
+<h3>D3 — Key custody: one deployment signing key, structural specifier/issuer split in data</h3>
+<p>Your own open decision (org onboarding O1–O5) notes the first two options "run on a single signing key held by the deployment, which removes the key-custody problem entirely." <span class="rec">Recommend:</span> exactly that — Certify signs everything with the deployment key; <em>which organisation</em> issued and <em>which specifier</em> defined the work are registry-backed fields inside the credential, not separate cryptographic signers. Distributed per-issuer DIDs is a later federation step, and the credential shape above doesn't have to change to get there (<code>issuerAuthority</code> becomes a DID reference).</p>
+</div>
+
+<div class="decision">
+<h3>D4 — Identity anchor: eSignet as the single L0 interface</h3>
+<p><span class="rec">Recommend:</span> CREST never talks to a national ID directly — it talks OIDC to eSignet, which brokers national ID / MOSIP / OTP behind one interface. Assisted enrolment (no document, no phone) creates a worker record on name + one contact route with a deployment-local identifier; the identity binding is attached <em>later</em>, when a credential first needs it — which is what the journeys doc draws ("a document, only when a credential needs one"). Duplicate detection is held-never-merged in the worker registry, outside Inji.</p>
+</div>
+
+<div class="decision">
+<h3>D5 — Revocation without a credential register: Bitstring Status List</h3>
+<p>The journeys doc is explicit that no central credential register exists, with withdrawal as the single central fact. That is precisely the W3C Status List pattern: Certify maintains a bitstring status list per deployment; a bit says "still stands" and nothing else; verify checks it when online and skips it offline (offline QR proves validity-at-issuance, which the docs already accept for the bare-scan case).</p>
+</div>
+
+<div class="decision">
+<h3>D6 — Work Definition Registry is CREST's crown jewel — build it as its own service</h3>
+<p>Nothing in Inji models the three-faced work definition (worker face / platform face / verifier face). It's also the object every other component reads: adapters validate against it, the confirm flow renders its worker face, the strength resolver reads its tier mapping, Certify's credential schema pins to it. <span class="rec">Recommend:</span> a standalone versioned-and-immutable definition service (ACTIVE versions frozen, new version per change, permanent resolvability of every version), with Certify's schema registry holding only the credential <em>shape</em> and pointing at definition versions by URN.</p>
+</div>
+
+<h2>5 · What CREST builds, concretely</h2>
+<div class="tblwrap"><table>
+<tr><th>Service</th><th>Responsibility</th><th>Notes</th></tr>
+<tr><td><strong>Registry service</strong></td><td>Organisations, terms, projects, grants, workers, skill list, disputes</td><td>The ten registries from the journeys doc; org onboarding per whichever of O1–O5 is chosen</td></tr>
+<tr><td><strong>Definition service</strong></td><td>Work definitions: author → ratify → ACTIVE, versioned, immutable; payment set-ups linked by reference</td><td>Author ≠ approver enforced here (D6)</td></tr>
+<tr><td><strong>Evidence pipeline</strong></td><td>Class adapters → canonical work unit + claim; identity resolution; validation against definition; unclear-queue for the validator</td><td>One adapter per system class; transport (push / pull / batch / manual) never affects strength</td></tr>
+<tr><td><strong>Confirmation service</strong></td><td>Draft credential → SMS/USSD notify → confirm / dispute / auto-confirm at T=7 → calls Certify to issue</td><td>Three parallel routes all release payment; credential flow can never block payment indefinitely</td></tr>
+<tr><td><strong>Verification service</strong></td><td>Wraps Inji Verify; resolves trust chain through definition + registries; derives strength at query time; enforces per-disclosure consent</td><td>The "store facts, derive judgement" resolver from §3</td></tr>
+<tr><td><strong>Payment trigger</strong></td><td>Accepted work × rate → payment instruction → rail connector → confirmation intake → reconciliation with reasons and owners</td><td>Never holds or moves money; "cleared work with no instruction" gap gets an owner here</td></tr>
+<tr><td><strong>Experience layer</strong></td><td>Worker (WhatsApp/USSD/app), supervisor, validator, project admin, specifier authoring, funder portal</td><td>All L3-product per the model — replaceable without ceasing to be CREST</td></tr>
+</table></div>
+
+<h2>6 · Suggested build sequence</h2>
+<ol>
+<li><strong>Phase 0 — Inji spike (1–2 weeks).</strong> Stand up Certify, Wallet, Verify with docker-compose. Hand-author one <code>WorkEventCredential</code> schema, issue it to Inji Mobile via OpenID4VCI, print it via PixelPass, verify it offline with Inji Verify. This de-risks the whole VC layer and tests D1/D2 assumptions against reality before any CREST code exists.</li>
+<li><strong>Phase 1 — Core loop.</strong> Definition service v0 (one definition, one version), worker registry with assisted enrolment, one adapter (pick the batch/CSV adapter — it unblocks every source system immediately), validation engine, confirmation window, Certify issuance. End state: a real evidence file in, a credential in a worker's hand out.</li>
+<li><strong>Phase 2 — Payments + verification.</strong> Rate/payment set-up, payment trigger with one rail connector (mobile money), reconciliation, verification service with strength resolution and consent, verifier widget.</li>
+<li><strong>Phase 3 — Hardening the inclusive paths.</strong> USSD/WhatsApp worker experience, dispute/support flows, second adapter class (DHIS2 or HCM), duplicate handling, SD-JWT selective disclosure (D1's second half).</li>
+</ol>
+
+<div class="callout">
+<p><strong>The single most valuable next artefact</strong> is the <code>WorkEventCredential</code> schema and one fully-worked work definition (bednet distribution, all three faces, tier mapping included) — because Phase 0 needs the first and every other service is shaped by the second.</p>
+</div>
+
+<div class="footer">Sources: CREST Trusted Payments readout summary · CREST Actor Journeys (17 Aug) · A DPI for Livelihoods v1.6 · docs.inji.io — drafted 20 Aug 2026.</div>
+</main>
+</body>
+</html>
