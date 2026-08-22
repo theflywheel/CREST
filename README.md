@@ -18,7 +18,7 @@ The layering test: *if two deployments could reasonably disagree and both still 
 
 Each is a self-contained HTML page — clone and open in a browser.
 
-Source material sits in [`reference/`](reference/).
+Full index with section map: [`docs/README.md`](docs/README.md). Source material sits in [`reference/`](reference/).
 
 ## The stack
 

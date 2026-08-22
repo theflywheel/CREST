@@ -80,10 +80,10 @@ li{margin-bottom:6px; max-width:64ch;}
 <h1>CREST on Inji</h1>
 <p class="lede">How CREST's five-layer architecture maps onto the Inji stack (Certify, Wallet, Verify) and MOSIP's eSignet — what Inji gives us for free, what CREST must build, and the six decisions to settle before the first line of code.</p>
 
-<h2>1 · The one-paragraph shape</h2>
+<h2 id="s0">1 · The one-paragraph shape</h2>
 <p>Inji is a complete <em>credential lifecycle</em> stack: issue (Certify, over OpenID4VCI), hold (Wallet — mobile and web), present and verify (Verify, over OpenID4VP, including offline QR). That covers CREST's Layer&nbsp;3 (Wallet) and the credential halves of Layers&nbsp;2 and&nbsp;4 almost entirely. What Inji deliberately does <em>not</em> know about is <strong>work</strong>: it has no concept of a work definition, an evidence adapter, a trust tier, a claim, a dispute, or a payment trigger. That is CREST's actual product surface. The design consequence: <strong>CREST is a work-evidence pipeline that terminates in an Inji issuance call, plus a verification service that wraps Inji Verify with trust-chain and strength resolution.</strong> We build no crypto, no wallet, no VC plumbing.</p>
 
-<h2>2 · Layer map</h2>
+<h2 id="s1">2 · Layer map</h2>
 <div class="legend">
   <span class="tag inji">Inji / MOSIP provides</span>
   <span class="tag crest">CREST builds</span>
@@ -114,7 +114,7 @@ li{margin-bottom:6px; max-width:64ch;}
 </div>
 <p>The credential path end to end: source system → class adapter → work unit + claim → validation against the work definition → worker confirmation window → <span class="mono">Inji Certify issues WorkEventCredential</span> → worker's wallet → presented via QR / OpenID4VP → <span class="mono">Inji Verify</span> checks signature and status → CREST resolver answers "how strong, under which definition, per whose authority."</p>
 
-<h2>3 · The credential itself</h2>
+<h2 id="s2">3 · The credential itself</h2>
 <p>One credential type to start: <code>WorkEventCredential</code>, a W3C Verifiable Credential issued by Certify. The subject is the <em>claim</em> (worker ⟷ work unit), not the bare unit — matching the journeys doc's unit/claim split. Sketch of the subject block:</p>
 <pre><code>credentialSubject:
   workerId:        did:crest:worker:…      # pairwise per deployment, binds to L0 anchor
@@ -134,7 +134,7 @@ li{margin-bottom:6px; max-width:64ch;}
 <p><strong>A tension in your own docs to resolve first.</strong> The concept note says the trust tier is "a first-class, visible property of every credential — never a hidden metadata field." The actor-journeys doc says "strength is never stored — it is resolved at the moment somebody asks." These contradict each other. Recommendation: <strong>store the facts, derive the judgement</strong>. The credential carries immutable provenance facts (source class, capture method, definition version — see <code>evidence</code> above); the verification layer derives Tier 1/2/3 at query time from those facts plus the definition's current evidence-to-tier mapping. The tier is still always <em>visible</em> to worker and verifier — it's just computed, so re-assessing a source system or versioning a definition doesn't strand old credentials with frozen judgements. Both documents' intent survives.</p>
 </div>
 
-<h2>4 · Six decisions to make now</h2>
+<h2 id="s3">4 · Six decisions to make now</h2>
 
 <div class="decision">
 <h3>D1 — Credential format: JSON-LD first, SD-JWT for selective disclosure later</h3>
@@ -166,7 +166,7 @@ li{margin-bottom:6px; max-width:64ch;}
 <p>Nothing in Inji models the three-faced work definition (worker face / platform face / verifier face). It's also the object every other component reads: adapters validate against it, the confirm flow renders its worker face, the strength resolver reads its tier mapping, Certify's credential schema pins to it. <span class="rec">Recommend:</span> a standalone versioned-and-immutable definition service (ACTIVE versions frozen, new version per change, permanent resolvability of every version), with Certify's schema registry holding only the credential <em>shape</em> and pointing at definition versions by URN.</p>
 </div>
 
-<h2>5 · What CREST builds, concretely</h2>
+<h2 id="s4">5 · What CREST builds, concretely</h2>
 <div class="tblwrap"><table>
 <tr><th>Service</th><th>Responsibility</th><th>Notes</th></tr>
 <tr><td><strong>Registry service</strong></td><td>Organisations, terms, projects, grants, workers, skill list, disputes</td><td>The ten registries from the journeys doc; org onboarding per whichever of O1–O5 is chosen</td></tr>
@@ -178,7 +178,7 @@ li{margin-bottom:6px; max-width:64ch;}
 <tr><td><strong>Experience layer</strong></td><td>Worker (WhatsApp/USSD/app), supervisor, validator, project admin, specifier authoring, funder portal</td><td>All L3-product per the model — replaceable without ceasing to be CREST</td></tr>
 </table></div>
 
-<h2>6 · Suggested build sequence</h2>
+<h2 id="s5">6 · Suggested build sequence</h2>
 <ol>
 <li><strong>Phase 0 — Inji spike (1–2 weeks).</strong> Stand up Certify, Wallet, Verify with docker-compose. Hand-author one <code>WorkEventCredential</code> schema, issue it to Inji Mobile via OpenID4VCI, print it via PixelPass, verify it offline with Inji Verify. This de-risks the whole VC layer and tests D1/D2 assumptions against reality before any CREST code exists.</li>
 <li><strong>Phase 1 — Core loop.</strong> Definition service v0 (one definition, one version), worker registry with assisted enrolment, one adapter (pick the batch/CSV adapter — it unblocks every source system immediately), validation engine, confirmation window, Certify issuance. End state: a real evidence file in, a credential in a worker's hand out.</li>

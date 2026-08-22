@@ -79,7 +79,7 @@ figcaption{font-size:.82rem; color:var(--muted); margin-top:10px; max-width:70ch
 <h1>CREST Implementation Plan</h1>
 <p class="lede">Five phases from substrate spike to pilot-ready deployment, sequenced so every risk is retired by the cheapest artefact that can retire it. Companion to the <em>CREST Infrastructure Blueprint</em>; section references (§) point there.</p>
 
-<h2>0 · Approach</h2>
+<h2 id="s0">0 · Approach</h2>
 <ul>
 <li><strong>Substrates before services.</strong> Inji, DeDi and eSignet carry the unforgeable properties; prove them against reality in weeks 1–2, before any CREST code depends on assumptions about them.</li>
 <li><strong>Schemas before code.</strong> The eleven primitives, the payments profile and the strength function are executable specification (§14's definition of done). They are the contract every service builds to, and writing them exposes design errors at document cost, not refactor cost.</li>
@@ -104,7 +104,7 @@ figcaption{font-size:.82rem; color:var(--muted); margin-top:10px; max-width:70ch
 <figcaption>Phases overlap deliberately: the spec bundle starts alongside the spike, and each build phase begins before its predecessor fully closes. The three amber gates are the only hard synchronisation points.</figcaption>
 </figure>
 
-<h2>1 · The phases</h2>
+<h2 id="s1">1 · The phases</h2>
 
 <div class="phase">
 <h3>Phase 0 — Substrate spike <span class="tag demo">weeks 1–2</span></h3>
@@ -167,7 +167,7 @@ figcaption{font-size:.82rem; color:var(--muted); margin-top:10px; max-width:70ch
 <p><strong>Gate G3 (week 24) — pilot readiness:</strong> W1–W10 walked as acceptance tests against the running system; security review of key handling and PII boundaries; data-protection sign-off on consent artefacts; one partner org onboarded end-to-end without engineering help.</p>
 </div>
 
-<h2>2 · Workstreams and staffing</h2>
+<h2 id="s2">2 · Workstreams and staffing</h2>
 <p>The plan fits a core team of five to seven engineers plus design and programme roles. Ownership follows the service boundaries so the org chart mirrors the architecture:</p>
 <div class="tblwrap"><table>
 <tr><th>Workstream</th><th>Owns</th><th>Phase load</th></tr>
@@ -179,7 +179,7 @@ figcaption{font-size:.82rem; color:var(--muted); margin-top:10px; max-width:70ch
 <tr><td>Spec &amp; governance (lead + PM)</td><td>Schema bundle, decision gates, W1–W10 acceptance suite, partner/pilot coordination</td><td>P1 heavy, gates throughout</td></tr>
 </table></div>
 
-<h2>3 · Dependencies that actually bind</h2>
+<h2 id="s3">3 · Dependencies that actually bind</h2>
 <ul>
 <li><strong>G1 blocks Phase 2 issuance semantics</strong> — tier storage vs derivation must be settled before the credential schema freezes. Everything else in P2 can start regardless.</li>
 <li><strong>The bednet definition blocks the evidence pipeline</strong> — validation needs a real definition to validate against. It is a Phase 1 deliverable for exactly this reason.</li>
@@ -188,7 +188,7 @@ figcaption{font-size:.82rem; color:var(--muted); margin-top:10px; max-width:70ch
 <li><strong>eSignet production access</strong> depends on the deployment country's identity authority — the sandbox suffices through G2, but G3 needs the real conversation concluded.</li>
 </ul>
 
-<h2>4 · Risks and their mitigations</h2>
+<h2 id="s4">4 · Risks and their mitigations</h2>
 <div class="tblwrap"><table>
 <tr><th>Risk</th><th>Signal</th><th>Mitigation</th></tr>
 <tr><td>Inji components don't compose as documented (format/protocol edges)</td><td>Phase 0 friction</td><td>Spike first; schema decisions deferred until the findings memo; MOSIP community engagement early</td></tr>
