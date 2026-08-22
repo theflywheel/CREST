@@ -1,0 +1,210 @@
+# CREST local stack.
+#
+# Two halves: substrate we run but do not build (Postgres, object store, DeDi,
+# Inji, eSignet), and services we build. Start the substrate alone with
+# `make substrate-up` — that is what the P0 spike (#1-#3) needs.
+#
+# Image tags for Inji and eSignet are UNVERIFIED until #1/#3 confirm them; see
+# .env.example. If a tag is wrong, that is a P0 finding, not a compose bug.
+#
+# Host ports are deliberately in the 5xxxx range and overridable: developers
+# routinely already run Postgres on 5432, and a stack that refuses to start on a
+# colleague's laptop gets abandoned rather than debugged.
+
+name: crest
+
+x-service: &crest-service
+  build:
+    context: ../..
+    dockerfile: infra/compose/Dockerfile.service
+  restart: unless-stopped
+  environment: &crest-env
+    CREST_ENV: local
+    LOG_LEVEL: debug
+    ADDR: ":8080"
+    DATABASE_URL: postgres://crest:crest@postgres:5432/crest?sslmode=disable
+    DEDI_URL: http://dedi:8080
+    CERTIFY_URL: http://inji-certify:8090
+    S3_ENDPOINT: http://objectstore:8333
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+x-healthcheck: &crest-healthcheck
+  healthcheck:
+    test: ["CMD", "/crest-healthcheck"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
+    start_period: 5s
+
+services:
+  # ── Substrate: run, don't build ──────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: crest
+      POSTGRES_PASSWORD: crest
+      POSTGRES_DB: crest
+    ports: ["${POSTGRES_PORT:-55432}:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crest -d crest"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # S3-compatible object storage for consent artefacts, including voice consent
+  # recordings from assisted enrolment (#24). SeaweedFS rather than MinIO — see
+  # docs/COMPONENTS.md. Swappable: pkg/store speaks the S3 API, not this server.
+  objectstore:
+    image: chrislusf/seaweedfs:3.80
+    command: "server -dir=/data -s3 -s3.port=8333 -master.volumeSizeLimitMB=64"
+    ports: ["${S3_PORT:-58333}:8333"]
+    volumes:
+      - objectdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8333/ >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  dedi:
+    image: ${DEDI_IMAGE:-ghcr.io/theflywheel/dedi-node:latest}
+    ports: ["${DEDI_PORT:-58081}:8080"]
+    environment:
+      DEDI_LOG_LEVEL: debug
+    volumes:
+      - dedidata:/data
+    profiles: ["substrate", "full"]
+
+  inji-certify:
+    image: ${INJI_CERTIFY_IMAGE:-mosipid/inji-certify:0.11.0}
+    ports: ["${CERTIFY_PORT:-58090}:8090"]
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["substrate", "full"]
+
+  inji-verify:
+    image: ${INJI_VERIFY_IMAGE:-mosipid/inji-verify:0.11.0}
+    ports: ["${VERIFY_PORT:-58091}:8080"]
+    profiles: ["substrate", "full"]
+
+  esignet:
+    image: ${ESIGNET_IMAGE:-mosipid/esignet:1.5.0}
+    ports: ["${ESIGNET_PORT:-58088}:8088"]
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+    profiles: ["substrate", "full"]
+
+  esignet-mock-identity:
+    image: ${ESIGNET_MOCK_IMAGE:-mosipid/mock-identity-system:0.10.0}
+    ports: ["${ESIGNET_MOCK_PORT:-58082}:8082"]
+    profiles: ["substrate", "full"]
+
+  # ── Mocks: ours, so the stack is usable without paid externals ───────────
+
+  mock-sms:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.tool
+      args:
+        TOOL: sms
+    ports: ["${MOCK_SMS_PORT:-59101}:8080"]
+    environment:
+      ADDR: ":8080"
+
+  mock-rail:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.tool
+      args:
+        TOOL: rail
+    ports: ["${MOCK_RAIL_PORT:-59102}:8080"]
+    environment:
+      ADDR: ":8080"
+
+  # ── CREST services: ours ─────────────────────────────────────────────────
+
+  registry:
+    <<: [*crest-service, *crest-healthcheck]
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.service
+      args:
+        SERVICE: registry
+    ports: ["${REGISTRY_PORT:-59001}:8080"]
+
+  definitions:
+    <<: [*crest-service, *crest-healthcheck]
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.service
+      args:
+        SERVICE: definitions
+    ports: ["${DEFINITIONS_PORT:-59002}:8080"]
+
+  evidence:
+    <<: [*crest-service, *crest-healthcheck]
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.service
+      args:
+        SERVICE: evidence
+    ports: ["${EVIDENCE_PORT:-59003}:8080"]
+
+  confirmation:
+    <<: [*crest-service, *crest-healthcheck]
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.service
+      args:
+        SERVICE: confirmation
+    ports: ["${CONFIRMATION_PORT:-59004}:8080"]
+    environment:
+      <<: *crest-env
+      NOTIFY_URL: http://notify:8080
+
+  verification:
+    <<: [*crest-service, *crest-healthcheck]
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.service
+      args:
+        SERVICE: verification
+    ports: ["${VERIFICATION_PORT:-59005}:8080"]
+
+  payments:
+    <<: [*crest-service, *crest-healthcheck]
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.service
+      args:
+        SERVICE: payments
+    ports: ["${PAYMENTS_PORT:-59006}:8080"]
+    environment:
+      <<: *crest-env
+      RAIL_URL: http://mock-rail:8080
+
+  notify:
+    <<: [*crest-service, *crest-healthcheck]
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.service
+      args:
+        SERVICE: notify
+    ports: ["${NOTIFY_PORT:-59007}:8080"]
+    environment:
+      <<: *crest-env
+      SMS_URL: http://mock-sms:8080
+
+volumes:
+  pgdata:
+  objectdata:
+  dedidata:

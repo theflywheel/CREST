@@ -1,0 +1,12 @@
+{
+  "name": "@crest/console",
+  "private": true,
+  "version": "0.0.0",
+  "description": "One console, three role-based faces: organisation, project, oversight",
+  "scripts": {
+    "build": "echo 'no build yet — see README'",
+    "lint": "echo 'no lint yet — see README'",
+    "test": "echo 'no tests yet — see README'",
+    "typecheck": "echo 'no typecheck yet — see README'"
+  }
+}

@@ -20,6 +20,31 @@ Each is a self-contained HTML page — clone and open in a browser.
 
 Full index with section map: [`docs/README.md`](docs/README.md). Source material sits in [`reference/`](reference/).
 
+## Repository
+
+```
+schemas/       JSON Schema — source of truth for Go and TypeScript
+services/      Six L1 services + notify (Go)
+pkg/           Shared Go libraries (clock, config, httpx, store, clients)
+adapters/      Source-system adapters
+cmd/crestctl/  Operator + harness CLI
+apps/          Worker PWA, enrolment app, console (TypeScript)
+harness/       E2E scenarios, fixtures, W1–W10 suite
+infra/compose/ The local stack
+tools/         Mocks, structure linter, healthcheck
+```
+
+What we run versus what we build, and why: [docs/COMPONENTS.md](docs/COMPONENTS.md).
+
+```sh
+make substrate-up   # Postgres, object store, DeDi, Inji, eSignet — what P0 needs
+make harness-up     # the whole stack
+make test           # unit + contract
+make lint           # includes the import-boundary and layout rules
+```
+
+Boundaries are enforced, not documented: services cannot import each other, `pkg/` cannot import `services/`, database drivers live only in `pkg/store`, and **only `pkg/clock` may call `time.Now()`** — which is what makes a seven-day confirmation window testable in milliseconds.
+
 ## The stack
 
 - **[Inji](https://docs.inji.io/)** — credential lifecycle. Certify (OpenID4VCI issuance), Wallet (mobile + web), Verify (OpenID4VP, offline QR), PixelPass (printed cards).
