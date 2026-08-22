@@ -35,6 +35,12 @@ var allowedTop = map[string]string{
 	"reference": "source material the design came from",
 }
 
+// Directories that exist on disk but are not part of the repository's layout.
+var ignoredDir = map[string]bool{
+	"node_modules": true,
+	"vendor":       true,
+}
+
 // Exactly the services named in the blueprint. A new top-level service is a
 // design decision, not a directory someone creates on a Tuesday.
 var knownServices = map[string]bool{
@@ -92,6 +98,12 @@ func checkTopLevel(root string) []violation {
 	for _, e := range entries {
 		name := e.Name()
 		if !e.IsDir() || strings.HasPrefix(name, ".") {
+			continue
+		}
+		// Dependency trees are not layout. They are gitignored, but this
+		// linter walks the filesystem rather than the index, so it has to be
+		// told — otherwise a `pnpm install` makes `make structure` fail.
+		if ignoredDir[name] {
 			continue
 		}
 		if _, ok := allowedTop[name]; !ok {

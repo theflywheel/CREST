@@ -96,7 +96,19 @@ curl -sS --fail "$DEDI_URL/dedi/lookup/$NS/$REG/$REC?proof=inclusion" > "$work/p
 
 # Asking DeDi to check its own proof would only establish that DeDi agrees with
 # itself. dediproof is a second implementation written from the wire format.
-[ -n "${DEDI_VERIFIER_KEY:-}" ] || fail "set DEDI_VERIFIER_KEY to the node's public verifier key (printed by 'dedid keygen')"
+#
+# In production the verifier key arrives out of band — that is what makes it a
+# trust root. For a spike against a node that minted its own key we derive it
+# from the node's published manifest, and then CHECK that the key the manifest
+# advertises is the key that actually signed the checkpoint. That check is not
+# ceremony: the manifest is regenerated on a schedule, so just after a key
+# change it still advertises the previous key, and a key you cannot cross-check
+# is a key you should not trust.
+if [ -z "${DEDI_VERIFIER_KEY:-}" ]; then
+  DEDI_VERIFIER_KEY="$(./tools/spikes/dedi-verifier-key.py "$DEDI_URL")" \
+    || fail "could not derive the verifier key"
+  echo "  derived verifier key: ${DEDI_VERIFIER_KEY%%+*}+…"
+fi
 go run ./tools/spikes/dediproof -key "$DEDI_VERIFIER_KEY" < "$work/proof1.json" \
   || fail "inclusion proof did not validate"
 

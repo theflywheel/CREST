@@ -1,0 +1,56 @@
+# Pre-commit checks so the fast, mechanical failures are caught by a machine
+# rather than by an agent burning tokens or a human burning attention.
+#
+# The rule for what belongs here: a check earns its place if it is fast,
+# deterministic, and its failure is unambiguous. Anything slow or flaky belongs
+# in CI, where a red result costs nobody a stalled commit.
+#
+# Escape hatch: LEFTHOOK=0 git commit …  — use it when you are deliberately
+# committing work in progress on a branch, never to get past a real failure.
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: gofmt
+      glob: "*.go"
+      run: |
+        unformatted=$(gofmt -l {staged_files})
+        if [ -n "$unformatted" ]; then
+          echo "gofmt would change:"; echo "$unformatted"
+          echo "run: gofmt -w {staged_files}"
+          exit 1
+        fi
+
+    - name: structure
+      glob: "*.{go,md,yml,yaml,json,sh}"
+      run: make structure
+
+    # The boundary rules are the ones most worth catching early: a cross-service
+    # import or a stray time.Now() is cheap to fix now and a refactor later.
+    - name: lint
+      glob: "*.go"
+      run: golangci-lint run --new-from-rev=HEAD
+
+    - name: unit tests
+      glob: "*.go"
+      run: make test-unit
+
+    # A signing key or a raw national ID reaching a commit is not recoverable by
+    # deleting it later — the object stays in the history and on every clone.
+    - name: no secrets or raw identifiers
+      run: |
+        for f in {staged_files}; do
+          [ -f "$f" ] || continue
+          python3 .claude/hooks/guard-secrets.py --scan "$f" || exit 1
+        done
+
+commit-msg:
+  jobs:
+    - name: conventional commit
+      run: npx --yes commitlint --edit {1}
+
+pre-push:
+  jobs:
+    # -race is too slow for every commit and too important to leave to CI alone.
+    - name: race
+      run: go test -race -count=1 ./pkg/... ./services/... ./tools/...

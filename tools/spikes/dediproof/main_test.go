@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -127,4 +128,17 @@ func TestRecordAndInteriorNodesHashDifferently(t *testing.T) {
 	if leaf == node {
 		t.Fatal("leaf and node hashing are not domain-separated")
 	}
+}
+
+// A verifier key whose base64 payload contains '+' must parse. The deployed
+// node's key does; the local one did not, so splitting on every '+' passed
+// every test here and then failed on the first real node.
+func TestVerifierKeyPayloadContainingPlus(t *testing.T) {
+	const deployed = "crest-dedi-production.up.railway.app/log+cf0a3fbf+Aacg4QNmjQA+k5ELS+DIAThv9ebAmuoS18h32p+t6X1K"
+	_, _, _, err := openNote("x\n1\nAAAA\n\n— nobody AAAA\n", deployed)
+	if err != nil && strings.Contains(err.Error(), "must be name+hash+base64key") {
+		t.Fatal("a key with '+' in its base64 payload failed to parse")
+	}
+	// Any other error is fine here: this note is not signed by that key, and
+	// rejecting it is the correct behaviour. Only the parse must succeed.
 }
