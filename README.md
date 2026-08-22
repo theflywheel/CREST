@@ -46,4 +46,6 @@ Work is tracked as six phase epics with thirty-three sub-issues across five mile
 | P3 · Payments + verification | [#38](../../issues/38) | 2026-12-11 |
 | P4 · Inclusion, oversight, federation | [#39](../../issues/39) | 2027-02-05 |
 
+Agents working in this repo should read [CLAUDE.md](CLAUDE.md) — it carries the rules that don't bend, and points at the skills in `.claude/skills/`. How anything gets validated is in [docs/TESTING.md](docs/TESTING.md), and what is validated is in [docs/test-manifest.md](docs/test-manifest.md).
+
 Three things sit on the critical path this week: book the G1 session for week 4, start P0, and open the mobile-money sandbox conversation ([#19](../../issues/19)) — that lead time is external and lands on P3.
