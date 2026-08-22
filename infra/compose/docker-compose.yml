@@ -5,8 +5,7 @@
 # `make substrate-up` — that is what the P0 spike (#1-#3) needs.
 #
 # Upstream tags were verified against Docker Hub on 2026-08-22 as part of the P0
-# spike (#1, #3); see .env.example for what that audit changed and why. DeDi has
-# no published image and is built from a checkout — `make dedi-image`.
+# spike (#1, #3); see .env.example for what that audit changed and why.
 #
 # Host ports are deliberately in the 5xxxx range and overridable: developers
 # routinely already run Postgres on 5432, and a stack that refuses to start on a
@@ -73,8 +72,8 @@ services:
       timeout: 3s
       retries: 20
 
-  # DeDi-node. There is no published image (P0 finding, #2): build it from a
-  # checkout with `make dedi-image DEDI_SRC=...` before starting this profile.
+  # DeDi-node, from the published multi-arch image. `make dedi-image` still
+  # exists for running an unreleased build from a checkout.
   #
   # It keeps its own Postgres. The node owns a transparency log whose leaves are
   # signed and whose checkpoints must never be rolled back — sharing a database
@@ -95,7 +94,7 @@ services:
     profiles: ["substrate", "full"]
 
   dedi:
-    image: ${DEDI_IMAGE:-crest/dedi-node:local}
+    image: ${DEDI_IMAGE:-flywheelai/dedi-node:sha-2d020a3}
     ports: ["${DEDI_PORT:-58081}:8080"]
     environment:
       DEDI_DB_URL: postgres://dedi:dedi@dedi-postgres:5432/dedi?sslmode=disable

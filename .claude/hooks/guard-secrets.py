@@ -27,7 +27,51 @@ PII = [
 ALLOW_MARKER = "crest:allow-secret"  # explicit, reviewable escape hatch
 
 
+def scan(path: str, content: str) -> int:
+    """Return 2 if content must not be committed, 0 otherwise.
+
+    Shared by the agent hook and the git pre-commit hook, deliberately: two
+    implementations of "what counts as a secret" drift, and the one that drifts
+    is always the one guarding the commit that mattered.
+    """
+    if ALLOW_MARKER in content:
+        return 0
+    if path.endswith("guard-secrets.py"):
+        return 0
+
+    for pat, label in PATTERNS:
+        if re.search(pat, content):
+            print(f"{path}: looks like a {label}", file=sys.stderr)
+            return 2
+
+    if "/tests/" in path or "fixture" in path.lower():
+        for pat, label in PII:
+            if re.search(pat, content):
+                print(f"{path}: {label} in a test fixture", file=sys.stderr)
+                return 2
+    return 0
+
+
 def main() -> int:
+    # `--scan <file>` is the git pre-commit entry point; stdin JSON is the
+    # agent-hook one. Same patterns either way.
+    if len(sys.argv) > 2 and sys.argv[1] == "--scan":
+        path = sys.argv[2]
+        try:
+            with open(path, "r", errors="ignore") as fh:
+                content = fh.read()
+        except OSError:
+            return 0
+        rc = scan(path, content)
+        if rc:
+            print(
+                "\nCREST must never hold secrets in the repo, and fixtures use\n"
+                "generated values only. If this is genuinely a placeholder or a test\n"
+                f"vector, add the marker '{ALLOW_MARKER}' on the same line.",
+                file=sys.stderr,
+            )
+        return rc
+
     try:
         data = json.load(sys.stdin)
     except Exception:

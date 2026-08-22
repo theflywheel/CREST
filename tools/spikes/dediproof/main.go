@@ -184,7 +184,11 @@ func rootFromPath(index, size int64, leaf hash, path []string) (hash, error) {
 // "<name>+<hash8>+<base64 32-byte ed25519 public key>"; the signature line is
 // "— <name> <base64(keyhash || sig)>".
 func openNote(text, verifierKey string) (origin string, size int64, root hash, err error) {
-	parts := strings.Split(verifierKey, "+")
+	// SplitN, not Split: the key payload is *standard* base64, which contains
+	// '+'. Splitting on every '+' works only for keys whose base64 happens not
+	// to contain one, which is exactly the kind of bug that passes locally and
+	// fails on the first real deployment. It did.
+	parts := strings.SplitN(verifierKey, "+", 3)
 	if len(parts) != 3 {
 		return "", 0, root, fmt.Errorf("verifier key must be name+hash+base64key")
 	}

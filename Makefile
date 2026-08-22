@@ -11,7 +11,8 @@ GO ?= go
 
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
-        harness-logs verify-deploy clean todo dedi-image dedi-keys spike-dedi
+        harness-logs verify-deploy clean todo dedi-image dedi-keys spike-dedi \
+        spike-dedi-deployed verify-deployed hooks
 
 help: ## Show available targets
 	@grep -E '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t26
@@ -85,6 +86,33 @@ dedi-keys: ## Generate the DeDi node key and a CREST publisher key
 		./dedid pubkeygen -out publisher.key -kid crest -namespace crest.local
 	@echo
 	@echo "Put the printed DEDI_PUBLISHER_KEYS line and the verifier key into infra/compose/.env"
+
+# ── Deployed environment ────────────────────────────────────────────────────
+# The Railway production stack lives in the DeDi project so it can reach the
+# shared Postgres over private networking. See docs/DEPLOYMENT.md.
+CREST_DEDI_URL ?= https://crest-dedi-production.up.railway.app
+CREST_REGISTRY_URL ?= https://crest-registry-production.up.railway.app
+
+verify-deployed: ## Check the deployed stack answers, and verify its log independently
+	@echo "── crest-registry"
+	@curl -fsS $(CREST_REGISTRY_URL)/healthz && echo
+	@echo "── crest-dedi"
+	@curl -fsS $(CREST_DEDI_URL)/healthz && echo
+	@echo "── work definition WD-4471, inclusion proof checked by our own verifier"
+	@curl -fsS "$(CREST_DEDI_URL)/dedi/lookup/crest/work-definitions/WD-4471?proof=inclusion" \
+		| go run ./tools/spikes/dediproof \
+			-key "$$(./tools/spikes/dedi-verifier-key.py $(CREST_DEDI_URL))"
+
+spike-dedi-deployed: ## Run the registry spike against the DEPLOYED node (#2)
+	DEDI_URL=$(CREST_DEDI_URL) \
+	DEDI_CLI=$(CURDIR)/infra/compose/dedi-keys/dedid \
+	DEDI_KEY_FILE=$(CURDIR)/infra/compose/dedi-keys/crest-publisher.key \
+	DEDI_KID=crest DEDI_NAMESPACE=crest \
+	./tools/spikes/dedi-spike.sh
+
+hooks: ## Install the git hooks (lefthook)
+	pnpm install
+	npx lefthook install
 
 spike-dedi: ## Run the P0 registry spike against a running node (#2)
 	DEDI_CLI=$(CURDIR)/infra/compose/dedi-keys/dedid \

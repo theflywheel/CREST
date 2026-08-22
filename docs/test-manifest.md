@@ -60,8 +60,21 @@ Spikes prove things about **other people's software**, so they live outside the 
 | Inclusion proof validates independently | [#2](../../issues/2) | `tools/spikes/dediproof` — a second implementation, stdlib only. Proven by **tampering**: altered leaf digest, rewritten `created_by`, flipped audit-path step and wrong verifier key are each rejected | Spike | spike |
 | Definition versions are immutable | [#2](../../issues/2) | v2 published; v1 still resolves by `version_id` **and its original proof still validates** — a credential issued under v1 stays verifiable | Spike | spike |
 | Upstream image tags exist and match our platform | [#1](../../issues/1), [#3](../../issues/3) | Every tag in `.env.example` checked against the registry and pulled. Found `inji-verify:0.11.0` does not exist and the component is two images | Spike | spike |
+| Registry spike against the **deployed** node | [#2](../../issues/2) | `make spike-dedi-deployed` — same script, real node, public origin. Caught a proof-checker bug that every local run had passed | Spike | spike |
 | Credential issuance → wallet → printed card → offline verify | [#1](../../issues/1) | Recorded demo; offline leg needs a real device with radios off | E2E | planned |
 | eSignet pairwise subject identifier | [#3](../../issues/3) | Round-trip against a **real sandbox** — a mock returns whatever its fixtures say, so it cannot answer this | E2E | planned |
+
+## Deployment
+
+| Feature | Issue | How it is proven | Layer | Status |
+|---|---|---|---|---|
+| Deployed stack answers | — | `make verify-deployed`; deploy workflow polls `/readyz` and fails if it never answers | Deploy | covered |
+| Deployed log is independently verifiable | — | `make verify-deployed` validates a real inclusion proof with our own verifier, against a key cross-checked against the checkpoint signature | Deploy | covered |
+| `main` deploys only after CI passes | — | `deploy.yml` triggers on CI **conclusion == success**, not on push | Deploy | covered |
+| Commit messages are machine-checked | — | `commitlint` in a lefthook `commit-msg` hook; unknown scopes and non-conventional subjects rejected | Lint | covered |
+| Secrets cannot reach a commit | — | `guard-secrets.py --scan` in the lefthook `pre-commit` hook, sharing its pattern table with the agent hook | Lint | covered |
+| Rollback | — | **Not proven.** Railway redeploy exists; no tested path back to a previous version | Deploy | planned |
+| Backup and restore | — | **Not proven, and not configured by us.** A backup nobody has restored from is a belief | Deploy | planned |
 
 ## Infrastructure layer
 
