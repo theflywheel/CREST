@@ -32,6 +32,24 @@ These are the promises to the worker. They must be executable at G3 (#33); until
 
 ---
 
+## Foundations
+
+The scaffolding. These are `covered` because the code exists and the checks run — the only rows in this file that are.
+
+| Feature | Issue | How it is proven | Layer | Status |
+|---|---|---|---|---|
+| Injectable clock | — | Advance 7 days in microseconds; backwards travel; concurrent read/advance under `-race`; System clock is UTC | Unit | covered |
+| Only `pkg/clock` reads wall time | — | `forbidigo` rule; verified by a deliberate violation failing lint | Lint | covered |
+| Services cannot import each other | — | `depguard` rule in `.golangci.yml` | Lint | covered |
+| DB drivers confined to `pkg/store` | — | `depguard` rule; verified by a deliberate violation failing lint | Lint | covered |
+| Repository layout | — | `make structure`; verified by a stray directory and an unknown service both failing | Lint | covered |
+| Health and readiness endpoints | — | Both respond per service; health reports the **injected** clock, so a service silently reading wall time is caught | Unit | covered |
+| Service images build and run | — | Distroless image builds; container starts; `/healthz` answers over HTTP | E2E | covered |
+| Per-service Postgres schemas | — | All seven schemas created on first boot; no cross-schema foreign keys | E2E | covered |
+| Mock rail enforces idempotency | — | Same key twice → one instruction, replay header on the second | Contract | covered |
+| Mock rail injects real failure modes | — | `timeout` mode: caller sees 504 while the rail recorded `cleared` — the cleared-but-never-confirmed case W10 must survive | Contract | covered |
+| Mock SMS records messages | — | Sent messages readable per recipient, so "the worker was notified" (W2) is assertable without a phone | Contract | covered |
+
 ## Infrastructure layer
 
 | Feature | Issue | How it is proven | Layer | Status |

@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go — structure, lint, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+
+      # Layout first: a misplaced file makes every later failure harder to read.
+      - name: Structure
+        run: make structure
+
+      - name: Lint (includes import-boundary rules)
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.12.2
+
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test-unit
+
+      # -race and -count=1 together: the clock and the mocks are shared state,
+      # and a cached pass tells us nothing about a change.
+      - name: Test (race, uncached)
+        run: go test -race -count=1 ./pkg/... ./services/... ./tools/...
+
+  compose:
+    name: Compose — config and service images build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Catches YAML and interpolation errors without pulling every upstream image.
+      - name: Validate compose
+        run: docker compose -f infra/compose/docker-compose.yml config -q
+
+      - name: Build one service image
+        run: |
+          docker build -f infra/compose/Dockerfile.service \
+            --build-arg SERVICE=registry -t crest-registry:ci .
+
+      - name: Build the mocks
+        run: |
+          docker build -f infra/compose/Dockerfile.tool --build-arg TOOL=sms -t crest-mock-sms:ci .
+          docker build -f infra/compose/Dockerfile.tool --build-arg TOOL=rail -t crest-mock-rail:ci .
+
+  docs:
+    name: Docs — design references resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The blueprint's section anchors are cited from every issue. If one
+      # disappears, those references rot silently.
+      - name: Blueprint sections intact
+        run: |
+          missing=0
+          for n in $(seq 1 16); do
+            grep -q "id=\"s$n\"" docs/crest-infrastructure-blueprint.html || { echo "missing blueprint section s$n"; missing=1; }
+          done
+          exit $missing
+
+      - name: Required docs present
+        run: |
+          for f in docs/COMPONENTS.md docs/TESTING.md docs/test-manifest.md docs/TRACKING.md CLAUDE.md; do
+            test -f "$f" || { echo "missing $f"; exit 1; }
+          done

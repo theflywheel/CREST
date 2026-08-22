@@ -1,0 +1,92 @@
+version: "2"
+
+# Structure is enforced here, not in a document. A boundary rule that lives only
+# in prose is a boundary that gets crossed in month three, and by then the fix is
+# a refactor rather than a review comment.
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - depguard
+    - forbidigo
+    - errorlint
+    - bodyclose
+    - rowserrcheck
+    - sqlclosecheck
+    - noctx
+    - misspell
+    - revive
+
+  settings:
+    depguard:
+      rules:
+        # Services talk to each other over HTTP, exactly as they do in production.
+        # Importing another service's package makes a distributed system that only
+        # works when it isn't distributed.
+        no-cross-service-imports:
+          files:
+            - "**/services/**"
+          deny:
+            - pkg: github.com/theflywheel/crest/services
+              desc: "services must not import each other — talk over HTTP, like in production"
+
+        # Shared code cannot depend on a particular service, or it stops being shared.
+        pkg-stays-generic:
+          files:
+            - "**/pkg/**"
+          deny:
+            - pkg: github.com/theflywheel/crest/services
+              desc: "pkg/ must not import services/ — shared code cannot depend on one service"
+            - pkg: github.com/theflywheel/crest/adapters
+              desc: "pkg/ must not import adapters/"
+
+        # One place owns database drivers, so the store boundary cannot be quietly bypassed.
+        db-driver-only-in-store:
+          files:
+            - "**/*.go"
+            - "!**/pkg/store/**"
+            - "!**/harness/**"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: "database drivers belong in pkg/store — services use the store interface"
+            - pkg: database/sql
+              desc: "database/sql belongs in pkg/store — services use the store interface"
+
+    forbidigo:
+      # The rule that makes a seven-day confirmation window testable in milliseconds.
+      forbid:
+        - pattern: ^time\.Now$
+          msg: "use a clock.Clock — only pkg/clock may read wall-clock time (W3 depends on this)"
+        - pattern: ^fmt\.Print.*$
+          msg: "use the injected slog.Logger, not stdout"
+      exclude-godoc-examples: true
+
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+
+  exclusions:
+    rules:
+      # Tests may use real time and print; they are not the thing being constrained.
+      - path: _test\.go
+        linters: [forbidigo, bodyclose, noctx]
+      # The clock package is where the permitted time.Now lives.
+      - path: pkg/clock/
+        linters: [forbidigo]
+      # Mocks, CLIs and the structure linter are command-line tools whose output
+      # IS stdout. They have no injected logger to use instead.
+      - path: (tools/|cmd/)
+        linters: [forbidigo]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/theflywheel/crest

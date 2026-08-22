@@ -1,0 +1,12 @@
+{
+  "name": "@crest/worker",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Worker PWA: wallet, confirmation window, earnings with held-payment reasons",
+  "scripts": {
+    "build": "echo 'no build yet — see README'",
+    "lint": "echo 'no lint yet — see README'",
+    "test": "echo 'no tests yet — see README'",
+    "typecheck": "echo 'no typecheck yet — see README'"
+  }
+}

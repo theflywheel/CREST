@@ -8,6 +8,7 @@ Everything the implementation builds against. Each is a self-contained HTML page
 | [crest-implementation-plan.html](crest-implementation-plan.html) | How the blueprint becomes a running pilot: phases, gates, risks. | 5 (`#s0`…`#s4`) |
 | [crest-inji-architecture.html](crest-inji-architecture.html) | How the Inji stack maps onto CREST's credential lifecycle. | 6 (`#s0`…`#s5`) |
 | [TRACKING.md](TRACKING.md) | How the work is tracked in GitHub — epics, gates, dependencies. | — |
+| [COMPONENTS.md](COMPONENTS.md) | What we run vs what we build, and the repository shape. | — |
 | [TESTING.md](TESTING.md) | The four test layers, the harness contract, and why in-toto waits. | — |
 | [test-manifest.md](test-manifest.md) | Every feature and how it is proven. Maintained by hand. | — |
 
