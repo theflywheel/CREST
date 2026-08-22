@@ -62,7 +62,10 @@ Spikes prove things about **other people's software**, so they live outside the 
 | Upstream image tags exist and match our platform | [#1](../../issues/1), [#3](../../issues/3) | Every tag in `.env.example` checked against the registry and pulled. Found `inji-verify:0.11.0` does not exist and the component is two images | Spike | spike |
 | Registry spike against the **deployed** node | [#2](../../issues/2) | `make spike-dedi-deployed` — same script, real node, public origin. Caught a proof-checker bug that every local run had passed | Spike | spike |
 | Credential issuance → wallet → printed card → offline verify | [#1](../../issues/1) | Recorded demo; offline leg needs a real device with radios off | E2E | planned |
-| eSignet pairwise subject identifier | [#3](../../issues/3) | Round-trip against a **real sandbox** — a mock returns whatever its fixtures say, so it cannot answer this | E2E | planned |
+| eSignet deployed and answering discovery | [#3](../../issues/3) | `curl $CREST_ESIGNET_URL/v1/esignet/oidc/.well-known/openid-configuration` — served over the public URL, `issuer` matches the host it was fetched from | Spike | spike |
+| eSignet advertises only pairwise subjects | [#3](../../issues/3) | `subject_types_supported == ["pairwise"]` in the discovery document. **Configuration, not behaviour** — it does not close the row below | Spike | spike |
+| eSignet pairwise subject is stable across sessions | [#3](../../issues/3) | Two OIDC round-trips for one subject through one relying party, comparing `sub`. Self-hosted eSignet can answer this; only production access needs an outside party | E2E | planned |
+| `individual_id` is never requested or stored | [#3](../../issues/3) | The claim is offered (finding E2). Proven when the relying-party registration exists and a test asserts the requested claim set excludes it (W9) | Contract | planned |
 
 ## Deployment
 
@@ -140,6 +143,6 @@ Recorded rather than quietly carried:
 
 - **Nothing in the product is `covered` yet** — only the foundations and the P0 spikes are. This file is the specification of proof, written before the thing it proves, which is the intended order.
 - **A `spike` row is not a regression test.** Nothing re-runs `make spike-dedi` automatically, so a DeDi upgrade could break an assumption here without anything going red. That is accepted deliberately for now and closes when #20 puts DeDi behind a CREST interface with contract tests of its own.
-- **Two P0 claims cannot be settled locally at all**: offline verification (#1) needs a device with its radios off, and pairwise subject identity (#3) needs a real eSignet sandbox, because a mock will happily return a pairwise subject whether or not production does.
+- **One P0 claim cannot be settled locally at all**: offline verification (#1) needs a device with its radios off. Pairwise subject identity (#3) was listed here too and that was wrong — self-hosted eSignet runs the same code a sandbox runs, so it answers the question; only *production access* needs another party.
 - **Offline verification (W6) needs real hardware.** A container asserting it has no network is weaker evidence than a phone in a field with no signal. The plan schedules a field simulation in week 12; W6's status stays `partial` until that happens, however green CI is.
 - **Rail behaviour is only ever proven against a sandbox** until production. Sandboxes lie about failure modes — treat the first real payment run as a test, with someone watching.
