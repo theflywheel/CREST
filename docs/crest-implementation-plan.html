@@ -1,0 +1,196 @@
+<title>CREST Implementation Plan</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --paper:#F6F7F5; --ink:#22282A; --muted:#5C686B; --line:#D8DDD9;
+  --card:#FFFFFF; --accent:#1E6B52; --accent-soft:#E3EEE8;
+  --amber:#A9731C; --amber-soft:#F4EBDB;
+  --inji:#3A5F85; --inji-soft:#E4EBF2;
+  --dedi:#6B4FA0; --dedi-soft:#ECE6F4;
+  --code-bg:#EDF0EE;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#171B1A; --ink:#E4E8E5; --muted:#93A09B; --line:#313A37;
+    --card:#1F2523; --accent:#5FB392; --accent-soft:#1E3A30;
+    --amber:#D6A254; --amber-soft:#3A2F1B;
+    --inji:#7FA8CE; --inji-soft:#20303F;
+    --dedi:#B49AD9; --dedi-soft:#2E2540;
+    --code-bg:#242B29;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#171B1A; --ink:#E4E8E5; --muted:#93A09B; --line:#313A37;
+  --card:#1F2523; --accent:#5FB392; --accent-soft:#1E3A30;
+  --amber:#D6A254; --amber-soft:#3A2F1B;
+  --inji:#7FA8CE; --inji-soft:#20303F;
+  --dedi:#B49AD9; --dedi-soft:#2E2540;
+  --code-bg:#242B29;
+}
+*{box-sizing:border-box}
+body{background:var(--paper); color:var(--ink); font:400 16px/1.65 "Public Sans",system-ui,sans-serif; margin:0;}
+main{max-width:800px; margin:0 auto; padding:56px 24px 96px;}
+h1,h2,h3{font-family:"Source Serif 4",Georgia,serif; text-wrap:balance; line-height:1.2;}
+h1{font-size:2.3rem; font-weight:700; margin:0 0 8px;}
+h2{font-size:1.5rem; font-weight:600; margin:56px 0 12px; padding-top:24px; border-top:1px solid var(--line);}
+h3{font-size:1.08rem; font-weight:600; margin:26px 0 8px;}
+p{margin:0 0 14px; max-width:70ch;}
+.kicker{font:600 .72rem/1 "Public Sans",sans-serif; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin-bottom:14px;}
+.lede{font-size:1.06rem; color:var(--muted); max-width:64ch;}
+code{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.85em; background:var(--code-bg); padding:1px 5px; border-radius:3px;}
+table{border-collapse:collapse; width:100%; font-size:.88rem; margin:16px 0;}
+.tblwrap{overflow-x:auto;}
+th{text-align:left; font-weight:600; font-size:.7rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); padding:8px 12px 6px; border-bottom:2px solid var(--line);}
+td{padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top;}
+.tag{display:inline-block; font:500 .66rem/1 "Public Sans",sans-serif; letter-spacing:.06em; text-transform:uppercase; padding:3px 8px; border-radius:99px; white-space:nowrap;}
+.tag.gate{background:var(--amber-soft); color:var(--amber);}
+.tag.demo{background:var(--accent-soft); color:var(--accent);}
+.phase{background:var(--card); border:1px solid var(--line); border-radius:8px; padding:18px 22px; margin:18px 0;}
+.phase h3{margin:0 0 4px;}
+.phase .meta{font-size:.8rem; color:var(--muted); margin-bottom:10px;}
+ul,ol{padding-left:22px; margin:0 0 14px;}
+li{margin-bottom:6px; max-width:66ch;}
+.callout{border-left:3px solid var(--accent); background:var(--card); padding:14px 18px; margin:18px 0; border-radius:0 6px 6px 0;}
+.callout p:last-child{margin-bottom:0;}
+figure{margin:26px 0; overflow-x:auto;}
+figure svg{max-width:100%; height:auto; display:block;}
+figcaption{font-size:.82rem; color:var(--muted); margin-top:10px; max-width:70ch;}
+.pb{fill:var(--accent-soft); stroke:var(--accent); stroke-width:1.2; rx:5;}
+.pb2{fill:var(--inji-soft); stroke:var(--inji); stroke-width:1.2; rx:5;}
+.pb3{fill:var(--dedi-soft); stroke:var(--dedi); stroke-width:1.2; rx:5;}
+.pt{font:600 11.5px "Public Sans",sans-serif; fill:var(--ink);}
+.ps{font:400 10.5px "Public Sans",sans-serif; fill:var(--muted);}
+.pl{stroke:var(--line); stroke-width:1;}
+.pg{stroke:var(--amber); stroke-width:1.4; stroke-dasharray:4 4;}
+.footer{margin-top:64px; padding-top:18px; border-top:1px solid var(--line); font-size:.8rem; color:var(--muted);}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+</style>
+
+<main>
+<div class="kicker">From blueprint to running pilot</div>
+<h1>CREST Implementation Plan</h1>
+<p class="lede">Five phases from substrate spike to pilot-ready deployment, sequenced so every risk is retired by the cheapest artefact that can retire it. Companion to the <em>CREST Infrastructure Blueprint</em>; section references (§) point there.</p>
+
+<h2>0 · Approach</h2>
+<ul>
+<li><strong>Substrates before services.</strong> Inji, DeDi and eSignet carry the unforgeable properties; prove them against reality in weeks 1–2, before any CREST code depends on assumptions about them.</li>
+<li><strong>Schemas before code.</strong> The eleven primitives, the payments profile and the strength function are executable specification (§14's definition of done). They are the contract every service builds to, and writing them exposes design errors at document cost, not refactor cost.</li>
+<li><strong>One vertical slice before breadth.</strong> The first running system is a single thread — CSV in, credential in a wallet out — through every layer. Breadth (more adapters, more rails, dashboards) attaches to a proven spine.</li>
+<li><strong>Decision gates on the critical path, explicitly.</strong> Three team decisions block later phases; they are scheduled as deliverables, not left to be discovered.</li>
+</ul>
+
+<figure>
+<svg viewBox="0 0 900 350" role="img" aria-label="Timeline: Phase 0 substrate spike weeks 1 to 2; Phase 1 specification bundle weeks 1 to 5 in parallel; decision gate at week 4; Phase 2 core loop weeks 4 to 10; Phase 3 payments and verification weeks 9 to 16; Phase 4 inclusion and federation weeks 15 to 24; pilot readiness gate at week 24.">
+<defs><marker id="pa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--amber)"/></marker></defs>
+<line class="pl" x1="60" y1="30" x2="60" y2="300"/><line class="pl" x1="200" y1="30" x2="200" y2="300"/><line class="pl" x1="340" y1="30" x2="340" y2="300"/><line class="pl" x1="480" y1="30" x2="480" y2="300"/><line class="pl" x1="620" y1="30" x2="620" y2="300"/><line class="pl" x1="760" y1="30" x2="760" y2="300"/>
+<text class="ps" x="60" y="20" text-anchor="middle">wk 0</text><text class="ps" x="200" y="20" text-anchor="middle">wk 4</text><text class="ps" x="340" y="20" text-anchor="middle">wk 8</text><text class="ps" x="480" y="20" text-anchor="middle">wk 12</text><text class="ps" x="620" y="20" text-anchor="middle">wk 16</text><text class="ps" x="760" y="20" text-anchor="middle">wk 20</text><text class="ps" x="880" y="20" text-anchor="middle">wk 24</text>
+<rect class="pb2" x="60" y="40" width="70" height="34"/><text class="pt" x="68" y="61">P0 · substrate spike</text>
+<rect class="pb3" x="60" y="92" width="175" height="34"/><text class="pt" x="68" y="113">P1 · specification bundle</text>
+<rect class="pb" x="200" y="144" width="210" height="34"/><text class="pt" x="208" y="165">P2 · core loop slice</text>
+<rect class="pb" x="375" y="196" width="245" height="34"/><text class="pt" x="383" y="217">P3 · payments + verification</text>
+<rect class="pb" x="585" y="248" width="295" height="34"/><text class="pt" x="593" y="269">P4 · inclusion + federation</text>
+<line class="pg" x1="200" y1="86" x2="200" y2="150" marker-end="url(#pa)"/><text class="ps" x="206" y="138" style="fill:var(--amber)">gate G1 · decisions ratified</text>
+<line class="pg" x1="410" y1="184" x2="410" y2="202" marker-end="url(#pa)"/><text class="ps" x="416" y="192" style="fill:var(--amber)">gate G2 · slice demo</text>
+<line class="pg" x1="880" y1="288" x2="880" y2="310"/><text class="ps" x="874" y="326" text-anchor="end" style="fill:var(--amber)">gate G3 · pilot readiness</text>
+</svg>
+<figcaption>Phases overlap deliberately: the spec bundle starts alongside the spike, and each build phase begins before its predecessor fully closes. The three amber gates are the only hard synchronisation points.</figcaption>
+</figure>
+
+<h2>1 · The phases</h2>
+
+<div class="phase">
+<h3>Phase 0 — Substrate spike <span class="tag demo">weeks 1–2</span></h3>
+<div class="meta">Retires: "does the stack actually do what the docs say?"</div>
+<ul>
+<li>Stand up Inji Certify + Wallet + Verify (docker-compose). Issue a hand-authored <code>WorkEventCredential</code> over OpenID4VCI; hold it in Inji Mobile; print it via PixelPass; verify the printed QR fully offline.</li>
+<li>Stand up a DeDi node (existing Railway path). Publish a sample work-definition record; fetch it with an inclusion proof; version it and confirm both versions resolve.</li>
+<li>eSignet sandbox: complete one OIDC binding round-trip; confirm the pairwise subject identifier behaviour §4.1 assumes.</li>
+</ul>
+<p><strong>Exit:</strong> a recorded 10-minute demo of issue → hold → offline verify, plus a short findings memo on anything Inji/DeDi did <em>not</em> do as assumed (feeds Phase 1 schemas).</p>
+</div>
+
+<div class="phase">
+<h3>Phase 1 — Specification bundle <span class="tag demo">weeks 1–5, parallel</span></h3>
+<div class="meta">Retires: design errors, at document cost. This is §14's definition of done for the layer.</div>
+<ul>
+<li>Eleven primitive schemas + Trusted Payments profile (roles, LinkedRecord types) as versioned JSON Schemas.</li>
+<li>Canonical work-evidence record + adapter contract (incl. source heartbeat / expected-volume watermark from gap register).</li>
+<li>Strength function <code>f</code> as executable spec with test vectors (§6), including identity-assurance interaction (§4.1).</li>
+<li><code>WorkEventCredential</code> schema live in Certify; Bitstring Status List configured.</li>
+<li>Six OpenAPI stubs (§13); identity-provider interface (§4.1) as the seventh contract.</li>
+<li>One fully-worked definition: bednet distribution, three faces, tier map — resolvable on the Phase-0 DeDi node.</li>
+</ul>
+<p><strong>Gate G1 (week 4) — decisions ratified:</strong> tier semantics (§6), org onboarding option, key custody, external-institution evidence tier, batch-verification caps, recovery override. One working session, minuted into the blueprint.</p>
+</div>
+
+<div class="phase">
+<h3>Phase 2 — Core loop vertical slice <span class="tag demo">weeks 4–10</span></h3>
+<div class="meta">Retires: integration risk across every layer. Unlocks journeys J2, J3 (minimal), J4, J6, J8.</div>
+<ul>
+<li><code>registry</code> service v0: instance, org self-registration + terms + approval, worker records with assisted enrolment, duplicate hold queue. Public records on DeDi, PII in the private store.</li>
+<li><code>definitions</code> service v0: author → ratify (author ≠ approver enforced) → ACTIVE on DeDi; three-face rendering.</li>
+<li><code>evidence</code> pipeline with the <strong>batch/CSV adapter first</strong> (unblocks every source system immediately): canonical record validation, unit + claim creation, identity matching via hashed keys, unclear queue.</li>
+<li><code>confirmation</code> service: draft → SMS notify → confirm / dispute / auto-confirm at T=7 → Certify issuance; supervisor-assisted route.</li>
+<li>Assisted enrolment path end-to-end: field registration, voice consent artefact, DID, printed card.</li>
+</ul>
+<p><strong>Gate G2 (week ~10) — the slice demo:</strong> a real CSV from a real source system in; seven days (compressed) later, a signed credential in a wallet and on a printed card, offline-verifiable. This is the demo that earns partner conversations.</p>
+</div>
+
+<div class="phase">
+<h3>Phase 3 — Payments profile + verification <span class="tag demo">weeks 9–16</span></h3>
+<div class="meta">Retires: money-movement and trust-resolution risk. Unlocks J5, J9, J12; J7 substantially complete.</div>
+<ul>
+<li><code>payments</code> runtime: rate objects, PaymentInstruction emission with idempotency, one rail connector (mobile money) with sandbox → live separation, CompensationRecord intake, reconciliation with owned reasons — including the cleared-but-never-instructed deadline rule.</li>
+<li><code>verification</code> service: wraps Inji Verify; strength function live; DeDi trust-chain walk; pass issuance; per-request disclosure consent with refusals-as-values; check audit trail visible to the worker.</li>
+<li>Worker experience v1 (app + SMS): wallet, confirmation window, earnings view with held-payment reasons.</li>
+</ul>
+<p><strong>Exit:</strong> accepted claim → money confirmed on a sandbox rail → reconciliation report with every gap owned; a stranger with a pass verifies a printed credential.</p>
+</div>
+
+<div class="phase">
+<h3>Phase 4 — Inclusion, oversight, federation <span class="tag demo">weeks 15–24</span></h3>
+<div class="meta">Retires: pilot-scale operational risk. Unlocks J1 (full), J10, J11; hardens J7.</div>
+<ul>
+<li>USSD/WhatsApp worker channels; dispute + support flows with escalation objects and SLAs; 2-of-3 social recovery (with whatever override G1 decided).</li>
+<li>Second adapter class (DHIS2 or DIGIT HCM — pick by pilot partner) connected through configuration, proving the class-adapter claim.</li>
+<li>Metric contracts as objects (§15/J11): straight-through funnel, delay taxonomy, payable coverage, <code>merges_without_confirmation = 0</code> monitor; the three consoles read them.</li>
+<li>Global DeDi node + witness ring with the national node; SD-JWT selective disclosure behind a flag.</li>
+</ul>
+<p><strong>Gate G3 (week 24) — pilot readiness:</strong> W1–W10 walked as acceptance tests against the running system; security review of key handling and PII boundaries; data-protection sign-off on consent artefacts; one partner org onboarded end-to-end without engineering help.</p>
+</div>
+
+<h2>2 · Workstreams and staffing</h2>
+<p>The plan fits a core team of five to seven engineers plus design and programme roles. Ownership follows the service boundaries so the org chart mirrors the architecture:</p>
+<div class="tblwrap"><table>
+<tr><th>Workstream</th><th>Owns</th><th>Phase load</th></tr>
+<tr><td>Platform &amp; substrates</td><td>Inji + DeDi + eSignet deployment, keys, status list, CI, environments</td><td>P0 heavy, then steady</td></tr>
+<tr><td>Registry &amp; definitions</td><td><code>registry</code>, <code>definitions</code>, DeDi write paths, terms/authorization model</td><td>P1–P2 heavy</td></tr>
+<tr><td>Evidence &amp; confirmation</td><td>Adapters, matching, unclear queue, T=7 state machine, issuance calls</td><td>P2 heavy, P4 second adapter</td></tr>
+<tr><td>Payments &amp; verification</td><td>Payments runtime, rail connectors, reconciliation; verification service, consent, pass flow</td><td>P3 heavy</td></tr>
+<tr><td>Experience</td><td>Worker app/USSD/SMS, field enrolment app, consoles</td><td>P2 onward, P4 heavy</td></tr>
+<tr><td>Spec &amp; governance (lead + PM)</td><td>Schema bundle, decision gates, W1–W10 acceptance suite, partner/pilot coordination</td><td>P1 heavy, gates throughout</td></tr>
+</table></div>
+
+<h2>3 · Dependencies that actually bind</h2>
+<ul>
+<li><strong>G1 blocks Phase 2 issuance semantics</strong> — tier storage vs derivation must be settled before the credential schema freezes. Everything else in P2 can start regardless.</li>
+<li><strong>The bednet definition blocks the evidence pipeline</strong> — validation needs a real definition to validate against. It is a Phase 1 deliverable for exactly this reason.</li>
+<li><strong>Rail partner lead time is external</strong> — mobile-money sandbox access can take weeks; start the commercial/API conversation in Phase 1, not Phase 3.</li>
+<li><strong>Pilot partner choice shapes Phase 4</strong> — the second adapter class and the USSD short code both depend on which country/programme pilots. Decide by end of Phase 2.</li>
+<li><strong>eSignet production access</strong> depends on the deployment country's identity authority — the sandbox suffices through G2, but G3 needs the real conversation concluded.</li>
+</ul>
+
+<h2>4 · Risks and their mitigations</h2>
+<div class="tblwrap"><table>
+<tr><th>Risk</th><th>Signal</th><th>Mitigation</th></tr>
+<tr><td>Inji components don't compose as documented (format/protocol edges)</td><td>Phase 0 friction</td><td>Spike first; schema decisions deferred until the findings memo; MOSIP community engagement early</td></tr>
+<tr><td>DeDi-node maturity (M1 in progress) lags CREST's registry needs</td><td>Missing write-path features in P2</td><td>Registry service owns an abstraction over DeDi; a Postgres-backed fallback keeps P2 moving while DeDi catches up — same interface, swapped later</td></tr>
+<tr><td>Decision gate G1 slips</td><td>Week 4 session inconclusive</td><td>Blueprint defaults are pre-agreed as the fallback: no decision means the default ships in the pilot and the question is revisited with field data</td></tr>
+<tr><td>Rail integration stalls on the provider side</td><td>No sandbox by week 9</td><td>P3 ships advisory-mode payments (statement, no rail) first — a real posture in the journeys, not a stopgap</td></tr>
+<tr><td>Field realities break assumptions (printers, signal, literacy)</td><td>First field test</td><td>Schedule a field simulation in week 12 with real hardware — before Phase 4 hardening, not after</td></tr>
+</table></div>
+
+<div class="callout"><p><strong>First three actions, this week:</strong> (1) book the G1 decision session with the team for week 4; (2) start Phase 0 — the compose files and the Railway DeDi path already exist; (3) open the mobile-money sandbox conversation. Everything else follows the phases.</p></div>
+
+<div class="footer">Companion to the CREST Infrastructure Blueprint (§ references) and “CREST on Inji”. Timeline assumes a 5–7 engineer core team; weeks are elapsed, not effort. Drafted 22 Aug 2026.</div>
+</main>
