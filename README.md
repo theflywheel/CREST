@@ -64,13 +64,15 @@ Work is tracked as six phase epics with thirty-three sub-issues across five mile
 
 | Phase | Epic | Due |
 |---|---|---|
-| P0 · Substrate spike | [#34](../../issues/34) | 2026-09-04 |
-| G1 · The six decisions | [#35](../../issues/35) | week 4 |
-| P1 · Specification bundle | [#36](../../issues/36) | 2026-09-25 |
-| P2 · Core loop slice | [#37](../../issues/37) | 2026-10-30 |
-| P3 · Payments + verification | [#38](../../issues/38) | 2026-12-11 |
-| P4 · Inclusion, oversight, federation | [#39](../../issues/39) | 2027-02-05 |
+| P0 · Substrate spike | [#34](../../issues/34) | 2026-08-22 |
+| G1 · The six decisions | [#35](../../issues/35) | 2026-08-23 |
+| P1 · Specification bundle | [#36](../../issues/36) | 2026-08-23 |
+| P2 · Core loop slice | [#37](../../issues/37) | 2026-08-23 |
+| P3 · Payments + verification | [#38](../../issues/38) | 2026-08-23 |
+| P4 · Inclusion, oversight, federation | [#39](../../issues/39) | 2026-08-23 |
+
+The schedule is agent-paced. The original week numbers assumed a human team and were wrong for how this repository is actually built. **Order still binds:** recorded dependencies must be satisfied before a phase closes, and the three gates keep their acceptance criteria — reaching them in hours instead of months does not lower the bar.
 
 Agents working in this repo should read [CLAUDE.md](CLAUDE.md) — it carries the rules that don't bend, and points at the skills in `.claude/skills/`. How anything gets validated is in [docs/TESTING.md](docs/TESTING.md), and what is validated is in [docs/test-manifest.md](docs/test-manifest.md).
 
-Three things sit on the critical path this week: book the G1 session for week 4, start P0, and open the mobile-money sandbox conversation ([#19](../../issues/19)) — that lead time is external and lands on P3.
+Two things on the critical path are **not** agent-pacable, and compressing everything else makes them the real constraint: the G1 decisions ([#11](../../issues/11)) need people to ratify them, and the mobile-money sandbox ([#19](../../issues/19)) needs an external counterparty. Both should be opened now regardless of where the code has got to.

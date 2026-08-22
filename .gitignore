@@ -8,3 +8,6 @@ node_modules/
 __pycache__/
 dist/
 /tmp/
+
+# DeDi node signing keys and the locally built dedid binary. Never committed.
+infra/compose/dedi-keys/
