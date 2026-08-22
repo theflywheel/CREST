@@ -16,11 +16,13 @@ The substrate does what §3 assumes. Publish, inclusion proof, independent valid
 
 | # | Finding | Effect |
 |---|---|---|
-| R1 | No published DeDi image; the repo is private and carries its own Dockerfile | Operational. Node is built from a checkout (`make dedi-image`). |
+| R1 | ~~No published DeDi image~~ — **withdrawn, this was wrong.** It is published as `flywheelai/dedi-node` (multi-arch, actively pushed). I checked `ghcr.io/theflywheel/dedi-node`, found nothing, and generalised from one registry to "no image exists" | None. Kept rather than deleted: a memo that quietly loses its wrong entries cannot be trusted for its right ones. |
 | R2 | DeDi expects its own Postgres | Operational, and correct: the log's checkpoints must not be reachable by a CREST migration. |
 | R3 | **An unrecognised query parameter is ignored, not rejected.** `?versionId=` returns the *latest* version with a valid proof attached; the parameter is `version_id` | **Design.** See below. |
 | R4 | `If-Match` wants `<digest>-<state>`, but lookup returns those as two fields with no combined tag | Minor. Clients re-derive a format the server should own. |
 | R5 | DeDi-node needs Go 1.25; CREST is on 1.24 | None. Separate modules, HTTP between them. Forecloses vendoring, which is right anyway. |
+| R6 | **A node mints its identity key on first boot, from whatever `DEDI_ORIGIN` it has then.** Ours booted before the origin was set, so its checkpoints were signed under `dev.dedi.local/log` while claiming the deployment's origin | Operational, and sharp: the signer name is what ties a log to a deployment. Fixed by wiping the node's database and letting it re-mint. **Set `DEDI_ORIGIN` before first boot, never after.** |
+| R7 | The published manifest (`/.well-known/dedi.index.json`) is regenerated on a schedule, so just after a key change it advertises the **previous** key | Operational. Presents as "signature does not verify" with no clue why. `tools/spikes/dedi-verifier-key.py` cross-checks the advertised key against the key that actually signed the checkpoint, and says which case it is. |
 
 **R3 is the finding with teeth.** A verifier that misspells the version pin silently resolves a *different* definition and receives a perfectly valid proof for it. Nothing in the response says "you did not get what you asked for". Applied to CREST, that is a verifier checking a credential against the wrong version of the work definition and having no way to notice.
 
@@ -59,11 +61,20 @@ None of that can be answered against a local mock: a mock identity system will r
 
 ---
 
+## Deploying it found two more things
+
+Running the same spike against a real deployment rather than a container on a laptop found R6 and R7 above, and one bug in **our own** code:
+
+**`dediproof` split the verifier key on every `+`.** The key format is `name+hash+base64`, and standard base64 contains `+`. The local node's key happened not to, so nine tampering tests and every local run passed; the deployed node's key did, and it failed immediately. Fixed with `SplitN`, and the deployed key is now a regression test.
+
+The lesson is not about base64. It is that **a test suite built entirely from one sample proves less than it appears to**, and the cheapest way to find out is to run against something you did not generate.
+
 ## What this memo already changes
 
 - `infra/compose/docker-compose.yml` and `.env.example` — corrected images and topology (C1, C2, C3), DeDi's own database and key material (R1, R2).
 - `Makefile` — `dedi-image`, `dedi-keys`, `spike-dedi`.
 - A requirement on #20: reject unknown query parameters (R3).
+- `docs/DEPLOYMENT.md` — the deployed environment, and what is *not* set up in it.
 
 ## What it does not change
 

@@ -9,8 +9,9 @@ Blueprint §3 assumes a registry that can hold a work definition, hand back a pr
 ```bash
 git clone git@github.com:theflywheel/DeDi-node.git ../DeDi-node
 
-make dedi-image DEDI_SRC=../DeDi-node    # no published image — see findings
-make dedi-keys  DEDI_SRC=../DeDi-node    # node key + CREST publisher key
+# The node image is published (flywheelai/dedi-node) and compose pins it, so
+# `make dedi-image` is only for running an unreleased build from a checkout.
+make dedi-keys DEDI_SRC=../DeDi-node     # node key + CREST publisher key
 # put the printed DEDI_PUBLISHER_KEYS line into infra/compose/.env
 
 make substrate-up
@@ -50,7 +51,7 @@ That last row is the one that matters. A checker that validates the path but not
 
 ## Findings for the memo (#4)
 
-**1. There is no published DeDi image.** `ghcr.io/theflywheel/dedi-node:latest` does not resolve; the repository is private and carries its own Dockerfile. Corrected: the node is built from a checkout via `make dedi-image`. *Affects operations, not the design.*
+**1. ~~There is no published DeDi image.~~ Withdrawn — I was wrong.** It is published as `flywheelai/dedi-node`; I checked one registry, found nothing, and generalised. Compose now pins the published image.
 
 **2. DeDi wants its own Postgres.** Its compose runs a separate database, and it should stay that way: the node owns a transparency log whose checkpoints must never roll back, and sharing a database with CREST would put registry history within reach of a CREST migration. Corrected in `infra/compose/docker-compose.yml`. *Reinforces §3, does not contradict it.*
 

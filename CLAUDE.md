@@ -48,6 +48,19 @@ Several issues name a specific way reality might contradict the design — a pri
 
 **Quietly patching around a design error is the one failure mode this project cannot afford**, because the error then survives into a pilot wearing a passing test.
 
+## Everything goes through a pull request
+
+**No direct pushes to `main`, by anyone, agent or human.** Branch, open a PR, let CI run, merge.
+
+This is about traceability, not ceremony. A PR is where the reasoning for a change is written down next to the change itself, where a reviewer — human or agent — has something reviewable, and where CI has somewhere to report before the fact rather than after. On a system whose records decide whether someone gets paid, "how did this get here?" needs an answer better than a commit on `main`.
+
+- **One PR per issue** where the issue is small enough; name the issue in the body with `Closes #n`.
+- **The PR body carries the reasoning**: what changed, which invariant (W1–W10) it could break, and how it was proven. If the change is a design finding, say so and link the issue.
+- **Do not merge your own work without CI green.** A red PR is information; merging past it destroys the information.
+- **Say what you did not do.** A PR that silently drops half its scope is worse than one that states the gap.
+
+**This rule is currently a convention, not a gate.** Branch protection and rulesets both require a paid plan on a private repository, so GitHub will not refuse a direct push to `main` today. Treat the rule as binding anyway; it becomes enforceable the moment the org is on a paid plan or the repo goes public, and the first thing to do then is turn it on.
+
 ## Conventions
 
 - Work through GitHub issues; every one carries a Design reference footer and a "done when".

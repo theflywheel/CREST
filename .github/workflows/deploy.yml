@@ -1,0 +1,83 @@
+name: Deploy
+
+# Deploys `main` to Railway, and only after CI has gone green on it.
+#
+# The gate is deliberate: `workflow_run` fires when CI *completes*, and the job
+# below refuses to run unless the conclusion was success. A deploy pipeline that
+# ships whatever landed on main regardless of tests is not a pipeline, it is a
+# way of finding out about failures from users.
+#
+# Railway builds from the uploaded source using infra/compose/Dockerfile.service
+# — the same Dockerfile compose uses locally, so "works locally" and "works
+# deployed" are the same statement about the same file.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  # Redeploying without a code change has to be possible: a rotated secret or a
+  # wedged container is not a reason to push an empty commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false # never interrupt a deploy mid-flight
+
+jobs:
+  deploy:
+    name: Railway — production
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    environment: production
+    strategy:
+      # Sequential, not parallel: these services share one database, and a
+      # failure part-way through a fan-out leaves a mix of versions with nobody
+      # able to say which. max-parallel 1 keeps the order legible.
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        service: [registry]
+        # The other six join this list as they gain behaviour worth deploying.
+        # Seven identical health-check stubs would cost money to prove a thing
+        # one of them already proves.
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # workflow_run checks out the default branch by default; be explicit
+          # about deploying exactly the commit CI validated.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli@4
+
+      - name: Deploy ${{ matrix.service }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway up \
+            --service "crest-${{ matrix.service }}" \
+            --ci --detach
+
+      - name: Wait for the service to answer
+        env:
+          URL: https://crest-${{ matrix.service }}-production.up.railway.app
+        run: |
+          # A deploy that returns without the service answering has told us
+          # nothing. Poll readiness rather than sleeping and hoping.
+          for i in $(seq 1 60); do
+            if curl -fsS --max-time 5 "$URL/readyz" >/dev/null; then
+              echo "$URL is ready"
+              curl -fsS "$URL/healthz"; echo
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::crest-${{ matrix.service }} did not become ready within 10 minutes"
+          exit 1

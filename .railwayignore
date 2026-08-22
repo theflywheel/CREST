@@ -1,0 +1,8 @@
+# Never upload to the builder. Key material and local state above all — an
+# upload is a copy, and a copy of a signing key is a signing key.
+infra/compose/dedi-keys/
+.env
+*.key
+node_modules/
+docs/reference/
+.claude/
