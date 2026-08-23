@@ -240,12 +240,45 @@ components:
           items: { type: string }
           description: Per-field detail from schema validation, when there is any.
 
+    TrustLink:
+      type: object
+      description: One step of the trust chain, and whether the verifier can confirm it themselves.
+      required: [claim, checkable]
+      properties:
+        claim: { type: string }
+        checkable:
+          type: boolean
+          description: Whether this link can be confirmed without taking CREST's word for it.
+        how:
+          type: string
+          description: >
+            Where to check it - a URL to fetch, or the artefact the verifier already
+            holds. Present only when `checkable`.
+        trusting:
+          type: string
+          description: >
+            What the verifier is relying on instead. Always present when `checkable`
+            is false: saying "you must trust something" without saying what is not a
+            disclosure.
+
     Verdict:
       type: object
       description: >
         What a verifier is handed. `trustChain` is what they can walk for
         themselves - a verdict nobody can check is an assertion, and this service
         asserting things is what §7 is trying to avoid.
+
+        Each link says whether it is `checkable` and where. A trust chain given
+        as a list of sentences quietly conflates two different things: facts the
+        verifier can confirm without CREST, and facts CREST is telling them. A
+        verifier who cannot tell those apart is trusting the whole list.
+
+        `notEstablished` is what a *valid* verdict does not prove. A green
+        verdict invites the reading "and therefore this person was authorised to
+        do this work"; that is not something a deployment can demonstrate to a
+        stranger, because a worker's authorization is deliberately not published
+        (finding #68). A limit that is disclosed is not the same as one the
+        verifier discovers by assuming wrongly.
       required: [valid, signatureValid, revoked]
       properties:
         valid: { type: boolean }
@@ -254,7 +287,13 @@ components:
           type: integer
           description: Present only when the credential is valid. Computed on this request, stored nowhere (W1).
         tierReason: { type: array, items: { type: string } }
-        trustChain: { type: array, items: { type: string } }
+        trustChain:
+          type: array
+          items: { $ref: "#/components/schemas/TrustLink" }
+        notEstablished:
+          type: array
+          items: { type: string }
+          description: What a valid verdict does not prove. Present on valid verdicts.
         signatureValid: { type: boolean }
         revoked: { type: boolean }
   responses:

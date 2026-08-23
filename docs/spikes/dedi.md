@@ -55,9 +55,9 @@ That last row is the one that matters. A checker that validates the path but not
 
 **2. DeDi wants its own Postgres.** Its compose runs a separate database, and it should stay that way: the node owns a transparency log whose checkpoints must never roll back, and sharing a database with CREST would put registry history within reach of a CREST migration. Corrected in `infra/compose/docker-compose.yml`. *Reinforces §3, does not contradict it.*
 
-**3. An unrecognised query parameter is ignored, not rejected.** `?versionId=` (camel case) returns the **latest** version with a perfectly valid proof attached; the parameter is `version_id`. A verifier that misspells the pin resolves the wrong definition and has no way to notice. **This is the finding with teeth** — CREST's own resolution path must reject unknown parameters rather than silently answer a different question, and #20 should treat that as a requirement on the registry interface.
+**3. An unrecognised query parameter is ignored, not rejected.** — filed upstream as [DeDi-node#65](https://github.com/theflywheel/DeDi-node/issues/65). `?versionId=` (camel case) returns the **latest** version with a perfectly valid proof attached; the parameter is `version_id`. A verifier that misspells the pin resolves the wrong definition and has no way to notice. **This is the finding with teeth** — CREST's own resolution path must reject unknown parameters rather than silently answer a different question, and #20 should treat that as a requirement on the registry interface.
 
-**4. The version tag has to be reassembled by the client.** `If-Match` wants `<digest>-<state>`, but the lookup response returns `digest` and `state` as separate fields with no combined tag. Every client re-derives a format only the server should own. Minor, but exactly the kind of thing that drifts between implementations.
+**4. The version tag has to be reassembled by the client.** — filed upstream as [DeDi-node#66](https://github.com/theflywheel/DeDi-node/issues/66), together with [#67](https://github.com/theflywheel/DeDi-node/issues/67): a publish response does not carry the tag the next write needs, so a publisher has to read back to learn what it just wrote. `If-Match` wants `<digest>-<state>`, but the lookup response returns `digest` and `state` as separate fields with no combined tag. Every client re-derives a format only the server should own. Minor, but exactly the kind of thing that drifts between implementations.
 
 **5. DeDi-node requires Go 1.25; the CREST module is on 1.24.** Harmless today — separate modules, and CREST consumes DeDi over HTTP — but it forecloses vendoring, which is the correct outcome anyway.
 
@@ -65,6 +65,7 @@ Nothing here contradicts Blueprint §3. Finding 3 adds a requirement to it rathe
 
 ## Not covered by this spike
 
+- **Findings 3, 4 and the publish-response gap are now upstream issues**, not just notes here: [DeDi-node#65](https://github.com/theflywheel/DeDi-node/issues/65), [#66](https://github.com/theflywheel/DeDi-node/issues/66), [#67](https://github.com/theflywheel/DeDi-node/issues/67). CREST works around all three in `pkg/dedi`, each in one place, so there is one line to change when they are fixed.
 - **Witness rings and consistency proofs.** The node exposes `/dedi/log/proof/consistency` and a witness surface; this spike checked neither. Inclusion proves a record is in *a* log — consistency proves the log was never rewritten, which is the property an independent verifier actually depends on. It belongs with #20.
 - **The private half of §3.** Only public work-definition faces were published. The rule that no PII reaches the DeDi node is asserted in #20, not here.
 - **Anything at scale.** Four leaves.

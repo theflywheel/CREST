@@ -5,9 +5,11 @@ package scenarios
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/theflywheel/crest/harness"
 	"github.com/theflywheel/crest/harness/fixtures"
 	"github.com/theflywheel/crest/pkg/schema"
 )
@@ -253,4 +255,107 @@ func TestAnActivatedDefinitionIsResolvableOutsideCREST(t *testing.T) {
 	}
 	t.Logf("definition %s published as %s@%s, transparent=%v",
 		w.w.Definitions[0].ID, pub.Record, pub.RegistryVersion, pub.Transparent)
+}
+
+// The payoff of publishing definitions, and the honesty required when it is not
+// available (#68, #69).
+//
+// A verdict's trust chain used to be a list of sentences. Some of those a
+// verifier could confirm without CREST — the signature, the status list — and
+// some were this deployment reading its own database aloud. Nothing
+// distinguished them, so a verifier who wanted to check the whole chain had no
+// way to know which parts they could.
+//
+// This asserts the distinction is real: the definition link is checkable
+// exactly when the definition actually reached a transparency log, and says
+// what is being trusted when it did not.
+func TestTheTrustChainSaysWhichLinksAVerifierCanCheck(t *testing.T) {
+	w := setup(t)
+
+	phone, err := harness.PhoneOf(w.w, fixtures.WorkerAID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := w.submit(t, batch(row(phone, 4, "HH-TRUST-"+runID)))
+	if len(res.ClaimIDs) != 1 {
+		t.Fatalf("expected one claim, got %d: %+v", len(res.ClaimIDs), res.Unclear)
+	}
+
+	// Confirmed rather than left to auto-confirm: this scenario is about what
+	// the verdict discloses, and the shortest honest route to a credential is
+	// the one that does not also re-test the window.
+	var exit struct {
+		Credential struct {
+			ID string `json:"id"`
+		} `json:"credential"`
+	}
+	eventually(t, "the confirmation window opens", 15*time.Second, func() error {
+		_, err := w.window(res.ClaimIDs[0])
+		return err
+	})
+	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+res.ClaimIDs[0]+"/confirm",
+		map[string]any{"route": "self"}, &exit); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	if exit.Credential.ID == "" {
+		t.Fatal("confirming produced no credential")
+	}
+
+	// Read where the definition landed BEFORE verifying, not after. The
+	// publication crosses a service boundary through the outbox, and a verdict
+	// computed while it was still in flight would legitimately report the link
+	// as unverifiable — comparing that against a publication that had arrived
+	// by the time the test looked would be a race, not a finding.
+	var pub publication
+	eventually(t, "the definition's publication is readable", 20*time.Second, func() error {
+		return w.Definitions.Get(w.ctx,
+			"/v1/definitions/"+w.w.Definitions[0].ID+"/publication", &pub)
+	})
+
+	v := w.verify(t, w.credential(t, exit.Credential.ID))
+	if !v.Valid {
+		t.Fatalf("the credential does not verify: %v", v.Reasons)
+	}
+
+	var defLink *trustLink
+	for i, l := range v.TrustChain {
+		if strings.Contains(l.Claim, "measured under") {
+			defLink = &v.TrustChain[i]
+		}
+	}
+	if defLink == nil {
+		t.Fatal("the trust chain has no link naming the definition the credential was measured under")
+	}
+
+	if pub.Transparent != defLink.Checkable {
+		t.Fatalf("the definition is transparent=%v but its trust-chain link says checkable=%v; "+
+			"one of the two is lying to the verifier", pub.Transparent, defLink.Checkable)
+	}
+	if defLink.Checkable {
+		// The URL has to actually answer. A "how" nobody can fetch is a
+		// promise, which is the thing this whole field replaces.
+		resp, err := http.Get(defLink.How) //nolint:gosec,noctx // a URL this deployment just published
+		if err != nil {
+			t.Fatalf("the trust chain points at %s, which does not answer: %v", defLink.How, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("the trust chain points at %s, which answered %d", defLink.How, resp.StatusCode)
+		}
+		t.Logf("verifier can resolve the pinned definition at %s", defLink.How)
+	} else {
+		t.Logf("definition link is not independently checkable, and says so: %q", defLink.Trusting)
+	}
+
+	// #68: the limit is disclosed on the verdict a verifier acts on, not left
+	// for them to discover by assuming wrongly.
+	found := false
+	for _, s := range v.NotEstablished {
+		if strings.Contains(s, "authorised") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("a valid verdict does not say that the subject's authorization is unverifiable: %v", v.NotEstablished)
+	}
 }

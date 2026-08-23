@@ -173,13 +173,14 @@ func (w *world) instruction(claimID string) (instructionView, error) {
 }
 
 type verdict struct {
-	Valid          bool     `json:"valid"`
-	Reasons        []string `json:"reasons"`
-	Tier           *int     `json:"tier"`
-	TierReason     []string `json:"tierReason"`
-	TrustChain     []string `json:"trustChain"`
-	SignatureValid bool     `json:"signatureValid"`
-	Revoked        bool     `json:"revoked"`
+	Valid          bool        `json:"valid"`
+	Reasons        []string    `json:"reasons"`
+	Tier           *int        `json:"tier"`
+	TierReason     []string    `json:"tierReason"`
+	TrustChain     []trustLink `json:"trustChain"`
+	NotEstablished []string    `json:"notEstablished"`
+	SignatureValid bool        `json:"signatureValid"`
+	Revoked        bool        `json:"revoked"`
 }
 
 func (w *world) credential(t *testing.T, credID string) map[string]any {
@@ -296,6 +297,23 @@ func TestARecordBecomesACredentialAndAPayment(t *testing.T) {
 	}
 	if len(v.TrustChain) == 0 {
 		t.Error("the verdict has no trust chain; a verdict nobody can check is an assertion")
+	}
+	// Every link answers the question, one way or the other. A link that
+	// claims to be checkable without saying where, or admits it is not without
+	// saying what is being trusted instead, has told the verifier nothing (#68).
+	for _, l := range v.TrustChain {
+		switch {
+		case l.Checkable && l.How == "":
+			t.Errorf("trust-chain link %q says it is checkable and does not say where", l.Claim)
+		case !l.Checkable && l.Trusting == "":
+			t.Errorf("trust-chain link %q is not checkable and does not say what is being trusted", l.Claim)
+		}
+	}
+	// A valid verdict states its own limits. #68: a green verdict reads as
+	// "and this person was authorised to do this work", and that is precisely
+	// what a deployment cannot demonstrate to a stranger.
+	if len(v.NotEstablished) == 0 {
+		t.Error("a valid verdict claims to establish everything; it does not establish that the subject was authorised")
 	}
 
 	// The credential must not carry the tier. A stored tier freezes a judgement
@@ -849,4 +867,14 @@ func TestAnUnreachedWorkerIsNotAutoConfirmedAgainst(t *testing.T) {
 	if in.State == "HELD" && (in.Held == nil || in.Held.OwnerPartyID == "") {
 		t.Error("a held payment with no owner")
 	}
+}
+
+// trustLink mirrors the verification service's Link. Declared here rather than
+// imported because the harness talks HTTP only — a scenario that imports a
+// service's types is testing the struct, not the contract.
+type trustLink struct {
+	Claim     string `json:"claim"`
+	Checkable bool   `json:"checkable"`
+	How       string `json:"how,omitempty"`
+	Trusting  string `json:"trusting,omitempty"`
 }

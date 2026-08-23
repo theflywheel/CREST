@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/theflywheel/crest/pkg/client"
@@ -26,6 +27,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 		definitions:  client.New(config.Str("DEFINITIONS_URL", "http://definitions:8080")),
 		registry:     client.New(config.Str("REGISTRY_URL", "http://registry:8080")),
 		confirmation: client.New(config.Str("CONFIRMATION_URL", "http://confirmation:8080")),
+		dediURL:      config.Str("DEDI_URL", ""),
 	}
 	mux.HandleFunc("POST /v1/verify", h.verify)
 	mux.HandleFunc("POST /v1/source-assessments", h.assess)
@@ -35,7 +37,13 @@ func routes(mux *http.ServeMux, d service.Deps) {
 }
 
 type handlers struct {
-	d            service.Deps
+	d service.Deps
+
+	// dediURL is where this deployment's registry node can be reached, so a
+	// verdict can hand the verifier a URL instead of a promise. Empty when the
+	// deployment runs on the Postgres fallback, and the trust chain says so.
+	dediURL string
+
 	definitions  *client.Client
 	registry     *client.Client
 	confirmation *client.Client
@@ -57,10 +65,54 @@ type Verdict struct {
 	// TrustChain is what the verifier can walk for themselves. A verdict
 	// nobody can check is an assertion, and this service asserting things is
 	// exactly what §7 is trying to avoid.
-	TrustChain []string `json:"trustChain,omitempty"`
+	//
+	// Each link says whether it is checkable and where, because "trust chain"
+	// as a list of sentences quietly conflates two different things: facts the
+	// verifier can confirm without CREST, and facts CREST is telling them. A
+	// verifier who cannot tell those apart is trusting the whole list.
+	TrustChain []Link `json:"trustChain,omitempty"`
+
+	// NotEstablished is what a *valid* verdict does not prove.
+	//
+	// This exists because of finding #68. A green verdict invites the reading
+	// "and therefore this person was authorised to do this work", and that is
+	// not something this deployment can demonstrate to a stranger — a worker's
+	// authorization is deliberately not published, because on an append-only
+	// log it is a permanent public roster of who works where. Saying so in the
+	// verdict is the difference between a limit that is disclosed and one the
+	// verifier discovers by assuming wrongly.
+	NotEstablished []string `json:"notEstablished,omitempty"`
 
 	SignatureValid bool `json:"signatureValid"`
 	Revoked        bool `json:"revoked"`
+}
+
+// Link is one step of the trust chain.
+type Link struct {
+	Claim string `json:"claim"`
+
+	// Checkable reports whether the verifier can confirm this link without
+	// taking CREST's word for it.
+	Checkable bool `json:"checkable"`
+
+	// How is where they go to check it — a URL they can fetch, or the name of
+	// the artefact they already hold. Set only when Checkable.
+	How string `json:"how,omitempty"`
+
+	// Trusting names what they are relying on instead, when they cannot.
+	// Never empty when Checkable is false: "you must trust something" without
+	// saying what is not a disclosure.
+	Trusting string `json:"trusting,omitempty"`
+}
+
+// checkable and asserted are the only two ways to build a Link, so a link
+// cannot be constructed without answering the question.
+func checkable(claim, how string) Link {
+	return Link{Claim: claim, Checkable: true, How: how}
+}
+
+func asserted(claim, trusting string) Link {
+	return Link{Claim: claim, Checkable: false, Trusting: trusting}
 }
 
 func (h *handlers) verify(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +174,10 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 		return v, subjectRef, credID
 	}
 	v.SignatureValid = true
-	v.TrustChain = append(v.TrustChain, "signed by "+issuerID)
+	// Checkable: the proof is on the credential and the key resolves from the
+	// issuer's own did:web document. This deployment is not in the loop.
+	v.TrustChain = append(v.TrustChain,
+		checkable("signed by "+issuerID, issuerID+" resolves to a DID document carrying the key; the proof is on the credential itself"))
 
 	revoked, err := h.revoked(ctx, doc, issuerKey)
 	if err != nil {
@@ -134,7 +189,12 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 		v.Reasons = append(v.Reasons, "this credential has been withdrawn")
 		return v, subjectRef, credID
 	}
-	v.TrustChain = append(v.TrustChain, "not withdrawn on the deployment's status list")
+	// Checkable: the status list is itself a signed credential, and a bitstring
+	// is designed to be fetched whole so that reading one bit does not tell the
+	// issuer which credential is being checked (§9).
+	v.TrustChain = append(v.TrustChain,
+		checkable("not withdrawn on the deployment's status list",
+			statusListURL(doc)))
 
 	cred, err := parse(doc)
 	if err != nil {
@@ -147,15 +207,24 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 		v.Reasons = append(v.Reasons, "the definition it names could not be resolved: "+err.Error())
 		return v, subjectRef, credID
 	}
-	v.TrustChain = append(v.TrustChain, fmt.Sprintf("measured under %s@%d, %s",
-		def.ID, def.Version, def.Activity.Label))
+	// The definition version is where #69 changed the answer. It used to be
+	// readable only from this deployment's database, which made it an
+	// assertion; now an ACTIVE definition is published to the registry
+	// substrate, and where that substrate is a transparency log the verifier
+	// can resolve the exact version this credential pinned and check its
+	// inclusion proof. Where it is not — the Postgres fallback — the link says
+	// so rather than quietly reading the same either way.
+	v.TrustChain = append(v.TrustChain, h.definitionLink(ctx, def))
 
 	if !issuerAuthorised(def, issuerID) {
 		v.Reasons = append(v.Reasons, fmt.Sprintf(
 			"%s is not an authorised issuer for %s@%d", issuerID, def.ID, def.Version))
 		return v, subjectRef, credID
 	}
-	v.TrustChain = append(v.TrustChain, "the definition names this issuer as authorised")
+	// Follows from the definition, so it is checkable exactly when the
+	// definition is: the authorised-issuer list is part of the verifier face
+	// that gets published.
+	v.TrustChain = append(v.TrustChain, issuerLink(v.TrustChain, issuerID, def))
 
 	assessment, err := h.assessmentFor(ctx, cred.CredentialSubject.Provenance.AdapterRef)
 	if err != nil {
@@ -184,7 +253,86 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 	tier := result.Tier
 	v.Tier = &tier
 	v.Valid = true
+
+	// Stated on a valid verdict, because that is the one a verifier acts on.
+	// Finding #68: a worker's authorization is not published, so whether this
+	// particular person was authorised for this project is not something a
+	// stranger can confirm — and a green verdict reads as though it were.
+	v.NotEstablished = append(v.NotEstablished,
+		"that the subject was authorised to do this work for this programme — "+
+			"a worker's authorization is deliberately not published, because on an "+
+			"append-only log it would be a permanent public record of who works where (#68). "+
+			"This deployment holds that authorization and can attest to it; you cannot check it independently.")
+	if assurance == schema.IdentityAssuranceIA0 {
+		// Distinct from the above and worth its own sentence: the credential
+		// verifies, and nothing here ties it to a person whose identity was
+		// ever checked.
+		v.NotEstablished = append(v.NotEstablished,
+			"that the subject is who they say they are — this deployment holds no identity binding "+
+				"for the credential's subject, so the tier above was computed at the weakest assurance")
+	}
 	return v, subjectRef, credID
+}
+
+// definitionLink resolves where, if anywhere, the verifier can fetch the
+// definition version this credential pinned.
+func (h *handlers) definitionLink(ctx context.Context, def schema.Definition) Link {
+	claim := fmt.Sprintf("measured under %s@%d, %s", def.ID, def.Version, def.Activity.Label)
+
+	var pub struct {
+		Namespace       string `json:"namespace"`
+		Registry        string `json:"registry"`
+		Record          string `json:"record"`
+		RegistryVersion string `json:"registryVersion"`
+		Transparent     bool   `json:"transparent"`
+	}
+	err := h.definitions.Get(ctx, fmt.Sprintf("/v1/definitions/%s/publication?version=%d",
+		url.PathEscape(def.ID), def.Version), &pub)
+	switch {
+	case err != nil:
+		// Not yet published, or the publication could not be read. Either way
+		// the verifier is reading this deployment's copy.
+		return asserted(claim, "this deployment's own record of the definition; it is not resolvable elsewhere")
+	case !pub.Transparent:
+		// The Postgres fallback. Published, in the sense that a record exists —
+		// but with no inclusion proof there is nothing for a verifier to check
+		// that is not just this deployment answering again.
+		return asserted(claim,
+			"this deployment's registry, which is running without a transparency log, so the published copy proves nothing a verifier can check")
+	case h.dediURL == "":
+		return asserted(claim, "this deployment's own record; it does not publish where its registry node can be reached")
+	}
+	return checkable(claim, fmt.Sprintf("%s/dedi/lookup/%s/%s/%s?version_id=%s&proof=inclusion",
+		strings.TrimRight(h.dediURL, "/"), pub.Namespace, pub.Registry,
+		url.PathEscape(pub.Record), url.QueryEscape(pub.RegistryVersion)))
+}
+
+// issuerLink inherits the definition link's checkability, because the
+// authorised-issuer list lives inside the definition. Claiming this is
+// independently checkable when the document it came from is not would be
+// exactly the conflation the Link type exists to prevent.
+func issuerLink(chain []Link, issuerID string, def schema.Definition) Link {
+	claim := fmt.Sprintf("%s is named an authorised issuer by %s@%d", issuerID, def.ID, def.Version)
+	if len(chain) > 0 {
+		if prev := chain[len(chain)-1]; prev.Checkable {
+			return checkable(claim, "the verifier face of the definition record above")
+		}
+	}
+	return asserted(claim, "this deployment's copy of the definition")
+}
+
+// statusListURL is where the verifier fetches the list for themselves. The
+// credential carries it, so this is the credential's own answer rather than
+// this service's.
+func statusListURL(doc map[string]any) string {
+	status, ok := doc["credentialStatus"].(map[string]any)
+	if !ok {
+		return "the status list named by the credential"
+	}
+	if u, ok := status["statusListCredential"].(string); ok && u != "" {
+		return u
+	}
+	return "the status list named by the credential"
 }
 
 // issuerKey resolves the verification key.
