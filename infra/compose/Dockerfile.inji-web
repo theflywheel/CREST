@@ -15,4 +15,9 @@ COPY infra/injiweb/nginx.conf                           /etc/nginx/conf.d/defaul
 COPY infra/mimoto/config/mimoto-issuers-config.json     /home/mosip/mimoto-issuers-config.json
 COPY infra/mimoto/config/mimoto-trusted-verifiers.json  /home/mosip/mimoto-trusted-verifiers.json
 
+COPY --chmod=0755 infra/injiweb/injiweb-start.sh        /injiweb-start.sh
+
 EXPOSE 3004
+
+# The client id is substituted at start, not at build. See injiweb-start.sh.
+ENTRYPOINT ["/bin/sh", "/injiweb-start.sh"]
