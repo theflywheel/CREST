@@ -1,15 +1,10 @@
 #!/bin/bash
 # Certify's entrypoint, wrapping the upstream one.
 #
-# It does one thing: make sure the work-event CSV exists on the data volume
-# before Certify reads it. The file cannot be baked into the image because it is
-# keyed by the pairwise subject eSignet mints for this deployment, and that value
-# does not exist until a worker has authenticated once. The image carries a
-# template; `make certify-bind-subject` replaces it with the real thing.
-#
-# Seeding only when the file is ABSENT is deliberate. Overwriting on every boot
-# would silently undo a binding at the next redeploy, and the symptom —
-# ERROR_FETCHING_IDENTITY_DATA — says nothing about a file having been replaced.
+# It does one thing: make sure the work-event CSV is in place before Certify
+# reads it. The file cannot be baked into the image because it is keyed by the
+# pairwise subject eSignet mints for this deployment, and that value does not
+# exist until a worker has authenticated once.
 set -e
 
 CSV="${CERTIFY_WORK_EVENTS_CSV:-/home/inji/data/work_events.csv}"
@@ -29,11 +24,26 @@ if [ "$(id -u)" = "0" ]; then
     'export PATH=/opt/java/openjdk/bin:$PATH; exec "$@"' -- sh "$0" "$@"
 fi
 
-DATA_DIR="$(dirname "${CERTIFY_WORK_EVENTS_CSV:-/home/inji/data/work_events.csv}")"
-mkdir -p "$DATA_DIR"
-if [ ! -f "${CERTIFY_WORK_EVENTS_CSV:-/home/inji/data/work_events.csv}" ]; then
+mkdir -p "$(dirname "$CSV")"
+
+# Three sources, most specific first.
+#
+# CERTIFY_WORK_EVENTS_B64 is how a deployment supplies the real fixture: the
+# file is keyed by the pairwise subjects eSignet minted for THIS deployment, so
+# it cannot be built at image-build time and there is no shell on a Railway
+# container to write it with. A variable is the platform's own mechanism for
+# "deployment-specific content", and setting it redeploys, which is exactly the
+# restart the CSV needs — the plugin reads the file once at startup, not per
+# request.
+if [ -n "$CERTIFY_WORK_EVENTS_B64" ]; then
+  echo "writing work events from CERTIFY_WORK_EVENTS_B64"
+  echo "$CERTIFY_WORK_EVENTS_B64" | base64 -d > "$CSV"
+elif [ ! -f "$CSV" ]; then
+  # Seeding only when the file is ABSENT is deliberate: overwriting on every
+  # boot would silently undo a binding written onto the volume, and the symptom
+  # — ERROR_FETCHING_IDENTITY_DATA — says nothing about a replaced file.
   echo "seeding work events from the image template"
-  cp /home/inji/config/work_events.csv "${CERTIFY_WORK_EVENTS_CSV:-/home/inji/data/work_events.csv}"
+  cp /home/inji/config/work_events.csv "$CSV"
 fi
 
 exec /home/inji/configure_start.sh "$@"

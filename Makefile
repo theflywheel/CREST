@@ -182,24 +182,25 @@ clean: ## Remove build output
 	rm -rf dist/
 
 # ── Inji Certify (#1) ───────────────────────────────────────────────────────
-# The work-event fixture is keyed by the pairwise subject eSignet mints for
-# this deployment, so it cannot be baked into the image. This resolves the
-# subjects, writes the file onto Certify's data volume, and restarts Certify —
-# the CSV is read once at startup, not per request, so a bind without a restart
-# looks like it did nothing.
+# The work-event fixture is keyed by the pairwise subject eSignet mints for this
+# deployment, so it cannot be baked into the image. This resolves the subjects
+# and sets the file as a Railway variable, which redeploys Certify — and the
+# redeploy is not incidental: the CSV plugin reads the file once at startup, so
+# a bind without a restart looks like it did nothing.
 certify-bind: ## Key the work-event fixture by this deployment's pairwise subjects (#1)
 	@ESIGNET=$(CERTIFY_ESIGNET) MOCK_IDENTITY=$(CERTIFY_MOCK_IDENTITY) \
-		python3 tools/certify/bind-subject.py > $(CURDIR)/.work_events.csv
-	@docker run --rm -v crest_certifydata:/d -v $(CURDIR):/src alpine \
-		sh -c 'cp /src/.work_events.csv /d/work_events.csv && chown 1001:1001 /d/work_events.csv'
-	@rm -f $(CURDIR)/.work_events.csv
-	@docker compose -f infra/compose/docker-compose.yml --profile substrate restart inji-certify
-	@echo "bound; Certify restarting"
+		python3 tools/certify/bind-subject.py | base64 | tr -d '\n' > $(CURDIR)/.work_events.b64
+	@railway variables --service crest-certify \
+		--set "CERTIFY_WORK_EVENTS_B64=$$(cat $(CURDIR)/.work_events.b64)" >/dev/null
+	@rm -f $(CURDIR)/.work_events.b64
+	@echo "bound; setting the variable redeploys Certify, which is the restart the CSV needs"
 
 certify-issue: ## Issue a WorkEventCredential over OpenID4VCI and verify it (#1)
-	@CERTIFY=$(CERTIFY_URL_LOCAL) ESIGNET=$(CERTIFY_ESIGNET) MOCK_IDENTITY=$(CERTIFY_MOCK_IDENTITY) \
+	@CERTIFY=$(CERTIFY_URL) ESIGNET=$(CERTIFY_ESIGNET) MOCK_IDENTITY=$(CERTIFY_MOCK_IDENTITY) \
 		python3 tools/spikes/certify-issue.py
 
-CERTIFY_URL_LOCAL ?= http://localhost:58090
-CERTIFY_ESIGNET ?= http://localhost:58088
-CERTIFY_MOCK_IDENTITY ?= http://localhost:58082
+# Deployed by default. #1 is about whether the substrate works where it is
+# actually going to run, and a laptop-only proof of that is not one.
+CERTIFY_URL ?= https://crest-certify-production.up.railway.app
+CERTIFY_ESIGNET ?= https://crest-esignet-production.up.railway.app
+CERTIFY_MOCK_IDENTITY ?= https://crest-mock-identity-production.up.railway.app
