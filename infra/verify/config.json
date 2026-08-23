@@ -1,0 +1,46 @@
+{
+  "verifiableClaims": [
+    {
+      "logo": "/assets/cert.png",
+      "name": "CREST Work Event",
+      "type": "WorkEventCredential",
+      "essential": true,
+      "clientIdScheme": "did",
+      "definition": {
+        "purpose": "Confirming that a piece of work was recorded, and where the record came from",
+        "format": {
+          "ldp_vc": {
+            "proof_type": [
+              "DataIntegrityProof"
+            ]
+          }
+        },
+        "input_descriptors": [
+          {
+            "id": "work event credential",
+            "format": {
+              "ldp_vc": {
+                "proof_type": [
+                  "DataIntegrityProof"
+                ]
+              }
+            },
+            "constraints": {
+              "fields": [
+                {
+                  "path": [
+                    "$.type"
+                  ],
+                  "filter": {
+                    "type": "object",
+                    "pattern": "WorkEventCredential"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

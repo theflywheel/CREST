@@ -11,7 +11,7 @@ GO ?= go
 
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
-        harness-logs verify-deploy clean todo dedi-image dedi-keys spike-dedi \
+        harness-logs verify-deploy clean todo dedi-image dedi-keys spike-dedi certify-bind certify-issue \
         spike-dedi-deployed spike-esignet verify-deployed hooks generate generate-check \
         e2e-up e2e-run
 
@@ -116,7 +116,9 @@ dedi-keys: ## Generate the DeDi node key and a CREST publisher key
 # shared Postgres over private networking. See docs/DEPLOYMENT.md.
 CREST_DEDI_URL ?= https://crest-dedi-production.up.railway.app
 CREST_REGISTRY_URL ?= https://crest-registry-production.up.railway.app
-CREST_ESIGNET_URL ?= https://crest-esignet-production.up.railway.app
+# The UI is eSignet's public hostname; the API service alone serves none of the
+# URLs its own discovery document advertises. See p0-findings C12.
+CREST_ESIGNET_URL ?= https://crest-esignet-ui-production.up.railway.app
 CREST_MOCK_IDENTITY_URL ?= https://crest-mock-identity-production.up.railway.app
 
 verify-deployed: ## Check the deployed stack answers, and verify its log independently
@@ -180,3 +182,29 @@ verify-deploy: todo ## Smoke a deployed env: make verify-deploy ENV=staging
 clean: ## Remove build output
 	$(GO) clean -cache -testcache
 	rm -rf dist/
+
+# ── Inji Certify (#1) ───────────────────────────────────────────────────────
+# The work-event fixture is keyed by the pairwise subject eSignet mints for this
+# deployment, so it cannot be baked into the image. This resolves the subjects
+# and sets the file as a Railway variable, which redeploys Certify — and the
+# redeploy is not incidental: the CSV plugin reads the file once at startup, so
+# a bind without a restart looks like it did nothing.
+certify-bind: ## Key the work-event fixture by this deployment's pairwise subjects (#1)
+	@ESIGNET=$(CERTIFY_ESIGNET) MOCK_IDENTITY=$(CERTIFY_MOCK_IDENTITY) \
+		python3 tools/certify/bind-subject.py | base64 | tr -d '\n' > $(CURDIR)/.work_events.b64
+	@railway variables --service crest-certify \
+		--set "CERTIFY_WORK_EVENTS_B64=$$(cat $(CURDIR)/.work_events.b64)" >/dev/null
+	@rm -f $(CURDIR)/.work_events.b64
+	@echo "bound; setting the variable redeploys Certify, which is the restart the CSV needs"
+
+certify-issue: ## Issue a WorkEventCredential over OpenID4VCI and verify it (#1)
+	@CERTIFY=$(CERTIFY_URL) ESIGNET=$(CERTIFY_ESIGNET) MOCK_IDENTITY=$(CERTIFY_MOCK_IDENTITY) \
+		python3 tools/spikes/certify-issue.py
+
+# Deployed by default. #1 is about whether the substrate works where it is
+# actually going to run, and a laptop-only proof of that is not one.
+CERTIFY_URL ?= https://crest-certify-production.up.railway.app
+# eSignet's public hostname is its UI, which fronts the API. The API service's
+# own domain serves none of the URLs eSignet advertises. See p0-findings C12.
+CERTIFY_ESIGNET ?= https://crest-esignet-ui-production.up.railway.app
+CERTIFY_MOCK_IDENTITY ?= https://crest-mock-identity-production.up.railway.app

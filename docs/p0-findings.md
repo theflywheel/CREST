@@ -45,6 +45,43 @@ The image audit is complete and it changed the picture. The issuance demo is not
 | C5 | Certify needs database `inji_certify`, schema `certify`, and **`ddl-auto=none`** — the DDL is applied from the upstream repo's `db_scripts`, not created on boot | Operational, and it must be wired into compose init before #1 can proceed. |
 | C6 | Certify's local profile points its authorization server at eSignet on `localhost:8088` | Certify and eSignet come up together or not at all. Affects how #1 and #3 are sequenced: they are one bring-up, not two. |
 
+### Issuance now works end to end against the deployed stack
+
+A `WorkEventCredential` is issued over OpenID4VCI by the deployed Certify, signed
+`eddsa-jcs-2022` by `did:web:crest-certify-production.up.railway.app:v1:certify`,
+and verified by `tools/spikes/certify-issue.py` — nine assertions, including that
+the credential carries provenance facts and **no tier and no identifier**. What
+follows is what standing that up cost, because most of it is invisible until you
+try.
+
+| # | Finding | Effect |
+|---|---|---|
+| C10 | **Certify 0.13.1 and eSignet 1.8.0 do not compose at all.** eSignet signs access tokens PS256; Certify 0.13.1 accepts RS256 only, and the algorithm is not configurable on either side — `JWSSignatureRequestDto` bakes PS256 in, and Certify's decoder has no lever. The failure is a bare `401 Another algorithm expected` | Fixed only by moving to **Certify 0.14.0**, which adds `.jwsAlgorithms(ES256, RS256, PS256)`. Two versions published as a working pair on the same quickstart page cannot in fact exchange a token. Pin both together; treat a Certify upgrade as an eSignet compatibility question. |
+| C11 | **Certify advertises `credential_issuer` as the bare host but serves its well-known at `/v1/certify/.well-known/openid-credential-issuer`.** A client that follows OpenID4VCI — appending the well-known suffix to the advertised issuer — gets a 404 | Mimoto is such a client, and reports `Api not accessible failure`, naming neither the URL nor the mismatch. Worked around by putting the servlet path in the wallet's `credential_issuer_host`. **A third-party wallet has no such workaround**, which makes this a conformance problem, not a configuration one. |
+| C12 | **eSignet's discovery document is only true behind a proxy.** It advertises `authorization_endpoint: <host>/authorize` and `jwks_uri: <host>/.well-known/jwks.json`; the API service serves neither, because MOSIP deploys the login UI and the API under one hostname | Every URL eSignet publishes about itself 404s when it is deployed as a bare service. Fixed by deploying `mosipid/oidc-ui:1.8.0` as `crest-esignet-ui` and vendoring the image's own nginx configuration — the routes were already there; only the upstream host was a Kubernetes name. **eSignet is not a service you deploy, it is two.** |
+| C13 | **Mimoto's `mimoto-bootstrap.properties` must be both vendored and named.** It carries `spring.application.name`, `server.port`, the context path and the OpenAPI block; upstream serves it from a Spring Cloud Config server. `SPRING_CONFIG_NAME=mimoto` loads only `mimoto.properties` and `mimoto-default.properties`, so a vendored copy sits unread | The symptom is an unsatisfied dependency on `securityConfig`; the cause, four levels down, is `property spring.application.name not found`. Nothing in between names the file. `SPRING_CONFIG_NAME=mimoto,mimoto-bootstrap`. |
+| C14 | **Mimoto's OIDC keystore is also the key manager's keystore.** MOSIP generates ROOT and MIMOTO master keys into the same p12 and records the aliases in the database | A container that re-materialises the p12 from a secret on each start finds a DB row naming an alias the file does not contain, and dies with `No such alias` **after Spring has already logged a successful start**. The keystore must be on a volume. Same shape as eSignet's C7/keystore problem, one layer down — this is a pattern in MOSIP services, not an incident. |
+| C15 | **A credential whose display carries no logo cannot be offered to a wallet.** Mimoto rejects the issuer outright with `Invalid Wellknown from Issuer … display[0].logo: must not be null` | The logo is load-bearing metadata, not decoration. Recorded because nothing in Certify's schema marks it required. |
+| C16 | **Certify's CSV data provider keys on the token's `sub`** — the pairwise subject, not any identifier in the file | Right for CREST: the fixture holds no identity number. But it makes the fixture **deployment-bound**, since the subject is only knowable after an authentication against that eSignet. `make certify-bind` re-keys it; the column is still named `individualId` because the plugin's reader names it. |
+| C17 | **The credential type list must match the request exactly, in order.** `VerifiableCredential,WorkEventCredential` works; the reverse fails with `ERROR_SIGNING_QR_DATA: CredentialConfig not found` | The error names the signing step, which is not what went wrong. Cost an hour of looking at the wrong subsystem. |
+| C18 | **The Data Integrity proof config must carry the *document's* `@context`** when verifying, or the signature check fails silently rather than reporting a mismatch | Fixed in `tools/spikes/certify-issue.py`; recorded because a verifier that gets this wrong reports "invalid" for a valid credential, and on this system that is a worker not getting paid. |
+
+**E7 — the pairwise subject is not salted per deployment.** `make certify-bind` was run
+against the deployed eSignet after the same fixtures had been bound against a local one.
+Two deployments, separate databases, no shared configuration — and **identical**
+subject identifiers. The PSUT is therefore a pure function of (individual id,
+`relyingPartyId`), so anyone who knows both can reproduce a worker's subject
+without access to either system. That is weaker than E1's "pairwise" advertisement
+suggests, and it bears directly on the rule that no raw national identifier is ever
+persisted: the pairwise reference is only a protection if it cannot be recomputed
+from the identifier it replaces. Extends E6 and belongs in §4.1.
+
+**V1 — the verifier's signing key ships in a public image with a published password.**
+`inji-verify-service` 0.16.0 contains a PKCS#12 whose password is `mosip`, and
+replacing it with a generated one breaks start-up. Anyone who can pull the image
+holds the key the verifier signs with. Acceptable for a spike; it must be an
+explicit gate before any verification result is trusted by a payer.
+
 **Still open on #1:** issuing a hand-authored `WorkEventCredential` over OpenID4VCI, holding it in a wallet, rendering a printed card via PixelPass, and verifying that card **fully offline**. The offline verification is the part that matters — it is W6 — and it needs a real device with its radios off. A container asserting it has no network is weaker evidence, and the honest place to prove it is the field simulation the test manifest already schedules.
 
 ---

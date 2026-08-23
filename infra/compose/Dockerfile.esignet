@@ -11,4 +11,16 @@ FROM ${ESIGNET_IMAGE}
 
 COPY --chmod=0755 infra/compose/esignet-start.sh /home/mosip/esignet-start.sh
 
+# The keystore directory, created with the right ownership so that a named
+# volume mounted here inherits it. Docker seeds an empty named volume from the
+# image, and creates a bare mount point owned by root if the path does not
+# exist — which eSignet, running as uid 1001, then cannot write to.
+#
+# The keystore itself must persist: the key aliases that point into it live in
+# the database, and a container recreated without it fails to start with
+# `No such alias`. See docs/p0-findings.md.
+USER root
+RUN mkdir -p /home/mosip/keys && chown mosip:mosip /home/mosip/keys
+USER 1001
+
 ENTRYPOINT ["/bin/bash", "/home/mosip/esignet-start.sh"]
