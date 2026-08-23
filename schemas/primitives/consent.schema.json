@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:primitives:consent:1",
+  "title": "Consent",
+  "description": "One of the three consent moments occurred, with scope (§9). The three are distinct objects, never collapsed.",
+  "type": "object",
+  "properties": {
+    "id": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
+    "subjectPartyId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" },
+    "moment": {
+      "type": "string",
+      "enum": ["enrolment", "issuance-confirmation", "disclosure"],
+      "description": "enrolment: the right to fetch and hold evidence. issuance-confirmation: is the draft record true. disclosure: who may see what, per presentation."
+    },
+    "scope": {
+      "type": "object",
+      "description": "What was consented to. For disclosure this names who asked and why — showing the bare QR is itself consent for the non-identifying payload, anything more is explicit and recorded.",
+      "properties": {
+        "purpose": { "type": "string", "minLength": 1 },
+        "requestedByPartyId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" },
+        "fields": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "targetId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" }
+      },
+      "required": ["purpose"],
+      "additionalProperties": false
+    },
+    "captureMethod": {
+      "type": "string",
+      "enum": ["screen", "sms", "ussd", "voice", "assisted"],
+      "description": "Voice recording is a valid capture for non-literate workers (§9)."
+    },
+    "artefactRef": {
+      "type": "string",
+      "description": "Object-store key for a voice recording or signed form. The artefact itself never lives in the database."
+    },
+    "capturedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" },
+    "revokedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" }
+  },
+  "required": ["id", "subjectPartyId", "moment", "scope", "captureMethod", "capturedAt"],
+  "additionalProperties": false
+}

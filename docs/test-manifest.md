@@ -86,15 +86,21 @@ Spikes prove things about **other people's software**, so they live outside the 
 
 | Feature | Issue | How it is proven | Layer | Status |
 |---|---|---|---|---|
-| Eleven primitive schemas | [#12](../../issues/12) | Valid + malformed document pairs per primitive; round-trip through each service | Unit | planned |
-| Trusted Payments profile | [#13](../../issues/13) | Profile expressible with zero primitive changes — asserted by schema diff against #12 | Contract | planned |
-| Canonical evidence record | [#14](../../issues/14) | Adapter conformance suite: every adapter emits records passing the same validator | Contract | planned |
+| Eleven primitive schemas | [#12](../../issues/12) | `make test-contract` — every schema compiles and is reachable by `$id`; the fixture world validates against all of them at load | Contract | partial |
+| Go types cannot drift from the schemas | [#46](../../issues/46) | `make generate-check` in CI — `tools/codegen` regenerates `pkg/schema` and fails if the committed file differs | Lint | covered |
+| The canonical fixture world | [#40](../../issues/40) | `make test-contract` — `tests/fixtures/world.yaml` loads, every object validates, and every named id resolves | Contract | covered |
+| Trusted Payments profile | [#13](../../issues/13) | The three LinkedRecord payload schemas exist and validate, and no primitive schema mentions payments. Profile-needs-no-primitive-change not yet asserted mechanically | Contract | partial |
+| Canonical evidence record | [#14](../../issues/14) | The schema exists and compiles. The adapter conformance suite arrives with the CSV adapter | Contract | partial |
 | Source heartbeat / silence detection | [#14](../../issues/14) | Harness stops a source; asserts a silence alert fires rather than nothing happening | E2E | planned |
-| Strength function `f` | [#15](../../issues/15) | Published test vectors: every tier × every assurance level, plus retroactive upgrade | Unit | planned |
+| Strength function `f` | [#15](../../issues/15) | `pkg/strength/testdata/vectors.json` — nine cases run as a table, readable by a second implementation in any language | Unit | covered |
+| Transport never affects strength | [#15](../../issues/15) | One set of facts through all four transports must give one answer (§8) | Unit | covered |
+| A credential resolves against its pinned definition version | [#15](../../issues/15) | The same facts under v1 and a stricter v2 give different tiers, and v1 does not move | Unit | covered |
+| A re-assessed source downgrades without reissuance | [#15](../../issues/15), [#6](../../issues/6) | A `SourceAssessment` cap changes the tier for an unchanged credential, and the reasoning says so | Unit | covered |
 | WorkEventCredential issuance | [#16](../../issues/16) | Issued credential verifies in Inji Verify; status list entry resolves | E2E | planned |
 | Credential revocation | [#16](../../issues/16) | Status list flip observed by an independent verifier | E2E | planned |
 | Identity provider interface | [#17](../../issues/17) | Same contract satisfied by ≥2 provider classes (eSignet + mobile OTP) | Contract | planned |
-| Bednet definition, three faces | [#18](../../issues/18) | Definition resolves from DeDi; all three faces render; tier map applied | E2E | planned |
+| Bednet definition, three faces | [#18](../../issues/18) | Authored in `tests/fixtures/world.yaml`, validates against the Definition schema, and its tier map drives the strength vectors. Resolving it from DeDi is still to come | Contract | partial |
+| A definition's author is never its ratifier | [#18](../../issues/18), [#21](../../issues/21) | Asserted on the fixture definition. Enforcement in the definitions service is still to come (§7) | Contract | partial |
 
 ## Registry and definitions
 

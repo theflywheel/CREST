@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:primitives:common:1",
+  "title": "Common definitions",
+  "description": "Shapes reused across the eleven primitives. Not a primitive itself.",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^crest:[a-z-]+:[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "crest:<type>:<ULID>. Sortable by creation time, opaque to meaning."
+    },
+    "did": {
+      "type": "string",
+      "pattern": "^did:crest:party:[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "A Party's deployment-local, pairwise DID. 'party', not 'worker': worker is a role a Party holds (§2), and an identifier that names a role cannot be reused when the same person is a supervisor."
+    },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "period": {
+      "type": "object",
+      "properties": {
+        "start": { "$ref": "#/$defs/timestamp" },
+        "end": { "$ref": "#/$defs/timestamp" }
+      },
+      "required": ["start"],
+      "additionalProperties": false
+    },
+    "versionedRef": {
+      "type": "object",
+      "description": "Everything references by versioned identifier (§2). A bare id is a reference that changes meaning underneath the thing holding it.",
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "version": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["id", "version"],
+      "additionalProperties": false
+    },
+    "outcome": {
+      "type": "object",
+      "description": "A quantity of a defined activity. The unit comes from the definition, never from the source system.",
+      "properties": {
+        "value": { "type": "number", "minimum": 0 },
+        "unit": { "type": "string", "minLength": 1 }
+      },
+      "required": ["value", "unit"],
+      "additionalProperties": false
+    },
+    "sourceClass": {
+      "type": "string",
+      "enum": ["national-system", "institutional-system", "programme-system", "supervised-capture", "self-reported"],
+      "description": "What kind of system the record came from. Adapter-attached, never source-asserted (§8)."
+    },
+    "captureMethod": {
+      "type": "string",
+      "enum": ["system-of-record", "digital-capture", "supervised-manual", "unsupervised-manual"],
+      "description": "How the fact was captured at source."
+    },
+    "provenance": {
+      "type": "object",
+      "description": "Attached by the adapter and validated by the pipeline. Whatever the source asserts about its own trustworthiness is ignored (§8). These are the facts the strength function reads; the tier itself is never stored (§6).",
+      "properties": {
+        "sourceClass": { "$ref": "#/$defs/sourceClass" },
+        "captureMethod": { "$ref": "#/$defs/captureMethod" },
+        "adapterRef": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Which adapter version translated the record. Resolvable in the adapter registry, so a verifier can walk evidence back to a known translator."
+        },
+        "receivedAt": { "$ref": "#/$defs/timestamp" },
+        "sourceRecordRef": {
+          "type": "string",
+          "description": "The source system's own identifier for the record. Opaque to CREST."
+        },
+        "sourceExposure": { "$ref": "#/$defs/sourceExposure" }
+      },
+      "required": ["sourceClass", "captureMethod", "adapterRef", "receivedAt", "sourceExposure"],
+      "additionalProperties": false
+    },
+    "sourceExposure": {
+      "type": "string",
+      "enum": ["push-api", "consent-pull", "signed-batch", "supervised-upload"],
+      "description": "The transport a record arrived by. Recorded, and deliberately not an input to strength (\u00a78) — an attester who could raise a tier by choosing how to send the file would have found a way to assert strength."
+    },
+    "identityAssurance": {
+      "type": "string",
+      "enum": ["IA-0", "IA-1", "IA-2", "IA-3"],
+      "description": "Derived from a Party's identity bindings, never asserted (§4.1). Present in a computed view; never a stored field on Party."
+    },
+    "tier": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3,
+      "description": "Never stored. Computed by the strength function at presentation time (§6). Appears only in responses."
+    }
+  }
+}

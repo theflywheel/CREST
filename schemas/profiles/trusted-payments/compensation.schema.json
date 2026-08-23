@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:profiles:trusted-payments:compensation:1",
+  "title": "compensation LinkedRecord payload",
+  "description": "What was actually paid, keyed to a Unit by event_id. Reconciliation compares instructed against confirmed and gives every gap one reason and one owner (§10, W10).",
+  "type": "object",
+  "properties": {
+    "eventId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
+    "instructionId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
+    "amountMinor": { "type": "integer", "minimum": 0 },
+    "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+    "railRef": { "type": "string", "minLength": 1 },
+    "state": { "type": "string", "enum": ["SENT", "CONFIRMED", "FAILED"] },
+    "confirmedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" },
+    "failureReason": {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "explanation": { "type": "string", "minLength": 1 },
+        "ownerPartyId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" }
+      },
+      "required": ["code", "explanation", "ownerPartyId"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["eventId", "instructionId", "amountMinor", "currency", "state"],
+  "additionalProperties": false
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:profiles:trusted-payments:payment-setup:1",
+  "title": "payment-setup LinkedRecord payload",
+  "description": "The rate, keyed to a Definition. Linked by reference, never embedded: a definition is complete and usable with no rate attached, because recognition is a use of its own (§7).",
+  "type": "object",
+  "properties": {
+    "ratePerOutcomeUnit": {
+      "type": "object",
+      "properties": {
+        "amountMinor": { "type": "integer", "minimum": 0, "description": "Minor units. Money is never a float." },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+      },
+      "required": ["amountMinor", "currency"],
+      "additionalProperties": false
+    },
+    "payerPartyId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" },
+    "effectiveFrom": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" }
+  },
+  "required": ["ratePerOutcomeUnit", "payerPartyId", "effectiveFrom"],
+  "additionalProperties": false
+}
