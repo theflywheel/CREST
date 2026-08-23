@@ -145,6 +145,8 @@ func registryFor(kind string) (string, error) {
 		return registryTerms, nil
 	case "authorization":
 		return registryAuthorizations, nil
+	case "instance":
+		return registryInstances, nil
 	default:
 		return "", fmt.Errorf("no registry for fact kind %q", kind)
 	}
@@ -172,12 +174,6 @@ func deliver(d service.Deps) store.Deliverer {
 			return err
 		}
 
-		if _, err := publicationOf(ctx, d.DB.Q(), msg.Kind, msg.ID, msg.Version); err == nil {
-			return nil // already published; a redelivery must not append a second version
-		} else if !errors.Is(err, store.ErrNotFound) {
-			return err
-		}
-
 		face, err := projectFact(ctx, d, msg)
 		switch {
 		case errors.Is(err, ErrNotPublishable):
@@ -188,6 +184,30 @@ func deliver(d service.Deps) store.Deliverer {
 				"kind", msg.Kind, "id", msg.ID, "error", err)
 			return nil
 		case err != nil:
+			return err
+		}
+
+		// Idempotent by CONTENT, not by existence.
+		//
+		// "Publish if absent" is the obvious rule and the wrong one here.
+		// Bootstrap runs on every start, so it would freeze the first answer
+		// forever: a deployment that changed operator or rotated its publisher
+		// key would go on advertising the old one, and the log — the thing a
+		// verifier trusts — would be the most confidently wrong copy in the
+		// system. Republishing only when the content actually changed keeps it
+		// a history rather than a stream of identical entries, and a redelivery
+		// of an unchanged fact still does nothing.
+		digest, err := dedi.Digest(face)
+		if err != nil {
+			return err
+		}
+		switch prev, err := publicationOf(ctx, d.DB.Q(), msg.Kind, msg.ID, msg.Version); {
+		case err == nil && prev.Digest == digest:
+			return nil
+		case err == nil:
+			d.Log.Info("a published fact has changed and is being republished",
+				"kind", msg.Kind, "id", msg.ID, "was", prev.Digest[:12], "now", digest[:12])
+		case !errors.Is(err, store.ErrNotFound):
 			return err
 		}
 
@@ -230,6 +250,18 @@ func projectFact(ctx context.Context, d service.Deps, msg factMessage) (map[stri
 			return nil, err
 		}
 		return termsFace(t), nil
+	case "instance":
+		// Re-read from configuration at delivery time rather than carrying the
+		// document in the queue: a retry after a redeploy should publish what
+		// the deployment is now, not what it was when the message was written.
+		inst, err := loadInstance(d.Config)
+		if err != nil {
+			return nil, err
+		}
+		if d.DeDi != nil {
+			inst.Registry.Transparent = d.DeDi.Transparent()
+		}
+		return instanceFace(inst), nil
 	case "authorization":
 		a, err := getAuthorization(ctx, d.DB.Q(), msg.ID)
 		if err != nil {

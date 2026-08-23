@@ -47,6 +47,10 @@ func routes(mux *http.ServeMux, d service.Deps) {
 
 	// Where a public fact landed on the registry substrate (§3).
 	mux.HandleFunc("GET /v1/publications/{kind}/{id}", h.publication)
+
+	// The deployment's public self-description (#70). Unauthenticated: one
+	// nobody outside can read is one nobody outside can check.
+	mux.HandleFunc("GET /v1/instance", h.getInstance)
 }
 
 type handlers struct {

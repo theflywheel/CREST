@@ -76,6 +76,16 @@ type Options struct {
 	// reaches the node.
 	DeDiRegistries []string
 
+	// OnStart runs once, after migrations and after the registry substrate is
+	// ready, before the service answers anything.
+	//
+	// It exists for bootstrap that belongs to one service rather than to all of
+	// them — publishing the deployment's own self-description, for instance.
+	// A failure here is fatal for the same reason a migration failure is: a
+	// service that started without its bootstrap answers requests it cannot
+	// honour, and the gap surfaces much later as something missing.
+	OnStart func(ctx context.Context, d Deps) error
+
 	Routes Routes
 }
 
@@ -138,6 +148,13 @@ func Main(name string, opts Options) {
 		if opts.Deliver != nil {
 			relay := store.NewRelay(db, opts.Deliver(d), log, clk, time.Second)
 			go relay.Run(ctx)
+		}
+	}
+
+	if opts.OnStart != nil {
+		if err := opts.OnStart(ctx, d); err != nil {
+			log.Error("start-up task failed", "error", err)
+			os.Exit(1)
 		}
 	}
 
