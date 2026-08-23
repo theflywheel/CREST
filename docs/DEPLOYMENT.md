@@ -52,6 +52,21 @@ The cost of that choice is worth stating: CREST services sit alongside a Beckn t
 
 **`crest-dedi` is deliberately a separate node from `dedid`.** CREST's work-definition log should not share a transparency log with a Beckn testnet demo: the origin, the key and the checkpoint history are what a verifier checks, and they should mean "CREST" and nothing else. It is on the same network and can be witnessed by the existing nodes, which is the part worth sharing.
 
+### Two things about Railway's private network that cost a day each
+
+**A service that binds `0.0.0.0` is unreachable.** The private network is IPv6-only,
+so Spring services are started with `SERVER_ADDRESS=::`. The symptom is a timeout,
+not a refusal, and nothing in either service's log mentions an address.
+
+**nginx must be told to re-resolve.** It resolves a literal upstream once, at
+configuration load, and holds that address forever; a redeployed service comes back
+on a different private address, and every proxied request then hangs while the
+upstream sits healthy on its own hostname. Both nginx-fronted services hold the
+upstream in a variable with a `resolver` written at start-up from the container's own
+`/etc/resolv.conf`. Note the second trap in the same fix: **once `proxy_pass` contains
+a variable, nginx stops substituting the matched location prefix**, so it must be
+passed `$request_uri` explicitly or every path under a location collapses onto one.
+
 ### Databases
 
 Two new logical databases on the **existing** Postgres, owned by a non-superuser `crest` role:
