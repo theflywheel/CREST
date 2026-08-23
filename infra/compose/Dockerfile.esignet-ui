@@ -6,10 +6,10 @@ ARG ESIGNET_UI_IMAGE=mosipid/oidc-ui:1.8.0
 FROM ${ESIGNET_UI_IMAGE}
 
 USER root
-COPY infra/esignet-ui/nginx.conf /etc/nginx/conf.d/default.conf
+COPY infra/esignet-ui/nginx.conf /etc/nginx/nginx.conf
 USER 1001
 
-EXPOSE 8080
+EXPOSE 3000
 
 # Restated from the upstream image: the entrypoint generates env-config.js from
 # the environment before nginx starts, and setting ENTRYPOINT would clear the
