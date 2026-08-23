@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:profiles:trusted-payments:payment-instruction:1",
+  "title": "payment-instruction LinkedRecord payload",
+  "description": "What should be paid, keyed to a Unit by event_id only — never inside the credential (§8). Released on every T=7 exit, including dispute: a dispute contests the record, it does not withhold the money (W4).",
+  "type": "object",
+  "properties": {
+    "eventId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
+    "claimId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
+    "payeePartyId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" },
+    "amountMinor": { "type": "integer", "minimum": 0 },
+    "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+    "releasedBy": {
+      "type": "string",
+      "enum": ["self", "auto", "assisted", "dispute"],
+      "description": "Which of the four exits released it. All four are here on purpose — an instruction with no 'dispute' case is a system that quietly withholds pay."
+    },
+    "releasedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" },
+    "heldReason": {
+      "type": "object",
+      "description": "Every held payment has a reason with an owner (W10). Absent unless state is HELD.",
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "explanation": { "type": "string", "minLength": 1 },
+        "ownerPartyId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" }
+      },
+      "required": ["code", "explanation", "ownerPartyId"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["eventId", "claimId", "payeePartyId", "amountMinor", "currency", "releasedBy", "releasedAt"],
+  "additionalProperties": false
+}

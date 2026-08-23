@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:evidence:work-evidence-record:1",
+  "title": "Canonical work-evidence record",
+  "description": "The L1 artefact every class adapter must emit (§8). CREST absorbs heterogeneity; source systems change nothing. A record providing only the mandatory core is valid Tier-1-capable evidence.",
+  "type": "object",
+  "properties": {
+    "activity": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Matched against a Definition's activity code by the evidence pipeline."
+    },
+    "outcome": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/outcome" },
+    "workerJoiningIdentifier": {
+      "type": "object",
+      "description": "Whatever joining identifier the source has. Resolved to a Party by the matching rules (§4.1); no match means the unclear queue, never a silent guess.",
+      "properties": {
+        "kind": { "type": "string", "enum": ["national-id", "phone", "roster-id"] },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "description": "For kind=national-id this is the raw number in transit only. It is resolved at ingestion and discarded — never persisted, not even in fixtures (W9)."
+        }
+      },
+      "required": ["kind", "value"],
+      "additionalProperties": false
+    },
+    "period": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/period" },
+    "geography": { "type": "string", "description": "Coarse only. A raw GPS fix is a rejection, not a truncation." },
+    "enrichment": {
+      "type": "object",
+      "description": "Beneficiary counts, session metadata, supervisor identity, device attestation. Optional, kept verbatim, read only by a definition's tier map."
+    },
+    "provenance": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/provenance" }
+  },
+  "required": ["activity", "outcome", "workerJoiningIdentifier", "period", "provenance"],
+  "additionalProperties": false
+}

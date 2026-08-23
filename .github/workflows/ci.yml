@@ -22,13 +22,17 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
-          # No third-party dependencies yet, so there is no go.sum to key a cache
-          # on. Turn this back on when the first dependency lands.
-          cache: false
+          cache: true
 
       # Layout first: a misplaced file makes every later failure harder to read.
       - name: Structure
         run: make structure
+
+      # schemas/ is the source of truth. A generated file that is behind the
+      # schema it came from is a second, wrong definition of a primitive — the
+      # exact failure schemas/README.md exists to prevent.
+      - name: Generated types are current
+        run: make generate-check
 
       - name: Lint (includes import-boundary rules)
         uses: golangci/golangci-lint-action@v7
@@ -39,12 +43,12 @@ jobs:
         run: make build
 
       - name: Test
-        run: make test-unit
+        run: make test
 
       # -race and -count=1 together: the clock and the mocks are shared state,
       # and a cached pass tells us nothing about a change.
       - name: Test (race, uncached)
-        run: go test -race -count=1 ./pkg/... ./services/... ./tools/...
+        run: go test -race -count=1 ./pkg/... ./services/... ./tools/... ./tests/...
 
   compose:
     name: Compose — config and service images build

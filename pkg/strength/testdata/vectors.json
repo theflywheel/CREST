@@ -1,0 +1,146 @@
+{
+  "about": [
+    "Test vectors for the strength function f (Blueprint §6, issue #15).",
+    "",
+    "These are the executable half of the specification. They are data rather than",
+    "Go so that a second implementation — a verifier written by someone else, in",
+    "another language — can be held to the same answers. If f and these disagree,",
+    "one of them is a bug and the disagreement is the finding.",
+    "",
+    "Unless a case says otherwise, the definition is the bednet definition from",
+    "tests/fixtures/world.yaml: ceiling 3, three rules descending to a floor."
+  ],
+  "cases": [
+    {
+      "name": "national system of record, anchored worker, all fields — the strongest thing this definition awards",
+      "facts": {
+        "sourceClass": "national-system",
+        "captureMethod": "system-of-record",
+        "sourceExposure": "push-api",
+        "presentFields": ["householdId", "beneficiaryCount"],
+        "identityAssurance": "IA-3"
+      },
+      "want": { "acceptable": true, "tier": 3, "matchedRule": 0 }
+    },
+    {
+      "name": "same evidence, contact-verified worker — identity assurance alone drops it a tier",
+      "why": "Tier 1's stated primary risk is identity mapping error (§4.1). The evidence did not get weaker; the claim that this worker is the one it describes did.",
+      "facts": {
+        "sourceClass": "national-system",
+        "captureMethod": "system-of-record",
+        "sourceExposure": "push-api",
+        "presentFields": ["householdId", "beneficiaryCount"],
+        "identityAssurance": "IA-1"
+      },
+      "want": { "acceptable": true, "tier": 2, "matchedRule": 1 }
+    },
+    {
+      "name": "programme system, digital capture, one field, contact-verified",
+      "facts": {
+        "sourceClass": "programme-system",
+        "captureMethod": "digital-capture",
+        "sourceExposure": "consent-pull",
+        "presentFields": ["householdId"],
+        "identityAssurance": "IA-1"
+      },
+      "want": { "acceptable": true, "tier": 2, "matchedRule": 1 }
+    },
+    {
+      "name": "the floor: self-reported, unsupervised, no optional fields, no identity binding",
+      "why": "§8 says a record providing only the mandatory core is valid Tier-1-capable evidence. This is that sentence as a test.",
+      "facts": {
+        "sourceClass": "self-reported",
+        "captureMethod": "unsupervised-manual",
+        "sourceExposure": "supervised-upload",
+        "presentFields": [],
+        "identityAssurance": "IA-0"
+      },
+      "want": { "acceptable": true, "tier": 1, "matchedRule": 2 }
+    },
+    {
+      "name": "a missing required field drops the rule, it does not fail the record",
+      "facts": {
+        "sourceClass": "national-system",
+        "captureMethod": "system-of-record",
+        "sourceExposure": "push-api",
+        "presentFields": [],
+        "identityAssurance": "IA-3"
+      },
+      "want": { "acceptable": true, "tier": 1, "matchedRule": 2 }
+    },
+    {
+      "name": "a compromised source is downgraded on assessment alone, with no reissuance",
+      "why": "The credential is unchanged and still says exactly what it said. What changed is how the deployment regards the source today (§6).",
+      "facts": {
+        "sourceClass": "national-system",
+        "captureMethod": "system-of-record",
+        "sourceExposure": "push-api",
+        "presentFields": ["householdId", "beneficiaryCount"],
+        "identityAssurance": "IA-3"
+      },
+      "assessment": { "maxTier": 1, "reason": "under investigation after a bulk edit" },
+      "want": { "acceptable": true, "tier": 1, "matchedRule": 0, "becauseContains": "under investigation" }
+    },
+    {
+      "name": "an assessment can take a source below what the definition recognises at all",
+      "why": "Not tier 0. Calling it tier 0 invites someone to store it as a number, and a stored zero is a stored judgement.",
+      "facts": {
+        "sourceClass": "national-system",
+        "captureMethod": "system-of-record",
+        "sourceExposure": "push-api",
+        "presentFields": ["householdId", "beneficiaryCount"],
+        "identityAssurance": "IA-3"
+      },
+      "assessment": { "maxTier": 0, "reason": "withdrawn" },
+      "want": { "acceptable": false }
+    },
+    {
+      "name": "the definition's ceiling caps evidence that would otherwise earn more",
+      "tierCeiling": 2,
+      "facts": {
+        "sourceClass": "national-system",
+        "captureMethod": "system-of-record",
+        "sourceExposure": "push-api",
+        "presentFields": ["householdId", "beneficiaryCount"],
+        "identityAssurance": "IA-3"
+      },
+      "want": { "acceptable": true, "tier": 2, "matchedRule": 0, "becauseContains": "ceiling" }
+    },
+    {
+      "name": "a definition with no floor can reject a record outright",
+      "why": "Definitions are allowed to be strict. What they are not allowed to do is be strict by accident, which is why the fixture definition's floor is asserted separately.",
+      "tierMap": [
+        {
+          "tier": 3,
+          "sourceClassIn": ["national-system"],
+          "captureMethodIn": ["system-of-record"],
+          "minIdentityAssurance": "IA-3"
+        }
+      ],
+      "facts": {
+        "sourceClass": "self-reported",
+        "captureMethod": "unsupervised-manual",
+        "sourceExposure": "supervised-upload",
+        "presentFields": [],
+        "identityAssurance": "IA-0"
+      },
+      "want": { "acceptable": false }
+    }
+  ],
+  "transportInvariance": {
+    "about": [
+      "The four transports never influence strength (§8). Run one set of facts",
+      "through all four and the answer must not move. This is separate from the",
+      "cases above because it is a property, not an example: if it ever fails, the",
+      "fix is in f, not in a vector."
+    ],
+    "facts": {
+      "sourceClass": "institutional-system",
+      "captureMethod": "system-of-record",
+      "presentFields": ["householdId", "beneficiaryCount"],
+      "identityAssurance": "IA-3"
+    },
+    "exposures": ["push-api", "consent-pull", "signed-batch", "supervised-upload"],
+    "want": { "acceptable": true, "tier": 3 }
+  }
+}

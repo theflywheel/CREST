@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:primitives:linked-record:1",
+  "title": "LinkedRecord",
+  "description": "A typed, versioned attachment keyed to a Unit, Claim or Definition by identifier — carrying its own lifecycle so the core object is never hostage to it. The extension point: compensation, obligations, endorsements and scores all live here, never in the core.",
+  "type": "object",
+  "properties": {
+    "id": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
+    "type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Defined by a profile, never by the core. The core stores the payload opaquely."
+    },
+    "version": { "type": "integer", "minimum": 1 },
+    "keyedTo": {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["unit", "claim", "definition"] },
+        "id": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" }
+      },
+      "required": ["kind", "id"],
+      "additionalProperties": false
+    },
+    "payload": { "type": "object", "description": "Shape is the profile's business. Validated against the profile's own schema by whatever service owns that profile." },
+    "state": { "type": "string", "minLength": 1, "description": "The record's own lifecycle, independent of the object it is keyed to." },
+    "createdAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" }
+  },
+  "required": ["id", "type", "version", "keyedTo", "payload", "state", "createdAt"],
+  "additionalProperties": false
+}
