@@ -2,7 +2,7 @@
 
 Every feature, and how we know it works. Maintained **by hand** — see [TESTING.md](TESTING.md) for why.
 
-**Status values:** `planned` (no code yet) · `partial` (some layers proven) · `covered` (every listed check passes in CI) · `unproven` (code exists, validation does not — treat as a bug).
+**Status values:** `planned` (no code yet) · `partial` (some layers proven) · `spike` (a check exists and passes, run on demand rather than in CI) · `covered` (every listed check passes in CI) · `unproven` (code exists, validation does not — treat as a bug).
 
 **How to use this file**
 - Adding a feature? Add its row in the same change. A feature with no row is unproven.
@@ -62,7 +62,13 @@ Spikes prove things about **other people's software**, so they live outside the 
 | Upstream image tags exist and match our platform | [#1](../../issues/1), [#3](../../issues/3) | Every tag in `.env.example` checked against the registry and pulled. Found `inji-verify:0.11.0` does not exist and the component is two images | Spike | spike |
 | Registry spike against the **deployed** node | [#2](../../issues/2) | `make spike-dedi-deployed` — same script, real node, public origin. Caught a proof-checker bug that every local run had passed | Spike | spike |
 | Credential issuance → wallet → printed card → offline verify | [#1](../../issues/1) | Recorded demo; offline leg needs a real device with radios off | E2E | planned |
-| eSignet pairwise subject identifier | [#3](../../issues/3) | Round-trip against a **real sandbox** — a mock returns whatever its fixtures say, so it cannot answer this | E2E | planned |
+| eSignet deployed and answering discovery | [#3](../../issues/3) | `make verify-deployed` — discovery is served over the public URL and `issuer` matches the host it was fetched from | Spike | spike |
+| eSignet advertises only pairwise subjects | [#3](../../issues/3) | `subject_types_supported == ["pairwise"]` in the discovery document. **Configuration, not behaviour** — the rows below are the behaviour | Spike | spike |
+| eSignet subject is stable across sessions | [#3](../../issues/3) | `make spike-esignet` — two full authorization-code round-trips per client, same `sub` both times | Spike | spike |
+| eSignet subject is partitioned by relying party | [#3](../../issues/3) | `make spike-esignet` — a client under a different `relyingPartyId` receives a different `sub`; two clients under the same one receive the same `sub` (finding E6) | Spike | spike |
+| The id_token carries no national identifier | [#3](../../issues/3) | `make spike-esignet` — decoded id_token claims are `sub, aud, acr, auth_time, iss, exp, iat, nonce, at_hash`; `individual_id` is never requested (W9) | Spike | spike |
+| eSignet relying-party registration in a real deployment | [#53](../../issues/53) | Not a test, and not P0. A partner conversation, blocked on choosing a pilot geography; the mobile-OTP provider class is the stated fallback | — | planned |
+| `individual_id` is never requested or stored | [#3](../../issues/3) | The claim is offered (finding E2). Proven when the relying-party registration exists and a test asserts the requested claim set excludes it (W9) | Contract | planned |
 
 ## Deployment
 
@@ -140,6 +146,6 @@ Recorded rather than quietly carried:
 
 - **Nothing in the product is `covered` yet** — only the foundations and the P0 spikes are. This file is the specification of proof, written before the thing it proves, which is the intended order.
 - **A `spike` row is not a regression test.** Nothing re-runs `make spike-dedi` automatically, so a DeDi upgrade could break an assumption here without anything going red. That is accepted deliberately for now and closes when #20 puts DeDi behind a CREST interface with contract tests of its own.
-- **Two P0 claims cannot be settled locally at all**: offline verification (#1) needs a device with its radios off, and pairwise subject identity (#3) needs a real eSignet sandbox, because a mock will happily return a pairwise subject whether or not production does.
+- **One P0 claim cannot be settled locally at all**: offline verification (#1) needs a device with its radios off. Pairwise subject identity (#3) was listed here too and that was wrong twice over: self-hosted eSignet runs the same code a sandbox runs, so it answered the question; and "production access" was never a sandbox at all but a relying-party registration by a country's identity authority, which is [#53](../../issues/53) and waits on a pilot geography.
 - **Offline verification (W6) needs real hardware.** A container asserting it has no network is weaker evidence than a phone in a field with no signal. The plan schedules a field simulation in week 12; W6's status stays `partial` until that happens, however green CI is.
 - **Rail behaviour is only ever proven against a sandbox** until production. Sandboxes lie about failure modes — treat the first real payment run as a test, with someone watching.

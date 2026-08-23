@@ -4,7 +4,7 @@ Where the substrates differ from what the design assumed. **In progress** — #2
 
 Each entry names the blueprint section it touches and the correction it forces. Entries that only cost us operational work are marked as such; entries that change the design are not.
 
-Last updated 2026-08-22.
+Last updated 2026-08-23.
 
 ---
 
@@ -49,15 +49,59 @@ The image audit is complete and it changed the picture. The issuance demo is not
 
 ---
 
-## Identity — eSignet (#3) · Blueprint §4 · **not started**
+## Identity — eSignet (#3) · Blueprint §4 · **settled**
 
-The image is pulled and the tag is confirmed (C3), and C6 means it will be brought up alongside Certify. Nothing has been verified about the thing #3 actually asks:
+~~None of that can be answered against a local mock.~~ **That claim was wrong, and worth correcting rather than quietly dropping.** It conflated two different questions. Whether the subject identifier is pairwise is a property of eSignet's *code*, and self-hosted eSignet is the same code a sandbox runs — so it is answerable by anyone willing to deploy it. The second half of #3's "done when" — production access — was also mis-scoped, and has been moved to [#53](../../issues/53). It is not a sandbox question. In a pilot, eSignet is the one the country's identity authority runs; being a relying party there means *they* register CREST. That is a partner conversation which cannot start before the pilot geography is chosen, and no part of it was blocking the technical answer.
 
-- whether the subject identifier is **pairwise per relying party** and stable across sessions — §4.1 assumes both;
-- which claims come back, and which of them CREST must never persist (W9);
-- what production access requires and how long it takes.
+eSignet 1.8.0 and mock-identity 0.13.0 now run on Railway against their own logical databases. Discovery is public:
 
-None of that can be answered against a local mock: a mock identity system will return whatever its fixtures say, including a pairwise subject, whether or not the real deployment does. **#3 needs a real sandbox and a relying-party registration**, and that is a conversation with a lead time, not a task. Like the rail sandbox (#19), it should be opened now rather than when the phase reaches it.
+    https://crest-esignet-production.up.railway.app/v1/esignet/oidc/.well-known/openid-configuration
+
+**E1 — `subject_types_supported` is `["pairwise"]`, and only that.** eSignet advertises no `public` option, which is stronger than §4.1 assumed: pairwise is not a mode CREST selects and could misconfigure, it is the only mode on offer. What it *advertises* is not evidence on its own, so the round-trip below settles the rest.
+
+**E6 — the subject is pairwise per *relying party*, not per client, and #3's premise needed that correction.** `tools/spikes/esignet-pairwise.py` (`make spike-esignet`) drives two complete authorization-code flows for each of three registered clients against one mock identity, and compares the four subjects:
+
+| Clients | `relyingPartyId` | Result |
+|---|---|---|
+| `crest-rp-a`, two sessions | `crest` | identical `sub` — **stable** |
+| `crest-rp-a` vs `crest-rp-b` | both `crest` | **identical `sub`** |
+| `crest-rp-a` vs `crest-rp-c` | `crest` vs `other-programme` | different `sub` — **partitioned** |
+
+So the identifier is stable across sessions, which is what a work history needs, and it is partitioned — but the partition boundary is the **relying party**, not the OIDC client. Registering a second client id does not get you a second pseudonym.
+
+That is a design correction, not a defect. §4.1 should say plainly that **`relyingPartyId` is the pairwise partition key**, with two consequences: CREST's own clients must share one relying-party id or a worker will look like two people; and two *programmes* that must not correlate their workers need **different** relying-party ids, which is a registration-time decision nobody can fix afterwards. Getting it wrong in either direction is silent — the identifiers simply are, or are not, the same.
+
+**The id_token carries no `individual_id`.** The subject is the only identifier the RP receives (`sub`, `aud`, `acr`, `auth_time`, `iss`, `nonce`, `at_hash`), which is the shape W9 wants; E2 remains the thing to keep out of the registration.
+
+**E2 — `claims_supported` includes `individual_id`.** The claim set is `name, address, gender, birthdate, picture, email, phone_number, individual_id, phone_number_verified, registration_type, updated_at`. `individual_id` is a national identifier: **requesting it would put CREST one careless persist away from breaking W9.** The scope-to-claim mapping is configuration, so this belongs in the relying-party registration as an explicit exclusion, not in a code review later. §4.1 should name the claims CREST requests and say plainly that `individual_id` is not one of them.
+
+**E3 — the issuer is whatever `mosip.esignet.host` says, and it defaults to `localhost:8088`.** The local profile hard-codes it, so a deployment that does not override it publishes a discovery document advertising `http://localhost:8088` as its issuer — served over a public HTTPS URL, and self-consistent enough to look fine. Same shape as R6 for DeDi: **an identity that defaults to a development value and is not checked against where the service actually is.** Set `MOSIP_ESIGNET_HOST` and `MOSIP_ESIGNET_DOMAIN_URL` before first boot; verifying deployment means fetching the discovery document and comparing `issuer` to the host you fetched it from.
+
+**E4 — keys are minted on first boot and the alias survives a keystore change.** eSignet and mock-identity both write `key_alias` rows on startup and load the material from the configured keystore. Change the keystore backend and the aliases persist while the material does not, and every subsequent boot dies on `Key in DBStore does not exist for this alias. So fetching the certificate from HSM.` — which names HSM even when no HSM is configured, so it reads like a missing dependency rather than the stale row it is. Recovery is truncating `key_alias` and `key_store`. **A third instance of the same class as R6 and E3**: substrate components mint an identity at first boot and give you no signal that it no longer matches the configuration around it. Worth stating as a rule — *for anything that mints its own identity, set the identity before first boot and verify it from outside afterwards.*
+
+**E5 — the deployed stack uses a PKCS12 keystore, and says so.** The log carries `IT IS SUGGESTED NOT TO USE PKCS12 KEYSTORE TYPE IN PRODUCTION ENVIRONMENT`. That is fine for a spike and **not fine for a pilot**; it is the same question as G1 #7 (key custody), and the deployed environment is now a concrete argument for settling it. Recorded here so that no one later mistakes "it worked in the spike" for "the key handling was reviewed".
+
+### C7 — the published eSignet quickstart cannot start on any host that is not root
+
+Both images share an entrypoint (`configure_start.sh`) that installs a PKCS#11 HSM client. It skips that step only when the profile is **exactly** the string `local`:
+
+    if [ "$active_profile_env" != "local" ]; then   # ... install HSM client ...
+
+Every published quickstart, including MOSIP's own `docker-compose.yml`, sets `default,local`. That is not equal to `local`, so **the skip never fires and the installer always runs.** It ends in `sudo ./install.sh`, which needs a terminal; MOSIP's compose gets away with it only by running `user: root`. On any platform that will not let you override the container user — Railway among them — the container fails, and because `mv` collides with the directory the previous attempt left behind, it fails differently on each restart and never with a clear cause.
+
+Dodging it by setting the profile to `local` alone does not work either: `application-local.properties` is a 55-line overlay on a 460-line `application-default.properties`, so `local` by itself is missing most of eSignet's configuration. It boots far enough to look promising and dies on the first `@Value` with no default (`mosip.esignet.header-filter.paths-to-validate`). **The profile CREST needs is the profile that triggers the bug**, so the entrypoint is what had to go: `infra/compose/Dockerfile.esignet` rebuilds both images with `esignet-start.sh`, which keeps the plugin-loading step and drops the HSM installer.
+
+This is upstream's bug, not ours, and it is worth reporting. It also means **CREST is running eSignet in a configuration its maintainers do not test**, which is a thing to say out loud before a pilot rather than after.
+
+### C8 — the authenticate endpoint is guarded by a header the server never sends
+
+`/authorization/**` requires `oauth-details-key` (the transaction id) and `oauth-details-hash`. Neither appears in any response: the client is expected to compute `base64url(sha256(<the response object, verbatim>))` itself, over the exact bytes eSignet serialised — re-serialising the parsed object changes key order and the hash no longer matches. Omit the headers and every call answers `invalid_transaction`, which reads like an expired session rather than a missing header, and sends you looking at cache configuration.
+
+Operational, but it costs a day if you meet it cold, and it means **an eSignet client cannot be written from the OpenAPI document alone**. Recorded here so the CREST identity adapter (#12) starts from the working sequence in `tools/spikes/esignet-pairwise.py` rather than rediscovering it. The same applies to CSRF: these endpoints need a token from `/csrf/token` and its cookie, and without them the answer is a bare `403` with an empty body.
+
+### C9 — a registered client's public key cannot be rotated
+
+`client_detail` uniquely indexes the public key hash, and the update API has no `publicKey` field. Lose the private key and that client id can never authenticate again; there is no rotation path short of a database edit. The spike sidesteps it by deriving the client id from the key, but **a pilot needs an answer to "the RP key was compromised, now what"** before it registers a long-lived client. Input to G1 #7 alongside E5.
 
 ---
 
@@ -75,7 +119,9 @@ The lesson is not about base64. It is that **a test suite built entirely from on
 - `Makefile` — `dedi-image`, `dedi-keys`, `spike-dedi`.
 - A requirement on #20: reject unknown query parameters (R3).
 - `docs/DEPLOYMENT.md` — the deployed environment, and what is *not* set up in it.
+- A requirement on §4.1 and #12: `relyingPartyId` is the pairwise partition key, and CREST's clients must share one (E6).
+- `Makefile` — `spike-esignet`, and `verify-deployed` now checks eSignet's advertised issuer against where it was fetched from (E3).
 
 ## What it does not change
 
-No primitive, credential shape or evidence-contract decision moves on the strength of what is here. §3 stands as written; §5 and §4 have not yet been tested where they make their riskiest claims — offline verification and pairwise identity respectively. **This memo cannot close, and Phase 1 schemas cannot freeze, on an image audit.**
+No primitive, credential shape or evidence-contract decision moves on the strength of what is here. §3 stands as written. §4's riskiest claim has now been tested and mostly holds — the subject is stable and partitioned — but E6 moves *where* the partition falls, which §4.1 must state. §5 has not yet been tested where it makes its riskiest claim: offline verification. **This memo cannot close, and Phase 1 schemas cannot freeze, until #1 has shown a credential verified offline.**

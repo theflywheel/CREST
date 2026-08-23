@@ -1,0 +1,14 @@
+# eSignet, with the upstream entrypoint replaced.
+#
+# Thin on purpose: same jar, same plugins, same profile — only the startup
+# script differs. See infra/compose/esignet-start.sh for why, and
+# docs/p0-findings.md for what it means for a real deployment.
+#
+# ESIGNET_IMAGE is pinned in infra/compose/.env.example. Overriding it here
+# means the Dockerfile and compose can never disagree about the version.
+ARG ESIGNET_IMAGE=mosipid/esignet-with-plugins:1.8.0
+FROM ${ESIGNET_IMAGE}
+
+COPY --chmod=0755 infra/compose/esignet-start.sh /home/mosip/esignet-start.sh
+
+ENTRYPOINT ["/bin/bash", "/home/mosip/esignet-start.sh"]
