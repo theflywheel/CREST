@@ -17,10 +17,17 @@
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
         "sourceExposure": "push-api",
-        "presentFields": ["household_id", "beneficiary_count"],
+        "presentFields": [
+          "household_id",
+          "beneficiary_count"
+        ],
         "identityAssurance": "IA-3"
       },
-      "want": { "acceptable": true, "tier": 3, "matchedRule": 0 }
+      "want": {
+        "acceptable": true,
+        "tier": 3,
+        "matchedRule": 0
+      }
     },
     {
       "name": "same evidence, contact-verified worker — identity assurance alone drops it a tier",
@@ -29,10 +36,17 @@
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
         "sourceExposure": "push-api",
-        "presentFields": ["household_id", "beneficiary_count"],
+        "presentFields": [
+          "household_id",
+          "beneficiary_count"
+        ],
         "identityAssurance": "IA-1"
       },
-      "want": { "acceptable": true, "tier": 2, "matchedRule": 1 }
+      "want": {
+        "acceptable": true,
+        "tier": 2,
+        "matchedRule": 1
+      }
     },
     {
       "name": "programme system, digital capture, one field, contact-verified",
@@ -40,10 +54,16 @@
         "sourceClass": "programme-system",
         "captureMethod": "digital-capture",
         "sourceExposure": "consent-pull",
-        "presentFields": ["household_id"],
+        "presentFields": [
+          "household_id"
+        ],
         "identityAssurance": "IA-1"
       },
-      "want": { "acceptable": true, "tier": 2, "matchedRule": 1 }
+      "want": {
+        "acceptable": true,
+        "tier": 2,
+        "matchedRule": 1
+      }
     },
     {
       "name": "the floor: self-reported, unsupervised, no optional fields, no identity binding",
@@ -55,7 +75,11 @@
         "presentFields": [],
         "identityAssurance": "IA-0"
       },
-      "want": { "acceptable": true, "tier": 1, "matchedRule": 2 }
+      "want": {
+        "acceptable": true,
+        "tier": 1,
+        "matchedRule": 2
+      }
     },
     {
       "name": "a missing required field drops the rule, it does not fail the record",
@@ -66,7 +90,11 @@
         "presentFields": [],
         "identityAssurance": "IA-3"
       },
-      "want": { "acceptable": true, "tier": 1, "matchedRule": 2 }
+      "want": {
+        "acceptable": true,
+        "tier": 1,
+        "matchedRule": 2
+      }
     },
     {
       "name": "a compromised source is downgraded on assessment alone, with no reissuance",
@@ -75,11 +103,22 @@
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
         "sourceExposure": "push-api",
-        "presentFields": ["household_id", "beneficiary_count"],
+        "presentFields": [
+          "household_id",
+          "beneficiary_count"
+        ],
         "identityAssurance": "IA-3"
       },
-      "assessment": { "maxTier": 1, "reason": "under investigation after a bulk edit" },
-      "want": { "acceptable": true, "tier": 1, "matchedRule": 0, "becauseContains": "under investigation" }
+      "assessment": {
+        "maxTier": 1,
+        "reason": "under investigation after a bulk edit"
+      },
+      "want": {
+        "acceptable": true,
+        "tier": 1,
+        "matchedRule": 0,
+        "becauseContains": "under investigation"
+      }
     },
     {
       "name": "an assessment can take a source below what the definition recognises at all",
@@ -88,11 +127,19 @@
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
         "sourceExposure": "push-api",
-        "presentFields": ["household_id", "beneficiary_count"],
+        "presentFields": [
+          "household_id",
+          "beneficiary_count"
+        ],
         "identityAssurance": "IA-3"
       },
-      "assessment": { "maxTier": 0, "reason": "withdrawn" },
-      "want": { "acceptable": false }
+      "assessment": {
+        "maxTier": 0,
+        "reason": "withdrawn"
+      },
+      "want": {
+        "acceptable": false
+      }
     },
     {
       "name": "the definition's ceiling caps evidence that would otherwise earn more",
@@ -101,10 +148,18 @@
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
         "sourceExposure": "push-api",
-        "presentFields": ["household_id", "beneficiary_count"],
+        "presentFields": [
+          "household_id",
+          "beneficiary_count"
+        ],
         "identityAssurance": "IA-3"
       },
-      "want": { "acceptable": true, "tier": 2, "matchedRule": 0, "becauseContains": "ceiling" }
+      "want": {
+        "acceptable": true,
+        "tier": 2,
+        "matchedRule": 0,
+        "becauseContains": "ceiling"
+      }
     },
     {
       "name": "a definition with no floor can reject a record outright",
@@ -112,8 +167,12 @@
       "tierMap": [
         {
           "tier": 3,
-          "sourceClassIn": ["national-system"],
-          "captureMethodIn": ["system-of-record"],
+          "sourceClassIn": [
+            "national-system"
+          ],
+          "captureMethodIn": [
+            "system-of-record"
+          ],
           "minIdentityAssurance": "IA-3"
         }
       ],
@@ -124,7 +183,46 @@
         "presentFields": [],
         "identityAssurance": "IA-0"
       },
-      "want": { "acceptable": false }
+      "want": {
+        "acceptable": false
+      }
+    },
+    {
+      "name": "an external institution's own system record earns the top tier — G1 #8, and it is the letterhead that does NOT do it",
+      "facts": {
+        "sourceClass": "institutional-system",
+        "captureMethod": "system-of-record",
+        "sourceExposure": "manual-upload",
+        "presentFields": [
+          "household_id",
+          "beneficiary_count"
+        ],
+        "identityAssurance": "IA-3"
+      },
+      "want": {
+        "acceptable": true,
+        "tier": 3,
+        "matchedRule": 0
+      }
+    },
+    {
+      "name": "the same institution, hand-keyed — who the source is does not make a typed row a system record",
+      "facts": {
+        "sourceClass": "institutional-system",
+        "captureMethod": "unsupervised-manual",
+        "sourceExposure": "push-api",
+        "presentFields": [
+          "household_id",
+          "beneficiary_count"
+        ],
+        "identityAssurance": "IA-3"
+      },
+      "want": {
+        "acceptable": true,
+        "tier": 1,
+        "matchedRule": 2,
+        "becauseContains": "unsupervised-manual"
+      }
     }
   ],
   "transportInvariance": {
@@ -137,10 +235,21 @@
     "facts": {
       "sourceClass": "institutional-system",
       "captureMethod": "system-of-record",
-      "presentFields": ["household_id", "beneficiary_count"],
+      "presentFields": [
+        "household_id",
+        "beneficiary_count"
+      ],
       "identityAssurance": "IA-3"
     },
-    "exposures": ["push-api", "consent-pull", "signed-batch", "supervised-upload"],
-    "want": { "acceptable": true, "tier": 3 }
+    "exposures": [
+      "push-api",
+      "consent-pull",
+      "signed-batch",
+      "supervised-upload"
+    ],
+    "want": {
+      "acceptable": true,
+      "tier": 3
+    }
   }
 }

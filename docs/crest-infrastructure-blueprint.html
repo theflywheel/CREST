@@ -58,6 +58,10 @@ td{padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top;}
 .tag.crest{background:var(--accent-soft); color:var(--accent);}
 .tag.dedi{background:var(--dedi-soft); color:var(--dedi);}
 .tag.open{background:var(--amber-soft); color:var(--amber);}
+/* A settled decision reads differently from an open one at a glance. It reuses
+   the accent rather than introducing a colour, because "settled" is the
+   ordinary state and only "open" needs to catch the eye. */
+.tag.ok{background:var(--accent-soft); color:var(--accent);}
 .callout{border-left:3px solid var(--accent); background:var(--card); padding:14px 18px; margin:18px 0; border-radius:0 6px 6px 0;}
 .callout.warn{border-left-color:var(--amber);}
 .callout p:last-child{margin-bottom:0;}
@@ -241,7 +245,7 @@ figcaption{font-size:.82rem; color:var(--muted); margin-top:10px; max-width:70ch
 <tr><td>Workers, Consent, Disputes, <em>workers' authorizations</em></td><td><span class="tag crest">Private store</span></td><td>Personal data; never leaves the country; never in a log anyone can mirror</td></tr>
 <tr><td>Credentials</td><td><em>nowhere</em></td><td>Deliberately no register — the worker's wallet is the only complete copy; the status list (§9) is the single central fact</td></tr>
 </table></div>
-<p><strong>Global vs national.</strong> One DeDi node per national deployment, plus one global node holding only: deployment public keys, credential schemas, skill taxonomy, and signed work-definition mirrors (no personal data by construction — nothing personal is ever on any DeDi node). National and global nodes witness each other, so neither can rewrite history unobserved. DeDi-node's current operator-gated onboarding matches the recommended org-onboarding default (§14): governance decisions as log entries.</p>
+<p><strong>Global vs national.</strong> One DeDi node per national deployment, plus one global node holding only: deployment public keys, credential schemas, skill taxonomy, and signed work-definition mirrors (no personal data by construction — nothing personal is ever on any DeDi node). National and global nodes witness each other, so neither can rewrite history unobserved. DeDi-node's current operator-gated onboarding matches the org-onboarding default settled at G1 (§14, <a href="https://github.com/theflywheel/CREST/issues/6">#6</a>): a human approves, and the decision is a log entry rather than a row only the operator can see.</p>
 
 <h2 id="s4">4 · Identity and the worker record</h2>
 <p>The worker record is deliberately minimal and the binding deliberately late:</p>
@@ -277,8 +281,10 @@ figcaption{font-size:.82rem; color:var(--muted); margin-top:10px; max-width:70ch
   period:         { start, end }
   quantity:       { value, unit }              # unit from the definition
   evidence:                                    # provenance FACTS only (§6)
-    sourceClass:    DHIS2 | HCM | COMMCARE | BATCH | SUPERVISOR_ENTRY | WORKER_ASSERTED
-    captureMethod:  SYSTEM_RECORD | FORM_ENTRY | SELF_REPORT
+    sourceClass:    national-system | institutional-system | programme-system
+                    | supervised-capture | self-reported
+    captureMethod:  system-of-record | digital-capture | supervised-manual
+                    | unsupervised-manual
     adapterRef:     { urn, version }
   issuerAuthority:  { orgId, qualificationRef, grantRef }  # walkable on DeDi
 credentialStatus:   BitstringStatusList entry  (§9)</code></pre>
@@ -288,6 +294,18 @@ credentialStatus:   BitstringStatusList entry  (§9)</code></pre>
 <p>This resolves the contradiction between the concept note ("tier is a first-class property of every credential") and the journeys ("strength is never stored"). The rule, stated as infrastructure:</p>
 <div class="callout"><p><strong>The credential stores provenance facts. The tier is a pure function, evaluated at presentation time:</strong> <code>tier = f(evidence facts, definition@version's evidence-to-tier map, current source-assessment)</code>. It is always <em>displayed</em> — to worker and verifier alike — never <em>written</em>.</p></div>
 <p>Consequences that make this the right L1 rule: re-assessing a compromised source system downgrades every affected credential's tier instantly, without reissuance; versioning a definition never strands old credentials (they resolve against their pinned version); no attester can inflate strength by asserting it — strength is derived from <em>how evidence arrived</em>, and transport never affects it. The function <code>f</code> itself is L1 (identical everywhere); the evidence-to-tier <em>mappings</em> are L2 data inside each definition.</p>
+
+<p><strong>Settled at G1 (<a href="https://github.com/theflywheel/CREST/issues/5">#5</a>): derived, with nothing on the credential.</strong> The concept note's reading was heard and not taken. A stored tier freezes a judgement verifiers should be free to make differently, and — the part that decided it — it cannot be raised when a worker binds an identity anchor a year later, so the worker who most needs their record to improve is the one it would be frozen against. Carrying the tier on the credential "as a convenience, clearly marked non-authoritative" was considered and rejected for the ordinary reason: the marked-non-authoritative field is the one every implementer reads.</p>
+
+<p><strong>Settled at G1 (<a href="https://github.com/theflywheel/CREST/issues/8">#8</a>): an external institution is <code>institutional-system</code>, and how its evidence arrived caps the tier independently.</strong> The open question was what class evidence carries when it comes from a hospital system, a training provider or a government programme that is <em>not</em> CREST-integrated — no adapter, no signed batch.</p>
+
+<p>The answer keeps the two dimensions orthogonal, because they answer different questions. <code>sourceClass</code> names <strong>who the source is</strong>; <code>captureMethod</code> names <strong>how the record was produced</strong>. An unintegrated national hospital is <code>institutional-system</code> — that is what it is — and reaches Tier 3 only where its records are <code>system-of-record</code>: generated by the system in the course of its work. The same hospital's staff typing rows into a form is <code>institutional-system</code> with <code>unsupervised-manual</code> capture, and the letterhead does not raise it, because nothing about who an organisation is makes a hand-keyed row a system record.</p>
+
+<p>Note what is deliberately <em>not</em> in that sentence: whether the batch arrived signed. Transport never affects strength (above), <code>sourceExposure</code> is carried and never read by <code>f</code>, and there is a test asserting it. A rule that let a signed upload raise a tier would let an attester inflate strength by choosing a channel, which is the exact failure §6's rule exists to prevent — and it would penalise the deployment that has to accept an emailed CSV from a hospital whose records are perfectly real.</p>
+
+<p>Two alternatives were rejected for the same underlying reason: a new <code>external-institution</code> class, and demoting the unintegrated to <code>programme-system</code>, both encode <em>how they integrated</em> into a field that means <em>who they are</em>, after which the field can answer neither question. No new class and no change to <code>f</code> — and integrating that hospital later changes nothing about what it is.</p>
+
+<p><strong>A correction that came with #8.</strong> §8's credential sketch used to enumerate <code>sourceClass</code> as <code>DHIS2 | HCM | COMMCARE | BATCH | …</code> — product names. That cannot be right and the schema had already diverged from it: which vendor a record came from is not a trust property, it is a procurement fact, and a class list that names products has to be edited every time a country buys something. The enumeration above is now the one in <code>schemas/primitives/</code>.</p>
 
 <h2 id="s7">7 · Work definition lifecycle</h2>
 <p>The definition is the object every other component reads, so its lifecycle is infrastructure even though its contents are pure configuration:</p>
@@ -386,10 +404,10 @@ provenance (adapter-attached, never source-asserted):
 <h2 id="s14">14 · Open decisions and chosen defaults</h2>
 <div class="tblwrap"><table>
 <tr><th>Decision</th><th>Default this blueprint assumes</th><th>Status</th></tr>
-<tr><td>Org onboarding (five options)</td><td>Self-registration with automated national-register check; human decides only where the check can't run — recorded as DeDi log entries</td><td><span class="tag open">Open — governance call</span></td></tr>
+<tr><td>Org onboarding (five options)</td><td><strong>Settled at G1 (<a href="https://github.com/theflywheel/CREST/issues/6">#6</a>): configuration, defaulting to manual.</strong> The state machine — apply → accept terms → approve, with author ≠ approver enforced in code and in a CHECK constraint — is infrastructure. <em>Who</em> approves is not: a pilot with three partner NGOs and a national rollout with four hundred would reasonably disagree, and both are still CREST, so it fails the layering test for L1. <code>REGISTRY_ORG_APPROVAL</code> selects it, and the default is manual because an approval that happens by itself is one nobody remembers granting — the safe default for a system whose records decide whether someone gets paid is the one that leaves a person's name on it. The automated national-register check this row used to assume is a <em>third</em> model, not yet built; it slots in as another value rather than as a change to the machine</td><td><span class="tag ok">Settled — G1</span></td></tr>
 <tr><td>Key custody</td><td>Single deployment signing key; specifier/issuer split structural; per-org DIDs deferred to federation</td><td><span class="tag crest">Default, reversible</span></td></tr>
 <tr><td>Credential format</td><td><strong>eddsa-jcs-2022</strong> (Ed25519 over JCS-canonicalised JSON) now; SD-JWT for selective disclosure in phase 2. <em>Corrected from JSON-LD/Ed25519 (finding #60):</em> verifying a JSON-LD signature requires RDF canonicalisation and a resolvable context document, and a verifier who must fetch a URL is not an offline verifier — which is the property W7 exists for</td><td><span class="tag crest">Default, staged</span></td></tr>
-<tr><td>Tier semantics</td><td>Facts stored, tier derived (§6) — needs sign-off since it reconciles two docs</td><td><span class="tag open">Needs team ratification</span></td></tr>
+<tr><td>Tier semantics</td><td><strong>Settled at G1 (<a href="https://github.com/theflywheel/CREST/issues/5">#5</a>): facts stored, tier derived (§6).</strong> Ratified as the blueprint assumed. See §6 for what decided it — a stored tier cannot be raised when a worker binds an anchor later, so it would be frozen hardest against the worker who most needs it to move</td><td><span class="tag ok">Settled — G1</span></td></tr>
 <tr><td>Review window T</td><td>7 days, per the readout; configurable per definition within L1 bounds (min/max are L1)</td><td><span class="tag crest">Default</span></td></tr>
 <tr><td>Global steward</td><td>Global DeDi node operated by CREST now; witness ring makes later handover to a multilateral body a key ceremony, not a migration</td><td><span class="tag open">Open — strategy call</span></td></tr>
 </table></div>
