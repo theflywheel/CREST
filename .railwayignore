@@ -6,3 +6,14 @@ infra/compose/dedi-keys/
 node_modules/
 docs/reference/
 .claude/
+
+# Locally built service binaries. They are gitignored but `railway up` uploads
+# the working directory, not the git tree — 80MB of Go binaries per deploy,
+# rebuilt inside the image anyway.
+/registry
+/definitions
+/evidence
+/confirmation
+/verification
+/payments
+/notify
