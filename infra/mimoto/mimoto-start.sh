@@ -30,7 +30,10 @@ CERTS_DIR="$CONFIG_DIR/certs"
 if [ "$(id -u)" = "0" ]; then
   mkdir -p "$CERTS_DIR"
   chown -R 1002:1001 "$CERTS_DIR"
-  exec setpriv --reuid=1002 --regid=1001 --clear-groups /bin/sh "$0" "$@"
+  # BusyBox's setpriv has no --reuid, so `su` it is. PATH is restated because
+  # `su` rebuilds it from login defaults and java would not be found.
+  exec su mosip -s /bin/sh -c \
+    'export PATH=/opt/java/openjdk/bin:$PATH; exec "$@"' -- sh "$0" "$@"
 fi
 
 mkdir -p "$CERTS_DIR"
