@@ -65,6 +65,10 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		return insertDefinition(r.Context(), tx, def)
 	}); err != nil {
+		if errors.Is(err, ErrAlreadyExists) {
+			httpx.WriteError(w, http.StatusConflict, "already_exists", "%s", ErrAlreadyExists)
+			return
+		}
 		httpx.Fail(w, h.d.Log, "create definition", err)
 		return
 	}

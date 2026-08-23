@@ -69,6 +69,8 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/status-list", h.statusList)
 	mux.HandleFunc("GET /v1/issuer", h.issuerInfo)
 	mux.HandleFunc("GET /v1/unreleased", h.unreleased)
+	mux.HandleFunc("GET /v1/unreached", h.unreached)
+	mux.HandleFunc("POST /v1/claims/{claimId}/assist", h.assist)
 }
 
 type handlers struct {
@@ -227,9 +229,70 @@ func (h *handlers) sweep(w http.ResponseWriter, r *http.Request) {
 		}
 		swept = append(swept, win.ClaimID)
 	}
+	// Windows whose worker was never reached are due and deliberately not
+	// swept. They are reported here so a sweep can never look like it did
+	// nothing when in fact it declined to act on someone's behalf.
+	unreached, err := unreachedWindows(r.Context(), h.d.DB.Q(), now)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "find unreached windows", err)
+		return
+	}
+	waiting := make([]string, 0, len(unreached))
+	for _, win := range unreached {
+		waiting = append(waiting, win.ClaimID)
+	}
+	if len(waiting) > 0 {
+		h.d.Log.Warn("windows past T=7 whose worker was never reached; not auto-confirming",
+			"count", len(waiting))
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"at": now, "due": len(due), "autoConfirmed": swept,
+		"heldForSomeoneToLookAt": waiting,
 	})
+}
+
+// assist is the supervisor-assisted route: a person confirming on behalf of a
+// worker who could not be reached (§9).
+//
+// It is the answer to an unreached window, and it is a person's decision rather
+// than a timer's. That is the whole difference: auto-confirmation on a worker
+// who never heard is silence the system manufactured, and this is somebody
+// taking responsibility for saying the record is true.
+func (h *handlers) assist(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		AssistedByPartyID string `json:"assistedByPartyId"`
+	}
+	if r.ContentLength > 0 && !httpx.ReadJSON(w, r, &body) {
+		return
+	}
+	if body.AssistedByPartyID == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body",
+			"an assisted confirmation needs the party making it; otherwise nobody is responsible for it")
+		return
+	}
+	claimID := r.PathValue("claimId")
+	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+		return markEscalated(r.Context(), tx, claimID, h.d.Clock.Now())
+	}); err != nil {
+		httpx.Fail(w, h.d.Log, "record escalation", err)
+		return
+	}
+	h.finish(w, r, routeAssisted)
+}
+
+// unreached is the counterpart to /v1/unreleased: windows past T=7 whose worker
+// was never told, waiting for a person. Both exist so that a promise is a query
+// rather than a hope.
+func (h *handlers) unreached(w http.ResponseWriter, r *http.Request) {
+	rows, err := unreachedWindows(r.Context(), h.d.DB.Q(), h.d.Clock.Now())
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "list unreached", err)
+		return
+	}
+	if rows == nil {
+		rows = []Window{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"windows": rows, "count": len(rows)})
 }
 
 func (h *handlers) finish(w http.ResponseWriter, r *http.Request, route string) {

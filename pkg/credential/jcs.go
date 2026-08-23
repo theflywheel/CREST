@@ -103,12 +103,28 @@ func write(b *bytes.Buffer, v any) error {
 	return nil
 }
 
+// writeString escapes a string the way JCS does — which is the way
+// JSON.stringify does, and which is *not* the way Go's json.Marshal does.
+//
+// json.Marshal HTML-escapes <, > and & into \u003c, \u003e and \u0026, and
+// escapes U+2028/U+2029. RFC 8785 does none of that. Both sides of CREST used
+// the same canonicaliser, so the signature round-tripped internally and nothing
+// failed — but a standards-conformant JCS implementation, which is exactly what
+// an independent offline verifier would use, produces different bytes and
+// therefore a different hash. One "&" in an activity name or a geography field
+// and the credential becomes unverifiable by anyone outside this codebase,
+// which is the whole property the package exists to provide.
+//
+// Latent until a fixture contained one of those characters. Found by review.
 func writeString(b *bytes.Buffer, s string) error {
-	raw, err := json.Marshal(s)
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(s); err != nil {
 		return err
 	}
-	b.Write(raw)
+	// Encode appends a newline; the canonical form has no trailing whitespace.
+	b.Write(bytes.TrimRight(buf.Bytes(), "\n"))
 	return nil
 }
 

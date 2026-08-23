@@ -830,9 +830,18 @@ type WorkEventCredentialCredentialSubjectWorkEvent struct {
 	Activity   string       `json:"activity"`
 	Definition VersionedRef `json:"definition"`
 	EventID    string       `json:"eventId"`
-	Geography  *string      `json:"geography,omitempty"`
-	Outcome    Outcome      `json:"outcome"`
-	Period     Period       `json:"period"`
+
+	// The names of the fields the source record carried — names only,
+	// never values. A definition's tier map can require a field, and a
+	// verifier who cannot tell whether the record had it resolves a lower
+	// tier than the issuer did. Offline is the case that matters (W6), so
+	// the credential has to carry enough to answer the question, and a
+	// list of field names discloses nothing about the household they
+	// describe.
+	EvidenceFields []string `json:"evidenceFields,omitempty"`
+	Geography      *string  `json:"geography,omitempty"`
+	Outcome        Outcome  `json:"outcome"`
+	Period         Period   `json:"period"`
 }
 
 type WorkEventCredentialProof struct {

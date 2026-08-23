@@ -141,3 +141,37 @@ func TestStatusListCredentialVerifies(t *testing.T) {
 		t.Fatalf("the status list credential does not verify: %v", err)
 	}
 }
+
+// JCS follows JSON.stringify, which does not HTML-escape. Go's json.Marshal
+// does, by default. Both sides of CREST using the same canonicaliser hides the
+// difference completely — the signature round-trips, nothing fails, and the
+// credential is simply unverifiable by any conformant implementation outside
+// this codebase. Which is the one property the package exists to provide.
+func TestCanonicalisationDoesNotHTMLEscape(t *testing.T) {
+	got, err := credential.CanonicaliseValue(map[string]any{
+		"activity": "Nets & Sprays <households>",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"activity":"Nets & Sprays <households>"}`
+	if string(got) != want {
+		t.Errorf("canonical form is %s,\n                    want %s", got, want)
+	}
+}
+
+// A credential carrying such a character must still verify — and must produce
+// the bytes an independent verifier would hash.
+func TestACredentialWithAnAmpersandVerifies(t *testing.T) {
+	iss := issuer(t)
+	d := doc()
+	d["credentialSubject"].(map[string]any)["activity"] = "Nets & Sprays"
+
+	signed, err := iss.Issue(d, time.Date(2026, 3, 8, 9, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := credential.Verify(signed, iss.PublicKeyMultibase()); err != nil {
+		t.Fatalf("a credential containing '&' does not verify: %v", err)
+	}
+}

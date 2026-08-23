@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/credential"
 	"github.com/theflywheel/crest/pkg/id"
 	"github.com/theflywheel/crest/pkg/schema"
+	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
 )
 
@@ -62,6 +64,17 @@ func (e *exiter) exit(ctx context.Context, claimID, route string) (exitResult, e
 		// Already exited. Idempotent rather than an error: the sweep and a
 		// worker's confirmation can race, and the worker should win without
 		// anyone seeing a failure.
+		//
+		// A dispute is the exception, and W3 is why. Silence is not consent
+		// against the worker: the seven days are a window for objecting, not a
+		// deadline for noticing, so a claim that auto-confirmed must still be
+		// disputable afterwards. The payment is already out and stays out —
+		// what changes is what the record says.
+		if route == routeDispute {
+			if err := e.transitionClaim(ctx, claimID, schema.ClaimStateDISPUTED, route); err != nil {
+				return exitResult{}, err
+			}
+		}
 		var cred *issuedCredential
 		if w.CredentialID != nil {
 			c, err := getCredential(ctx, e.db.Q(), *w.CredentialID)
@@ -165,11 +178,32 @@ func (e *exiter) buildCredential(ctx context.Context, w Window, route string, no
 	}, nil
 }
 
+// evidenceFieldsOf lists what the source record carried, by name.
+//
+// A verifier offline in a field office cannot ask CREST which fields the record
+// had, and a definition's tier map can require one. Without this the offline
+// answer is systematically weaker than the online answer — which is the wrong
+// way round, because offline is the case W6 exists for.
+//
+// Sorted, so two credentials over the same record produce the same bytes.
+func evidenceFieldsOf(unit schema.Unit) []string {
+	fields := make([]string, 0, len(unit.Enrichment)+1)
+	for name := range unit.Enrichment {
+		fields = append(fields, name)
+	}
+	if unit.Geography != nil {
+		fields = append(fields, "geography")
+	}
+	sort.Strings(fields)
+	return fields
+}
+
 // setStatusIndex finishes the credential once its status slot is known, then
 // signs it. Signing last is what makes the status entry part of what is signed.
 func (c *issuedCredential) setStatusIndex(idx int, listURL string, iss *credential.Issuer, now time.Time) error {
 	doc, err := credential.Document(c.ID, iss.ID(), c.SubjectRef, c.unit,
-		schema.ClaimConfirmationRoute(c.route), now, c.unit.Definition.ID, listURL, idx, now)
+		schema.ClaimConfirmationRoute(c.route), now, c.unit.Definition.ID,
+		evidenceFieldsOf(c.unit), listURL, idx, now)
 	if err != nil {
 		return fmt.Errorf("the credential does not satisfy its own schema: %w", err)
 	}
@@ -189,4 +223,45 @@ func (c *issuedCredential) setStatusIndex(idx int, listURL string, iss *credenti
 	c.Digest = digest
 	c.Doc = raw
 	return nil
+}
+
+// deliverNotification sends a notification and records whether it reached the
+// worker.
+//
+// notify deliberately answers 201 whether the send succeeded, failed, or found
+// no route at all — returning an error there would have the relay redeliver and
+// write the row again. That is correct for the outbox and wrong for the sweep,
+// which until now could not tell the difference and auto-confirmed regardless.
+//
+// So the outcome comes back in the body and is written onto the window. A
+// window marked unreached is never auto-confirmed; it is surfaced, the same way
+// a held payment is surfaced, because the alternative is a worker whose record
+// was confirmed against them during a silence the system produced.
+func deliverNotification(ctx context.Context, d service.Deps, notify *client.Client,
+	payload json.RawMessage) error {
+	var req struct {
+		ClaimID string `json:"claimId"`
+	}
+	if err := json.Unmarshal(payload, &req); err != nil {
+		return err
+	}
+	var out struct {
+		State   string `json:"state"`
+		Channel string `json:"channel"`
+	}
+	if err := notify.Do(ctx, "POST", "/v1/notifications", payload, &out); err != nil {
+		return err
+	}
+
+	reach, detail := "reached", out.Channel
+	if out.State != "SENT" {
+		reach = "unreached"
+		detail = out.State
+		if out.Channel != "" && out.Channel != "none" {
+			detail += " on " + out.Channel
+		}
+	}
+	return d.DB.InTx(ctx, func(tx store.Querier) error {
+		return recordReach(ctx, tx, req.ClaimID, reach, detail)
+	})
 }

@@ -69,7 +69,7 @@ func Main(name string, opts Options) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	clk := clock.System{}
+	clk, driveable := chooseClock(cfg, log)
 	d := Deps{Config: cfg, Log: log, Clock: clk}
 
 	var ready httpx.ReadyFunc
@@ -102,11 +102,82 @@ func Main(name string, opts Options) {
 	if opts.Routes != nil {
 		opts.Routes(mux, d)
 	}
+	if driveable != nil {
+		registerClockControl(mux, driveable, log)
+	}
 
 	if err := httpx.New(name, cfg.Addr, mux, clk, log, ready).Run(); err != nil {
 		log.Error("server stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+// chooseClock decides whether this process reads wall-clock time or is driven.
+//
+// The confirmation window is seven days. A harness that waits seven days is not
+// a harness, and one that shortens the window to a second is testing a
+// different system — the whole point of W3 is what happens at the boundary of a
+// real week. So outside production a service can be handed its time, and the
+// harness advances it.
+//
+// Refused in production, loudly. A running deployment whose clock an HTTP call
+// can move is a deployment where a confirmation window can be closed early on
+// someone, and that is a way to take a worker's chance to object away from them.
+func chooseClock(cfg config.Base, log *slog.Logger) (clock.Clock, *clock.Fake) {
+	if !config.MustBool("CLOCK_DRIVEABLE", false) {
+		return clock.System{}, nil
+	}
+	if cfg.Env == "production" {
+		log.Error("CLOCK_DRIVEABLE is set in production; refusing to start",
+			"why", "a clock an HTTP call can move can close a worker's confirmation window early")
+		os.Exit(1)
+	}
+	start := clock.System{}.Now()
+	if s := config.Str("CLOCK_START", ""); s != "" {
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			log.Error("CLOCK_START is not RFC3339", "value", s, "error", err)
+			os.Exit(1)
+		}
+		start = t
+	}
+	fake := clock.NewFake(start)
+	log.Warn("clock is driveable", "now", start, "env", cfg.Env)
+	return fake, fake
+}
+
+// registerClockControl exposes the clock under /internal/, which is the prefix
+// for everything that exists for the harness rather than for a caller.
+func registerClockControl(mux *http.ServeMux, fake *clock.Fake, log *slog.Logger) {
+	mux.HandleFunc("GET /internal/clock", func(w http.ResponseWriter, _ *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"now": fake.Now()})
+	})
+	mux.HandleFunc("POST /internal/clock", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Now     *time.Time `json:"now,omitempty"`
+			Advance string     `json:"advance,omitempty"`
+		}
+		if !httpx.ReadJSON(w, r, &body) {
+			return
+		}
+		switch {
+		case body.Now != nil:
+			fake.Set(*body.Now)
+		case body.Advance != "":
+			d, err := time.ParseDuration(body.Advance)
+			if err != nil {
+				httpx.WriteError(w, http.StatusBadRequest, "invalid_duration",
+					"advance is not a duration: %v", err)
+				return
+			}
+			fake.Advance(d)
+		default:
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "set now, or advance by a duration")
+			return
+		}
+		log.Info("clock moved", "now", fake.Now())
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"now": fake.Now()})
+	})
 }
 
 func newLogger(level, service string) *slog.Logger {

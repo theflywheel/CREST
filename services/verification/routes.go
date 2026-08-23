@@ -30,6 +30,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/verify", h.verify)
 	mux.HandleFunc("POST /v1/source-assessments", h.assess)
 	mux.HandleFunc("GET /v1/source-assessments", h.assessments)
+	mux.HandleFunc("DELETE /v1/source-assessments/{adapterRef}", h.clearAssessment)
 	mux.HandleFunc("GET /v1/presentations", h.presentations)
 }
 
@@ -274,22 +275,12 @@ func issuerAuthorised(def schema.Definition, issuerID string) bool {
 // presentFields is which of the tier map's required fields the credential
 // actually carries. The credential carries them because a verifier cannot ask
 // CREST — offline is the case that matters (W6).
+// presentFields is which fields the source record carried, as the credential
+// records them. Read from the credential rather than from CREST, because that
+// is what an offline verifier has — and if this service used a richer source
+// than they do, it would report a tier they cannot reproduce.
 func presentFields(cred schema.WorkEventCredential) []string {
-	// A gap worth naming: the credential carries the work event and its
-	// provenance, but not the source system's enrichment fields, so a tier map
-	// that requires "householdId" cannot be satisfied from the credential
-	// alone. Today that means an offline verifier resolves a lower tier than
-	// this service does, which is the wrong way round — offline is the case
-	// that matters (W6).
-	//
-	// The fix is to carry the *names* of the fields the record had, not their
-	// values: enough to evaluate the map, nothing that discloses a household.
-	// Filed rather than bodged; see the manifest row for #27.
-	var out []string
-	if cred.CredentialSubject.WorkEvent.Geography != nil {
-		out = append(out, "geography")
-	}
-	return out
+	return cred.CredentialSubject.WorkEvent.EvidenceFields
 }
 
 func parse(doc map[string]any) (schema.WorkEventCredential, error) {
@@ -336,6 +327,25 @@ func (h *handlers) assess(w http.ResponseWriter, r *http.Request) {
 		return err
 	}); err != nil {
 		httpx.Fail(w, h.d.Log, "record source assessment", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// clearAssessment lifts a downgrade.
+//
+// As real an operation as imposing one: a source that was under investigation
+// and has been cleared must be able to return to full strength, and every
+// credential it produced recovers with it — again with no reissuance, because
+// the tier was never stored. A system that can only ever downgrade a source
+// ratchets one way and eventually trusts nothing.
+func (h *handlers) clearAssessment(w http.ResponseWriter, r *http.Request) {
+	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+		_, err := tx.Exec(r.Context(),
+			`DELETE FROM source_assessments WHERE adapter_ref = $1`, r.PathValue("adapterRef"))
+		return err
+	}); err != nil {
+		httpx.Fail(w, h.d.Log, "clear source assessment", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

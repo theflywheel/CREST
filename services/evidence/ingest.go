@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/theflywheel/crest/adapters"
@@ -90,8 +93,9 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 
 	result := ingestResult{Unclear: []UnclearRow{}, Claims: []string{}}
 	type pending struct {
-		unit  schema.Unit
-		claim schema.Claim
+		unit      schema.Unit
+		claim     schema.Claim
+		dedupeKey string
 	}
 	var accepted []pending
 
@@ -107,14 +111,17 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 	for _, row := range rows {
 		reason, unit, claim := in.consider(ctx, row, def, p, now)
 		if reason != "" {
-			raw, _ := json.Marshal(row.Record)
+			raw, err := json.Marshal(redact(row.Record))
+			if err != nil {
+				return ingestResult{}, err
+			}
 			result.Unclear = append(result.Unclear, UnclearRow{
 				ID: id.New(in.clock, "unclear"), BatchID: batch.ID,
 				RowRef: row.Ref, Reason: reason, Record: raw, CreatedAt: now,
 			})
 			continue
 		}
-		accepted = append(accepted, pending{unit: unit, claim: claim})
+		accepted = append(accepted, pending{unit: unit, claim: claim, dedupeKey: dedupeKey(unit, row.Record)})
 	}
 
 	batch.RowsAccepted = len(accepted)
@@ -134,9 +141,15 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 			}
 		}
 		for _, a := range accepted {
-			if err := insertUnit(ctx, tx, batch.ID, a.unit); err != nil {
+			unitID, err := insertUnit(ctx, tx, batch.ID, a.unit, a.dedupeKey)
+			if err != nil {
 				return err
 			}
+			// The unit already existed: this is the same work arriving again,
+			// so the claim is written against the unit that is already there
+			// and the uniqueness on (unit_id, party_id) refuses the duplicate.
+			a.claim.UnitID = unitID
+			a.unit.ID = unitID
 			created, err := insertClaim(ctx, tx, a.claim)
 			if err != nil {
 				return err
@@ -147,7 +160,7 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 			result.Claims = append(result.Claims, a.claim.ID)
 			if err := store.Enqueue(ctx, tx, topicClaimCreated, windowRequest{
 				ClaimID:      a.claim.ID,
-				UnitID:       a.unit.ID,
+				UnitID:       unitID,
 				PartyID:      a.claim.PartyID,
 				ContextID:    a.unit.ContextID,
 				DefinitionID: def.ID,
@@ -164,6 +177,78 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 	}
 	result.Batch = batch
 	return result, nil
+}
+
+// dedupeKey is a unit's identity, derived from the work it describes rather
+// than from when it was written.
+//
+// Everything that makes two rows the same piece of work is in it, and nothing
+// else: the context and definition it was measured under, the activity, who it
+// joins to, when it happened and how much of it there was. A source's own
+// record reference is included when it supplies one, because a source that
+// numbers its rows is telling us which are distinct and we should believe it.
+//
+// Deliberately excluded: the batch, the adapter, the transport and the
+// timestamp of ingestion. Two identical rows submitted an hour apart through
+// different transports are the same work, and paying twice for them is the
+// failure this exists to prevent.
+//
+// The trade this makes is worth stating: a worker who genuinely does the same
+// thing twice in one period, with the same outcome and no distinguishing field,
+// is recorded once. That is a real cost, and it falls on the worker. It is also
+// why sources should send a record reference — with one, the collision cannot
+// happen, and the queue of definitions that need one is a shorter conversation
+// than a queue of duplicate payments.
+func dedupeKey(unit schema.Unit, record schema.CanonicalWorkEvidenceRecord) string {
+	joining := record.WorkerJoiningIdentifier.Value
+	if record.WorkerJoiningIdentifier.Kind == schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifierKindNationalID {
+		// Never the raw number, here or anywhere else.
+		joining = hashNationalID(joining)
+	}
+	end := ""
+	if unit.Period.End != nil {
+		end = unit.Period.End.UTC().Format(time.RFC3339)
+	}
+	ref := ""
+	if record.Provenance.SourceRecordRef != nil {
+		ref = *record.Provenance.SourceRecordRef
+	}
+	parts := []string{
+		unit.ContextID,
+		unit.Definition.ID,
+		fmt.Sprint(unit.Definition.Version),
+		record.Activity,
+		string(record.WorkerJoiningIdentifier.Kind),
+		joining,
+		unit.Period.Start.UTC().Format(time.RFC3339),
+		end,
+		fmt.Sprintf("%v %s", unit.Outcome.Value, unit.Outcome.Unit),
+		ref,
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
+	return hex.EncodeToString(sum[:])
+}
+
+// redact removes the raw national identifier before a record is stored.
+//
+// The unclear queue keeps the parsed record so a row can be re-attributed once
+// the person is identified, rather than asked for again. That is right — and it
+// is also the one place a raw national identifier could come to rest, because
+// an unmatched row is exactly the row whose identifier nobody has resolved yet.
+//
+// The rule is absolute: a pairwise subject reference and a salted hash, nothing
+// else. So the hash goes in the queue, the raw number does not, and
+// re-attribution works from the hash because that is what the registry matches
+// on anyway.
+//
+// This was found by an adversarial review, not by a test. The unmatched-row
+// fixtures all joined on a phone number, so the national-identifier path
+// through the queue was never exercised.
+func redact(rec schema.CanonicalWorkEvidenceRecord) schema.CanonicalWorkEvidenceRecord {
+	if rec.WorkerJoiningIdentifier.Kind == schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifierKindNationalID {
+		rec.WorkerJoiningIdentifier.Value = hashNationalID(rec.WorkerJoiningIdentifier.Value)
+	}
+	return rec
 }
 
 // windowRequest is what evidence tells confirmation. Deliberately the facts

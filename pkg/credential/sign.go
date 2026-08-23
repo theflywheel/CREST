@@ -219,7 +219,8 @@ func hex(b []byte) string {
 // reference and nothing else (W8, W9).
 func Document(credentialID, issuerID, subjectRef string, unit schema.Unit,
 	confirmation schema.ClaimConfirmationRoute, confirmedAt time.Time,
-	activity string, statusListURL string, statusIndex int, validFrom time.Time) (map[string]any, error) {
+	activity string, evidenceFields []string,
+	statusListURL string, statusIndex int, validFrom time.Time) (map[string]any, error) {
 	cred := schema.WorkEventCredential{
 		Context:   []string{ContextVC, ContextCREST},
 		ID:        credentialID,
@@ -235,6 +236,10 @@ func Document(credentialID, issuerID, subjectRef string, unit schema.Unit,
 				Outcome:    unit.Outcome,
 				Period:     unit.Period,
 				Geography:  unit.Geography,
+				// Names, never values. Enough for a verifier with no network to
+				// evaluate the definition's tier map; nothing that describes a
+				// household.
+				EvidenceFields: evidenceFields,
 			},
 			Provenance: unit.Provenance,
 			Confirmation: schema.WorkEventCredentialCredentialSubjectConfirmation{

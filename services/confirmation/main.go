@@ -33,11 +33,16 @@ func main() {
 		Migrations: migrations,
 		Dir:        "migrations",
 		Routes:     routes,
-		Deliver: func(_ service.Deps) store.Deliverer {
+		Deliver: func(d service.Deps) store.Deliverer {
 			return func(ctx context.Context, topic string, payload json.RawMessage) error {
 				switch topic {
 				case topicNotifyClaim:
-					return notify.Do(ctx, "POST", "/v1/notifications", json.RawMessage(payload), nil)
+					// The outcome comes back and is written down. notify
+					// answers 201 for a send that failed and for a worker with
+					// no reachable route, which is right for the outbox — but
+					// it means "delivered" here has never meant "the worker
+					// knows". The sweep reads what this records.
+					return deliverNotification(ctx, d, notify, payload)
 				case topicPaymentRelease:
 					// Idempotent on the claim at the far end. The relay is
 					// at-least-once, and a redelivered release must not pay twice.

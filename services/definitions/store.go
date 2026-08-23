@@ -19,17 +19,30 @@ var ErrImmutable = errors.New("an ACTIVE definition is immutable; publish a new 
 // say something better than "constraint violation" (§7).
 var ErrSelfRatified = errors.New("the author of a version may not ratify it")
 
+// ErrAlreadyExists is a second attempt to create a version that is already
+// there. Refused rather than overwritten: a definition version is immutable
+// from the moment it exists, and "create" quietly meaning "replace" is how an
+// ACTIVE definition changes underneath the credentials pinned to it.
+var ErrAlreadyExists = errors.New("that definition version already exists")
+
 func insertDefinition(ctx context.Context, tx store.Querier, d schema.Definition) error {
 	doc, err := json.Marshal(d)
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `
+	affected, err := tx.Exec(ctx, `
 		INSERT INTO definitions (id, version, state, activity_code, authored_by, ratified_by, doc, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (id, version) DO NOTHING`,
 		d.ID, d.Version, string(d.State), d.Activity.Code,
 		d.AuthoredByPartyID, d.RatifiedByPartyID, doc, d.CreatedAt)
-	return err
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrAlreadyExists
+	}
+	return nil
 }
 
 func getDefinition(ctx context.Context, q store.Querier, defID string, version int) (schema.Definition, error) {

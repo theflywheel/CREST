@@ -9,6 +9,7 @@ package csv
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -74,24 +75,33 @@ func (a Adapter) Parse(r io.Reader, src adapters.Source, receivedAt time.Time) (
 
 	var rows []adapters.Row
 	var rejected []adapters.Rejection
-	line := 1
 	for {
 		record, err := reader.Read()
-		line++
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
-		ref := fmt.Sprintf("row %d", line)
 		if err != nil {
-			rejected = append(rejected, adapters.Rejection{Ref: ref, Reason: err.Error()})
-			// A structurally broken row does not stop the batch. The other
-			// rows describe work that happened, and refusing all of them
-			// because one is malformed is a person unpaid for a typo.
-			if strings.Contains(err.Error(), "wrong number of fields") {
-				continue
+			// The line comes from the parse error rather than from a counter.
+			// A quoted field containing a newline is one record over two
+			// physical lines, and a counter drifts from that point on — which
+			// breaks the one property the reference exists for: that a person
+			// can find the row in the file they sent.
+			ref := "row ?"
+			var parseErr *csv.ParseError
+			if errors.As(err, &parseErr) {
+				ref = fmt.Sprintf("row %d", parseErr.Line)
 			}
+			// A structurally broken row does not stop the batch. The other rows
+			// describe work that happened, and refusing all of them because one
+			// is malformed leaves people unpaid for someone else's typo.
+			rejected = append(rejected, adapters.Rejection{Ref: ref, Reason: err.Error()})
 			continue
 		}
+
+		// FieldPos reports where the record actually started, so this is the
+		// line a person will find when they open the file.
+		startLine, _ := reader.FieldPos(0)
+		ref := fmt.Sprintf("row %d", startLine)
 
 		row, reason := a.row(header, index, record, src, receivedAt, ref)
 		if reason != "" {

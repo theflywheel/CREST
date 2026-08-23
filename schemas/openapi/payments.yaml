@@ -1,0 +1,280 @@
+openapi: 3.1.0
+info:
+  title: CREST payments
+  version: "1"
+  description: |
+    Turning a window exit into a payment instruction, and keeping a reason attached
+    to every one that does not move money.
+
+    Instruction and compensation shapes come from the trusted-payments profile
+    under `schemas/` and are referenced by `$id` rather than restated - `schemas/`
+    is the source of truth, and a second copy is what `schemas/README.md` exists to
+    prevent.
+servers:
+  - url: http://payments:8080
+    description: In-cluster address used by the other services.
+
+paths:
+  /v1/instructions:
+    post:
+      operationId: releasePayment
+      summary: Release a payment for a claim that exited its window
+      description: >
+        Note what this does not do: look at which exit it was. All four release
+        (W4), dispute included, because a dispute contests the record and not the
+        money. `releasedBy` is recorded for reconciliation and never branched on.
+        The call is idempotent by claim - the relay is at-least-once, and answering
+        the same instruction twice is friendlier than answering an error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [claimId, unitId, partyId]
+              properties:
+                claimId: { type: string }
+                unitId: { type: string }
+                partyId: { type: string, description: The payee. }
+                releasedBy: { type: string, description: Which of the four exits released it. Recorded, never branched on. }
+                releasedAt: { type: string, format: date-time }
+      responses:
+        "200":
+          description: An instruction already existed for this claim; it is returned unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:profiles:trusted-payments:payment-instruction:1"
+        "201":
+          description: >
+            An instruction was created - **RELEASED or HELD**. A held payment is not
+            an error: the instruction exists and is the thing that carries the reason
+            and its owner (W10). Returning an error instead would leave the hold
+            unrecorded and the caller retrying forever, which is a worker seeing
+            nothing and being told nothing. Holds arise from `unit_unreadable`,
+            `rate_unreadable`, `amount_out_of_range`, or `no_rate_attached` - the
+            last being entirely legitimate, since a definition is complete with no
+            rate attached and recognition is a use of its own (§7).
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:profiles:trusted-payments:payment-instruction:1"
+              examples:
+                released:
+                  summary: Released
+                  value: { id: "payment-instruction-...", claimId: "claim-...", state: RELEASED, amountMinor: 25000, currency: KES }
+                held:
+                  summary: Held, with a reason and an owner
+                  value:
+                    id: "payment-instruction-..."
+                    claimId: "claim-..."
+                    state: HELD
+                    held:
+                      code: no_rate_attached
+                      explanation: this work is recognised but no payment rate is attached to its definition
+                      ownerPartyId: "did:crest:party:programme-operations"
+        "400":
+          description: A release without a claim, a unit or a payee.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+    get:
+      operationId: listInstructions
+      summary: Which instructions exist?
+      description: Filterable by party and state; `state=HELD` is the list every held payment's owner is meant to be working through.
+      parameters:
+        - { name: partyId, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string, enum: [RELEASED, HELD] } }
+      responses:
+        "200":
+          description: The matching instructions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [instructions]
+                properties:
+                  instructions:
+                    type: array
+                    items:
+                      $ref: "urn:crest:schema:profiles:trusted-payments:payment-instruction:1"
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/instructions/by-claim/{claimId}:
+    get:
+      operationId: getInstructionByClaim
+      summary: What happened to the payment for this claim?
+      description: >
+        The question a worker asks. One instruction per claim, so this is a lookup
+        and not a search - and if it is held, the answer carries the reason and
+        whose job it is to clear it (W10).
+      parameters: [{ name: claimId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The instruction.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:profiles:trusted-payments:payment-instruction:1"
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/reconciliation:
+    get:
+      operationId: reconciliation
+      summary: What is owed and has not been paid, and does each gap have a reason?
+      description: >
+        Gaps between what was released and what the rail confirmed. `withoutAReason`
+        is reported separately because a gap with no reason is itself the finding -
+        it makes "everything unpaid has an explanation" (W10) a number someone can
+        watch rather than a claim someone makes.
+      responses:
+        "200":
+          description: The gaps, and how many of them nobody has explained.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [gaps, count, withoutAReason]
+                properties:
+                  gaps: { type: array, items: { type: object } }
+                  count: { type: integer }
+                  withoutAReason: { type: integer, description: Expected to be 0. }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  # Every CREST service carries these two, added by pkg/httpx.Server.
+  /healthz: { $ref: "#/components/pathItems/healthz" }
+  /readyz: { $ref: "#/components/pathItems/readyz" }
+
+
+  /internal/clock:
+    get:
+      operationId: readClock
+      summary: What time does this service think it is?
+      description: >
+        Present only when CLOCK_DRIVEABLE is set, which pkg/service refuses in
+        production. The confirmation window is seven days; a harness that waits
+        seven days is not a harness, and one that shortens the window to a second
+        is testing a different system. So outside production a service is handed
+        its time. In production this path does not exist, because a clock an HTTP
+        call can move is a clock that can close a worker's window early on them.
+      responses:
+        "200":
+          description: The service's current time.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  now: { type: string, format: date-time }
+    post:
+      operationId: setClock
+      summary: Move this service's clock
+      description: >
+        Set an instant, or advance by a duration. The harness moves every service
+        together: a stack where evidence is on Tuesday and confirmation is on
+        Friday produces results that are nobody's design.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                now: { type: string, format: date-time }
+                advance: { type: string, description: "A Go duration, e.g. 168h." }
+      responses:
+        "200":
+          description: The clock after the move.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  now: { type: string, format: date-time }
+        "400":
+          description: Neither an instant nor a duration, or a duration that does not parse.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+components:
+
+  schemas:
+    Error:
+      type: object
+      description: >
+        The error body every CREST service returns (pkg/httpx). The message is
+        written for whoever reads it, including eventually a worker being told why
+        something is held.
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        problems:
+          type: array
+          items: { type: string }
+          description: Per-field detail from schema validation, when there is any.
+
+  responses:
+    BadBody:
+      description: >
+        The body could not be read, or carried a field this service does not know.
+        Unknown fields are rejected rather than dropped - a misspelled field is a
+        wrong number nobody notices.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    SchemaViolation:
+      description: The document does not satisfy its JSON Schema; `problems` lists every failure at once.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: No such record.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Internal:
+      description: The service logged the cause and did not leak it.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  pathItems:
+    healthz:
+      get:
+        operationId: healthz
+        tags: [health]
+        summary: Liveness
+        description: The process is up. Separate from readiness on purpose - a service can be alive and unable to serve.
+        responses:
+          "200":
+            description: Alive.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string, const: ok }
+                    time: { type: string, format: date-time }
+    readyz:
+      get:
+        operationId: readyz
+        tags: [health]
+        summary: Readiness
+        description: >
+          Actually touches the database. The harness polls this instead of
+          sleeping, so a readyz that always says yes turns every start-up race into
+          a flaky test rather than a failed one.
+        responses:
+          "200":
+            description: Ready to serve.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string, const: ready }
+          "503":
+            description: Alive but not serving; `reason` says what is unreachable.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string }
+                    reason: { type: string }

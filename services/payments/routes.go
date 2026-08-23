@@ -179,6 +179,23 @@ func (h *handlers) amountFor(ctx context.Context, unitID string) (int64, string,
 			OwnerPartyID: setup.PayerPartyID,
 		}
 	}
+	if total == 0 {
+		// The comment below this line used to be the only thing standing
+		// between here and a zero-amount RELEASED instruction. An outcome of
+		// zero is a legitimate accepted row — the schema allows it and the
+		// adapter only rejects negatives — and multiplying it by any rate gives
+		// nothing to pay.
+		//
+		// Released with a zero amount, it satisfies every count, moves no
+		// money, and carries no explanation for the worker: the exact silent
+		// failure a held payment with a reason exists to prevent. Held instead,
+		// with a sentence a person can act on.
+		return 0, "", &HeldReason{
+			Code:         "nothing_to_pay",
+			Explanation:  "this record's outcome is zero, so there is nothing to pay for it",
+			OwnerPartyID: setup.PayerPartyID,
+		}
+	}
 	return int64(total), setup.RatePerOutcomeUnit.Currency, nil
 }
 

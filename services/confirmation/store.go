@@ -30,19 +30,27 @@ type Window struct {
 	ExitedAt          *time.Time `json:"exitedAt,omitempty"`
 	PaymentReleasedAt *time.Time `json:"paymentReleasedAt,omitempty"`
 	CredentialID      *string    `json:"credentialId,omitempty"`
+
+	// Reach is whether the worker was actually told, as opposed to whether a
+	// message was queued. Nil means not yet established.
+	Reach       *string    `json:"reach,omitempty"`
+	ReachDetail *string    `json:"reachDetail,omitempty"`
+	EscalatedAt *time.Time `json:"escalatedAt,omitempty"`
 }
 
 // Open is true while the window is still running.
 func (w Window) Open() bool { return w.ExitRoute == nil }
 
 const windowColumns = `claim_id, unit_id, party_id, context_id, definition_id, definition_version,
-	opened_at, closes_at, notified_at, exit_route, exited_at, payment_released_at, credential_id`
+	opened_at, closes_at, notified_at, exit_route, exited_at, payment_released_at, credential_id,
+	reach, reach_detail, escalated_at`
 
 func scanWindow(r store.Row) (Window, error) {
 	var w Window
 	return w, r.Scan(&w.ClaimID, &w.UnitID, &w.PartyID, &w.ContextID, &w.DefinitionID,
 		&w.DefinitionVersion, &w.OpenedAt, &w.ClosesAt, &w.NotifiedAt, &w.ExitRoute,
-		&w.ExitedAt, &w.PaymentReleasedAt, &w.CredentialID)
+		&w.ExitedAt, &w.PaymentReleasedAt, &w.CredentialID,
+		&w.Reach, &w.ReachDetail, &w.EscalatedAt)
 }
 
 // insertWindow is idempotent on the claim. The message that creates it is
@@ -82,6 +90,9 @@ func dueWindows(ctx context.Context, q store.Querier, now time.Time, limit int) 
 	rows, err := q.Query(ctx, `
 		SELECT `+windowColumns+` FROM windows
 		WHERE exit_route IS NULL AND closes_at <= $1
+		  -- Never auto-confirm a window whose worker was not reached. Silence
+		  -- is only consent-shaped if the person had a chance to break it.
+		  AND (reach IS NULL OR reach = 'reached')
 		ORDER BY closes_at LIMIT $2`, now, limit)
 	if err != nil {
 		return nil, err
@@ -110,6 +121,34 @@ func unreleased(ctx context.Context, q store.Querier) ([]Window, error) {
 func markNotified(ctx context.Context, tx store.Querier, claimID string, at time.Time) error {
 	_, err := tx.Exec(ctx, `UPDATE windows SET notified_at = $2 WHERE claim_id = $1`, claimID, at)
 	return err
+}
+
+// recordReach stores whether the worker was actually told.
+func recordReach(ctx context.Context, tx store.Querier, claimID, reach, detail string) error {
+	_, err := tx.Exec(ctx,
+		`UPDATE windows SET reach = $2, reach_detail = $3 WHERE claim_id = $1`,
+		claimID, reach, detail)
+	return err
+}
+
+func markEscalated(ctx context.Context, tx store.Querier, claimID string, at time.Time) error {
+	_, err := tx.Exec(ctx, `UPDATE windows SET escalated_at = $2 WHERE claim_id = $1`, claimID, at)
+	return err
+}
+
+// unreachedWindows are the ones whose time has run out on a worker who was
+// never actually told. They are not auto-confirmed; they are surfaced, the way
+// a held payment is.
+func unreachedWindows(ctx context.Context, q store.Querier, now time.Time) ([]Window, error) {
+	rows, err := q.Query(ctx, `
+		SELECT `+windowColumns+` FROM windows
+		WHERE exit_route IS NULL AND closes_at <= $1 AND reach = 'unreached'
+		ORDER BY closes_at`, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.Collect(rows, scanWindow)
 }
 
 func recordExit(ctx context.Context, tx store.Querier, claimID, route string,

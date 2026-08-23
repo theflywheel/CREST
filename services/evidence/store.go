@@ -46,16 +46,27 @@ func insertBatch(ctx context.Context, tx store.Querier, b Batch) error {
 	return err
 }
 
-func insertUnit(ctx context.Context, tx store.Querier, batchID string, u schema.Unit) error {
+// insertUnit stores a unit, or returns the id of the one already describing the
+// same work.
+//
+// Converging rather than inserting is what makes a re-submitted batch harmless.
+// The returned id is then what the claim is written against, so the claim's own
+// (unit_id, party_id) uniqueness catches the duplicate and nobody is paid twice.
+func insertUnit(ctx context.Context, tx store.Querier, batchID string, u schema.Unit, dedupeKey string) (string, error) {
 	doc, err := json.Marshal(u)
 	if err != nil {
-		return err
+		return "", err
 	}
-	_, err = tx.Exec(ctx, `
-		INSERT INTO units (id, batch_id, context_id, definition_id, definition_version, doc, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		u.ID, batchID, u.ContextID, u.Definition.ID, u.Definition.Version, doc, u.CreatedAt)
-	return err
+	var existingID string
+	err = tx.QueryRow(ctx, `
+		INSERT INTO units (id, batch_id, context_id, definition_id, definition_version,
+		                   doc, created_at, dedupe_key)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		ON CONFLICT (dedupe_key) DO UPDATE SET dedupe_key = units.dedupe_key
+		RETURNING id`,
+		u.ID, batchID, u.ContextID, u.Definition.ID, u.Definition.Version,
+		doc, u.CreatedAt, dedupeKey).Scan(&existingID)
+	return existingID, err
 }
 
 // insertClaim is idempotent on (unit, party). Re-running a batch is an ordinary
