@@ -17,6 +17,23 @@
 # for production — see docs/p0-findings.md before this reaches a pilot.
 set -euo pipefail
 
+# The keystore has to outlive the container. Its key aliases live in the
+# database, so a container recreated with a fresh keystore — an ordinary
+# redeploy — leaves eSignet unable to start with `No such alias`.
+#
+# On Railway the volume's mount point is created owned by root while eSignet
+# runs as uid 1001, so the service starts as root (RAILWAY_RUN_UID=0), takes
+# ownership, and drops straight back. PATH is restated because `su` rebuilds it
+# from login defaults and the next line would fail with `java: not found`.
+KEYS_DIR="$(dirname "${MOSIP_KERNEL_KEYMANAGER_HSM_CONFIG_PATH:-/home/mosip/keys/esignet_local.p12}")"
+if [[ "$(id -u)" == "0" ]]; then
+  mkdir -p "$KEYS_DIR"
+  chown -R 1001:1001 "$KEYS_DIR"
+  exec su mosip -s /bin/bash -c \
+    'export PATH=/opt/java/openjdk/bin:$PATH; exec "$@"' -- sh "$0" "$@"
+fi
+mkdir -p "$KEYS_DIR"
+
 # The one useful thing the stock entrypoint did: put the plugin jars where
 # Spring Boot's PropertiesLauncher will find them.
 if [[ -n "${plugin_name_env:-}" ]]; then
