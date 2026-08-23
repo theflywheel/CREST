@@ -16,6 +16,10 @@ import (
 	"github.com/theflywheel/crest/pkg/clock"
 )
 
+// ReadyFunc reports whether the service can serve. Nil means "always ready",
+// which is only honest for a service with no dependencies.
+type ReadyFunc func(ctx context.Context) error
+
 // Server wraps http.Server with the lifecycle CREST services need.
 type Server struct {
 	name string
@@ -26,7 +30,7 @@ type Server struct {
 // New builds a server for a service. The mux is the service's own routes;
 // health endpoints are added here so every service reports readiness the same
 // way — the harness polls these instead of sleeping.
-func New(name, addr string, mux *http.ServeMux, clk clock.Clock, log *slog.Logger) *Server {
+func New(name, addr string, mux *http.ServeMux, clk clock.Clock, log *slog.Logger, ready ReadyFunc) *Server {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"service": name,
@@ -37,7 +41,21 @@ func New(name, addr string, mux *http.ServeMux, clk clock.Clock, log *slog.Logge
 	// readyz is separate on purpose: a service can be alive but not yet able to
 	// serve (migrations pending, dependency unreachable). Conflating them makes
 	// the harness wait on the wrong signal.
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
+	//
+	// It actually checks. Readiness that does not touch the database is
+	// readiness that lies through a failover, and the harness polls this
+	// instead of sleeping — so a readyz that always says yes turns every
+	// start-up race into a flaky test rather than a failed one.
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		if ready != nil {
+			if err := ready(r.Context()); err != nil {
+				log.Warn("not ready", "service", name, "error", err)
+				writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+					"service": name, "status": "not ready", "reason": err.Error(),
+				})
+				return
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"service": name, "status": "ready"})
 	})
 

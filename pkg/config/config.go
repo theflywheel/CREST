@@ -69,3 +69,16 @@ func Bool(key string, def bool) (bool, error) {
 	}
 	return b, nil
 }
+
+// MustBool reads a boolean and falls back to def on anything unreadable.
+//
+// Used for flags where a malformed value should not stop a service starting —
+// the safe reading of an unparseable "true-ish" string is the default, and the
+// default is always the more conservative behaviour.
+func MustBool(key string, def bool) bool {
+	v, err := Bool(key, def)
+	if err != nil {
+		return def
+	}
+	return v
+}

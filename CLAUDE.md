@@ -19,6 +19,7 @@ Verifiable work history for informal workers. The first use case is trusted paym
 | `review-work` | Before a PR, or after finishing an issue |
 | `sync-design-docs` | The design changed, or a decision was settled |
 | `verify-deploy` | After a deploy |
+| `bookkeeping` | Finishing a piece of work — issue, manifest, PR, board |
 
 ## The rules that don't bend
 
@@ -34,7 +35,9 @@ Verifiable work history for informal workers. The first use case is trusted paym
 
 **Every held payment has a reason with an owner.** A worker must never see a missing payment with no explanation attached.
 
-These are W1–W10 (Blueprint §11). When you touch evidence, confirmation, payments or verification, name which one your change could break.
+When you touch evidence, confirmation, payments or verification, name which one your change could break.
+
+**These six are not Blueprint §11's W1–W10, and this file used to say they were.** §11 enumerates ten *worker guarantees* — "exist without document, phone or literacy", "provable to a stranger in a minute, offline" — which are promises to a person. The six above are engineering rules that serve those promises. Six cannot be ten, and code comments across the services currently cite W-numbers that resolve to different statements in §11. Reconciling the two is [#57](https://github.com/theflywheel/CREST/issues/57); until it lands, cite the rule by its sentence rather than by a number.
 
 ## The layering test
 
@@ -69,3 +72,11 @@ This is about traceability, not ceremony. A PR is where the reasoning for a chan
 - Every feature gets a `docs/test-manifest.md` row in the same change.
 - Commands live in the `Makefile`. If a skill tells you to run something, it is a make target.
 - Git author email for this repo is `mittal.yash12@hotmail.com`.
+
+## Bookkeeping is part of the work, not after it
+
+The issue's "done when", the `docs/test-manifest.md` rows, the PR body, the board status — these are not paperwork that follows the change. They are the only record of whether the change was proven, and they get skipped exactly when they matter most, which is when the work ran late.
+
+Skipped bookkeeping does not leave a gap; it leaves a lie. An issue closed against an unmet criterion reads as satisfied. A feature with no manifest row reads as covered by whatever CI happens to be green. A board that says Done reads as shipped. The next person believes all three and stops checking, and on a system whose records decide whether someone gets paid, that is how an untested path reaches a pilot.
+
+So finish the work by loading the `bookkeeping` skill, in the same change and the same PR. The `unproven-work` pre-commit hook names what looks unproven, but it warns rather than blocks — it is a reminder, not a gate, and it cannot tell whether a status value is honest.

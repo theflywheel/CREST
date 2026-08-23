@@ -170,10 +170,14 @@ definitions:
         tierCeiling: 3
       platform:
         sourceSystems: [dhis2-riverside, csv-batch]
-        requiredFields: [householdId, beneficiaryCount]
+        requiredFields: [household_id, beneficiary_count]
         schemaRef: urn:crest:schema:evidence:work-evidence-record:1
       verifier:
-        authorisedIssuers: [did:crest:issuer:fixture-deployment]
+        # The issuer this deployment signs with (ISSUER_ID). Naming an issuer
+        # the deployment does not use is not a harmless mismatch: verification
+        # checks it, and a credential from an unlisted issuer is refused — which
+        # is the check doing its job, and the reason this line is not decorative.
+        authorisedIssuers: [did:crest:issuer:local]
         specifierPartyId: did:crest:party:01JCREST00000000000000SPEC
         specifiedAt: 2026-01-15T11:00:00Z
 
@@ -186,12 +190,12 @@ definitions:
       - tier: 3
         sourceClassIn: [national-system, institutional-system]
         captureMethodIn: [system-of-record]
-        requiresFields: [householdId, beneficiaryCount]
+        requiresFields: [household_id, beneficiary_count]
         minIdentityAssurance: IA-3
       - tier: 2
         sourceClassIn: [national-system, institutional-system, programme-system]
         captureMethodIn: [system-of-record, digital-capture]
-        requiresFields: [householdId]
+        requiresFields: [household_id]
         minIdentityAssurance: IA-1
       - tier: 1
         sourceClassIn:

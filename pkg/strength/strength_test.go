@@ -169,7 +169,7 @@ func TestOldCredentialsResolveAgainstTheirPinnedVersion(t *testing.T) {
 			SourceExposure: schema.SourceExposurePushAPI,
 			AdapterRef:     "fixture-adapter@1",
 		},
-		PresentFields:     []string{"householdId", "beneficiaryCount"},
+		PresentFields:     []string{"household_id", "beneficiary_count"},
 		IdentityAssurance: schema.IdentityAssuranceIA3,
 	}
 

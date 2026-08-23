@@ -1,0 +1,2 @@
+activity,outcome_value,outcome_unit,worker_id_kind,worker_id,period_start,source_class,capture_method,adapter_ref,source_exposure
+bednet-distribution,6,bednets-distributed,phone,+15550100011,2026-03-02,national-system,system-of-record,trust-me@9,push-api

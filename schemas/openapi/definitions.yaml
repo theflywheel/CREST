@@ -1,0 +1,396 @@
+openapi: 3.1.0
+info:
+  title: CREST definitions
+  version: "1"
+  description: |
+    What counts as a unit of work, who ratified it, and the three faces the same
+    record is read through.
+
+    Bodies that are CREST primitives are referenced by the `$id` of their JSON
+    Schema under `schemas/` rather than restated here. `schemas/` is the source of
+    truth; a second copy of a primitive is what `schemas/README.md` exists to
+    prevent.
+servers:
+  - url: http://definitions:8080
+    description: In-cluster address used by the other services.
+
+paths:
+  /v1/definitions:
+    post:
+      operationId: createDefinition
+      summary: Create a definition
+      description: >
+        Registers what a unit of work is and how its strength is judged. Defaults
+        to DRAFT version 1. A definition may be created straight past DRAFT only if
+        the caller supplies a ratifier who is not the author - fixture seeding uses
+        that path; a person uses the two-step ratify/activate route, which is why
+        it exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "urn:crest:schema:primitives:definition:1"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:definition:1"
+        "400": { $ref: "#/components/responses/BadBody" }
+        "409":
+          description: >
+            The ratifier is the author. Separation of duties is an L1 rule (§7):
+            nobody approves their own definition, on the creation path either.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "422":
+          description: Either the document fails its schema, or it claims a state past DRAFT with no ratifier.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/definitions/{id}:
+    get:
+      operationId: getDefinition
+      summary: Read a definition
+      description: >
+        Answers what a credential was measured under. Verification calls this with
+        an explicit `version` because a credential pins the version it was issued
+        against - resolving it to "latest" would rewrite history.
+      parameters:
+        - { $ref: "#/components/parameters/DefinitionID" }
+        - name: version
+          in: query
+          schema: { type: integer }
+          description: The exact version. Omitted means the current one.
+      responses:
+        "200":
+          description: The definition.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:definition:1"
+        "400":
+          description: "`version` is not a number."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/definitions/{id}/faces/{face}:
+    get:
+      operationId: getDefinitionFace
+      summary: Read one face of a definition
+      description: >
+        Three faces, one signed record, never three documents (§7). This reads the
+        same row three ways rather than storing three things that can disagree. The
+        verifier face additionally carries the tier map, because a verifier who
+        cannot see the evidence-to-tier map cannot check the tier they are shown -
+        they can only be told it.
+      parameters:
+        - { $ref: "#/components/parameters/DefinitionID" }
+        - name: face
+          in: path
+          required: true
+          schema: { type: string, enum: [worker, platform, verifier] }
+        - { name: version, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: The common header plus the requested face.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [definitionId, version, activity, outcomeUnit, state]
+                properties:
+                  definitionId: { type: string }
+                  version: { type: integer }
+                  activity: { type: object }
+                  outcomeUnit: { type: object }
+                  state: { type: string }
+                  worker: { type: object }
+                  platform: { type: object }
+                  verifier: { type: object }
+                  tierMap:
+                    type: object
+                    description: Present on the verifier face only.
+        "400":
+          description: "`version` is not a number."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: No such definition, or no such face - the faces are worker, platform and verifier.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/definitions/{id}/versions/{version}/ratify:
+    post:
+      operationId: ratifyDefinition
+      summary: Ratify a draft
+      description: >
+        Moves DRAFT to RATIFIED, recording who approved it. Answers 409 when the
+        ratifier is the author: separation of duties is an L1 rule (§7), so a
+        self-ratified definition is refused rather than flagged.
+      parameters:
+        - { $ref: "#/components/parameters/DefinitionID" }
+        - { $ref: "#/components/parameters/Version" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ratifiedByPartyId]
+              properties:
+                ratifiedByPartyId: { type: string }
+      responses:
+        "200":
+          description: Ratified.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:definition:1"
+        "400":
+          description: The body is unreadable, or the path version is not a number.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: No such definition version.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: >
+            `self_ratified` - the ratifier is the author, refused under §7. Or
+            `cannot_ratify` - the version is not in DRAFT.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/definitions/{id}/versions/{version}/activate:
+    post:
+      operationId: activateDefinition
+      summary: Activate a ratified version
+      description: >
+        Moves RATIFIED to ACTIVE and stamps `activatedAt`. Only from RATIFIED -
+        activation is what makes a version usable for issuance, so skipping
+        ratification would put unapproved rules behind someone's credential.
+      parameters:
+        - { $ref: "#/components/parameters/DefinitionID" }
+        - { $ref: "#/components/parameters/Version" }
+      responses:
+        "200":
+          description: Active.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:definition:1"
+        "400":
+          description: The path version is not a number.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: No such definition version.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: >
+            `immutable` - an active version cannot be edited, only superseded by a
+            new one. Or `cannot_activate` - the version is not RATIFIED.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/definitions/{id}/linked-records:
+    post:
+      operationId: addLinkedRecord
+      summary: Attach a linked record to a definition
+      description: >
+        Attaches use-case data - a payment rate, for instance - without putting it
+        in the primitive. The core stores the payload opaquely, but a record keyed
+        to a definition has to be checked by somebody, so a `payment-setup` payload
+        is validated against its profile schema here.
+      parameters: [{ $ref: "#/components/parameters/DefinitionID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "urn:crest:schema:primitives:linked-record:1"
+      responses:
+        "201":
+          description: Attached. `keyedTo` is set by the server from the path.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:linked-record:1"
+        "400": { $ref: "#/components/responses/BadBody" }
+        "422":
+          description: >
+            The record fails the LinkedRecord schema, or a `payment-setup` payload
+            fails `urn:crest:schema:profiles:trusted-payments:payment-setup:1`.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+    get:
+      operationId: listLinkedRecords
+      summary: What is attached to this definition?
+      description: >
+        Payments calls this with `type=payment-setup` to find the rate. An empty
+        list is a legitimate answer, not a failure: a definition is complete with
+        no rate attached, because recognition is a use of its own (§7).
+      parameters:
+        - { $ref: "#/components/parameters/DefinitionID" }
+        - { name: type, in: query, schema: { type: string }, description: Filter by linked-record type. }
+      responses:
+        "200":
+          description: The attached records, possibly none.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [linkedRecords]
+                properties:
+                  linkedRecords:
+                    type: array
+                    items:
+                      $ref: "urn:crest:schema:primitives:linked-record:1"
+        "500": { $ref: "#/components/responses/Internal" }
+
+  # Every CREST service carries these two, added by pkg/httpx.Server.
+  /healthz: { $ref: "#/components/pathItems/healthz" }
+  /readyz: { $ref: "#/components/pathItems/readyz" }
+
+
+  /internal/clock:
+    get:
+      operationId: readClock
+      summary: What time does this service think it is?
+      description: >
+        Present only when CLOCK_DRIVEABLE is set, which pkg/service refuses in
+        production. The confirmation window is seven days; a harness that waits
+        seven days is not a harness, and one that shortens the window to a second
+        is testing a different system. So outside production a service is handed
+        its time. In production this path does not exist, because a clock an HTTP
+        call can move is a clock that can close a worker's window early on them.
+      responses:
+        "200":
+          description: The service's current time.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  now: { type: string, format: date-time }
+    post:
+      operationId: setClock
+      summary: Move this service's clock
+      description: >
+        Set an instant, or advance by a duration. The harness moves every service
+        together: a stack where evidence is on Tuesday and confirmation is on
+        Friday produces results that are nobody's design.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                now: { type: string, format: date-time }
+                advance: { type: string, description: "A Go duration, e.g. 168h." }
+      responses:
+        "200":
+          description: The clock after the move.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  now: { type: string, format: date-time }
+        "400":
+          description: Neither an instant nor a duration, or a duration that does not parse.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+components:
+  parameters:
+    DefinitionID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    Version:
+      name: version
+      in: path
+      required: true
+      schema: { type: integer }
+
+  schemas:
+    Error:
+      type: object
+      description: >
+        The error body every CREST service returns (pkg/httpx). The message is
+        written for whoever reads it, including eventually a worker being told why
+        something is held.
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        problems:
+          type: array
+          items: { type: string }
+          description: Per-field detail from schema validation, when there is any.
+
+  responses:
+    BadBody:
+      description: >
+        The body could not be read, or carried a field this service does not know.
+        Unknown fields are rejected rather than dropped - a misspelled field is a
+        wrong number nobody notices.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    SchemaViolation:
+      description: The document does not satisfy its JSON Schema; `problems` lists every failure at once.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: No such record.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Internal:
+      description: The service logged the cause and did not leak it.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  pathItems:
+    healthz:
+      get:
+        operationId: healthz
+        tags: [health]
+        summary: Liveness
+        description: The process is up. Separate from readiness on purpose - a service can be alive and unable to serve.
+        responses:
+          "200":
+            description: Alive.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string, const: ok }
+                    time: { type: string, format: date-time }
+    readyz:
+      get:
+        operationId: readyz
+        tags: [health]
+        summary: Readiness
+        description: >
+          Actually touches the database. The harness polls this instead of
+          sleeping, so a readyz that always says yes turns every start-up race into
+          a flaky test rather than a failed one.
+        responses:
+          "200":
+            description: Ready to serve.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string, const: ready }
+          "503":
+            description: Alive but not serving; `reason` says what is unreachable.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string }
+                    reason: { type: string }

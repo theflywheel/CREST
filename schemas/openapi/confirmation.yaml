@@ -1,0 +1,406 @@
+openapi: 3.1.0
+info:
+  title: CREST confirmation
+  version: "1"
+  description: |
+    The T=7 window and what comes out of it: a signed credential, a payment
+    release, and - whichever of the four exits was taken - the money.
+
+    Credentials and contests are referenced by the `$id` of their JSON Schema
+    under `schemas/` rather than restated here. `schemas/` is the source of truth;
+    a second copy of a primitive is what `schemas/README.md` exists to prevent.
+servers:
+  - url: http://confirmation:8080
+    description: In-cluster address used by the other services.
+
+paths:
+  /v1/windows:
+    post:
+      operationId: openWindow
+      summary: Open a confirmation window for a claim
+      description: >
+        Called by evidence's outbox when a claim is created. Opening the window and
+        queueing the worker's notification happen in one transaction: a window
+        nobody was told about is a worker who can neither confirm nor dispute,
+        which is W2 broken quietly. Redelivery is safe - the second call returns
+        the existing window rather than opening a second one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [claimId, unitId, partyId]
+              properties:
+                claimId: { type: string }
+                unitId: { type: string }
+                partyId: { type: string }
+                contextId: { type: string }
+                definitionId: { type: string }
+                definitionVersion: { type: integer }
+                createdAt: { type: string, format: date-time }
+      responses:
+        "201":
+          description: The window, whether it was opened now or already existed.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Window" } } }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/windows/{claimId}:
+    get:
+      operationId: getWindow
+      summary: Read the window for a claim
+      description: When it opened, when it closes, whether the worker was told, and how it was exited if it was.
+      parameters: [{ $ref: "#/components/parameters/ClaimID" }]
+      responses:
+        "200":
+          description: The window.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Window" } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/claims/{claimId}/confirm:
+    post:
+      operationId: confirmClaim
+      summary: Confirm a claim
+      description: >
+        The worker saying yes, or a supervisor saying it for them. Exits the window,
+        issues the credential and releases payment. `auto` is not accepted here -
+        that is what the sweep does - and `dispute` has its own endpoint, because
+        conflating "I agree" with "I object" in one field is how a wrong record gets
+        recorded as agreed.
+      parameters: [{ $ref: "#/components/parameters/ClaimID" }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                route: { type: string, enum: [self, assisted], default: self }
+      responses:
+        "200":
+          description: Window closed, credential issued, payment released.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ExitResult" } } }
+        "400":
+          description: A route other than self or assisted.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: No window for that claim.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/claims/{claimId}/dispute:
+    post:
+      operationId: disputeClaim
+      summary: Dispute a claim - and still release the payment
+      description: >
+        Records an open Contest against the claim and then exits the window by
+        exactly the same path every other exit takes. Payment is released (W4): a
+        dispute contests the record, not the money. Withholding the money while the
+        record is argued about is the failure this endpoint is shaped to prevent. A
+        reason is required, because a dispute nobody can act on is not a dispute.
+      parameters: [{ $ref: "#/components/parameters/ClaimID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+                raisedByPartyId: { type: string }
+      responses:
+        "200":
+          description: Contest recorded, window closed, payment released like any other exit.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ExitResult" } } }
+        "400":
+          description: No reason given.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: No window for that claim.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "422":
+          description: The dispute is not a valid Contest.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/sweep:
+    post:
+      operationId: sweep
+      summary: Auto-confirm every window whose time has run out
+      description: >
+        Driven by the clock and nothing else, and exposed as an endpoint so the
+        harness can advance seven days and then ask for the consequences instead of
+        waiting on a ticker it cannot see. One claim failing does not stop the rest:
+        the others are also owed a payment, and a sweep that aborts halfway leaves
+        the remainder silently unpaid.
+      responses:
+        "200":
+          description: What was due and what was auto-confirmed. A shortfall between the two is a failure to investigate, and is visible here.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [at, due, autoConfirmed]
+                properties:
+                  at: { type: string, format: date-time }
+                  due: { type: integer }
+                  autoConfirmed: { type: array, items: { type: string } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/credentials/{id}:
+    get:
+      operationId: getCredential
+      summary: Read an issued credential
+      description: The signed WorkEventCredential as issued. It carries provenance facts, never a stored tier (W1) - the tier is computed at verification time.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The credential.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:credentials:work-event-credential:1"
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/credentials/{id}/revoke:
+    post:
+      operationId: revokeCredential
+      summary: Withdraw a credential
+      description: >
+        Flips one bit in the status list. Withdrawal is the single central fact
+        about a credential (§9) and this is the whole of it - there is no partial
+        withdrawal to reason about later.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "204": { description: Withdrawn. The status list now reads revoked at this credential's index. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/status-list:
+    get:
+      operationId: statusList
+      summary: The signed revocation bitstring
+      description: >
+        Returns the whole list, signed. Whole on purpose: a verifier who asks about
+        one credential tells the issuer which credential they are checking, and the
+        point of a bitstring is that it does not (§9).
+      responses:
+        "200":
+          description: A signed status list credential.
+          content: { application/json: { schema: { type: object } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/issuer:
+    get:
+      operationId: issuerInfo
+      summary: The issuer's verification key
+      description: >
+        A verifier needs this once and then never again, which is what makes
+        offline verification possible (W6).
+      responses:
+        "200":
+          description: Issuer identity, verification method and public key.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issuer: { type: string }
+                  verificationMethod: { type: string }
+                  publicKeyMultibase: { type: string }
+                  cryptosuite: { type: string }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/unreleased:
+    get:
+      operationId: unreleased
+      summary: Windows that closed without releasing payment
+      description: >
+        Should always answer zero. It exists so W4 can be checked rather than
+        believed - any row here is a claim that exited its window and left someone
+        unpaid.
+      responses:
+        "200":
+          description: The offending windows, and how many.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [windows, count]
+                properties:
+                  windows: { type: array, items: { $ref: "#/components/schemas/Window" } }
+                  count: { type: integer, description: Expected to be 0.}
+        "500": { $ref: "#/components/responses/Internal" }
+
+  # Every CREST service carries these two, added by pkg/httpx.Server.
+  /healthz: { $ref: "#/components/pathItems/healthz" }
+  /readyz: { $ref: "#/components/pathItems/readyz" }
+
+
+  /internal/clock:
+    get:
+      operationId: readClock
+      summary: What time does this service think it is?
+      description: >
+        Present only when CLOCK_DRIVEABLE is set, which pkg/service refuses in
+        production. The confirmation window is seven days; a harness that waits
+        seven days is not a harness, and one that shortens the window to a second
+        is testing a different system. So outside production a service is handed
+        its time. In production this path does not exist, because a clock an HTTP
+        call can move is a clock that can close a worker's window early on them.
+      responses:
+        "200":
+          description: The service's current time.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  now: { type: string, format: date-time }
+    post:
+      operationId: setClock
+      summary: Move this service's clock
+      description: >
+        Set an instant, or advance by a duration. The harness moves every service
+        together: a stack where evidence is on Tuesday and confirmation is on
+        Friday produces results that are nobody's design.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                now: { type: string, format: date-time }
+                advance: { type: string, description: "A Go duration, e.g. 168h." }
+      responses:
+        "200":
+          description: The clock after the move.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  now: { type: string, format: date-time }
+        "400":
+          description: Neither an instant nor a duration, or a duration that does not parse.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+components:
+  parameters:
+    ClaimID:
+      name: claimId
+      in: path
+      required: true
+      schema: { type: string }
+
+  schemas:
+    Error:
+      type: object
+      description: >
+        The error body every CREST service returns (pkg/httpx). The message is
+        written for whoever reads it, including eventually a worker being told why
+        something is held.
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        problems:
+          type: array
+          items: { type: string }
+          description: Per-field detail from schema validation, when there is any.
+
+    Window:
+      type: object
+      description: One claim's confirmation window.
+      properties:
+        claimId: { type: string }
+        unitId: { type: string }
+        partyId: { type: string }
+        contextId: { type: string }
+        definitionId: { type: string }
+        definitionVersion: { type: integer }
+        openedAt: { type: string, format: date-time }
+        closesAt: { type: string, format: date-time }
+        notifiedAt: { type: [string, "null"], format: date-time }
+        exitedAt: { type: [string, "null"], format: date-time }
+        route: { type: [string, "null"], enum: [self, auto, assisted, dispute, null] }
+    ExitResult:
+      type: object
+      description: >
+        What a window exit produced. Every one of the four routes produces a
+        release; the route is recorded for reconciliation and never branched on
+        (W4).
+      properties:
+        claimId: { type: string }
+        route: { type: string, enum: [self, auto, assisted, dispute] }
+        credentialId: { type: string }
+        releasedAt: { type: string, format: date-time }
+  responses:
+    BadBody:
+      description: >
+        The body could not be read, or carried a field this service does not know.
+        Unknown fields are rejected rather than dropped - a misspelled field is a
+        wrong number nobody notices.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    SchemaViolation:
+      description: The document does not satisfy its JSON Schema; `problems` lists every failure at once.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: No such record.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Internal:
+      description: The service logged the cause and did not leak it.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  pathItems:
+    healthz:
+      get:
+        operationId: healthz
+        tags: [health]
+        summary: Liveness
+        description: The process is up. Separate from readiness on purpose - a service can be alive and unable to serve.
+        responses:
+          "200":
+            description: Alive.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string, const: ok }
+                    time: { type: string, format: date-time }
+    readyz:
+      get:
+        operationId: readyz
+        tags: [health]
+        summary: Readiness
+        description: >
+          Actually touches the database. The harness polls this instead of
+          sleeping, so a readyz that always says yes turns every start-up race into
+          a flaky test rather than a failed one.
+        responses:
+          "200":
+            description: Ready to serve.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string, const: ready }
+          "503":
+            description: Alive but not serving; `reason` says what is unreachable.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string }
+                    reason: { type: string }

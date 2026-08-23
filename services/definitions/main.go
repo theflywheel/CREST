@@ -1,20 +1,26 @@
 // Command definitions is a CREST service.
 //
-// Work definitions: author → ratify → ACTIVE, three-face rendering, DeDi publication. Blueprint §7.
+// Answers "what counts as done, in which version, per which face?" (§13).
 //
-// Skeleton: serves health only. Endpoints arrive with the issue that owns this
-// service — see docs/COMPONENTS.md.
+// Two rules here are infrastructure rather than product, and both are enforced
+// in this service rather than left to a UI: a definition is immutable once
+// ACTIVE, and the party who authored a version may not be the party who
+// ratifies it (§7).
 package main
 
 import (
-	"net/http"
+	"embed"
 
 	"github.com/theflywheel/crest/pkg/service"
 )
 
+//go:embed migrations/*.sql
+var migrations embed.FS
+
 func main() {
-	service.Main("definitions", func(mux *http.ServeMux, d service.Deps) {
-		_ = mux
-		_ = d
+	service.Main("definitions", service.Options{
+		Migrations: migrations,
+		Dir:        "migrations",
+		Routes:     routes,
 	})
 }

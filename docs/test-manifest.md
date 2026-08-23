@@ -90,17 +90,50 @@ Spikes prove things about **other people's software**, so they live outside the 
 | Go types cannot drift from the schemas | [#46](../../issues/46) | `make generate-check` in CI — `tools/codegen` regenerates `pkg/schema` and fails if the committed file differs | Lint | covered |
 | The canonical fixture world | [#40](../../issues/40) | `make test-contract` — `tests/fixtures/world.yaml` loads, every object validates, and every named id resolves | Contract | covered |
 | Trusted Payments profile | [#13](../../issues/13) | The three LinkedRecord payload schemas exist and validate, and no primitive schema mentions payments. Profile-needs-no-primitive-change not yet asserted mechanically | Contract | partial |
-| Canonical evidence record | [#14](../../issues/14) | The schema exists and compiles. The adapter conformance suite arrives with the CSV adapter | Contract | partial |
+| Canonical evidence record | [#14](../../issues/14) | `tests/contract/adapter_test.go` — every record the CSV adapter emits validates against `schema.IDEvidenceRecord`, and a record with only the mandatory core is valid | Contract | covered |
+| Provenance is adapter-attached, never source-asserted | [#14](../../issues/14) | `tests/contract/adapter_test.go` against `csv-asserting-its-own-provenance.csv`: a file's own `source_class`/`capture_method`/`adapter_ref` columns are ignored and kept as enrichment (§8) | Contract | covered |
+| A batch loses no rows | [#22](../../issues/22) | `adapters/csv/csv_test.go` — every data row leaves as a record or a named rejection, and the reference points at the real line even after a quoted newline | Unit | covered |
+| CSV batch adapter | [#22](../../issues/22) | `adapters/csv/csv_test.go` — six bad-value cases reject one row each; a missing mandatory column fails the file and names it | Unit | covered |
 | Source heartbeat / silence detection | [#14](../../issues/14) | Harness stops a source; asserts a silence alert fires rather than nothing happening | E2E | planned |
 | Strength function `f` | [#15](../../issues/15) | `pkg/strength/testdata/vectors.json` — nine cases run as a table, readable by a second implementation in any language | Unit | covered |
 | Transport never affects strength | [#15](../../issues/15) | One set of facts through all four transports must give one answer (§8) | Unit | covered |
 | A credential resolves against its pinned definition version | [#15](../../issues/15) | The same facts under v1 and a stricter v2 give different tiers, and v1 does not move | Unit | covered |
 | A re-assessed source downgrades without reissuance | [#15](../../issues/15), [#6](../../issues/6) | A `SourceAssessment` cap changes the tier for an unchanged credential, and the reasoning says so | Unit | covered |
-| WorkEventCredential issuance | [#16](../../issues/16) | Issued credential verifies in Inji Verify; status list entry resolves | E2E | planned |
-| Credential revocation | [#16](../../issues/16) | Status list flip observed by an independent verifier | E2E | planned |
+| WorkEventCredential issuance | [#16](../../issues/16) | `make test-e2e` — a confirmed claim issues a credential that verifies, carries no tier and no national identifier. **Issued by CREST's own signer, not Certify** — see the row below | E2E | partial |
+| Credential signature and tampering | [#16](../../issues/16) | `pkg/credential` — a signed credential verifies; reassigning the subject, re-pointing the proof at another key, or verifying under a stranger's key all fail | Unit | covered |
+| Issuance through Inji Certify | [#16](../../issues/16) | **Not proven.** The credential is signed in-process with `eddsa-jcs-2022`. Certify is the intended issuer and the OpenID4VCI path is unbuilt | E2E | planned |
+| Credential revocation | [#16](../../issues/16) | `make test-e2e` — revoking flips a bit in the signed Bitstring Status List and verification refuses the credential; the list is fetched whole so the check reveals nothing | E2E | covered |
 | Identity provider interface | [#17](../../issues/17) | Same contract satisfied by ≥2 provider classes (eSignet + mobile OTP) | Contract | planned |
-| Bednet definition, three faces | [#18](../../issues/18) | Authored in `tests/fixtures/world.yaml`, validates against the Definition schema, and its tier map drives the strength vectors. Resolving it from DeDi is still to come | Contract | partial |
-| A definition's author is never its ratifier | [#18](../../issues/18), [#21](../../issues/21) | Asserted on the fixture definition. Enforcement in the definitions service is still to come (§7) | Contract | partial |
+| Six OpenAPI descriptions | [#17](../../issues/17) | `schemas/openapi/*.yaml`, one per service, referencing `schemas/` by `$id` rather than restating it. Hand-written from the handlers — nothing yet checks they have not drifted | Contract | partial |
+| Identity assurance is derived, never stored | [#20](../../issues/20) | `registry` computes it from a Party's bindings on request; there is no column to store it in (§4.1) | E2E | covered |
+| Bednet definition, three faces | [#18](../../issues/18) | Seeded through the real endpoints, ratified and activated by the harness, and its tier map drives both the strength vectors and the live verdict. Resolving it from DeDi is still to come | E2E | partial |
+| A definition's author is never its ratifier | [#21](../../issues/21) | Enforced in the definitions service and in a CHECK constraint; the harness seeds through DRAFT → ratify → activate, so the path is exercised on every run (§7) | E2E | covered |
+
+## The spine (G2, #25)
+
+Proven by `make test-e2e`: docker compose up, seed through the real endpoints, drive the clock, tear down. Three consecutive clean runs required (#40).
+
+| Feature | Issue | How it is proven | Layer | Status |
+|---|---|---|---|---|
+| CSV in, verifiable credential out | [#25](../../issues/25) | `TestARecordBecomesACredentialAndAPayment` — a batch becomes a unit and a claim, the worker is notified, confirming issues a credential that verifies, and a payment instruction is released for the right amount | E2E | covered |
+| The E2E harness itself | [#40](../../issues/40) | `make test-e2e` from a clean checkout with no manual step; readiness by polling, never `sleep`; the clock is driven rather than waited on | E2E | covered |
+| W2 — the worker is told before it counts | [#23](../../issues/23) | The window and its notification commit together; the SMS arrives and says the worker will be paid either way | E2E | partial |
+| A worker who was never reached is not auto-confirmed against | [#23](../../issues/23) | `TestAnUnreachedWorkerIsNotAutoConfirmedAgainst` — the notification outcome is recorded on the window, the sweep skips `unreached` windows and reports them, and the supervisor-assisted route closes them. Found by review: notify answers 201 for a failed send, so "notified" never meant "told" | E2E | covered |
+| A re-submitted batch does not pay twice | [#22](../../issues/22) | `TestResubmittingTheSameBatchDoesNotPayTwice` — a unit's identity is derived from the work it describes, so two ingestions converge. Found by review: the unit id was minted fresh each time and the schema's own comment claimed otherwise | E2E | covered |
+| A zero-outcome record is held, not paid as zero | [#26](../../issues/26) | `TestAZeroOutcomeIsHeldWithAReasonRatherThanPaidAsZero` — held with an explanation and an owner rather than RELEASED for nothing | E2E | covered |
+| No raw national identifier reaches the unclear queue | [#22](../../issues/22) | `TestAnUnmatchedNationalIdentifierIsNeverStoredRaw` — the queue keeps the salted hash so a row can still be re-attributed. Found by review: the fixtures all joined on a phone, so this path was never exercised | E2E | covered |
+| Canonicalisation matches RFC 8785 | [#16](../../issues/16) | `pkg/credential` — `&`, `<` and `>` are not escaped. Found by review: Go's `json.Marshal` escapes them, both sides of CREST agreed, and no conformant outside verifier would have | Unit | covered |
+| W3 — silence is not consent | [#23](../../issues/23) | `TestSilenceStillPaysAndStaysDisputable` — seven days advance, the sweep auto-confirms, payment is released, and the claim is still disputable afterwards | E2E | covered |
+| Every T=7 exit releases payment | [#23](../../issues/23), [#26](../../issues/26) | `TestADisputeStillReleasesPayment` for the hardest exit, plus `/v1/unreleased` asserted empty. All four routes are now exercised — self, auto, dispute, and supervisor-assisted via the unreached path | E2E | covered |
+| W5 — a disputed claim never destroys the unit | [#22](../../issues/22) | The unit is fetched after its claim is disputed and is unchanged; `Contest.target` cannot name a unit at all | E2E | covered |
+| W1 — an unattributable row goes to the unclear queue | [#22](../../issues/22) | `TestAnUnattributableRowGoesToTheUnclearQueue` — the row is queued with a reason and a row reference, never guessed at and never dropped | E2E | covered |
+| W7 — probable matches hold | [#20](../../issues/20) | The registry answers 409 and writes a hold row. **The 409 path is not yet exercised end to end** — no fixture has two parties sharing an identifier | Contract | partial |
+| A re-assessed source downgrades without reissuance | [#27](../../issues/27) | `TestReassessingASourceDowngradesAnUnchangedCredential` — the same credential bytes verify at a lower tier, and the verdict says why. Lifting the assessment restores it | E2E | covered |
+| Withdrawal is visible to a verifier | [#27](../../issues/27) | `TestARevokedCredentialStopsVerifying` | E2E | covered |
+| The tier is never stored | [#5](../../issues/5), [#27](../../issues/27) | The credential is asserted to carry no `tier` field; the verdict computes one per request | E2E | covered |
+| W6 — verifiable without CREST | [#27](../../issues/27) | **Not proven.** `verification` resolves the issuer key, the status list and the definition over HTTP. The credential now carries `evidenceFields` so a tier map can be evaluated offline, but no offline verifier exists and the printed-card path (#1) is untouched | E2E | planned |
+| W10 — a held payment has a reason and an owner | [#26](../../issues/26) | A CHECK constraint makes a hold without an owner unrepresentable, and `/v1/reconciliation` reports gaps that have no reason. **No scenario yet forces a hold** | E2E | partial |
+| The outbox survives a crash between a state change and its side effect | [#47](../../issues/47) | **Not proven.** The transaction is structurally right; nothing yet kills a service mid-exit and asserts recovery | E2E | planned |
 
 ## Registry and definitions
 

@@ -26,6 +26,36 @@ x-service: &crest-service
     DEDI_URL: http://dedi:8080
     CERTIFY_URL: http://inji-certify:8090
     S3_ENDPOINT: http://objectstore:8333
+
+    # Services find each other by name. There is no service discovery and there
+    # should not be one yet: seven names in a compose file is a dependency graph
+    # a person can read, and the day it stops being readable is the day it needs
+    # something better.
+    REGISTRY_URL: http://registry:8080
+    DEFINITIONS_URL: http://definitions:8080
+    EVIDENCE_URL: http://evidence:8080
+    CONFIRMATION_URL: http://confirmation:8080
+    PAYMENTS_URL: http://payments:8080
+    NOTIFY_URL: http://notify:8080
+    VERIFICATION_URL: http://verification:8080
+    SMS_URL: http://mock-sms:8080
+    RAIL_URL: http://mock-rail:8080
+
+    # The seven-day window, and a clock the harness can move through it. Both
+    # are refused in production — see pkg/service.chooseClock for why a
+    # driveable clock in a live deployment is a way to close a worker's window
+    # early on them.
+    CONFIRMATION_WINDOW: "${CONFIRMATION_WINDOW:-168h}"
+    CLOCK_DRIVEABLE: "${CLOCK_DRIVEABLE:-true}"
+    CLOCK_START: "${CLOCK_START:-2026-03-01T08:00:00Z}"
+
+    # Deployment secrets, with local values that are not pretending to be
+    # secrets. A real deployment sets all three; key custody is G1 #7.
+    NATIONAL_ID_SALT: "${NATIONAL_ID_SALT:-local-development-salt-not-for-any-real-deployment}"
+    NATIONAL_ID_SALT_REF: "${NATIONAL_ID_SALT_REF:-local-1}"
+    ISSUER_ID: "${ISSUER_ID:-did:crest:issuer:local}"
+    ISSUER_SEED: "${ISSUER_SEED:-AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=}"
+    STATUS_LIST_URL: "${STATUS_LIST_URL:-http://confirmation:8080/v1/status-list}"
   depends_on:
     postgres:
       condition: service_healthy
@@ -267,9 +297,6 @@ services:
       args:
         SERVICE: confirmation
     ports: ["${CONFIRMATION_PORT:-59004}:8080"]
-    environment:
-      <<: *crest-env
-      NOTIFY_URL: http://notify:8080
 
   verification:
     <<: [*crest-service, *crest-healthcheck]
@@ -288,9 +315,6 @@ services:
       args:
         SERVICE: payments
     ports: ["${PAYMENTS_PORT:-59006}:8080"]
-    environment:
-      <<: *crest-env
-      RAIL_URL: http://mock-rail:8080
 
   notify:
     <<: [*crest-service, *crest-healthcheck]
@@ -300,9 +324,6 @@ services:
       args:
         SERVICE: notify
     ports: ["${NOTIFY_PORT:-59007}:8080"]
-    environment:
-      <<: *crest-env
-      SMS_URL: http://mock-sms:8080
 
 volumes:
   pgdata:

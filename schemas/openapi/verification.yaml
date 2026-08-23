@@ -1,0 +1,323 @@
+openapi: 3.1.0
+info:
+  title: CREST verification
+  version: "1"
+  description: |
+    Checking a credential and deriving - never reading - its trust tier.
+
+    The credential body is referenced by the `$id` of its JSON Schema under
+    `schemas/` rather than restated here. `schemas/` is the source of truth; a
+    second copy of the credential shape is what `schemas/README.md` exists to
+    prevent.
+servers:
+  - url: http://verification:8080
+    description: In-cluster address used by the other services.
+
+paths:
+  /v1/verify:
+    post:
+      operationId: verify
+      summary: Verify a credential and derive its tier
+      description: >
+        Answers, in the order a sceptic would: is the signature real, has it been
+        withdrawn, and only then how strong is it. The order matters - putting a
+        tier next to a forged credential would give a number to something that
+        should only ever read "not valid". The tier is computed on this request and
+        stored nowhere (W1): against the definition version the credential pinned,
+        this deployment's current assessment of the source, and the subject's
+        identity assurance asked for now, so a worker who anchored their identity
+        last week sees it reflected in a credential issued last year. Ask again
+        tomorrow and the answer may differ; that is the feature.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credential]
+              properties:
+                credential:
+                  $ref: "urn:crest:schema:credentials:work-event-credential:1"
+                requestedByPartyId:
+                  type: string
+                  description: >
+                    Who is asking. Supplying this or `purpose` makes the
+                    presentation scoped rather than bare, and either way the
+                    presentation is recorded (§9).
+                purpose: { type: string }
+      responses:
+        "200":
+          description: >
+            The verdict - including a negative one. An invalid credential is a 200
+            with `valid: false` and reasons, not an HTTP error: the question was
+            answered, and the answer was no.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Verdict" } } }
+        "400":
+          description: No credential in the body, or the body was unreadable.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/source-assessments:
+    post:
+      operationId: assessSource
+      summary: Record how this deployment regards a source
+      description: >
+        Caps the tier any credential from that adapter can reach. One call
+        downgrades every credential that source ever produced, immediately and with
+        no reissuance - which is only possible because the tier is derived and not
+        stored (W1). The reason and the assessor are required: a downgrade nobody
+        signed is a downgrade nobody can appeal.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [adapterRef, reason, assessedByPartyId]
+              properties:
+                adapterRef: { type: string }
+                maxTier: { type: integer, minimum: 0, maximum: 3 }
+                reason: { type: string }
+                assessedByPartyId: { type: string }
+      responses:
+        "204": { description: Recorded, replacing any previous assessment of that source. }
+        "400":
+          description: A missing adapter, reason or assessor, or a maxTier outside 0 to 3.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+    get:
+      operationId: listSourceAssessments
+      summary: What does this deployment think of its sources?
+      description: >
+        The recorded caps, with who set each one and why. A verifier reading a tier
+        can read this alongside it and see the judgement that shaped it.
+      responses:
+        "200":
+          description: The assessments, ordered by adapter.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [assessments]
+                properties:
+                  assessments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        adapterRef: { type: string }
+                        maxTier: { type: integer }
+                        reason: { type: string }
+                        assessedByPartyId: { type: string }
+                        assessedAt: { type: string, format: date-time }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/source-assessments/{adapterRef}:
+    delete:
+      operationId: clearSourceAssessment
+      summary: Lift a downgrade
+      description: >
+        As real an operation as imposing one. A source that was under
+        investigation and has been cleared returns to full strength, and every
+        credential it produced recovers with it - again with no reissuance,
+        because the tier was never stored. A system that can only ever downgrade
+        a source ratchets one way and eventually trusts nothing.
+      parameters:
+        - name: adapterRef
+          in: path
+          required: true
+          schema: { type: string }
+          description: The adapter reference as it appears in a record's provenance.
+      responses:
+        "204": { description: "Cleared. Clearing a source with no assessment is not an error." }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/presentations:
+    get:
+      operationId: listPresentations
+      summary: Who has been shown this worker's credentials, and why?
+      description: >
+        Every verify is recorded, scoped or bare. Filterable by subject so the
+        worker can be shown their own disclosure history - consent is only
+        meaningful if the person can see what was disclosed (§9).
+      parameters:
+        - { name: subjectRef, in: query, schema: { type: string }, description: The pairwise subject reference. Never a raw national identifier (W5). }
+      responses:
+        "200":
+          description: The presentations, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [presentations]
+                properties:
+                  presentations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        credentialId: { type: string }
+                        subjectRef: { type: string }
+                        requestedByPartyId: { type: string }
+                        purpose: { type: string }
+                        scope: { type: string, enum: [bare, scoped] }
+                        outcome: { type: string, enum: [valid, withdrawn, signature-failed, not-valid] }
+                        tier: { type: integer }
+                        createdAt: { type: string, format: date-time }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  # Every CREST service carries these two, added by pkg/httpx.Server.
+  /healthz: { $ref: "#/components/pathItems/healthz" }
+  /readyz: { $ref: "#/components/pathItems/readyz" }
+
+
+  /internal/clock:
+    get:
+      operationId: readClock
+      summary: What time does this service think it is?
+      description: >
+        Present only when CLOCK_DRIVEABLE is set, which pkg/service refuses in
+        production. The confirmation window is seven days; a harness that waits
+        seven days is not a harness, and one that shortens the window to a second
+        is testing a different system. So outside production a service is handed
+        its time. In production this path does not exist, because a clock an HTTP
+        call can move is a clock that can close a worker's window early on them.
+      responses:
+        "200":
+          description: The service's current time.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  now: { type: string, format: date-time }
+    post:
+      operationId: setClock
+      summary: Move this service's clock
+      description: >
+        Set an instant, or advance by a duration. The harness moves every service
+        together: a stack where evidence is on Tuesday and confirmation is on
+        Friday produces results that are nobody's design.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                now: { type: string, format: date-time }
+                advance: { type: string, description: "A Go duration, e.g. 168h." }
+      responses:
+        "200":
+          description: The clock after the move.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  now: { type: string, format: date-time }
+        "400":
+          description: Neither an instant nor a duration, or a duration that does not parse.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+components:
+
+  schemas:
+    Error:
+      type: object
+      description: >
+        The error body every CREST service returns (pkg/httpx). The message is
+        written for whoever reads it, including eventually a worker being told why
+        something is held.
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        problems:
+          type: array
+          items: { type: string }
+          description: Per-field detail from schema validation, when there is any.
+
+    Verdict:
+      type: object
+      description: >
+        What a verifier is handed. `trustChain` is what they can walk for
+        themselves - a verdict nobody can check is an assertion, and this service
+        asserting things is what §7 is trying to avoid.
+      required: [valid, signatureValid, revoked]
+      properties:
+        valid: { type: boolean }
+        reasons: { type: array, items: { type: string } }
+        tier:
+          type: integer
+          description: Present only when the credential is valid. Computed on this request, stored nowhere (W1).
+        tierReason: { type: array, items: { type: string } }
+        trustChain: { type: array, items: { type: string } }
+        signatureValid: { type: boolean }
+        revoked: { type: boolean }
+  responses:
+    BadBody:
+      description: >
+        The body could not be read, or carried a field this service does not know.
+        Unknown fields are rejected rather than dropped - a misspelled field is a
+        wrong number nobody notices.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    SchemaViolation:
+      description: The document does not satisfy its JSON Schema; `problems` lists every failure at once.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: No such record.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Internal:
+      description: The service logged the cause and did not leak it.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  pathItems:
+    healthz:
+      get:
+        operationId: healthz
+        tags: [health]
+        summary: Liveness
+        description: The process is up. Separate from readiness on purpose - a service can be alive and unable to serve.
+        responses:
+          "200":
+            description: Alive.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string, const: ok }
+                    time: { type: string, format: date-time }
+    readyz:
+      get:
+        operationId: readyz
+        tags: [health]
+        summary: Readiness
+        description: >
+          Actually touches the database. The harness polls this instead of
+          sleeping, so a readyz that always says yes turns every start-up race into
+          a flaky test rather than a failed one.
+        responses:
+          "200":
+            description: Ready to serve.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string, const: ready }
+          "503":
+            description: Alive but not serving; `reason` says what is unreachable.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string }
+                    reason: { type: string }

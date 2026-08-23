@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.25"
           cache: true
 
       # Layout first: a misplaced file makes every later failure harder to read.
@@ -49,6 +49,21 @@ jobs:
       # and a cached pass tells us nothing about a change.
       - name: Test (race, uncached)
         run: go test -race -count=1 ./pkg/... ./services/... ./tools/... ./tests/...
+
+  e2e:
+    name: E2E — the spine, on real services
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      # The whole point of #40: one command, from a clean checkout, no manual
+      # step. If this needs a human, it is not a harness.
+      - name: CSV in, verifiable credential out
+        run: make test-e2e
 
   compose:
     name: Compose — config and service images build

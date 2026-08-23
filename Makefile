@@ -12,7 +12,8 @@ GO ?= go
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
         harness-logs verify-deploy clean todo dedi-image dedi-keys spike-dedi \
-        spike-dedi-deployed spike-esignet verify-deployed hooks generate generate-check
+        spike-dedi-deployed spike-esignet verify-deployed hooks generate generate-check \
+        e2e-up e2e-run
 
 help: ## Show available targets
 	@grep -E '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t26
@@ -57,10 +58,26 @@ test-unit: ## Pure functions: strength fn, schemas, state machines, money
 test-contract: ## Fixture-driven: adapters, OpenAPI shapes, credential shape
 	$(GO) test ./tests/contract/...
 
+# One command, from a clean checkout, no manual step (#40). It brings the stack
+# up, waits on readiness rather than sleeping, runs the spine, and tears down —
+# including volumes, so the next run starts from nothing and cannot pass on
+# yesterday's rows.
 test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
-	@if [ -d harness/scenarios ] && [ -n "$$(find harness/scenarios -name '*_test.go' 2>/dev/null)" ]; then \
-		$(GO) test -tags=e2e ./harness/...; \
-	else echo "harness not built yet — #40"; exit 1; fi
+	$(COMPOSE) up -d --build --wait postgres mock-sms mock-rail $(SERVICES)
+	@$(GO) test -tags=e2e -count=1 -timeout=10m ./harness/... ; \
+		status=$$? ; \
+		if [ $$status -ne 0 ]; then \
+			echo "── logs from the failing run ──" ; \
+			$(COMPOSE) logs --tail=80 $(SERVICES) ; \
+		fi ; \
+		$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 ; \
+		exit $$status
+
+e2e-up: ## Bring up just what the spine needs, and leave it running
+	$(COMPOSE) up -d --build --wait postgres mock-sms mock-rail $(SERVICES)
+
+e2e-run: ## Run the spine against an already-running stack (fast iteration)
+	$(GO) test -tags=e2e -count=1 -timeout=10m ./harness/...
 
 test-invariants: ## W1-W10 as executable acceptance tests
 	@if [ -d harness/invariants ]; then $(GO) test -tags=invariants ./harness/invariants/...; \
