@@ -12,7 +12,7 @@ GO ?= go
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
         harness-logs verify-deploy clean todo dedi-image dedi-keys spike-dedi \
-        spike-dedi-deployed verify-deployed hooks
+        spike-dedi-deployed spike-esignet verify-deployed hooks
 
 help: ## Show available targets
 	@grep -E '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t26
@@ -92,6 +92,8 @@ dedi-keys: ## Generate the DeDi node key and a CREST publisher key
 # shared Postgres over private networking. See docs/DEPLOYMENT.md.
 CREST_DEDI_URL ?= https://crest-dedi-production.up.railway.app
 CREST_REGISTRY_URL ?= https://crest-registry-production.up.railway.app
+CREST_ESIGNET_URL ?= https://crest-esignet-production.up.railway.app
+CREST_MOCK_IDENTITY_URL ?= https://crest-mock-identity-production.up.railway.app
 
 verify-deployed: ## Check the deployed stack answers, and verify its log independently
 	@echo "── crest-registry"
@@ -102,6 +104,16 @@ verify-deployed: ## Check the deployed stack answers, and verify its log indepen
 	@curl -fsS "$(CREST_DEDI_URL)/dedi/lookup/crest/work-definitions/WD-4471?proof=inclusion" \
 		| go run ./tools/spikes/dediproof \
 			-key "$$(./tools/spikes/dedi-verifier-key.py $(CREST_DEDI_URL))"
+	@echo "── crest-esignet: discovery answers, and its issuer is where we fetched it"
+	@curl -fsS $(CREST_ESIGNET_URL)/v1/esignet/oidc/.well-known/openid-configuration \
+		| python3 -c "import json,sys; d=json.load(sys.stdin); \
+		  iss=d['issuer']; want='$(CREST_ESIGNET_URL)'; \
+		  sys.exit(0) if iss==want else sys.exit('issuer is %s, expected %s' % (iss, want))"
+	@echo "issuer ok"
+
+spike-esignet: ## Run the identity spike: is the subject pairwise and stable? (#3)
+	ESIGNET=$(CREST_ESIGNET_URL) MOCK_IDENTITY=$(CREST_MOCK_IDENTITY_URL) \
+		python3 ./tools/spikes/esignet-pairwise.py
 
 spike-dedi-deployed: ## Run the registry spike against the DEPLOYED node (#2)
 	DEDI_URL=$(CREST_DEDI_URL) \
