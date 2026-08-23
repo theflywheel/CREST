@@ -1,0 +1,18 @@
+# eSignet's login UI.
+#
+# Deployed for a reason beyond the screen it draws: it is the hostname eSignet
+# claims to live at. See infra/esignet-ui/nginx.conf.
+ARG ESIGNET_UI_IMAGE=mosipid/oidc-ui:1.8.0
+FROM ${ESIGNET_UI_IMAGE}
+
+USER root
+COPY infra/esignet-ui/nginx.conf /etc/nginx/conf.d/default.conf
+USER 1001
+
+EXPOSE 8080
+
+# Restated from the upstream image: the entrypoint generates env-config.js from
+# the environment before nginx starts, and setting ENTRYPOINT would clear the
+# inherited CMD — the container would exit 0 looking like a clean shutdown.
+ENTRYPOINT ["sh", "/home/mosip/configure_start.sh"]
+CMD ["/bin/sh", "-c", "echo starting nginx ; nginx ; sleep infinity"]

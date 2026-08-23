@@ -346,7 +346,10 @@ INSERT INTO certify.credential_config (
     -- the default — that disagreement is #60.
     'eddsa-jcs-2022',
     NULL,
-    '[{"name": "Work Event", "locale": "en", "background_color": "#0f3d2e", "text_color": "#FFFFFF"}]'::JSONB,
+    -- The logo is not decoration: Mimoto rejects an issuer whose credential
+    -- display carries a null logo ("Invalid Wellknown from Issuer"), so a
+    -- credential without one cannot be offered to the wallet at all.
+    '[{"name": "Work Event", "locale": "en", "background_color": "#0f3d2e", "text_color": "#FFFFFF", "logo": {"url": "https://crest.theflywheel.in/logo.png", "alt_text": "CREST"}}]'::JSONB,
     ARRAY['activity', 'period', 'outcome', 'provenance'],
     'crest_work_event_vc_ldp',
     ARRAY['did:jwk'],
