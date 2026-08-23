@@ -21,5 +21,10 @@ func main() {
 		Migrations: migrations,
 		Dir:        "migrations",
 		Routes:     routes,
+		// The public half of §3, and only the public half. Workers, contact
+		// routes and identity bindings have no registry here and never will —
+		// what reaches the node is decided field by field in publish.go.
+		DeDiRegistries: []string{registryOrganisations, registryTerms, registryAuthorizations},
+		Deliver:        deliver,
 	})
 }

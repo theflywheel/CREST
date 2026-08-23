@@ -23,7 +23,24 @@ x-service: &crest-service
     LOG_LEVEL: debug
     ADDR: ":8080"
     DATABASE_URL: postgres://crest:crest@postgres:5432/crest?sslmode=disable
-    DEDI_URL: http://dedi:8080
+    # The registry substrate (#20). Empty by default, which selects the
+    # Postgres fallback: the DeDi node lives in the `substrate` profile and
+    # needs publisher keys generated from a checkout (`make dedi-keys`), so a
+    # plain `make test-e2e` must not require one. Set DEDI_URL and
+    # DEDI_PUBLISHER_KEY together to run against the node — a URL with no key
+    # is refused at start-up rather than downgraded silently, because a
+    # deployment that meant to publish to a log and quietly did not is the
+    # worst of the three states.
+    DEDI_URL: "${DEDI_URL:-}"
+    DEDI_NAMESPACE: "${DEDI_NAMESPACE:-crest}"
+    DEDI_KEY_ID: "${DEDI_KEY_ID:-crest}"
+    DEDI_PUBLISHER_KEY: "${DEDI_PUBLISHER_KEY:-}"
+
+    # Who approves a registering organisation. Configuration, not
+    # infrastructure: a pilot with three partner NGOs and a national rollout
+    # would reasonably disagree, and both are still CREST (the layering test).
+    REGISTRY_ORG_APPROVAL: "${REGISTRY_ORG_APPROVAL:-manual}"
+
     CERTIFY_URL: http://inji-certify:8090
     S3_ENDPOINT: http://objectstore:8333
 
