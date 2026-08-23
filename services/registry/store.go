@@ -289,7 +289,12 @@ func recordPublication(ctx context.Context, db *store.DB, msg factMessage, r ded
 				(subject_kind, subject_id, subject_version, namespace, registry, record,
 				 registry_version, digest, state, transparent, published_at)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-			ON CONFLICT (subject_kind, subject_id, subject_version) DO NOTHING`,
+			ON CONFLICT (subject_kind, subject_id, subject_version) DO UPDATE SET
+				registry_version = EXCLUDED.registry_version,
+				digest           = EXCLUDED.digest,
+				state            = EXCLUDED.state,
+				transparent      = EXCLUDED.transparent,
+				published_at     = EXCLUDED.published_at`,
 			msg.Kind, msg.ID, msg.Version, r.Ref.Namespace, r.Ref.Registry, r.Ref.Record,
 			r.Ref.Version, r.Digest, r.State, r.Transparent, at)
 		return err

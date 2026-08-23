@@ -24,7 +24,13 @@ func main() {
 		// The public half of §3, and only the public half. Workers, contact
 		// routes and identity bindings have no registry here and never will —
 		// what reaches the node is decided field by field in publish.go.
-		DeDiRegistries: []string{registryOrganisations, registryTerms, registryAuthorizations},
-		Deliver:        deliver,
+		DeDiRegistries: []string{
+			registryOrganisations, registryTerms, registryAuthorizations, registryInstances,
+		},
+		// Publishes the deployment's own self-description, so a verifier who
+		// resolves a record on the node can find out which deployment owns the
+		// namespace and which publisher key its writes should carry (#70).
+		OnStart: publishInstance,
+		Deliver: deliver,
 	})
 }
