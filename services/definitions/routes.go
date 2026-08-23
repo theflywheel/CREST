@@ -18,6 +18,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/definitions", h.create)
 	mux.HandleFunc("GET /v1/definitions/{id}", h.get)
 	mux.HandleFunc("GET /v1/definitions/{id}/faces/{face}", h.face)
+	mux.HandleFunc("GET /v1/definitions/{id}/publication", h.publication)
 	mux.HandleFunc("POST /v1/definitions/{id}/versions/{version}/ratify", h.ratify)
 	mux.HandleFunc("POST /v1/definitions/{id}/versions/{version}/activate", h.activate)
 	mux.HandleFunc("POST /v1/definitions/{id}/linked-records", h.addLinkedRecord)
@@ -117,6 +118,46 @@ func (h *handlers) face(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, common)
 }
 
+// publication answers "where can a verifier resolve the version this credential
+// pinned?" — the question §7 says a definition has to be able to answer to
+// someone who does not trust CREST.
+//
+// It reports transparent explicitly. A caller that receives a publication with
+// transparent=false has been told, in the same response, that resolving it
+// still means trusting this deployment.
+func (h *handlers) publication(w http.ResponseWriter, r *http.Request) {
+	version := 0
+	if s := r.URL.Query().Get("version"); s != "" {
+		v, err := strconv.Atoi(s)
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_query", "version is not a number")
+			return
+		}
+		version = v
+	}
+	if version == 0 {
+		def, err := h.lookup(w, r)
+		if err != nil {
+			return
+		}
+		version = def.Version
+	}
+	pub, err := publicationOf(r.Context(), h.d.DB.Q(), r.PathValue("id"), version)
+	if errors.Is(err, store.ErrNotFound) {
+		// Distinguished from "no such definition" on purpose: a version that
+		// exists and is not yet published is a normal, temporary state, and a
+		// caller that cannot tell it from a typo will retry the wrong thing.
+		httpx.WriteError(w, http.StatusNotFound, "not_published",
+			"version %d of this definition has not reached the registry yet", version)
+		return
+	}
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "read publication", err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, pub)
+}
+
 func (h *handlers) ratify(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		RatifiedByPartyID string `json:"ratifiedByPartyId"`
@@ -170,7 +211,14 @@ func (h *handlers) activate(w http.ResponseWriter, r *http.Request) {
 				d.ActivatedAt = &at
 				return nil
 			})
-		return err
+		if err != nil {
+			return err
+		}
+		// In the same transaction as the state change. A publish attempted
+		// after the commit is a publish a crash loses, and the result is an
+		// ACTIVE definition that no verifier can resolve — which is exactly
+		// the state credentials would then be issued against (§3, §7).
+		return enqueuePublication(r.Context(), tx, out.ID, out.Version)
 	})
 	switch {
 	case errors.Is(err, ErrImmutable):

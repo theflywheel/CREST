@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
+
+	"github.com/theflywheel/crest/pkg/dedi"
 
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
@@ -139,4 +142,48 @@ func linkedRecords(ctx context.Context, q store.Querier, defID, recordType strin
 		var lr schema.LinkedRecord
 		return lr, json.Unmarshal(doc, &lr)
 	})
+}
+
+// Publication is where a definition version landed on the registry substrate.
+type Publication struct {
+	DefinitionID    string `json:"definitionId"`
+	Version         int    `json:"version"`
+	Namespace       string `json:"namespace"`
+	Registry        string `json:"registry"`
+	Record          string `json:"record"`
+	RegistryVersion string `json:"registryVersion"`
+	Digest          string `json:"digest"`
+	State           string `json:"state"`
+	// Transparent is stored per publication rather than read from the current
+	// configuration: a deployment can move from the fallback to a real node,
+	// and a verifier asking about last month's definition needs last month's
+	// answer, not today's.
+	Transparent bool      `json:"transparent"`
+	PublishedAt time.Time `json:"publishedAt"`
+}
+
+func recordPublication(ctx context.Context, db *store.DB, d schema.Definition, r dedi.Receipt, at time.Time) error {
+	return db.InTx(ctx, func(tx store.Querier) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO definition_publications
+				(definition_id, version, namespace, registry, record,
+				 registry_version, digest, state, transparent, published_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+			ON CONFLICT (definition_id, version) DO NOTHING`,
+			d.ID, d.Version, r.Ref.Namespace, r.Ref.Registry, r.Ref.Record,
+			r.Ref.Version, r.Digest, r.State, r.Transparent, at)
+		return err
+	})
+}
+
+func publicationOf(ctx context.Context, q store.Querier, defID string, version int) (Publication, error) {
+	var p Publication
+	err := q.QueryRow(ctx, `
+		SELECT definition_id, version, namespace, registry, record,
+		       registry_version, digest, state, transparent, published_at
+		FROM definition_publications WHERE definition_id = $1 AND version = $2`,
+		defID, version).
+		Scan(&p.DefinitionID, &p.Version, &p.Namespace, &p.Registry, &p.Record,
+			&p.RegistryVersion, &p.Digest, &p.State, &p.Transparent, &p.PublishedAt)
+	return p, err
 }

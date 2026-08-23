@@ -22,5 +22,10 @@ func main() {
 		Migrations: migrations,
 		Dir:        "migrations",
 		Routes:     routes,
+		// Public by design (§3): a work definition's faces say what counts as
+		// done and carry no personal data. Nothing else this service holds
+		// goes to the node.
+		DeDiRegistries: []string{registryName},
+		Deliver:        deliver,
 	})
 }

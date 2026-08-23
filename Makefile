@@ -12,7 +12,7 @@ GO ?= go
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
         harness-logs verify-deploy clean todo dedi-image dedi-keys spike-dedi certify-bind certify-issue \
-        spike-dedi-deployed spike-esignet verify-deployed hooks generate generate-check \
+        spike-dedi-deployed spike-esignet verify-deployed verify-registry hooks generate generate-check \
         e2e-up e2e-run
 
 help: ## Show available targets
@@ -136,6 +136,23 @@ verify-deployed: ## Check the deployed stack answers, and verify its log indepen
 		  iss=d['issuer']; want='$(CREST_ESIGNET_URL)'; \
 		  sys.exit(0) if iss==want else sys.exit('issuer is %s, expected %s' % (iss, want))"
 	@echo "issuer ok"
+
+# One record, fetched from the deployed node and checked by our own verifier.
+# The point is not that DeDi answered — it is that a second implementation,
+# written from the wire format, agrees the record is in the log. Asking DeDi to
+# check its own proof would only establish that DeDi agrees with itself.
+verify-registry: ## Resolve a published CREST fact on the deployed node and validate its proof (#20, #21)
+	@test -n "$(RECORD)" || { \
+		echo "usage: make verify-registry REGISTRY=work-definitions RECORD=<id>"; \
+		echo "  the record id is the 'record' field of GET /v1/definitions/<id>/publication"; \
+		echo "  or of GET /v1/publications/organisation/<id> on the registry service"; exit 1; }
+	@curl -fsS "$(CREST_DEDI_URL)/dedi/lookup/$(DEDI_NAMESPACE)/$(REGISTRY)/$(RECORD)?proof=inclusion" \
+		| tee /dev/stderr \
+		| go run ./tools/spikes/dediproof \
+			-key "$$(./tools/spikes/dedi-verifier-key.py $(CREST_DEDI_URL))"
+
+DEDI_NAMESPACE ?= crest
+REGISTRY ?= work-definitions
 
 spike-esignet: ## Run the identity spike: is the subject pairwise and stable? (#3)
 	ESIGNET=$(CREST_ESIGNET_URL) MOCK_IDENTITY=$(CREST_MOCK_IDENTITY_URL) \

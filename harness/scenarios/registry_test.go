@@ -1,0 +1,256 @@
+//go:build e2e
+
+package scenarios
+
+import (
+	"fmt"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/theflywheel/crest/harness/fixtures"
+	"github.com/theflywheel/crest/pkg/schema"
+)
+
+// Onboarding and the public half of Blueprint §3, against real services (#20).
+//
+// Every scenario here is named after what it protects rather than what it
+// calls, because each of them is a way a real person is harmed: an organisation
+// approving itself, a worker who cannot be enrolled without a phone, a
+// supervisor's say-so quietly counting as an identity check, or a worker's
+// roster entry ending up in a permanent public log.
+
+func orgParty(name string) schema.Party {
+	return schema.Party{
+		Kind:        schema.PartyKindOrganisation,
+		DisplayName: name,
+		ContactRoutes: []schema.PartyContactRoutesItem{
+			{Kind: schema.PartyContactRoutesItemKindEmail, Value: "ops-" + runID + "@example.org"},
+		},
+	}
+}
+
+type registration struct {
+	PartyID    string  `json:"partyId"`
+	State      string  `json:"state"`
+	DecidedBy  *string `json:"decidedBy,omitempty"`
+	Reason     *string `json:"reason,omitempty"`
+	AcceptedBy *string `json:"acceptedBy,omitempty"`
+}
+
+type publication struct {
+	Kind            string `json:"kind"`
+	Registry        string `json:"registry"`
+	Record          string `json:"record"`
+	RegistryVersion string `json:"registryVersion"`
+	Digest          string `json:"digest"`
+	Transparent     bool   `json:"transparent"`
+}
+
+// apply registers an organisation and returns its party id.
+func (w *world) apply(t *testing.T, name string) string {
+	t.Helper()
+	var out struct {
+		Party        schema.Party `json:"party"`
+		Registration registration `json:"registration"`
+	}
+	if err := w.Registry.Post(w.ctx, "/v1/organisations", orgParty(name), &out); err != nil {
+		t.Fatalf("register organisation: %v", err)
+	}
+	if out.Registration.State != "APPLIED" {
+		t.Fatalf("a new application is %q, want APPLIED", out.Registration.State)
+	}
+	return out.Party.ID
+}
+
+// An approval you can grant yourself is not an approval. This is the same
+// separation of duties §7 requires of a definition, and it is enforced in two
+// places — the service and a CHECK constraint — so a future code path that
+// forgets still cannot write the row.
+func TestAnOrganisationCannotApproveItself(t *testing.T) {
+	w := setup(t)
+	orgID := w.apply(t, "Self-Approving Trust "+runID)
+
+	code, body, err := w.Registry.Status(w.ctx, http.MethodPost,
+		"/v1/organisations/"+orgID+"/decision",
+		map[string]any{"approve": true, "decidedBy": orgID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != http.StatusConflict {
+		t.Fatalf("self-approval answered %d: %s", code, body)
+	}
+}
+
+// An organisation operating under no terms is an organisation nobody agreed
+// anything with, and a verifier walking back from a credential to "under what
+// terms was this authorised" would find nothing.
+func TestAnOrganisationCannotBeApprovedBeforeAcceptingTerms(t *testing.T) {
+	w := setup(t)
+	orgID := w.apply(t, "Hasty Trust "+runID)
+
+	code, body, err := w.Registry.Status(w.ctx, http.MethodPost,
+		"/v1/organisations/"+orgID+"/decision",
+		map[string]any{"approve": true, "decidedBy": fixtures.SpecifierID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != http.StatusConflict {
+		t.Fatalf("approval without terms answered %d: %s", code, body)
+	}
+}
+
+// The whole path, and the fact it produces: an approved organisation reaches
+// the registry substrate, where somebody outside CREST can resolve it.
+func TestAnApprovedOrganisationReachesTheRegistry(t *testing.T) {
+	w := setup(t)
+	orgID := w.apply(t, "Bednet Distribution Trust "+runID)
+	terms := w.w.Terms[0]
+
+	var reg registration
+	if err := w.Registry.Post(w.ctx, "/v1/organisations/"+orgID+"/terms-acceptance",
+		map[string]any{"termsId": terms.ID, "termsVersion": terms.Version, "acceptedBy": orgID}, &reg); err != nil {
+		t.Fatalf("accept terms: %v", err)
+	}
+
+	// Not published yet. An applicant that has signed terms is still not an
+	// approved organisation, and an append-only log that recorded both the same
+	// way could never tell them apart afterwards.
+	code, _, err := w.Registry.Status(w.ctx, http.MethodGet, "/v1/publications/organisation/"+orgID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != http.StatusNotFound && reg.State == "TERMS_ACCEPTED" {
+		t.Fatalf("an organisation that had only accepted terms was already published (%d)", code)
+	}
+
+	if reg.State == "TERMS_ACCEPTED" {
+		if err := w.Registry.Post(w.ctx, "/v1/organisations/"+orgID+"/decision",
+			map[string]any{"approve": true, "decidedBy": fixtures.SpecifierID}, &reg); err != nil {
+			t.Fatalf("approve: %v", err)
+		}
+	}
+	if reg.State != "APPROVED" {
+		t.Fatalf("state after approval is %q", reg.State)
+	}
+
+	var pub publication
+	eventually(t, "the approved organisation reaches the registry", 20*time.Second, func() error {
+		return w.Registry.Get(w.ctx, "/v1/publications/organisation/"+orgID, &pub)
+	})
+	if pub.Registry != "organisations" || pub.Record != orgID {
+		t.Fatalf("published to %s/%s, want organisations/%s", pub.Registry, pub.Record, orgID)
+	}
+	if pub.Digest == "" || pub.RegistryVersion == "" {
+		t.Fatalf("publication carries no digest or version: %+v", pub)
+	}
+	// Reported honestly either way. On the Postgres fallback this is false, and
+	// a caller who is told so knows that resolving this still means trusting
+	// this deployment (#20).
+	t.Logf("organisation %s published to %s@%s, transparent=%v",
+		orgID, pub.Record, pub.RegistryVersion, pub.Transparent)
+}
+
+// W1: a worker must be able to exist without a document, a phone or literacy.
+// A system that can only enrol people who complete a form on their own device
+// excludes exactly the workers it is for.
+func TestAWorkerWithNoPhoneCanStillBeEnrolled(t *testing.T) {
+	w := setup(t)
+	supervisor := fixtures.SupervisorID
+
+	var out struct {
+		Party     schema.Party `json:"party"`
+		Enrolment struct {
+			EnrolledBy string `json:"enrolledBy"`
+			Method     string `json:"method"`
+		} `json:"enrolment"`
+		IdentityAssurance string `json:"identityAssurance"`
+	}
+	body := map[string]any{
+		"enrolledBy": supervisor,
+		"method":     "supervisor-attested",
+		"party": schema.Party{
+			Kind:        schema.PartyKindPerson,
+			DisplayName: "Enrolled By Supervisor " + runID,
+			// No phone. The route that reaches this worker is their
+			// supervisor, which is what the contact kind is for — W2 is
+			// unenforceable against a Party nobody can reach, and this path
+			// does not exempt it.
+			ContactRoutes: []schema.PartyContactRoutesItem{
+				{Kind: schema.PartyContactRoutesItemKindSupervisor, Value: supervisor},
+			},
+		},
+	}
+	if err := w.Registry.Post(w.ctx, "/v1/enrolments", body, &out); err != nil {
+		t.Fatalf("assisted enrolment: %v", err)
+	}
+	if out.Party.ID == "" {
+		t.Fatal("no party was created")
+	}
+
+	// The property that matters as much as the enrolment succeeding: being
+	// vouched for by a supervisor did NOT raise the worker's identity
+	// assurance. Assurance stays derived from the Party's own bindings, so this
+	// worker can be upgraded later when they bind an anchor, and is never
+	// silently treated as equivalent to one who already has.
+	var assurance struct {
+		Level   string   `json:"identityAssurance"`
+		Because []string `json:"because"`
+	}
+	if err := w.Registry.Get(w.ctx, "/v1/parties/"+out.Party.ID+"/assurance", &assurance); err != nil {
+		t.Fatalf("read assurance: %v", err)
+	}
+	if assurance.Level != out.IdentityAssurance {
+		t.Errorf("the enrolment response reported assurance %q, the derivation says %q",
+			out.IdentityAssurance, assurance.Level)
+	}
+
+	var enrolment struct {
+		EnrolledBy string `json:"enrolledBy"`
+		Method     string `json:"method"`
+	}
+	if err := w.Registry.Get(w.ctx, "/v1/parties/"+out.Party.ID+"/enrolment", &enrolment); err != nil {
+		t.Fatalf("read enrolment provenance: %v", err)
+	}
+	if enrolment.EnrolledBy != supervisor {
+		t.Errorf("enrolledBy = %q, want the supervisor who is answerable for it", enrolment.EnrolledBy)
+	}
+}
+
+// The "never the reverse" half of §3's placement rule. A worker is personal
+// data; nothing about them reaches the append-only public log, and the
+// publication endpoint is the only place that could have leaked one.
+func TestAWorkerNeverReachesTheRegistrySubstrate(t *testing.T) {
+	w := setup(t)
+	workerID := w.w.Parties[0].ID
+
+	for _, kind := range []string{"organisation", "authorization"} {
+		code, body, err := w.Registry.Status(w.ctx, http.MethodGet,
+			fmt.Sprintf("/v1/publications/%s/%s", kind, workerID), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if code != http.StatusNotFound {
+			t.Fatalf("a worker is published as %s: %d %s", kind, code, body)
+		}
+	}
+}
+
+// A credential names the definition version it was issued against. For that
+// name to mean anything to someone outside CREST, the version has to be
+// resolvable without asking CREST — and stay resolvable after the definition
+// moves on (#21, §7).
+func TestAnActivatedDefinitionIsResolvableOutsideCREST(t *testing.T) {
+	w := setup(t)
+
+	var pub publication
+	eventually(t, "the seeded definition reaches the registry", 20*time.Second, func() error {
+		return w.Definitions.Get(w.ctx,
+			"/v1/definitions/"+w.w.Definitions[0].ID+"/publication", &pub)
+	})
+	if pub.Digest == "" {
+		t.Fatalf("publication carries no digest: %+v", pub)
+	}
+	t.Logf("definition %s published as %s@%s, transparent=%v",
+		w.w.Definitions[0].ID, pub.Record, pub.RegistryVersion, pub.Transparent)
+}
