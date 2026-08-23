@@ -11,7 +11,7 @@ GO ?= go
 
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
-        harness-logs verify-deploy clean todo dedi-image dedi-keys spike-dedi \
+        harness-logs verify-deploy clean todo dedi-image dedi-keys spike-dedi certify-bind certify-issue \
         spike-dedi-deployed spike-esignet verify-deployed hooks generate generate-check \
         e2e-up e2e-run
 
@@ -180,3 +180,26 @@ verify-deploy: todo ## Smoke a deployed env: make verify-deploy ENV=staging
 clean: ## Remove build output
 	$(GO) clean -cache -testcache
 	rm -rf dist/
+
+# ── Inji Certify (#1) ───────────────────────────────────────────────────────
+# The work-event fixture is keyed by the pairwise subject eSignet mints for
+# this deployment, so it cannot be baked into the image. This resolves the
+# subjects, writes the file onto Certify's data volume, and restarts Certify —
+# the CSV is read once at startup, not per request, so a bind without a restart
+# looks like it did nothing.
+certify-bind: ## Key the work-event fixture by this deployment's pairwise subjects (#1)
+	@ESIGNET=$(CERTIFY_ESIGNET) MOCK_IDENTITY=$(CERTIFY_MOCK_IDENTITY) \
+		python3 tools/certify/bind-subject.py > $(CURDIR)/.work_events.csv
+	@docker run --rm -v crest_certifydata:/d -v $(CURDIR):/src alpine \
+		sh -c 'cp /src/.work_events.csv /d/work_events.csv && chown 1001:1001 /d/work_events.csv'
+	@rm -f $(CURDIR)/.work_events.csv
+	@docker compose -f infra/compose/docker-compose.yml --profile substrate restart inji-certify
+	@echo "bound; Certify restarting"
+
+certify-issue: ## Issue a WorkEventCredential over OpenID4VCI and verify it (#1)
+	@CERTIFY=$(CERTIFY_URL_LOCAL) ESIGNET=$(CERTIFY_ESIGNET) MOCK_IDENTITY=$(CERTIFY_MOCK_IDENTITY) \
+		python3 tools/spikes/certify-issue.py
+
+CERTIFY_URL_LOCAL ?= http://localhost:58090
+CERTIFY_ESIGNET ?= http://localhost:58088
+CERTIFY_MOCK_IDENTITY ?= http://localhost:58082
