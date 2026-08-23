@@ -836,9 +836,14 @@ type WorkEventCredentialCredentialSubjectWorkEvent struct {
 }
 
 type WorkEventCredentialProof struct {
-	Created            time.Time `json:"created"`
-	ProofPurpose       string    `json:"proofPurpose"`
-	ProofValue         string    `json:"proofValue"`
-	Type               string    `json:"type"`
-	VerificationMethod string    `json:"verificationMethod"`
+	Created time.Time `json:"created"`
+
+	// Ed25519 over JCS-canonicalised JSON. Chosen over the JSON-LD suite
+	// because verifying that one requires resolving a context document,
+	// and a verifier that must fetch a URL is not offline (W6).
+	Cryptosuite        string `json:"cryptosuite"`
+	ProofPurpose       string `json:"proofPurpose"`
+	ProofValue         string `json:"proofValue"`
+	Type               string `json:"type"`
+	VerificationMethod string `json:"verificationMethod"`
 }

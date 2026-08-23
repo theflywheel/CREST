@@ -1,0 +1,204 @@
+// Package csv is the batch-file adapter: one adapter class covering every
+// source system that can produce a delimited export (§8).
+//
+// It is the lowest-common-denominator transport, and the one a programme with
+// no API can always use. That is why the tier map's floor exists: a record that
+// arrives this way, with only the mandatory core, is still valid Tier-1-capable
+// evidence.
+package csv
+
+import (
+	"encoding/csv"
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/theflywheel/crest/adapters"
+	"github.com/theflywheel/crest/pkg/schema"
+)
+
+// Version is the adapter's version, and it appears in every record's
+// provenance. Bump it when the parsing changes, because a verifier resolving
+// "which translator produced this" needs the answer to mean something.
+const Version = "csv-batch@1"
+
+// The columns the adapter understands. Everything else in the header becomes
+// enrichment, kept verbatim — a source system's extra column is information,
+// and discarding it because CREST does not recognise it is how a definition's
+// tier map loses the field it needed.
+const (
+	colActivity    = "activity"
+	colOutcome     = "outcome_value"
+	colOutcomeUnit = "outcome_unit"
+	colWorkerKind  = "worker_id_kind"
+	colWorkerValue = "worker_id"
+	colStart       = "period_start"
+	colEnd         = "period_end"
+	colGeography   = "geography"
+	colRecordRef   = "source_record_ref"
+)
+
+// Adapter is the batch-file adapter.
+type Adapter struct{}
+
+// Ref returns the adapter reference recorded in provenance.
+func (Adapter) Ref() string { return Version }
+
+// Parse reads a CSV and returns canonical records plus the rows it refused.
+//
+// A row is either a record or a rejection; nothing is dropped in between.
+func (a Adapter) Parse(r io.Reader, src adapters.Source, receivedAt time.Time) ([]adapters.Row, []adapters.Rejection, error) {
+	reader := csv.NewReader(r)
+	reader.TrimLeadingSpace = true
+	// Variable field counts are a malformed file, not a shape to accommodate:
+	// a short row means a column was dropped, and guessing which one is how a
+	// worker's outcome becomes someone else's.
+	reader.FieldsPerRecord = 0
+
+	header, err := reader.Read()
+	if err != nil {
+		return nil, nil, fmt.Errorf("read header: %w", err)
+	}
+	index := map[string]int{}
+	for i, name := range header {
+		index[strings.TrimSpace(strings.ToLower(name))] = i
+	}
+	for _, required := range []string{colActivity, colOutcome, colOutcomeUnit, colWorkerValue, colStart} {
+		if _, ok := index[required]; !ok {
+			return nil, nil, fmt.Errorf("the file has no %q column; the mandatory core of a "+
+				"work-evidence record cannot be assembled without it (§8)", required)
+		}
+	}
+
+	var rows []adapters.Row
+	var rejected []adapters.Rejection
+	line := 1
+	for {
+		record, err := reader.Read()
+		line++
+		if err == io.EOF {
+			break
+		}
+		ref := fmt.Sprintf("row %d", line)
+		if err != nil {
+			rejected = append(rejected, adapters.Rejection{Ref: ref, Reason: err.Error()})
+			// A structurally broken row does not stop the batch. The other
+			// rows describe work that happened, and refusing all of them
+			// because one is malformed is a person unpaid for a typo.
+			if strings.Contains(err.Error(), "wrong number of fields") {
+				continue
+			}
+			continue
+		}
+
+		row, reason := a.row(header, index, record, src, receivedAt, ref)
+		if reason != "" {
+			rejected = append(rejected, adapters.Rejection{Ref: ref, Reason: reason})
+			continue
+		}
+		rows = append(rows, row)
+	}
+	return rows, rejected, nil
+}
+
+func (a Adapter) row(header []string, index map[string]int, record []string,
+	src adapters.Source, receivedAt time.Time, ref string) (adapters.Row, string) {
+	get := func(col string) string {
+		i, ok := index[col]
+		if !ok || i >= len(record) {
+			return ""
+		}
+		return strings.TrimSpace(record[i])
+	}
+
+	value, err := strconv.ParseFloat(get(colOutcome), 64)
+	if err != nil {
+		return adapters.Row{}, fmt.Sprintf("%s is not a number: %q", colOutcome, get(colOutcome))
+	}
+	if value < 0 {
+		return adapters.Row{}, fmt.Sprintf("%s is negative", colOutcome)
+	}
+	start, err := parseTime(get(colStart))
+	if err != nil {
+		return adapters.Row{}, fmt.Sprintf("%s: %v", colStart, err)
+	}
+	period := schema.Period{Start: start}
+	if s := get(colEnd); s != "" {
+		end, err := parseTime(s)
+		if err != nil {
+			return adapters.Row{}, fmt.Sprintf("%s: %v", colEnd, err)
+		}
+		if end.Before(start) {
+			return adapters.Row{}, "period ends before it starts"
+		}
+		period.End = &end
+	}
+
+	kind := schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifierKind(get(colWorkerKind))
+	if kind == "" {
+		kind = schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifierKindPhone
+	}
+	if get(colWorkerValue) == "" {
+		return adapters.Row{}, "no worker identifier"
+	}
+
+	// Everything the adapter does not recognise, kept verbatim.
+	enrichment := map[string]any{}
+	known := map[string]bool{
+		colActivity: true, colOutcome: true, colOutcomeUnit: true, colWorkerKind: true,
+		colWorkerValue: true, colStart: true, colEnd: true, colGeography: true, colRecordRef: true,
+	}
+	for i, name := range header {
+		key := strings.TrimSpace(strings.ToLower(name))
+		if known[key] || i >= len(record) {
+			continue
+		}
+		if v := strings.TrimSpace(record[i]); v != "" {
+			enrichment[key] = v
+		}
+	}
+
+	rec := schema.CanonicalWorkEvidenceRecord{
+		Activity: get(colActivity),
+		Outcome:  schema.Outcome{Value: value, Unit: get(colOutcomeUnit)},
+		WorkerJoiningIdentifier: schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifier{
+			Kind:  kind,
+			Value: get(colWorkerValue),
+		},
+		Period: period,
+		// Provenance comes from the deployment's configuration for this source,
+		// never from the file. A CSV that carries a "source_class" column gets
+		// it treated as enrichment like any other unrecognised field — which is
+		// the whole point of §8's rule.
+		Provenance: schema.Provenance{
+			SourceClass:    src.Class,
+			CaptureMethod:  src.CaptureMethod,
+			SourceExposure: src.Exposure,
+			AdapterRef:     a.Ref(),
+			ReceivedAt:     receivedAt,
+		},
+	}
+	if g := get(colGeography); g != "" {
+		rec.Geography = &g
+	}
+	if r := get(colRecordRef); r != "" {
+		rec.Provenance.SourceRecordRef = &r
+	}
+	if len(enrichment) > 0 {
+		rec.Enrichment = enrichment
+	}
+	return adapters.Row{Record: rec, Ref: ref}, ""
+}
+
+// parseTime accepts a date or a full timestamp. Source systems export both, and
+// refusing a date would refuse most real files.
+func parseTime(s string) (time.Time, error) {
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05Z", "2006-01-02"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC(), nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("%q is neither a date nor an RFC3339 timestamp", s)
+}
