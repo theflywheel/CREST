@@ -20,7 +20,8 @@ ENV SPRING_CONFIG_NAME=mimoto \
 
 EXPOSE 8099
 
-ENTRYPOINT ["/bin/bash", "/home/mosip/mimoto-start.sh"]
+# /bin/sh: the base image is Alpine and has no bash. See mimoto-start.sh.
+ENTRYPOINT ["/bin/sh", "/home/mosip/mimoto-start.sh"]
 
 # Restated from the upstream image: setting ENTRYPOINT clears the inherited CMD,
 # and the container would exit 0 looking like a clean shutdown.

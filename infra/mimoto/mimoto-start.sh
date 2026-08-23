@@ -1,5 +1,10 @@
-#!/bin/bash
+#!/bin/sh
 # Mimoto's entrypoint.
+#
+# POSIX sh, not bash: the mimoto image is Alpine and has no /bin/bash. An
+# ENTRYPOINT naming one exits the container instantly, and Railway reports a
+# failed deploy with no logs at all — the build succeeds, the image pushes, and
+# nothing says why.
 #
 # It materialises the OIDC keystore from a secret and substitutes the client id
 # into the issuer config. Both exist because the keystore is a private key: it
