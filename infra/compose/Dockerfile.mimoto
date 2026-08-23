@@ -15,7 +15,13 @@ COPY infra/mimoto/config/mimoto-trusted-verifiers.json  /home/mosip/mimoto-trust
 COPY --chmod=0755 infra/mimoto/mimoto-start.sh          /home/mosip/mimoto-start.sh
 RUN chown -R 1002:1001 /home/mosip
 
-ENV SPRING_CONFIG_NAME=mimoto \
+# Both names, comma-separated. SPRING_CONFIG_NAME=mimoto alone loads
+# mimoto.properties and mimoto-default.properties and nothing else, so the
+# vendored bootstrap file sits in the image unread — upstream gets it from a
+# Spring Cloud Config server, which we deliberately do not run. Without it the
+# service dies on `property spring.application.name not found`, four causes
+# below an unsatisfied dependency on `securityConfig` that names nothing absent.
+ENV SPRING_CONFIG_NAME=mimoto,mimoto-bootstrap \
     SPRING_CONFIG_LOCATION=/home/mosip/ \
     active_profile_env=default
 
