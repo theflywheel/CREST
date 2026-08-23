@@ -1,0 +1,14 @@
+# Inji Verify's UI, carrying CREST's claim configuration.
+#
+# The upstream image reads /assets/config.json for the credential types it will
+# ask a holder to present. Upstream mounts that file; Railway has no bind
+# mounts, so it is baked in — the same reason Certify's configuration is.
+#
+# The proof type here is DataIntegrityProof, not RsaSignature2018 as upstream's
+# sample has it: a WorkEventCredential is signed with eddsa-jcs-2022, and a
+# presentation definition that asks for the wrong proof type matches nothing
+# while looking correctly configured.
+ARG INJI_VERIFY_UI_IMAGE=mosipid/inji-verify-ui:0.16.0
+FROM ${INJI_VERIFY_UI_IMAGE}
+
+COPY infra/verify/config.json /usr/share/nginx/html/assets/config.json
