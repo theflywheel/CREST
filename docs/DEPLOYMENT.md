@@ -19,6 +19,7 @@ Or in a browser, in this order, because each link is checkable against the next:
 | A work definition, with proof | [WD-4471](https://crest-dedi-production.up.railway.app/dedi/lookup/crest/work-definitions/WD-4471?proof=inclusion) |
 | Version 1 of it, still resolving | [WD-4471 v1](https://crest-dedi-production.up.railway.app/dedi/lookup/crest/work-definitions/WD-4471?version_id=2&proof=inclusion) |
 | The registry service | https://crest-registry-production.up.railway.app/healthz |
+| eSignet discovery | https://crest-esignet-production.up.railway.app/v1/esignet/oidc/.well-known/openid-configuration |
 
 The checkpoint's first line is the log's origin, and it is this deployment's own domain. That is what anyone verifying CREST checks against, so it is tied to the deployment rather than to us.
 
@@ -34,6 +35,8 @@ The cost of that choice is worth stating: CREST services sit alongside a Beckn t
 |---|---|
 | `crest-dedi` | CREST's own DeDi node — its own log, its own origin, its own database |
 | `crest-registry` | The registry service, built from `infra/compose/Dockerfile.service` |
+| `crest-esignet` | eSignet 1.8.0, rebuilt with our own entrypoint (P0 finding C7). Databases `mosip_esignet`, `mosip_mockidentitysystem` |
+| `crest-mock-identity` | MOSIP's mock identity system, which is what the spike authenticates against |
 
 **`crest-dedi` is deliberately a separate node from `dedid`.** CREST's work-definition log should not share a transparency log with a Beckn testnet demo: the origin, the key and the checkpoint history are what a verifier checks, and they should mean "CREST" and nothing else. It is on the same network and can be witnessed by the existing nodes, which is the part worth sharing.
 
@@ -75,6 +78,8 @@ The node's **verifier** key is public and meant to be: `./tools/spikes/dedi-veri
 
 Being explicit, so none of this is mistaken for done:
 
+- **`crest-mock-identity` is on a public URL, and its create-identity endpoint is unauthenticated.** It holds synthetic fixtures only and is a mock by construction, but anyone can add one and then authenticate as it. It is exposed so `make spike-esignet` is runnable from a laptop against a fresh deployment; **it must not survive into anything a real worker touches**, and eSignet's own plugin only ever needs it over the private network.
+- **eSignet's keys are in a PKCS12 keystore** the service itself warns against in production (P0 finding E5), and a registered relying-party client's public key cannot be rotated (C9). Both are inputs to the key-custody decision, G1 #7.
 - **No staging environment.** `main` deploys straight to the only environment there is. That is honest for a pre-pilot project and unacceptable for a piloting one.
 - **No rollback beyond Railway's own redeploy.** There is no tested "get back to the previous version" path.
 - **No backups configured by us** on either new database, and no restore has been rehearsed. A backup nobody has restored from is a belief, not a backup.
