@@ -1,0 +1,443 @@
+openapi: 3.1.0
+info:
+  title: CREST registry
+  version: "1"
+  description: |
+    Who a party is, what they agreed to, what they are authorised to do, and — the
+    part the rest of the system leans on — whether an identifier from a source
+    system resolves to exactly one of them.
+
+    Request and response bodies that are CREST primitives are referenced by the
+    `$id` of their JSON Schema under `schemas/`, never restated here. A second copy
+    of a primitive is the thing `schemas/README.md` exists to prevent: two
+    hand-maintained definitions agree right up until they don't.
+servers:
+  - url: http://registry:8080
+    description: In-cluster address used by the other services.
+
+paths:
+  /v1/parties:
+    post:
+      operationId: createParty
+      summary: Register a party
+      description: >
+        Creates the person or organisation everything else hangs off. The body is
+        validated against the Party schema rather than trusted because it
+        unmarshalled — W2 is unenforceable against a party with no contact route,
+        and the Go struct cannot express "at least one".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "urn:crest:schema:primitives:party:1"
+      responses:
+        "201":
+          description: Created. `id` and `createdAt` are filled in if the caller omitted them.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:party:1"
+        "400": { $ref: "#/components/responses/BadBody" }
+        "422": { $ref: "#/components/responses/SchemaViolation" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/parties/{id}:
+    get:
+      operationId: getParty
+      summary: Read a party
+      description: Answers who this identifier belongs to, including the contact routes notify uses to reach them.
+      parameters: [{ $ref: "#/components/parameters/PartyID" }]
+      responses:
+        "200":
+          description: The party.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:party:1"
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/parties/{id}/assurance:
+    get:
+      operationId: getPartyAssurance
+      summary: How strongly is this party's identity established?
+      description: >
+        Derives the identity assurance level now, and says why. It is derived and
+        not stored for the same reason a trust tier is (W1): a stored level freezes
+        a judgement and cannot be raised when the worker binds an anchor later, so
+        verification asks this endpoint on every verify rather than reading a value
+        off the credential.
+      parameters: [{ $ref: "#/components/parameters/PartyID" }]
+      responses:
+        "200":
+          description: The level as of now, with the facts that produced it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [partyId, identityAssurance, because]
+                properties:
+                  partyId: { type: string }
+                  identityAssurance:
+                    type: string
+                    description: IA-0 through IA-3, as defined in Blueprint §4.1.
+                  because:
+                    type: array
+                    items: { type: string }
+                    description: The reasons behind the level, so a caller can argue with it.
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/parties/{id}/roster-ids:
+    post:
+      operationId: addRosterID
+      summary: Attach a source-system roster identifier
+      description: >
+        Records that a source system knows this party by some other id, scoped to
+        the context it came from. The scope is mandatory: an unscoped roster id
+        matches the wrong person in the next deployment that reuses the number.
+      parameters: [{ $ref: "#/components/parameters/PartyID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rosterId, contextId]
+              properties:
+                rosterId: { type: string }
+                contextId: { type: string, description: The context this roster id is meaningful within. }
+      responses:
+        "204": { description: Recorded. }
+        "400":
+          description: Either field missing — an unscoped roster id is refused, not stored.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/resolve:
+    get:
+      operationId: resolve
+      summary: Which party does this identifier belong to?
+      description: >
+        The endpoint the evidence pipeline calls for every row, and the one whose
+        third answer is the design. 200 means exactly one candidate. 404 means
+        nothing matched and the row belongs in the unclear queue. 409 means more
+        than one party carries this identifier: a hold is recorded and no merge
+        happens (W7). The 409 is a designed outcome, not a failure — picking the
+        best candidate would be a merge, and `merges_without_confirmation = 0` is a
+        monitored metric.
+      parameters:
+        - { name: kind, in: query, schema: { type: string }, description: Which key is being matched (roster id, hashed national id, phone). }
+        - { name: value, in: query, required: true, schema: { type: string }, description: The key value. Required. }
+        - { name: contextId, in: query, schema: { type: string }, description: Narrows a roster id to the context it was issued in. }
+      responses:
+        "200":
+          description: Exactly one candidate, with which key matched and at what confidence.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Match" }
+        "400":
+          description: No `value` supplied.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: Nothing matched. The caller sends the row to the unclear queue rather than guessing.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: >
+            More than one candidate. A hold has been written and is returned; it
+            names the candidates so a human can decide. Nothing was merged (W7).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Hold" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/holds:
+    get:
+      operationId: listHolds
+      summary: What match decisions are waiting on a person?
+      description: >
+        The open holds recorded by resolve. This is the queue that makes W7
+        checkable rather than believed — if it is never drained, that is visible
+        here instead of quietly resolved by a merge.
+      responses:
+        "200":
+          description: Open holds, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [holds, count]
+                properties:
+                  holds: { type: array, items: { $ref: "#/components/schemas/Hold" } }
+                  count: { type: integer }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/terms:
+    post:
+      operationId: createTerms
+      summary: Publish a version of terms
+      description: >
+        Records the terms a party can later be shown to have agreed to. Versioned,
+        because consent to a document is only meaningful against the exact text
+        that was consented to.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "urn:crest:schema:primitives:terms:1"
+      responses:
+        "201":
+          description: Created; `publishedAt` defaults to now.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:terms:1"
+        "400": { $ref: "#/components/responses/BadBody" }
+        "422": { $ref: "#/components/responses/SchemaViolation" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/authorizations:
+    post:
+      operationId: createAuthorization
+      summary: Grant a party a function within a context
+      description: >
+        Records that someone may do something somewhere, for some period. Defaults
+        to state ACTIVE approved now. What the function names means is programme
+        configuration; that an authorization exists and is time-bounded is
+        infrastructure.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "urn:crest:schema:primitives:authorization:1"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:authorization:1"
+        "400": { $ref: "#/components/responses/BadBody" }
+        "422": { $ref: "#/components/responses/SchemaViolation" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/authorizations/permits:
+    get:
+      operationId: permits
+      summary: May this party do this, here, at this moment?
+      description: >
+        A yes/no against the authorizations on file, evaluated at a point in time.
+        `at` is a parameter rather than always-now so a caller can ask whether an
+        action was permitted when it happened — an authorization that has since
+        expired did not retroactively un-permit last month's work.
+      parameters:
+        - { name: partyId, in: query, schema: { type: string } }
+        - { name: function, in: query, schema: { type: string } }
+        - { name: contextId, in: query, schema: { type: string } }
+        - name: at
+          in: query
+          schema: { type: string, format: date-time }
+          description: RFC3339. Defaults to the service clock's now.
+      responses:
+        "200":
+          description: The answer, and the instant it was evaluated at.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [permitted, at]
+                properties:
+                  permitted: { type: boolean }
+                  at: { type: string, format: date-time }
+        "400":
+          description: "`at` is not RFC3339."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/contexts:
+    post:
+      operationId: createContext
+      summary: Create a context
+      description: >
+        The programme, geography or deployment that scopes everything else —
+        roster ids, authorizations, evidence batches. Contexts are what stop two
+        deployments' identifiers colliding.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "urn:crest:schema:primitives:context:1"
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:context:1"
+        "400": { $ref: "#/components/responses/BadBody" }
+        "422": { $ref: "#/components/responses/SchemaViolation" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  # Every CREST service carries these two, added by pkg/httpx.Server.
+  /healthz: { $ref: "#/components/pathItems/healthz" }
+  /readyz: { $ref: "#/components/pathItems/readyz" }
+
+
+  /internal/clock:
+    get:
+      operationId: readClock
+      summary: What time does this service think it is?
+      description: >
+        Present only when CLOCK_DRIVEABLE is set, which pkg/service refuses in
+        production. The confirmation window is seven days; a harness that waits
+        seven days is not a harness, and one that shortens the window to a second
+        is testing a different system. So outside production a service is handed
+        its time. In production this path does not exist, because a clock an HTTP
+        call can move is a clock that can close a worker's window early on them.
+      responses:
+        "200":
+          description: The service's current time.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  now: { type: string, format: date-time }
+    post:
+      operationId: setClock
+      summary: Move this service's clock
+      description: >
+        Set an instant, or advance by a duration. The harness moves every service
+        together: a stack where evidence is on Tuesday and confirmation is on
+        Friday produces results that are nobody's design.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                now: { type: string, format: date-time }
+                advance: { type: string, description: "A Go duration, e.g. 168h." }
+      responses:
+        "200":
+          description: The clock after the move.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  now: { type: string, format: date-time }
+        "400":
+          description: Neither an instant nor a duration, or a duration that does not parse.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+components:
+  parameters:
+    PartyID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: The party identifier.
+
+  schemas:
+    Error:
+      type: object
+      description: >
+        The error body every CREST service returns (pkg/httpx). The message is
+        written for whoever reads it, including eventually a worker being told why
+        something is held.
+      required: [code, message]
+      properties:
+        code: { type: string, description: A machine-actionable code, e.g. no_match, invalid_query, schema_violation. }
+        message: { type: string }
+        problems:
+          type: array
+          items: { type: string }
+          description: Per-field detail from schema validation, when there is any.
+    Match:
+      type: object
+      description: One resolved candidate, with the evidence for the match.
+      properties:
+        partyId: { type: string }
+        matchedOn: { type: string, description: Which key matched. }
+        confidence: { type: number }
+    Hold:
+      type: object
+      description: >
+        A recorded decision not to merge. Written whenever resolve finds more than
+        one candidate; the row is what someone later acts on (W7).
+      properties:
+        id: { type: string }
+        keyKind: { type: string }
+        keyValue: { type: string }
+        candidates: { type: array, items: { type: string } }
+        reason: { type: string }
+        createdAt: { type: string, format: date-time }
+
+  responses:
+    BadBody:
+      description: The body could not be read, or carried a field this service does not know. Unknown fields are rejected rather than dropped — a misspelled field is a wrong number nobody notices.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    SchemaViolation:
+      description: The document does not satisfy its JSON Schema; `problems` lists every failure at once.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: No such record.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Internal:
+      description: The service logged the cause and did not leak it.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  pathItems:
+    healthz:
+      get:
+        operationId: healthz
+        tags: [health]
+        summary: Liveness
+        description: The process is up. Separate from readiness on purpose — a service can be alive and unable to serve.
+        responses:
+          "200":
+            description: Alive.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string, const: ok }
+                    time: { type: string, format: date-time }
+    readyz:
+      get:
+        operationId: readyz
+        tags: [health]
+        summary: Readiness
+        description: >
+          Actually touches the database. The harness polls this instead of
+          sleeping, so a readyz that always says yes turns every start-up race
+          into a flaky test rather than a failed one.
+        responses:
+          "200":
+            description: Ready to serve.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string, const: ready }
+          "503":
+            description: Alive but not serving; `reason` says what is unreachable.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string }
+                    reason: { type: string }

@@ -1,0 +1,8 @@
+activity,outcome_value,outcome_unit,worker_id_kind,worker_id,period_start,period_end
+bednet-distribution,12,bednets-distributed,phone,+15550100011,2026-03-02,2026-03-02T17:00:00Z
+bednet-distribution,not-a-number,bednets-distributed,phone,+15550100012,2026-03-02,
+bednet-distribution,-4,bednets-distributed,phone,+15550100012,2026-03-02,
+bednet-distribution,7,bednets-distributed,phone,+15550100012,the second of March,
+bednet-distribution,7,bednets-distributed,phone,+15550100012,2026-03-05,2026-03-04
+bednet-distribution,7,bednets-distributed,phone,,2026-03-02,
+bednet-distribution,3,bednets-distributed,roster-id,riverside-roster-0003,2026-03-04,

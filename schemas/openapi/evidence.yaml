@@ -1,0 +1,345 @@
+openapi: 3.1.0
+info:
+  title: CREST evidence
+  version: "1"
+  description: |
+    Where a source system's file becomes units and claims, with provenance facts
+    attached and nothing about trust strength stored.
+
+    Units, claims and evidence records are referenced by the `$id` of their JSON
+    Schema under `schemas/` rather than restated here - `schemas/` is the source of
+    truth, and a second copy of a primitive is what `schemas/README.md` exists to
+    prevent.
+servers:
+  - url: http://evidence:8080
+    description: In-cluster address used by the other services.
+
+paths:
+  /v1/batches:
+    post:
+      operationId: submitBatch
+      summary: Submit a batch of work records
+      description: >
+        The body is the source file itself; everything about the source is query
+        parameters. The split is the point: the payload is what the source system
+        said, and the parameters are what the deployment knows about that source.
+        Provenance comes from the second, never the first (§8) - which is why a
+        batch with unknown provenance is refused rather than ingested at a guess.
+        Each row is resolved against the registry; rows that resolve to nobody or
+        to more than one party go to the unclear queue rather than being attached
+        to a best guess (W7).
+      parameters:
+        - { name: contextId, in: query, required: true, schema: { type: string } }
+        - { name: definitionId, in: query, required: true, schema: { type: string } }
+        - { name: submittedBy, in: query, required: true, schema: { type: string }, description: The party accountable for the submission. }
+        - { name: sourceClass, in: query, required: true, schema: { type: string }, description: What kind of system this came from - a provenance fact, never a tier. }
+        - { name: captureMethod, in: query, required: true, schema: { type: string } }
+        - { name: sourceExposure, in: query, required: true, schema: { type: string } }
+        - { name: systemRef, in: query, schema: { type: string }, description: The specific source system instance. }
+      requestBody:
+        required: true
+        description: The CSV file as sent by the source system. Up to 64 MiB.
+        content:
+          text/csv:
+            schema: { type: string }
+      responses:
+        "201":
+          description: >
+            Ingested. The result reports what became units and claims and what did
+            not - a batch is never all-or-nothing at the row level.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batchId: { type: string }
+                  rows: { type: integer }
+                  units: { type: integer }
+                  claims: { type: integer }
+                  unclear: { type: integer, description: Rows sent to the unclear queue. }
+                  rejections:
+                    type: array
+                    items: { type: object }
+                    description: Rows the adapter could not read, each with its reason.
+        "400":
+          description: A required provenance parameter is missing, or the body could not be read.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "422":
+          description: >
+            `unparseable_batch` - the header is unusable, so the file is refused
+            whole and the missing column is named. Or `batch_refused` - ingest
+            could not proceed, e.g. the definition is unknown.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/batches/{id}:
+    get:
+      operationId: getBatch
+      summary: Read a batch
+      description: What was submitted, by whom, under what provenance, and what came of it.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The batch record.
+          content: { application/json: { schema: { type: object } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/units/{id}:
+    get:
+      operationId: getUnit
+      summary: Read a unit of work
+      description: >
+        The work itself, independent of who performed it (W3). Payments reads this
+        to work out the amount owed. A disputed claim never destroys this record,
+        which is exactly why the two are separate resources.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The unit.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:unit:1"
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/claims:
+    get:
+      operationId: listClaims
+      summary: Which claims exist?
+      description: >
+        A claim links a party to a unit (W3). Filterable by party and state, which
+        is how a worker-facing view answers "what have I been credited with".
+      parameters:
+        - { name: partyId, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: The matching claims.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [claims]
+                properties:
+                  claims:
+                    type: array
+                    items:
+                      $ref: "urn:crest:schema:primitives:claim:1"
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/claims/{id}:
+    get:
+      operationId: getClaim
+      summary: Read a claim
+      description: Who is credited with which unit, and where that claim has got to in its window.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The claim.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:claim:1"
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/claims/{id}/transition:
+    post:
+      operationId: transitionClaim
+      summary: Move a claim to another state
+      description: >
+        How confirmation drives the claim state machine. Every legal move is a
+        request rather than a database write, which is what lets the harness make
+        any of them without reaching behind the service. An illegal move is a 409,
+        not a silent no-op.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to: { type: string, description: The target claim state. }
+                route:
+                  type: string
+                  description: >
+                    Which of the four exits took the claim there - self, auto,
+                    assisted or dispute. Recorded on the confirmation, never
+                    branched on for payment (W4).
+      responses:
+        "200":
+          description: The claim in its new state.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:claim:1"
+        "400": { $ref: "#/components/responses/BadBody" }
+        "404":
+          description: No such claim.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: The move is not legal from the claim's current state.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/unclear:
+    get:
+      operationId: listUnclear
+      summary: Which rows could not be attributed to a person?
+      description: >
+        Rows whose identifier resolved to nobody, or to more than one candidate.
+        They are held here rather than attached to a best guess (W7), and the count
+        is a number someone is meant to watch fall.
+      responses:
+        "200":
+          description: The open unclear rows.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [unclear, count]
+                properties:
+                  unclear: { type: array, items: { type: object } }
+                  count: { type: integer }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  # Every CREST service carries these two, added by pkg/httpx.Server.
+  /healthz: { $ref: "#/components/pathItems/healthz" }
+  /readyz: { $ref: "#/components/pathItems/readyz" }
+
+
+  /internal/clock:
+    get:
+      operationId: readClock
+      summary: What time does this service think it is?
+      description: >
+        Present only when CLOCK_DRIVEABLE is set, which pkg/service refuses in
+        production. The confirmation window is seven days; a harness that waits
+        seven days is not a harness, and one that shortens the window to a second
+        is testing a different system. So outside production a service is handed
+        its time. In production this path does not exist, because a clock an HTTP
+        call can move is a clock that can close a worker's window early on them.
+      responses:
+        "200":
+          description: The service's current time.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  now: { type: string, format: date-time }
+    post:
+      operationId: setClock
+      summary: Move this service's clock
+      description: >
+        Set an instant, or advance by a duration. The harness moves every service
+        together: a stack where evidence is on Tuesday and confirmation is on
+        Friday produces results that are nobody's design.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                now: { type: string, format: date-time }
+                advance: { type: string, description: "A Go duration, e.g. 168h." }
+      responses:
+        "200":
+          description: The clock after the move.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  now: { type: string, format: date-time }
+        "400":
+          description: Neither an instant nor a duration, or a duration that does not parse.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+components:
+
+  schemas:
+    Error:
+      type: object
+      description: >
+        The error body every CREST service returns (pkg/httpx). The message is
+        written for whoever reads it, including eventually a worker being told why
+        something is held.
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        problems:
+          type: array
+          items: { type: string }
+          description: Per-field detail from schema validation, when there is any.
+
+  responses:
+    BadBody:
+      description: >
+        The body could not be read, or carried a field this service does not know.
+        Unknown fields are rejected rather than dropped - a misspelled field is a
+        wrong number nobody notices.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    SchemaViolation:
+      description: The document does not satisfy its JSON Schema; `problems` lists every failure at once.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: No such record.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Internal:
+      description: The service logged the cause and did not leak it.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  pathItems:
+    healthz:
+      get:
+        operationId: healthz
+        tags: [health]
+        summary: Liveness
+        description: The process is up. Separate from readiness on purpose - a service can be alive and unable to serve.
+        responses:
+          "200":
+            description: Alive.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string, const: ok }
+                    time: { type: string, format: date-time }
+    readyz:
+      get:
+        operationId: readyz
+        tags: [health]
+        summary: Readiness
+        description: >
+          Actually touches the database. The harness polls this instead of
+          sleeping, so a readyz that always says yes turns every start-up race into
+          a flaky test rather than a failed one.
+        responses:
+          "200":
+            description: Ready to serve.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string, const: ready }
+          "503":
+            description: Alive but not serving; `reason` says what is unreachable.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    service: { type: string }
+                    status: { type: string }
+                    reason: { type: string }

@@ -1,7 +1,9 @@
 package httpx_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -15,8 +17,13 @@ import (
 
 func newTestServer(t *testing.T, clk clock.Clock) http.Handler {
 	t.Helper()
+	return newTestServerReady(t, clk, nil)
+}
+
+func newTestServerReady(t *testing.T, clk clock.Clock, ready httpx.ReadyFunc) http.Handler {
+	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return httpx.New("test", ":0", http.NewServeMux(), clk, log).Handler()
+	return httpx.New("test", ":0", http.NewServeMux(), clk, log, ready).Handler()
 }
 
 // The harness polls readiness instead of sleeping, so these endpoints are load
@@ -68,5 +75,39 @@ func TestUnknownRouteIs404(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/nope", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+// A readiness check that fails must make the endpoint fail. The harness polls
+// /readyz instead of sleeping, so a readyz that always says yes turns every
+// start-up race into a flaky test rather than a failed one.
+func TestReadinessReportsItsDependency(t *testing.T) {
+	h := newTestServerReady(t, clock.NewFake(time.Now()), func(context.Context) error {
+		return errors.New("the database is not accepting connections")
+	})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz = %d while its dependency was down, want 503", rec.Code)
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if body["reason"] == nil {
+		t.Error("readyz said no without saying why")
+	}
+}
+
+// Liveness is not readiness: a service whose database is down is still alive,
+// and conflating the two makes an orchestrator restart a healthy process.
+func TestHealthStaysUpWhenTheDependencyIsDown(t *testing.T) {
+	h := newTestServerReady(t, clock.NewFake(time.Now()), func(context.Context) error {
+		return errors.New("down")
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if rec.Code != http.StatusOK {
+		t.Errorf("healthz = %d, want 200", rec.Code)
 	}
 }

@@ -17,7 +17,7 @@
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
         "sourceExposure": "push-api",
-        "presentFields": ["householdId", "beneficiaryCount"],
+        "presentFields": ["household_id", "beneficiary_count"],
         "identityAssurance": "IA-3"
       },
       "want": { "acceptable": true, "tier": 3, "matchedRule": 0 }
@@ -29,7 +29,7 @@
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
         "sourceExposure": "push-api",
-        "presentFields": ["householdId", "beneficiaryCount"],
+        "presentFields": ["household_id", "beneficiary_count"],
         "identityAssurance": "IA-1"
       },
       "want": { "acceptable": true, "tier": 2, "matchedRule": 1 }
@@ -40,7 +40,7 @@
         "sourceClass": "programme-system",
         "captureMethod": "digital-capture",
         "sourceExposure": "consent-pull",
-        "presentFields": ["householdId"],
+        "presentFields": ["household_id"],
         "identityAssurance": "IA-1"
       },
       "want": { "acceptable": true, "tier": 2, "matchedRule": 1 }
@@ -75,7 +75,7 @@
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
         "sourceExposure": "push-api",
-        "presentFields": ["householdId", "beneficiaryCount"],
+        "presentFields": ["household_id", "beneficiary_count"],
         "identityAssurance": "IA-3"
       },
       "assessment": { "maxTier": 1, "reason": "under investigation after a bulk edit" },
@@ -88,7 +88,7 @@
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
         "sourceExposure": "push-api",
-        "presentFields": ["householdId", "beneficiaryCount"],
+        "presentFields": ["household_id", "beneficiary_count"],
         "identityAssurance": "IA-3"
       },
       "assessment": { "maxTier": 0, "reason": "withdrawn" },
@@ -101,7 +101,7 @@
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
         "sourceExposure": "push-api",
-        "presentFields": ["householdId", "beneficiaryCount"],
+        "presentFields": ["household_id", "beneficiary_count"],
         "identityAssurance": "IA-3"
       },
       "want": { "acceptable": true, "tier": 2, "matchedRule": 0, "becauseContains": "ceiling" }
@@ -137,7 +137,7 @@
     "facts": {
       "sourceClass": "institutional-system",
       "captureMethod": "system-of-record",
-      "presentFields": ["householdId", "beneficiaryCount"],
+      "presentFields": ["household_id", "beneficiary_count"],
       "identityAssurance": "IA-3"
     },
     "exposures": ["push-api", "consent-pull", "signed-batch", "supervised-upload"],

@@ -77,6 +77,14 @@ linters:
       # The clock package is where the permitted time.Now lives.
       - path: pkg/clock/
         linters: [forbidigo]
+      # The harness measures how long a container takes to start, which is real
+      # elapsed time and cannot be anything else: the clock it reads for that
+      # would be the clock it is driving, and a deadline on a fake clock that
+      # only the test advances never expires. Domain logic is still forbidden
+      # from wall time — the harness is not domain logic, it is the thing
+      # holding domain logic to the rule.
+      - path: harness/
+        linters: [forbidigo]
       # Mocks, CLIs and the structure linter are command-line tools whose output
       # IS stdout. They have no injected logger to use instead.
       - path: (tools/|cmd/)

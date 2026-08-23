@@ -44,6 +44,12 @@ pre-commit:
           python3 .claude/hooks/guard-secrets.py --scan "$f" || exit 1
         done
 
+    # The manifest is maintained by hand, which means it is the first thing
+    # dropped when a change is finished late. This warns and always passes:
+    # a blocking check that is wrong once gets disabled for good.
+    - name: unproven work
+      run: python3 .claude/hooks/unproven-work.py --scan || true
+
 commit-msg:
   jobs:
     - name: conventional commit

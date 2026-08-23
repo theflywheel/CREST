@@ -11,7 +11,11 @@ module.exports = {
       2,
       'always',
       [
-        // Services (Blueprint §13)
+        // Services (Blueprint §13). 'services' is for a change that spans the
+        // spine — the seven are meant to change one at a time, and needing this
+        // scope is a mild signal that something crossed more boundaries than it
+        // should have.
+        'services',
         'registry', 'definitions', 'evidence', 'confirmation',
         'verification', 'payments', 'notify',
         // Shared code and contracts

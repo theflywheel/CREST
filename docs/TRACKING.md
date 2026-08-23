@@ -72,3 +72,20 @@ Gates are issues, not calendar entries, because they have acceptance criteria an
 Nine items start Blocked (#4, #12, #15, #16, #22, #25, #26, #30, #33) — every one of them waiting on something real, not on capacity.
 
 The board is a **view**, not a second source of truth. Milestones, epics and dependencies live on the issues; if the board and an issue disagree, the issue wins.
+
+## What closing out a piece of work touches
+
+The `bookkeeping` skill walks an agent through finishing work. It assumes the conventions below, and they are written here so the skill and this document cannot drift apart — if one changes, change the other in the same PR.
+
+**Four places record one piece of work**, and all four have to agree:
+
+1. **The issue** — closed only against a satisfied "done when", or an amended one with the amendment stated. Closing is the claim that the criterion was met; nothing else in the system re-checks it.
+2. **`docs/test-manifest.md`** — a row per feature, in the same change, with a status (`planned` / `partial` / `spike` / `covered` / `unproven`) that survives review. An issue's rows are `covered` before it closes, or the issue says why not.
+3. **The PR** — `Closes #N`, what changed, which of W1–W10 it could break, how it was proven, and what was left undone.
+4. **The board** — Status moved. `Blocked` still means only that a recorded dependency is unmet.
+
+**Statuses map to a state, not to effort.** `In Progress` means someone is working it now; an item nobody is touching goes back to `Todo` rather than sitting In Progress as a record of intent. `Done` means merged, not "the branch works".
+
+**`gh issue close` and `gh pr edit` can fail** with a GraphQL error about Projects (classic) being deprecated. It is not a permissions problem and it does not clear on retry. The route that works is REST: `gh api -X PATCH repos/theflywheel/CREST/issues/N -F body=@file`, and `-f state=closed` to close. This is recorded here because it has cost time twice.
+
+**A pre-commit hook warns when the manifest looks stale** — `.claude/hooks/unproven-work.py` flags a change that adds a service file, a `pkg/` package, or a new endpoint while leaving `docs/test-manifest.md` untouched. It warns and always exits 0, deliberately: a blocking check that is wrong once gets disabled for good, and a disabled check protects nothing.
