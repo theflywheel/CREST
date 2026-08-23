@@ -49,9 +49,9 @@ The image audit is complete and it changed the picture. The issuance demo is not
 
 ---
 
-## Identity — eSignet (#3) · Blueprint §4 · **round-trip done; production access still open**
+## Identity — eSignet (#3) · Blueprint §4 · **settled**
 
-~~None of that can be answered against a local mock.~~ **That claim was wrong, and worth correcting rather than quietly dropping.** It conflated two different questions. Whether the subject identifier is pairwise is a property of eSignet's *code*, and self-hosted eSignet is the same code a sandbox runs — so it is answerable by anyone willing to deploy it. What genuinely needs an outside party is only the second half of #3's "done when": production access, who to talk to, and lead time. That half is still open, and like the rail sandbox (#19) it is a conversation to start now.
+~~None of that can be answered against a local mock.~~ **That claim was wrong, and worth correcting rather than quietly dropping.** It conflated two different questions. Whether the subject identifier is pairwise is a property of eSignet's *code*, and self-hosted eSignet is the same code a sandbox runs — so it is answerable by anyone willing to deploy it. The second half of #3's "done when" — production access — was also mis-scoped, and has been moved to [#53](../../issues/53). It is not a sandbox question. In a pilot, eSignet is the one the country's identity authority runs; being a relying party there means *they* register CREST. That is a partner conversation which cannot start before the pilot geography is chosen, and no part of it was blocking the technical answer.
 
 eSignet 1.8.0 and mock-identity 0.13.0 now run on Railway against their own logical databases. Discovery is public:
 
