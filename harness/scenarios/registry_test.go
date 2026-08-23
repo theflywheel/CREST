@@ -327,9 +327,23 @@ func TestTheTrustChainSaysWhichLinksAVerifierCanCheck(t *testing.T) {
 		t.Fatal("the trust chain has no link naming the definition the credential was measured under")
 	}
 
-	if pub.Transparent != defLink.Checkable {
-		t.Fatalf("the definition is transparent=%v but its trust-chain link says checkable=%v; "+
-			"one of the two is lying to the verifier", pub.Transparent, defLink.Checkable)
+	// The invariant is one-directional, and the direction matters.
+	//
+	// Checkable MUST imply the version really reached a transparency log —
+	// claiming otherwise hands a verifier a URL that proves nothing. The
+	// converse does not hold: a version published to a log by a deployment that
+	// has since been reconfigured without a node address is genuinely no longer
+	// checkable *here*, and saying so is correct rather than a contradiction.
+	// Asserting equality treats that honest answer as a bug.
+	if defLink.Checkable && !pub.Transparent {
+		t.Fatalf("the trust chain says this definition is independently checkable, but it was " +
+			"published with no transparency proof — the verifier is being handed a URL that proves nothing")
+	}
+	if pub.Transparent && !defLink.Checkable {
+		t.Logf("published to a log, but not checkable from here: %q", defLink.Trusting)
+		if defLink.Trusting == "" {
+			t.Error("and it does not say why")
+		}
 	}
 	if defLink.Checkable {
 		// The URL has to actually answer. A "how" nobody can fetch is a

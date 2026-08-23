@@ -135,6 +135,18 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 		if err := insertBatch(ctx, tx, batch); err != nil {
 			return err
 		}
+		// The heartbeat, in the same transaction as the evidence it came with
+		// (#22). Written outside it, a rolled-back batch would still leave the
+		// source looking alive — and "the feed is fine, we just have no data"
+		// is the exact wrong conclusion.
+		//
+		// A batch that produced only rejections still counts as a heartbeat:
+		// this watches whether the source is *sending*, not whether what it
+		// sends is any good. Bad rows are the unclear queue's problem and are
+		// visible there; silence is invisible everywhere else.
+		if err := markSeen(ctx, tx, batch.AdapterRef, batch.ContextID, now); err != nil {
+			return err
+		}
 		for _, u := range result.Unclear {
 			if err := insertUnclear(ctx, tx, u); err != nil {
 				return err

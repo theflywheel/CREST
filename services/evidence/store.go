@@ -11,6 +11,15 @@ import (
 
 const topicClaimCreated = "claim.created"
 
+// topicSourceQuiet tells a source's owner that it has stopped sending.
+//
+// A side effect that must not be lost, for a reason worth stating: this is the
+// only alert in the system nobody else will raise. A missed payment is noticed
+// by the worker who did not get paid; a rejected row is in the unclear queue; a
+// wrong record gets disputed. A silent source produces no artefact anywhere,
+// so if this message is dropped the outage is simply invisible.
+const topicSourceQuiet = "source.quiet"
+
 // Batch is the receipt for one submission. Every count is here so that "we sent
 // 500 rows and 12 people were not paid" is a question with an answer.
 type Batch struct {
