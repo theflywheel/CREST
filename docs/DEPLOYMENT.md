@@ -152,3 +152,37 @@ The record id is the `record` field of `GET /v1/definitions/<id>/publication` or
 inclusion proof and hands it to `tools/spikes/dediproof` — a second
 implementation written from the wire format, because asking DeDi to check its
 own proof would only establish that DeDi agrees with itself.
+
+## Telling a deployment who it is
+
+`registry` publishes the deployment's own self-description to the `instances`
+registry on the node (#70), so a verifier who resolves
+`crest/organisations/<id>` can find out which deployment owns that namespace,
+which publisher key its writes should carry, and who is answerable when a record
+and a credential disagree. It is served unauthenticated at `GET /v1/instance` —
+a public self-description nobody outside can read is one nobody outside can
+check.
+
+| Variable | Required | What it is |
+|---|---|---|
+| `CREST_INSTANCE_ID` | outside local | This deployment's identifier |
+| `CREST_INSTANCE_NAME` | outside local | Human-readable name |
+| `CREST_OPERATOR_PARTY_ID` | **always** | The organisation answerable for this deployment |
+
+The first two have local-only defaults and none outside it, deliberately. A
+deployment that invented its own identifier would publish under a name nobody
+agreed to, and two that both defaulted would collide in one namespace — which on
+an append-only log is not a mistake anyone can take back. The operator has no
+default anywhere: it is the one field nobody can guess on someone's behalf.
+
+The record is republished **when its content changes**, not when it is absent.
+Bootstrap runs on every start, so publish-if-absent would freeze the first answer
+forever, and a deployment that changed operator or rotated its publisher key
+would go on advertising the old one — leaving the log, the thing a verifier
+trusts, as the most confidently wrong copy in the system.
+
+One caveat worth stating: `publisherKeyId` is **self-asserted**. Anyone holding a
+valid publisher key for the namespace could publish a different answer. What
+stops that being silent is the log itself — the record is append-only, so a
+change is visible to anyone who looked before. It is a fact you can watch, not
+one you can take on faith.

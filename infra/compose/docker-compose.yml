@@ -36,6 +36,15 @@ x-service: &crest-service
     DEDI_KEY_ID: "${DEDI_KEY_ID:-crest}"
     DEDI_PUBLISHER_KEY: "${DEDI_PUBLISHER_KEY:-}"
 
+    # Who this deployment is (#70). Required outside local, and deliberately
+    # without a default there: a deployment that invented its own identifier
+    # would publish under a name nobody agreed to, and two that both defaulted
+    # would collide in one namespace — which on an append-only log is not a
+    # mistake anyone can take back.
+    CREST_INSTANCE_ID: "${CREST_INSTANCE_ID:-crest:instance:local}"
+    CREST_INSTANCE_NAME: "${CREST_INSTANCE_NAME:-Local development deployment}"
+    CREST_OPERATOR_PARTY_ID: "${CREST_OPERATOR_PARTY_ID:-did:crest:party:01JCREST000000000000000RGN}"
+
     # Who approves a registering organisation. Configuration, not
     # infrastructure: a pilot with three partner NGOs and a national rollout
     # would reasonably disagree, and both are still CREST (the layering test).

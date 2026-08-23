@@ -171,3 +171,24 @@ func (f *Fallback) Resolve(ctx context.Context, ref Ref, withProof bool) (Record
 		Details: out,
 	}, nil
 }
+
+// Digest is the content address of a payload, computed the same way a
+// publication computes it.
+//
+// Exported so a caller can ask "has this changed since I last published it?"
+// without publishing to find out. Canonicalised before hashing, so the answer
+// is a property of the content and not of Go's map iteration order — two
+// marshals of the same fact must produce the same digest or the question is
+// meaningless.
+func Digest(payload any) (string, error) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("dedi: marshal payload: %w", err)
+	}
+	canon, err := credential.Canonicalise(raw)
+	if err != nil {
+		return "", fmt.Errorf("dedi: canonicalise payload: %w", err)
+	}
+	sum := sha256.Sum256(canon)
+	return hex.EncodeToString(sum[:]), nil
+}

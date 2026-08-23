@@ -26,7 +26,7 @@ CREATE INDEX outbox_pending ON outbox (id) WHERE delivered_at IS NULL;
 -- to, so "prove this organisation held these terms in March" is one query
 -- rather than three.
 CREATE TABLE registry_publications (
-    subject_kind     text NOT NULL CHECK (subject_kind IN ('organisation', 'terms', 'authorization')),
+    subject_kind     text NOT NULL CHECK (subject_kind IN ('organisation', 'terms', 'authorization', 'instance')),
     subject_id       text NOT NULL,
     subject_version  integer NOT NULL DEFAULT 1,
     namespace        text NOT NULL,

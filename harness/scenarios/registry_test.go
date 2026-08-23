@@ -359,3 +359,60 @@ func TestTheTrustChainSaysWhichLinksAVerifierCanCheck(t *testing.T) {
 		t.Errorf("a valid verdict does not say that the subject's authorization is unverifiable: %v", v.NotEstablished)
 	}
 }
+
+// #70: a deployment says who it is, and a verifier can resolve it.
+//
+// This closes the loop #69 left open. A verifier who resolves
+// `crest/organisations/<id>` on the node holds a record and, until now, no way
+// to find out which deployment owns that namespace, which publisher key its
+// writes should carry, or who is answerable when the record and a credential
+// disagree.
+func TestADeploymentSaysWhoItIsAndAVerifierCanResolveIt(t *testing.T) {
+	w := setup(t)
+
+	var out struct {
+		Instance struct {
+			ID              string `json:"instanceId"`
+			Name            string `json:"name"`
+			OperatorPartyID string `json:"operatorPartyId"`
+			IssuerID        string `json:"issuerId"`
+			Registry        struct {
+				Namespace      string `json:"namespace"`
+				PublisherKeyID string `json:"publisherKeyId"`
+				Transparent    bool   `json:"transparent"`
+			} `json:"registry"`
+		} `json:"instance"`
+		Publication publication `json:"publication"`
+	}
+	// Unauthenticated on purpose: a public self-description nobody outside can
+	// read is one nobody outside can check.
+	eventually(t, "the deployment publishes its own identity", 20*time.Second, func() error {
+		if err := w.Registry.Get(w.ctx, "/v1/instance", &out); err != nil {
+			return err
+		}
+		if out.Publication.Record == "" {
+			return fmt.Errorf("published nowhere yet")
+		}
+		return nil
+	})
+
+	if out.Instance.OperatorPartyID == "" {
+		t.Error("the deployment does not say who operates it")
+	}
+	if out.Instance.Registry.Transparent && out.Instance.Registry.PublisherKeyID == "" {
+		t.Error("the deployment publishes to a log and does not say which key its writes carry")
+	}
+	// The description of where it publishes has to match where it actually
+	// published. If those disagree, the record is pointing readers at a
+	// namespace it is not writing to.
+	if out.Publication.Registry != "instances" {
+		t.Errorf("the instance published to %q, want the instances registry", out.Publication.Registry)
+	}
+	if out.Instance.Registry.Transparent != out.Publication.Transparent {
+		t.Errorf("the deployment says transparent=%v and its own publication says %v",
+			out.Instance.Registry.Transparent, out.Publication.Transparent)
+	}
+	t.Logf("instance %s, operated by %s, published as %s@%s (transparent=%v)",
+		out.Instance.ID, out.Instance.OperatorPartyID,
+		out.Publication.Record, out.Publication.RegistryVersion, out.Publication.Transparent)
+}
