@@ -12,6 +12,19 @@
 # ERROR_FETCHING_IDENTITY_DATA — says nothing about a file having been replaced.
 set -e
 
+CSV="${CERTIFY_WORK_EVENTS_CSV:-/home/inji/data/work_events.csv}"
+
+# Railway creates a volume's mount point owned by root, and Certify runs as uid
+# 1001, so the first thing it does on a fresh volume is fail to write to it. The
+# service therefore starts as root (RAILWAY_RUN_UID=0), takes ownership, and
+# drops straight back to 1001 — the issuer's signing key lives on that volume,
+# and a process that can be exploited into reading it should not also be root.
+if [ "$(id -u)" = "0" ]; then
+  mkdir -p "$(dirname "$CSV")" "$(dirname "${CERTIFY_KEYSTORE_PATH:-/home/inji/CERTIFY_PKCS12/local.p12}")"
+  chown -R 1001:1001 "$(dirname "$CSV")" "$(dirname "${CERTIFY_KEYSTORE_PATH:-/home/inji/CERTIFY_PKCS12/local.p12}")"
+  exec su inji -s /bin/bash -c 'exec "$@"' -- sh "$0" "$@"
+fi
+
 DATA_DIR="$(dirname "${CERTIFY_WORK_EVENTS_CSV:-/home/inji/data/work_events.csv}")"
 mkdir -p "$DATA_DIR"
 if [ ! -f "${CERTIFY_WORK_EVENTS_CSV:-/home/inji/data/work_events.csv}" ]; then

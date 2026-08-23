@@ -12,3 +12,4 @@ ARG INJI_VERIFY_UI_IMAGE=mosipid/inji-verify-ui:0.16.0
 FROM ${INJI_VERIFY_UI_IMAGE}
 
 COPY infra/verify/config.json /usr/share/nginx/html/assets/config.json
+COPY infra/verify/nginx.conf  /etc/nginx/conf.d/default.conf
