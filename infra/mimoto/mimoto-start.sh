@@ -15,11 +15,31 @@ set -e
 
 CONFIG_DIR=/home/mosip
 CERTS_DIR="$CONFIG_DIR/certs"
+
+# The keystore has to outlive the container. It is not only the OIDC client key:
+# the MOSIP key manager generates its ROOT master key *into this same p12* on
+# first start and records the alias in the database. A container that comes back
+# with a freshly materialised keystore therefore finds a DB row naming an alias
+# the file does not contain, and dies with `No such alias` — the same failure
+# eSignet had, one layer down. So the keystore lives on a volume and is written
+# from the secret only when it is not already there.
+#
+# Railway creates the volume's mount point owned by root while mimoto runs as
+# 1002:1001, so the service starts as root (RAILWAY_RUN_UID=0), takes ownership
+# and drops straight back.
+if [ "$(id -u)" = "0" ]; then
+  mkdir -p "$CERTS_DIR"
+  chown -R 1002:1001 "$CERTS_DIR"
+  exec setpriv --reuid=1002 --regid=1001 --clear-groups /bin/sh "$0" "$@"
+fi
+
 mkdir -p "$CERTS_DIR"
 
-if [ -n "$MIMOTO_OIDC_P12_B64" ]; then
+if [ -f "$CERTS_DIR/oidckeystore.p12" ]; then
+  echo "keystore already present on the volume; leaving it alone"
+elif [ -n "$MIMOTO_OIDC_P12_B64" ]; then
   echo "$MIMOTO_OIDC_P12_B64" | base64 -d > "$CERTS_DIR/oidckeystore.p12"
-  chmod 0400 "$CERTS_DIR/oidckeystore.p12"
+  chmod 0600 "$CERTS_DIR/oidckeystore.p12"
 else
   echo "MIMOTO_OIDC_P12_B64 is not set; mimoto will fail to start" >&2
 fi
