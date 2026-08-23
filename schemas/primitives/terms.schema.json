@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:primitives:terms:1",
+  "title": "Terms",
+  "description": "A published, versioned permission set a Party may qualify under. Domain-neutral: the permission names come from profiles.",
+  "type": "object",
+  "properties": {
+    "id": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
+    "version": { "type": "integer", "minimum": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "permissions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Opaque strings. The core never interprets them; profiles and definitions do."
+    },
+    "publishedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" },
+    "supersedes": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/versionedRef" }
+  },
+  "required": ["id", "version", "name", "permissions", "publishedAt"],
+  "additionalProperties": false
+}

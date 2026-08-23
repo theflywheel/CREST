@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:primitives:claim:1",
+  "title": "Claim",
+  "description": "Party P performed (part of) Unit U — zero, one or many per unit. The only place actor and activity meet.",
+  "type": "object",
+  "properties": {
+    "id": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
+    "unitId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
+    "partyId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" },
+    "share": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "description": "Portion of the unit attributed to this party. Absent means the whole of it."
+    },
+    "matched": {
+      "type": "object",
+      "description": "Which key matched the worker and at what confidence — provenance the strength function and the unclear queue both read (§4.1).",
+      "properties": {
+        "key": { "type": "string", "enum": ["national-id-hash", "contact-route", "roster-id"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "required": ["key", "confidence"],
+      "additionalProperties": false
+    },
+    "state": {
+      "type": "string",
+      "enum": ["DRAFT", "NOTIFIED", "ACCEPTED", "DISPUTED"],
+      "description": "ACCEPTED is reachable by confirm, auto-confirm or supervisor-assisted, and all three release payment (W4). DISPUTED may follow ACCEPTED — silence is not consent against the worker (W3)."
+    },
+    "confirmation": {
+      "type": "object",
+      "properties": {
+        "windowOpenedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" },
+        "windowClosesAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" },
+        "route": { "type": "string", "enum": ["self", "auto", "assisted"] },
+        "at": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" },
+        "notifiedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" }
+      },
+      "required": ["windowOpenedAt", "windowClosesAt"],
+      "additionalProperties": false
+    },
+    "createdAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" }
+  },
+  "required": ["id", "unitId", "partyId", "state", "createdAt"],
+  "additionalProperties": false
+}

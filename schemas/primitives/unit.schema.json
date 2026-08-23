@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:primitives:unit:1",
+  "title": "Unit",
+  "description": "An instance of a defined activity happened — independent of who did it. A disputed Claim never destroys the Unit (W5).",
+  "type": "object",
+  "properties": {
+    "id": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
+    "definition": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/versionedRef" },
+    "contextId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
+    "outcome": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/outcome" },
+    "period": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/period" },
+    "geography": {
+      "type": "string",
+      "description": "Coarse only. Raw location is never stored (§8)."
+    },
+    "enrichment": {
+      "type": "object",
+      "description": "Optional source fields, kept verbatim. Read by the tier map's requiresFields; never interpreted by the core."
+    },
+    "provenance": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/provenance" },
+    "createdAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" }
+  },
+  "required": ["id", "definition", "contextId", "outcome", "period", "provenance", "createdAt"],
+  "additionalProperties": false
+}

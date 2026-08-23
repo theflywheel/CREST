@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:primitives:party:1",
+  "title": "Party",
+  "description": "An actor exists — person or organisation. Persons need only a name and one contact route; identity binds late (§4). 'Worker' is a role a Party holds, not a type.",
+  "type": "object",
+  "properties": {
+    "id": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" },
+    "kind": { "type": "string", "enum": ["person", "organisation"] },
+    "displayName": { "type": "string", "minLength": 1 },
+    "contactRoutes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["phone", "email", "ussd", "supervisor"] },
+          "value": { "type": "string", "minLength": 1 },
+          "verifiedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" }
+        },
+        "required": ["kind", "value"],
+        "additionalProperties": false
+      },
+      "description": "At least one, because W2 is unenforceable against a Party nobody can reach."
+    },
+    "identityBindings": {
+      "type": "array",
+      "description": "Append-only. Re-binding adds a record; history is never rewritten (§4.1). The assurance level is derived from these, never stored.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "provider": { "type": "string", "minLength": 1 },
+          "providerClass": {
+            "type": "string",
+            "enum": ["esignet", "mosip-ida", "generic-oidc", "mobile-otp", "document-seen", "asserted"]
+          },
+          "subjectRef": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The provider's pairwise subject identifier. With eSignet this partitions by relying party, not by client (finding E6)."
+          },
+          "nationalIdHash": {
+            "type": "object",
+            "description": "For matching only. A salted hash and the salt's identifier — never the identifier itself, and never for fixtures either (W9).",
+            "properties": {
+              "alg": { "type": "string", "enum": ["sha256"] },
+              "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "saltRef": { "type": "string", "minLength": 1 }
+            },
+            "required": ["alg", "value", "saltRef"],
+            "additionalProperties": false
+          },
+          "assertedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" },
+          "expiresAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" }
+        },
+        "required": ["provider", "providerClass", "subjectRef", "assertedAt"],
+        "additionalProperties": false
+      }
+    },
+    "createdAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" }
+  },
+  "required": ["id", "kind", "displayName", "contactRoutes", "createdAt"],
+  "additionalProperties": false
+}

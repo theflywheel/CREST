@@ -1,0 +1,221 @@
+# The canonical fixture world.
+#
+# Defined once, used by the harness and the invariant suite both, because two
+# fixture worlds is the beginning of two understandings of the system
+# (docs/TESTING.md). Every object here validates against schemas/ — the loader
+# checks that, so a world that has drifted from a schema fails at load rather
+# than three assertions later.
+#
+# Everything is invented. No real person, no real programme, no identifier any
+# real identity system would issue (W9, and docs/TESTING.md).
+#
+# IDs are fixed and readable on purpose: a failing assertion should name
+# something a person recognises, not a random ULID.
+
+instance:
+  name: Fixture deployment
+  # A fixed instant everything is relative to. The harness starts its clock
+  # here, so "seven days later" is arithmetic rather than a wait.
+  epoch: 2026-03-01T08:00:00Z
+
+parties:
+  # The paying organisation. An org is a Party like any other (§2).
+  - id: did:crest:party:01JCREST000000000000000RGN
+    kind: organisation
+    displayName: Riverside Health Programme
+    contactRoutes:
+      - kind: email
+        value: programme@riverside.invalid
+    createdAt: 2026-01-05T09:00:00Z
+
+  # Who writes the definition, and who ratifies it — two Parties, because
+  # author must not equal approver on the same version (§7).
+  - id: did:crest:party:01JCREST00000000000000SPEC
+    kind: person
+    displayName: Programme Specifier
+    contactRoutes:
+      - kind: email
+        value: specifier@riverside.invalid
+    createdAt: 2026-01-05T09:05:00Z
+
+  - id: did:crest:party:01JCREST00000000000000SPVR
+    kind: person
+    displayName: District Supervisor
+    contactRoutes:
+      - kind: phone
+        value: "+15550100001"
+      - kind: email
+        value: supervisor@riverside.invalid
+    createdAt: 2026-01-06T09:00:00Z
+
+  # Three workers at three identity-assurance levels. The level itself is not
+  # stored — it is derived from these bindings, the same way tier is derived
+  # from provenance (§4.1, §6).
+
+  # IA-3: anchored against a national system.
+  - id: did:crest:party:01JCREST00000000000000WRKA
+    kind: person
+    displayName: Worker Anaya
+    contactRoutes:
+      - kind: phone
+        value: "+15550100011"
+    identityBindings:
+      - provider: fixture-esignet
+        providerClass: esignet
+        subjectRef: fixture-psut-anaya
+        nationalIdHash:
+          alg: sha256
+          value: 3f79bb7b435b05321651daefd374cdc681dc06faa65e374e38337b88ca046dea
+          saltRef: fixture-salt-1
+        assertedAt: 2026-01-10T10:00:00Z
+    createdAt: 2026-01-10T09:59:00Z
+
+  # IA-1: a verified contact route and nothing more. The floor.
+  - id: did:crest:party:01JCREST00000000000000WRKB
+    kind: person
+    displayName: Worker Bina
+    contactRoutes:
+      - kind: phone
+        value: "+15550100012"
+        verifiedAt: 2026-01-11T10:00:00Z
+    identityBindings:
+      - provider: fixture-otp
+        providerClass: mobile-otp
+        subjectRef: fixture-otp-bina
+        assertedAt: 2026-01-11T10:00:00Z
+    createdAt: 2026-01-11T09:59:00Z
+
+  # IA-0: asserted at assisted enrolment, no binding at all. This worker exists
+  # so that "the weakest worker still gets paid and still gets a credential" is
+  # a case the suite runs, not a case the design merely claims.
+  - id: did:crest:party:01JCREST00000000000000WRKC
+    kind: person
+    displayName: Worker Chandra
+    contactRoutes:
+      - kind: supervisor
+        value: did:crest:party:01JCREST00000000000000SPVR
+    createdAt: 2026-01-12T09:00:00Z
+
+terms:
+  - id: crest:terms:01JCREST00000000000000TERM
+    version: 1
+    name: Community health worker terms
+    permissions:
+      - submit-work-evidence
+      - specify-definition
+      - ratify-definition
+    publishedAt: 2026-01-05T10:00:00Z
+
+authorizations:
+  # The supervisor may submit evidence, scoped to this project only.
+  - id: crest:authorization:01JCREST00000000000000GRNT
+    partyId: did:crest:party:01JCREST00000000000000SPVR
+    terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
+    scope: { kind: context, contextId: crest:context:01JCREST00000000000000PRJC }
+    functions: [submit-work-evidence]
+    period: { start: 2026-01-06T00:00:00Z, end: 2026-12-31T23:59:59Z }
+    authorityPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedByPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedAt: 2026-01-06T09:30:00Z
+    state: ACTIVE
+
+  - id: crest:authorization:01JCREST00000000000000GRNS
+    partyId: did:crest:party:01JCREST00000000000000SPEC
+    terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
+    scope: { kind: instance }
+    functions: [specify-definition]
+    period: { start: 2026-01-05T00:00:00Z }
+    authorityPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedByPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedAt: 2026-01-05T10:30:00Z
+    state: ACTIVE
+
+contexts:
+  - id: crest:context:01JCREST00000000000000PRJC
+    kind: project
+    name: Riverside bednet campaign 2026
+    ownerPartyId: did:crest:party:01JCREST000000000000000RGN
+    period: { start: 2026-02-01T00:00:00Z, end: 2026-06-30T23:59:59Z }
+    configuration:
+      district: Riverside
+      confirmationWindowDays: 7
+    activationGates:
+      - name: definition-active
+        satisfiedAt: 2026-01-20T12:00:00Z
+      - name: payment-setup-attached
+        satisfiedAt: 2026-01-21T09:00:00Z
+    state: ACTIVE
+
+definitions:
+  # The fully-worked definition (#18): bednet distribution, three faces, tier map.
+  #
+  # It is the object every other component reads, so it is worth reading closely.
+  # The three faces are projections of this one record — the worker's plain
+  # language, the platform's field requirements, and what a verifier walks.
+  - id: crest:definition:01JCREST00000000000000DEFN
+    version: 1
+    state: ACTIVE
+    activity: { code: bednet-distribution, label: Bednet distribution }
+    outcomeUnit: bednets-distributed
+    faces:
+      worker:
+        summary: You handed out bednets and recorded each household you visited.
+        evidenceInPlainLanguage:
+          - The programme's own system has your visit recorded.
+          - Each household you visited has an identifier against your name.
+          - Your supervisor confirmed the day's round.
+        # The ceiling exists so that a definition can promise less than the tier
+        # map could award. A worker should never be told a record is stronger
+        # than the definition itself is willing to stand behind.
+        tierCeiling: 3
+      platform:
+        sourceSystems: [dhis2-riverside, csv-batch]
+        requiredFields: [householdId, beneficiaryCount]
+        schemaRef: urn:crest:schema:evidence:work-evidence-record:1
+      verifier:
+        authorisedIssuers: [did:crest:issuer:fixture-deployment]
+        specifierPartyId: did:crest:party:01JCREST00000000000000SPEC
+        specifiedAt: 2026-01-15T11:00:00Z
+
+    # Read top to bottom; the first rule whose conditions all hold wins. Order
+    # is the whole semantics, so the strongest rule is first and the floor is
+    # last. The floor has no requirements at all, which is what makes "a record
+    # providing only the mandatory core is valid Tier-1-capable evidence" (§8)
+    # true rather than merely stated.
+    tierMap:
+      - tier: 3
+        sourceClassIn: [national-system, institutional-system]
+        captureMethodIn: [system-of-record]
+        requiresFields: [householdId, beneficiaryCount]
+        minIdentityAssurance: IA-3
+      - tier: 2
+        sourceClassIn: [national-system, institutional-system, programme-system]
+        captureMethodIn: [system-of-record, digital-capture]
+        requiresFields: [householdId]
+        minIdentityAssurance: IA-1
+      - tier: 1
+        sourceClassIn:
+          [national-system, institutional-system, programme-system, supervised-capture, self-reported]
+        captureMethodIn: [system-of-record, digital-capture, supervised-manual, unsupervised-manual]
+
+    authorisedAttesterFunctions: [submit-work-evidence]
+    authoredByPartyId: did:crest:party:01JCREST00000000000000SPEC
+    # Not the author. Separation of duties is enforced in the service, and the
+    # fixture world would be a strange place to violate the rule being tested.
+    ratifiedByPartyId: did:crest:party:01JCREST000000000000000RGN
+    activatedAt: 2026-01-20T12:00:00Z
+    createdAt: 2026-01-15T11:00:00Z
+
+linkedRecords:
+  # The rate. It is attached to the definition by reference, and the definition
+  # is complete without it — recognition is a use of its own (§7).
+  - id: crest:linked-record:01JCREST00000000000000PAYS
+    type: payment-setup
+    version: 1
+    keyedTo: { kind: definition, id: crest:definition:01JCREST00000000000000DEFN }
+    state: ACTIVE
+    createdAt: 2026-01-21T09:00:00Z
+    payload:
+      ratePerOutcomeUnit: { amountMinor: 250, currency: USD }
+      payerPartyId: did:crest:party:01JCREST000000000000000RGN
+      effectiveFrom: 2026-02-01T00:00:00Z

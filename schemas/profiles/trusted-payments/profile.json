@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:profiles:trusted-payments:1",
+  "title": "Trusted Payments profile",
+  "description": "L2-adjacent specification (§2.1): it names roles and LinkedRecord types and touches no core schema. The test of the object model is that a second profile needs nothing new.",
+  "type": "object",
+  "properties": {
+    "roles": {
+      "type": "object",
+      "description": "Roles a Party holds in this profile. 'Worker' is here, not in the Party primitive.",
+      "properties": {
+        "subject": { "const": "worker" },
+        "attester": { "const": "supervisor" },
+        "specifier": { "const": "programme-owner" },
+        "payer": { "const": "paying-organisation" }
+      },
+      "required": ["subject", "attester", "specifier", "payer"],
+      "additionalProperties": false
+    },
+    "linkedRecordTypes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "const": ["payment-setup", "payment-instruction", "compensation"]
+    }
+  },
+  "required": ["roles", "linkedRecordTypes"],
+  "additionalProperties": false
+}

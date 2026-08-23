@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:primitives:context:1",
+  "title": "Context",
+  "description": "A bounded operational scope with its own configuration and activation gates. 'Project' and 'campaign' are what profiles call it; a training cohort is one too.",
+  "type": "object",
+  "properties": {
+    "id": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
+    "kind": { "type": "string", "minLength": 1, "description": "Profile vocabulary: project, campaign, cohort. The core does not interpret it." },
+    "name": { "type": "string", "minLength": 1 },
+    "parentId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
+    "ownerPartyId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" },
+    "period": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/period" },
+    "configuration": { "type": "object", "description": "L2 data. The core stores and returns it and never reads inside it." },
+    "activationGates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "satisfiedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      }
+    },
+    "state": { "type": "string", "enum": ["DRAFT", "ACTIVE", "CLOSED"] }
+  },
+  "required": ["id", "kind", "name", "ownerPartyId", "period", "state"],
+  "additionalProperties": false
+}

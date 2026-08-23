@@ -12,7 +12,7 @@ GO ?= go
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
         harness-logs verify-deploy clean todo dedi-image dedi-keys spike-dedi \
-        spike-dedi-deployed spike-esignet verify-deployed hooks
+        spike-dedi-deployed spike-esignet verify-deployed hooks generate generate-check
 
 help: ## Show available targets
 	@grep -E '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t26
@@ -37,6 +37,14 @@ lint: structure ## Lint, including the structure rules
 structure: ## Enforce repository layout (fails on a misplaced file)
 	@$(GO) run ./tools/lint/structure
 
+# schemas/ is the source of truth; Go types are one projection of it. Two
+# hand-maintained definitions of a primitive is two systems (docs/COMPONENTS.md).
+generate: ## Regenerate Go types from schemas/
+	@$(GO) run ./tools/codegen
+
+generate-check: ## Fail if the generated types are behind schemas/ (CI)
+	@$(GO) run ./tools/codegen -check
+
 # ── Tests ───────────────────────────────────────────────────────────────────
 
 test: test-unit test-contract ## Unit + contract (the fast pair, run constantly)
@@ -47,8 +55,7 @@ test-unit: ## Pure functions: strength fn, schemas, state machines, money
 	$(GO) test ./pkg/... ./services/... ./adapters/... ./tools/...
 
 test-contract: ## Fixture-driven: adapters, OpenAPI shapes, credential shape
-	@if [ -d tests/contract ]; then $(GO) test ./tests/contract/...; \
-	else echo "no contract tests yet — they arrive with #41"; fi
+	$(GO) test ./tests/contract/...
 
 test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
 	@if [ -d harness/scenarios ] && [ -n "$$(find harness/scenarios -name '*_test.go' 2>/dev/null)" ]; then \
