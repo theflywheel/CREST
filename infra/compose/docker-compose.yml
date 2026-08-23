@@ -142,11 +142,44 @@ services:
         condition: service_healthy
     profiles: ["substrate", "full"]
 
+  # Certify, rebuilt with CREST's configuration baked in — Railway has no bind
+  # mounts, and an image that is configured differently there is not the image
+  # this stack proves. See infra/compose/Dockerfile.certify.
   inji-certify:
-    image: ${INJI_CERTIFY_IMAGE:-mosipid/inji-certify:0.13.1}
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.certify
+      args:
+        INJI_CERTIFY_IMAGE: ${INJI_CERTIFY_IMAGE:-mosipid/inji-certify-with-plugins:0.14.0}
     ports: ["${CERTIFY_PORT:-58090}:8090"]
     environment:
-      SPRING_PROFILES_ACTIVE: local
+      # did:web maps host and path. Certify serves its own DID document at
+      # ${CERTIFY_DOMAIN_URL}/v1/certify/.well-known/did.json, so the issuer
+      # resolves from the deployment rather than from a GitHub Pages repository
+      # somebody has to remember to update. The `%3A` is a literal colon: a
+      # did:web with a port must percent-encode it.
+      CERTIFY_DOMAIN_URL: http://localhost:${CERTIFY_PORT:-58090}
+      CERTIFY_DID_URL: did:web:localhost%3A${CERTIFY_PORT:-58090}:v1:certify
+      # Three values, not one, because they answer different questions: what
+      # the token's `iss` literally says, where Certify can fetch the signing
+      # keys, and what audience it will accept. Locally the first is the URL the
+      # browser used and the second is the compose network name.
+      CERTIFY_AUTHZ_URL: http://localhost:${ESIGNET_PORT:-58088}
+      CERTIFY_AUTHZ_JWKS: http://esignet:8088/v1/esignet/oauth/.well-known/jwks.json
+      CERTIFY_DB_HOST: postgres
+      CERTIFY_DB_USER: ${POSTGRES_USER:-crest}
+      CERTIFY_DB_PASSWORD: ${POSTGRES_PASSWORD:-crest}
+      CERTIFY_KEYSTORE_PASSWORD: ${CERTIFY_KEYSTORE_PASSWORD:-local}
+    volumes:
+      # The issuer key lives here. A named volume rather than the container
+      # filesystem because `docker compose up --build` would otherwise mint a
+      # new issuer key and silently invalidate every credential already issued —
+      # the key_alias rows in the database point into this file.
+      - certifykeys:/home/inji/CERTIFY_PKCS12
+      # The work-event fixture, keyed by a pairwise subject this deployment
+      # minted. Separate from the keystore volume because one is a secret and
+      # the other is a fixture, and they have different reasons to be wiped.
+      - certifydata:/home/inji/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -194,6 +227,13 @@ services:
       MOSIP_ESIGNET_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-crest}
       MOSIP_ESIGNET_MOCK_DOMAIN_URL: http://esignet-mock-identity:8082
       MOSIP_ESIGNET_INTEGRATION_KEY_BINDER: MockKeyBindingWrapperService
+      # The credential scope Certify advertises. eSignet will not mint an access
+      # token for a scope it has never heard of, and the resource mapping is
+      # what puts Certify's credential endpoint in the token's audience —
+      # without it the token is valid and Certify still rejects it, which reads
+      # like an authentication bug rather than a configuration gap.
+      MOSIP_ESIGNET_SUPPORTED_CREDENTIAL_SCOPES: "{'crest_work_event_vc_ldp'}"
+      MOSIP_ESIGNET_CREDENTIAL_SCOPE_RESOURCE_MAPPING: "{'crest_work_event_vc_ldp': 'http://localhost:${CERTIFY_PORT:-58090}/v1/certify/issuance/credential'}"
       MOSIP_ESIGNET_HOST: localhost:${ESIGNET_PORT:-58088}
       MOSIP_ESIGNET_DOMAIN_URL: http://localhost:${ESIGNET_PORT:-58088}
       SPRING_CACHE_TYPE: redis
@@ -201,6 +241,15 @@ services:
       SPRING_DATA_REDIS_PORT: "6379"
       KAFKA_ENABLED: "false"
       SPRING_AUTOCONFIGURE_EXCLUDE: org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+      # FINDING (#4): the `local` profile writes its PKCS12 keystore into the
+      # container's working directory, while the key aliases that point into it
+      # live in the database. Recreate the container without recreating the
+      # database — an ordinary redeploy — and eSignet refuses to start with
+      # `No such alias`, because the aliases outlived the keys. Pinning the
+      # keystore to a volume is what makes a redeploy survivable.
+      MOSIP_KERNEL_KEYMANAGER_HSM_CONFIG_PATH: /home/mosip/keys/esignet_local.p12
+    volumes:
+      - esignetkeys:/home/mosip/keys
     depends_on:
       postgres:
         condition: service_healthy
@@ -327,5 +376,8 @@ services:
 
 volumes:
   pgdata:
+  certifykeys:
+  certifydata:
+  esignetkeys:
   objectdata:
   dedipgdata:

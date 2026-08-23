@@ -1,0 +1,47 @@
+# Inji Certify, with CREST's configuration baked in.
+#
+# Baked rather than mounted because Railway has no bind mounts: the same image
+# has to carry its configuration into both compose and the deployed environment,
+# or the two stop being the same thing. Values that differ between environments
+# come from the environment (see infra/certify/config/certify-default.properties)
+# — the files here are identical everywhere.
+#
+# `inji-certify-with-plugins`, NOT `inji-certify`. The plain image has no data
+# provider plugin on its loader path and answers every issuance request with a
+# plugin-resolution failure; it is the wrong image for any deployment that
+# actually issues something. See docs/p0-findings.md.
+ARG INJI_CERTIFY_IMAGE=mosipid/inji-certify-with-plugins:0.14.0
+FROM ${INJI_CERTIFY_IMAGE}
+
+# 0.14.0 renamed the container user from `mosip` to `inji` and moved its home
+# with it. Ownership is given numerically so a future rename does not fail the
+# build with `invalid user` and send someone hunting through a base image.
+USER root
+COPY --chown=1001:1001 infra/certify/config/certify-default.properties /home/inji/config/certify-default.properties
+COPY --chown=1001:1001 infra/certify/config/certify-crest.properties   /home/inji/config/certify-crest.properties
+COPY --chown=1001:1001 infra/certify/config/work_events.csv            /home/inji/config/work_events.csv
+
+# The keystore is minted here on first boot and IS the issuer key. Created now
+# so that the directory exists and is writable even when a volume is mounted
+# over it by a platform that creates mount points as root.
+RUN mkdir -p /home/inji/CERTIFY_PKCS12 /home/inji/data && chown -R 1001:1001 /home/inji/CERTIFY_PKCS12 /home/inji/data /home/inji/config
+USER 1001
+
+COPY --chmod=0755 infra/certify/certify-start.sh /home/inji/certify-start.sh
+
+ENV SPRING_CONFIG_NAME=certify \
+    SPRING_CONFIG_LOCATION=/home/inji/config/ \
+    active_profile_env=default,crest \
+    install_hsm_client=false \
+    enable_certify_artifactory=false
+
+EXPOSE 8090
+
+# The upstream CMD is inherited unchanged — same jar, same loader path, same
+# profiles. Only the entrypoint differs, and only to seed the data volume.
+ENTRYPOINT ["/bin/bash", "/home/inji/certify-start.sh"]
+
+# Restated verbatim from the upstream image. Setting ENTRYPOINT clears the
+# inherited CMD, and the failure is silent: configure_start.sh execs an empty
+# argument list and the container exits 0, which reads as a clean shutdown.
+CMD ["java", "-jar", "-Dloader.path=${loader_path_env}", "-Dspring.cloud.config.label=${spring_config_label_env}", "-Dspring.profiles.active=${active_profile_env}", "-Dspring.cloud.config.uri=${spring_config_url_env}", "certify-service.jar"]

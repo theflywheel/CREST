@@ -1,0 +1,26 @@
+# eSignet's login UI.
+#
+# Deployed for a reason beyond the screen it draws: it is the hostname eSignet
+# claims to live at. See infra/esignet-ui/nginx.conf.
+ARG ESIGNET_UI_IMAGE=mosipid/oidc-ui:1.8.0
+FROM ${ESIGNET_UI_IMAGE}
+
+USER root
+COPY infra/esignet-ui/nginx.conf /etc/nginx/nginx.conf
+COPY --chmod=0755 infra/esignet-ui/esignet-ui-start.sh /esignet-ui-start.sh
+
+# nginx runs as uid 1001 here and writes its temp paths and pid file at start;
+# both directories are root-owned in the published image, and the container dies
+# with `mkdir() "/var/cache/nginx/client_temp" failed (13: Permission denied)`
+# before serving anything.
+RUN mkdir -p /var/cache/nginx /var/run \
+ && chown -R 1001:1001 /var/cache/nginx /var/run
+USER 1001
+
+EXPOSE 3000
+
+# Restated from the upstream image: the entrypoint generates env-config.js from
+# the environment before nginx starts, and setting ENTRYPOINT would clear the
+# inherited CMD — the container would exit 0 looking like a clean shutdown.
+ENTRYPOINT ["/bin/sh", "/esignet-ui-start.sh"]
+CMD ["/bin/sh", "-c", "echo starting nginx ; nginx ; sleep infinity"]
