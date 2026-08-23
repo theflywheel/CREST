@@ -9,6 +9,7 @@ FROM ${MIMOTO_IMAGE}
 
 USER root
 COPY infra/mimoto/config/mimoto-default.properties      /home/mosip/mimoto-default.properties
+COPY infra/mimoto/config/mimoto-bootstrap.properties    /home/mosip/mimoto-bootstrap.properties
 COPY infra/mimoto/config/mimoto-issuers-config.json     /home/mosip/mimoto-issuers-config.json
 COPY infra/mimoto/config/mimoto-trusted-verifiers.json  /home/mosip/mimoto-trusted-verifiers.json
 COPY --chmod=0755 infra/mimoto/mimoto-start.sh          /home/mosip/mimoto-start.sh
