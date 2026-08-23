@@ -1,0 +1,31 @@
+{
+  "issuers": [
+    {
+      "issuer_id": "CREST",
+      "credential_issuer": "CREST",
+      "protocol": "OpenId4VCI",
+      "display": [
+        {
+          "name": "CREST",
+          "logo": {
+            "url": "https://crest.theflywheel.in/logo.png",
+            "alt_text": "CREST"
+          },
+          "title": "CREST",
+          "description": "Download your work record",
+          "language": "en"
+        }
+      ],
+      "client_id": "CLIENT_ID_PLACEHOLDER",
+      "redirect_uri": "https://crest-inji-web-production.up.railway.app/redirect",
+      "token_endpoint": "https://crest-mimoto-production.up.railway.app/v1/mimoto/get-token/CREST",
+      "authorization_audience": "https://crest-esignet-production.up.railway.app/v1/esignet/oauth/v2/token",
+      "proxy_token_endpoint": "https://crest-esignet-production.up.railway.app/v1/esignet/oauth/v2/token",
+      "client_alias": "crest-wallet-client",
+      "qr_code_type": "EmbeddedVC",
+      "credential_issuer_host": "https://crest-certify-production.up.railway.app",
+      "enabled": "true",
+      "wellknown_endpoint": "https://crest-certify-production.up.railway.app/v1/certify/.well-known/openid-credential-issuer"
+    }
+  ]
+}

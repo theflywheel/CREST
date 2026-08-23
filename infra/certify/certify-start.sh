@@ -22,10 +22,11 @@ CSV="${CERTIFY_WORK_EVENTS_CSV:-/home/inji/data/work_events.csv}"
 if [ "$(id -u)" = "0" ]; then
   mkdir -p "$(dirname "$CSV")" "$(dirname "${CERTIFY_KEYSTORE_PATH:-/home/inji/CERTIFY_PKCS12/local.p12}")"
   chown -R 1001:1001 "$(dirname "$CSV")" "$(dirname "${CERTIFY_KEYSTORE_PATH:-/home/inji/CERTIFY_PKCS12/local.p12}")"
-  # -m preserves the environment. Without it `su` resets PATH and the very
-  # next line fails with `exec: java: not found`, which reads as a broken
-  # image rather than as a dropped variable.
-  exec su -m inji -s /bin/bash -c 'exec "$@"' -- sh "$0" "$@"
+  # PATH is restated rather than inherited: `su` rebuilds it from login
+  # defaults even with -m, and the failure is `exec: java: not found`,
+  # which reads as a broken image rather than as a dropped variable.
+  exec su inji -s /bin/bash -c \
+    'export PATH=/opt/java/openjdk/bin:$PATH; exec "$@"' -- sh "$0" "$@"
 fi
 
 DATA_DIR="$(dirname "${CERTIFY_WORK_EVENTS_CSV:-/home/inji/data/work_events.csv}")"

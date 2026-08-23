@@ -1,0 +1,27 @@
+# Mimoto, the browser wallet's backend-for-frontend, with CREST's configuration.
+#
+# Baked for the same reason as Certify's: Railway has no bind mounts, and an
+# image configured differently there is not the image this repository describes.
+# The one thing NOT baked is the OIDC keystore — that is a private key, and a
+# key in an image layer is a key anyone who can pull the image has.
+ARG MIMOTO_IMAGE=mosipid/mimoto:0.19.2
+FROM ${MIMOTO_IMAGE}
+
+USER root
+COPY infra/mimoto/config/mimoto-default.properties      /home/mosip/mimoto-default.properties
+COPY infra/mimoto/config/mimoto-issuers-config.json     /home/mosip/mimoto-issuers-config.json
+COPY infra/mimoto/config/mimoto-trusted-verifiers.json  /home/mosip/mimoto-trusted-verifiers.json
+COPY --chmod=0755 infra/mimoto/mimoto-start.sh          /home/mosip/mimoto-start.sh
+RUN chown -R 1002:1001 /home/mosip
+
+ENV SPRING_CONFIG_NAME=mimoto \
+    SPRING_CONFIG_LOCATION=/home/mosip/ \
+    active_profile_env=default
+
+EXPOSE 8099
+
+ENTRYPOINT ["/bin/bash", "/home/mosip/mimoto-start.sh"]
+
+# Restated from the upstream image: setting ENTRYPOINT clears the inherited CMD,
+# and the container would exit 0 looking like a clean shutdown.
+CMD ["/bin/sh", "-c", "java -jar -Dspring.cloud.config.label=\"${spring_config_label_env}\" -Dspring.profiles.active=\"${active_profile_env}\" -Dspring.cloud.config.uri=\"${spring_config_url_env}\" mimoto.jar"]
