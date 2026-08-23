@@ -116,7 +116,9 @@ dedi-keys: ## Generate the DeDi node key and a CREST publisher key
 # shared Postgres over private networking. See docs/DEPLOYMENT.md.
 CREST_DEDI_URL ?= https://crest-dedi-production.up.railway.app
 CREST_REGISTRY_URL ?= https://crest-registry-production.up.railway.app
-CREST_ESIGNET_URL ?= https://crest-esignet-production.up.railway.app
+# The UI is eSignet's public hostname; the API service alone serves none of the
+# URLs its own discovery document advertises. See p0-findings C12.
+CREST_ESIGNET_URL ?= https://crest-esignet-ui-production.up.railway.app
 CREST_MOCK_IDENTITY_URL ?= https://crest-mock-identity-production.up.railway.app
 
 verify-deployed: ## Check the deployed stack answers, and verify its log independently
@@ -202,5 +204,7 @@ certify-issue: ## Issue a WorkEventCredential over OpenID4VCI and verify it (#1)
 # Deployed by default. #1 is about whether the substrate works where it is
 # actually going to run, and a laptop-only proof of that is not one.
 CERTIFY_URL ?= https://crest-certify-production.up.railway.app
-CERTIFY_ESIGNET ?= https://crest-esignet-production.up.railway.app
+# eSignet's public hostname is its UI, which fronts the API. The API service's
+# own domain serves none of the URLs eSignet advertises. See p0-findings C12.
+CERTIFY_ESIGNET ?= https://crest-esignet-ui-production.up.railway.app
 CERTIFY_MOCK_IDENTITY ?= https://crest-mock-identity-production.up.railway.app
