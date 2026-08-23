@@ -207,6 +207,110 @@ paths:
                   count: { type: integer }
         "500": { $ref: "#/components/responses/Internal" }
 
+  /v1/sources:
+    post:
+      operationId: registerSource
+      summary: Declare a feed this deployment expects evidence from
+      description: >
+        Registers a source for heartbeat monitoring (#22, Blueprint §8).
+
+        A source going quiet is the only failure in this system that produces
+        nothing a worker can see or report. A held payment has a reason they can
+        ask about; a rejected row is in the unclear queue; a wrong record can be
+        disputed. When a feed stops, the worker keeps working and their record
+        simply stops growing - which from where they stand is indistinguishable
+        from having done no work. So the system has to notice it unaided.
+
+        `expectedEvery` and `ownerPartyId` are both required and neither is
+        defaulted. A cadence inferred from history learns from a degraded feed
+        and calls it healthy; an owner defaulted to nobody produces an alert
+        that gets forwarded until it is nobody's.
+
+        Re-registering an existing feed updates its cadence and owner and keeps
+        its identity and history. Resetting the heartbeat would make a feed look
+        healthy for one cadence because somebody edited a row.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [adapterRef, contextId, expectedEvery, ownerPartyId]
+              properties:
+                adapterRef: { type: string }
+                contextId:
+                  type: string
+                  description: >
+                    The same adapter serving two projects is two sources: it can
+                    go quiet for one and not the other, and one row would average
+                    that away.
+                systemRef:
+                  type: string
+                  description: The name the feed's operator knows it by; it is what the outage message names.
+                expectedEvery:
+                  type: string
+                  description: A positive Go duration, e.g. "24h".
+                ownerPartyId: { type: string }
+      responses:
+        "201":
+          description: The registered source, with its derived state.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Source" } } }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "500": { $ref: "#/components/responses/Internal" }
+    get:
+      operationId: listSources
+      summary: Which feeds are healthy, and which have gone quiet?
+      description: >
+        `?state=SILENT` is the query somebody should be able to alert on, and
+        `silent` is the count for a monitor that would rather not parse a list.
+      parameters:
+        - name: state
+          in: query
+          schema: { type: string, enum: [HEALTHY, SILENT, NEVER_SEEN] }
+      responses:
+        "200":
+          description: The registered sources.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sources, count, silent]
+                properties:
+                  sources: { type: array, items: { $ref: "#/components/schemas/Source" } }
+                  count: { type: integer }
+                  silent: { type: integer }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/sources/sweep:
+    post:
+      operationId: sweepSources
+      summary: Notice which feeds have gone quiet and tell their owners
+      description: >
+        Driven by a call rather than a background ticker, like confirmation's
+        window sweep: a test that waits on a goroutine is flaky on a slow
+        runner, and an operator who cannot make it run now cannot check that
+        their fix worked.
+
+        Alerts fire on the *transition* into silence, not on the state. A sweep
+        runs often and a source can be quiet for weeks; one message per sweep is
+        how an alert channel becomes something people mute, and the muted
+        channel is the one the real outage arrives on. `stillQuiet` is returned
+        alongside so a second sweep over an unfixed outage does not read as
+        "nothing wrong".
+      responses:
+        "200":
+          description: What this sweep discovered, and what was already open.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [wentQuiet, stillQuiet, checked]
+                properties:
+                  wentQuiet: { type: array, items: { type: string } }
+                  stillQuiet: { type: array, items: { type: string } }
+                  checked: { type: integer }
+        "500": { $ref: "#/components/responses/Internal" }
+
   # Every CREST service carries these two, added by pkg/httpx.Server.
   /healthz: { $ref: "#/components/pathItems/healthz" }
   /readyz: { $ref: "#/components/pathItems/readyz" }
@@ -264,6 +368,40 @@ paths:
 components:
 
   schemas:
+    Source:
+      type: object
+      description: >
+        A feed this deployment expects evidence from, and how it is doing.
+
+        `state` and `quietFor` are DERIVED on every read and stored nowhere -
+        the same rule as a credential's tier and a Party's identity assurance.
+        A stored state is wrong the moment the clock moves, and the whole
+        subject here is time passing.
+      required: [id, adapterRef, contextId, expectedEvery, ownerPartyId, registeredAt, state]
+      properties:
+        id: { type: string }
+        adapterRef: { type: string }
+        contextId: { type: string }
+        systemRef: { type: string }
+        expectedEvery: { type: string }
+        ownerPartyId: { type: string }
+        registeredAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        silentSince:
+          type: string
+          format: date-time
+          description: When the current silence began. Absent while healthy; it is what makes the alert fire once per episode.
+        notifiedAt: { type: string, format: date-time }
+        state:
+          type: string
+          enum: [HEALTHY, SILENT, NEVER_SEEN]
+          description: >
+            NEVER_SEEN is distinct from SILENT on purpose. A feed that has gone
+            quiet is a broken integration; one that never started is a deployment
+            step nobody finished. They look identical in a count and need
+            different people.
+        quietFor: { type: string }
+
     Error:
       type: object
       description: >

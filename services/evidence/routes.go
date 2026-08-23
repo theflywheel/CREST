@@ -6,12 +6,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/theflywheel/crest/adapters"
 	csvadapter "github.com/theflywheel/crest/adapters/csv"
 	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/httpx"
+	"github.com/theflywheel/crest/pkg/id"
 	"github.com/theflywheel/crest/pkg/pii"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/service"
@@ -49,6 +51,12 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/claims/{id}", hs.getClaim)
 	mux.HandleFunc("POST /v1/claims/{id}/transition", hs.transition)
 	mux.HandleFunc("GET /v1/unclear", hs.listUnclear)
+
+	// Source heartbeat monitoring (#22). A source going quiet is the one
+	// failure a worker cannot see and cannot report.
+	mux.HandleFunc("POST /v1/sources", hs.registerSource)
+	mux.HandleFunc("GET /v1/sources", hs.listSources)
+	mux.HandleFunc("POST /v1/sources/sweep", hs.sweepSources)
 }
 
 type handlers struct {
@@ -205,3 +213,151 @@ func (h *handlers) listUnclear(w http.ResponseWriter, r *http.Request) {
 func hashNationalID(raw string) string { return hasher.Hash(raw) }
 
 func urlSafe(s string) string { return url.QueryEscape(s) }
+
+// registerSource declares a feed this deployment expects evidence from (#22).
+//
+// The cadence and the owner are both required and neither is defaulted. A
+// cadence inferred from history would learn from a degraded feed and call it
+// healthy; an owner defaulted to nobody produces an alert that gets forwarded
+// until it is nobody's.
+func (h *handlers) registerSource(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		AdapterRef    string `json:"adapterRef"`
+		ContextID     string `json:"contextId"`
+		SystemRef     string `json:"systemRef"`
+		ExpectedEvery string `json:"expectedEvery"`
+		OwnerPartyID  string `json:"ownerPartyId"`
+	}
+	if !httpx.ReadJSON(w, r, &body) {
+		return
+	}
+	for name, v := range map[string]string{
+		"adapterRef": body.AdapterRef, "contextId": body.ContextID,
+		"expectedEvery": body.ExpectedEvery, "ownerPartyId": body.OwnerPartyID,
+	} {
+		if v == "" {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_body",
+				"%s is required; a source with no %s cannot be monitored", name, name)
+			return
+		}
+	}
+	every, err := time.ParseDuration(body.ExpectedEvery)
+	if err != nil || every <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body",
+			"expectedEvery must be a positive duration such as \"24h\"")
+		return
+	}
+
+	src := Source{
+		ID:            id.New(h.d.Clock, "source"),
+		AdapterRef:    body.AdapterRef,
+		ContextID:     body.ContextID,
+		SystemRef:     body.SystemRef,
+		OwnerPartyID:  body.OwnerPartyID,
+		RegisteredAt:  h.d.Clock.Now(),
+		expectedEvery: every,
+	}
+	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+		var err error
+		src, err = registerSource(r.Context(), tx, src)
+		return err
+	}); err != nil {
+		httpx.Fail(w, h.d.Log, "register source", err)
+		return
+	}
+	src.stateAt(h.d.Clock.Now())
+	httpx.WriteJSON(w, http.StatusCreated, src)
+}
+
+// listSources is what an operations console reads. `?state=SILENT` is the query
+// somebody should be able to alert on.
+func (h *handlers) listSources(w http.ResponseWriter, r *http.Request) {
+	now := h.d.Clock.Now()
+	sources, err := listSources(r.Context(), h.d.DB.Q(), now)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "list sources", err)
+		return
+	}
+	if want := r.URL.Query().Get("state"); want != "" {
+		filtered := make([]Source, 0, len(sources))
+		for _, s := range sources {
+			if string(s.State) == want {
+				filtered = append(filtered, s)
+			}
+		}
+		sources = filtered
+	}
+	if sources == nil {
+		sources = []Source{}
+	}
+	// The count is here so a monitor can alert on a number without parsing the
+	// list, and silent is broken out because it is the only one anybody pages on.
+	silent := 0
+	for _, s := range sources {
+		if s.overdue(now) {
+			silent++
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"sources": sources, "count": len(sources), "silent": silent,
+	})
+}
+
+// sweepSources notices which feeds have gone quiet and tells their owners.
+//
+// Driven by a call rather than a background ticker, exactly like confirmation's
+// window sweep: a test that has to wait for a goroutine is a test that is flaky
+// on a slow runner, and an operator who cannot make it run now has no way to
+// check their fix worked.
+func (h *handlers) sweepSources(w http.ResponseWriter, r *http.Request) {
+	now := h.d.Clock.Now()
+	sources, err := listSources(r.Context(), h.d.DB.Q(), now)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "sweep sources", err)
+		return
+	}
+
+	opened := []string{}
+	stillSilent := []string{}
+	for _, s := range sources {
+		if !s.overdue(now) {
+			continue
+		}
+		var isNew bool
+		if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+			var err error
+			if isNew, err = openSilence(r.Context(), tx, s.ID, now); err != nil || !isNew {
+				return err
+			}
+			// Enqueued in the transaction that opened the episode, so the
+			// alert cannot be lost by a crash between noticing and telling —
+			// and cannot be sent twice, because the episode only opens once.
+			return store.Enqueue(r.Context(), tx, topicSourceQuiet, map[string]any{
+				"partyId": s.OwnerPartyID,
+				"kind":    "source-went-quiet",
+				// The feed by the name its operator knows it by, not the
+				// internal id: the person receiving this has to go and look at
+				// something, and a ULID is not something they can look at.
+				"subject": s.SystemRef,
+			})
+		}); err != nil {
+			httpx.Fail(w, h.d.Log, "record source silence", err)
+			return
+		}
+		if isNew {
+			opened = append(opened, s.ID)
+			h.d.Log.Warn("a source has gone quiet",
+				"source", s.ID, "adapter", s.AdapterRef, "context", s.ContextID,
+				"quietFor", s.QuietFor, "owner", s.OwnerPartyID)
+		} else {
+			stillSilent = append(stillSilent, s.ID)
+		}
+	}
+	// Both lists are returned. A sweep that reported only what it discovered
+	// would read as "nothing wrong" on the second run of an unfixed outage.
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"wentQuiet":  opened,
+		"stillQuiet": stillSilent,
+		"checked":    len(sources),
+	})
+}
