@@ -17,6 +17,7 @@ import (
 
 	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/config"
+	"github.com/theflywheel/crest/pkg/dedi"
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -32,6 +33,17 @@ type Deps struct {
 	// silently got a nil DB because its migrations failed is not, which is why
 	// a migration error is fatal rather than logged.
 	DB *store.DB
+
+	// DeDi is the registry substrate, present only for a service that asked
+	// for one. It is an interface rather than a client because a deployment
+	// may be running without a transparency log behind it (#20), and the
+	// difference is visible through DeDi.Transparent() rather than hidden.
+	DeDi dedi.Publisher
+
+	// DeDiNamespace is the namespace this deployment writes its public facts
+	// under. Kept beside the publisher so no service has to read the
+	// environment a second time and get a different answer.
+	DeDiNamespace string
 }
 
 // Routes registers a service's own endpoints. Health endpoints are added by httpx.
@@ -53,6 +65,16 @@ type Options struct {
 	//
 	// Nil means the service never enqueues anything.
 	Deliver func(d Deps) store.Deliverer
+
+	// DeDiRegistries names the registries this service publishes public facts
+	// into (Blueprint §3). Non-empty selects a registry substrate, builds it
+	// from the environment, and makes each registry exist before the service
+	// answers a request.
+	//
+	// A service that lists none gets a nil Deps.DeDi. That is the honest
+	// default: most services hold personal data, and personal data never
+	// reaches the node.
+	DeDiRegistries []string
 
 	Routes Routes
 }
@@ -91,6 +113,27 @@ func Main(name string, opts Options) {
 		log.Info("schema up to date", "schema", db.Schema())
 		d.DB = db
 		ready = db.Ping
+
+		if len(opts.DeDiRegistries) > 0 {
+			cfg := dedi.LoadConfig()
+			pub, err := dedi.New(cfg, db, clk, log)
+			if err != nil {
+				log.Error("registry substrate unusable", "error", err)
+				os.Exit(1)
+			}
+			// Bootstrap is fatal on failure for the same reason a migration
+			// is. A service that starts without its registries answers writes
+			// it cannot publish, and the outbox then retries them forever
+			// against a namespace that does not exist.
+			for _, reg := range opts.DeDiRegistries {
+				if err := pub.EnsureRegistry(ctx, cfg.Namespace, reg,
+					"CREST public facts — Blueprint §3"); err != nil {
+					log.Error("could not create registry", "registry", reg, "error", err)
+					os.Exit(1)
+				}
+			}
+			d.DeDi, d.DeDiNamespace = pub, cfg.Namespace
+		}
 
 		if opts.Deliver != nil {
 			relay := store.NewRelay(db, opts.Deliver(d), log, clk, time.Second)

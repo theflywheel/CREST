@@ -112,3 +112,43 @@ Being explicit, so none of this is mistaken for done:
 - **No backups configured by us** on either new database, and no restore has been rehearsed. A backup nobody has restored from is a belief, not a backup.
 - **No alerting.** The project has Grafana and Prometheus for the Beckn services; CREST is not wired into them.
 - **The deploy is not reproducible from a commit alone** — Railway builds from an upload rather than from a registry image, so there is no digest tying a running container to a commit. That is the next thing to fix if provenance matters, and it will (see the `in-toto` side quest, #44).
+
+## The registry substrate, and the key that writes to it
+
+CREST's public facts — approved organisations, terms, authorizations held by
+organisations, and every ACTIVE work definition — are published to the DeDi node
+at `crest-dedi-production.up.railway.app` (#20, #21). Four variables select it,
+and they are read by `registry` and `definitions` only:
+
+| Variable | What it does |
+|---|---|
+| `DEDI_URL` | The node. **Empty selects the Postgres fallback**, which has no transparency log and therefore no inclusion proof |
+| `DEDI_NAMESPACE` | `crest` — must match the node's `DEDI_WILDCARD_NAMESPACES` |
+| `DEDI_KEY_ID` | `crest-services` |
+| `DEDI_PUBLISHER_KEY` | The Ed25519 private key, base64. A secret |
+
+**A URL with no key is refused at start-up**, deliberately. A deployment that
+meant to publish to a transparency log and silently fell back to Postgres is the
+worst of the three states, because every response still looks correct — which is
+why `Receipt.Transparent` is carried through to the publication row and returned
+to callers rather than being a deployment-wide fact nobody re-reads.
+
+**The node's publisher keys are additive.** `DEDI_PUBLISHER_KEYS` on
+`crest-dedi` is a comma-separated list of `kid:namespace:base64pubkey`. It
+currently holds two: `crest`, minted during the P0 spike and whose private half
+no longer exists anywhere, and `crest-services`, which the services use. Do not
+replace the list when adding a key — appending is the whole point of the format,
+and overwriting it silently revokes every other publisher.
+
+To check a published fact independently:
+
+```sh
+make verify-registry REGISTRY=work-definitions RECORD=<the record id>
+make verify-registry REGISTRY=organisations RECORD=<a party id>
+```
+
+The record id is the `record` field of `GET /v1/definitions/<id>/publication` or
+`GET /v1/publications/organisation/<id>`. The target fetches the record with an
+inclusion proof and hands it to `tools/spikes/dediproof` — a second
+implementation written from the wire format, because asking DeDi to check its
+own proof would only establish that DeDi agrees with itself.

@@ -11,3 +11,14 @@ dist/
 
 # DeDi node signing keys and the locally built dedid binary. Never committed.
 infra/compose/dedi-keys/
+
+# `go build ./services/<name>/` drops a binary named after the package at the
+# repo root. One of them (`registry`) was committed in eec03af — a 12MB Mach-O
+# that only builds on one architecture, tracked as though it were source.
+/registry
+/definitions
+/evidence
+/confirmation
+/verification
+/payments
+/notify

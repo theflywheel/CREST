@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/theflywheel/crest/pkg/dedi"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -243,4 +244,67 @@ func insertTerms(ctx context.Context, tx store.Querier, t schema.Terms) error {
 		`INSERT INTO terms (id, version, doc, published_at) VALUES ($1, $2, $3, $4)
 		 ON CONFLICT (id, version) DO NOTHING`, t.ID, t.Version, doc, t.PublishedAt)
 	return err
+}
+
+func getTerms(ctx context.Context, q store.Querier, id string, version int) (schema.Terms, error) {
+	var doc []byte
+	err := q.QueryRow(ctx,
+		`SELECT doc FROM terms WHERE id = $1 AND version = $2`, id, version).Scan(&doc)
+	if err != nil {
+		return schema.Terms{}, err
+	}
+	var t schema.Terms
+	return t, json.Unmarshal(doc, &t)
+}
+
+func getAuthorization(ctx context.Context, q store.Querier, id string) (schema.Authorization, error) {
+	var doc []byte
+	err := q.QueryRow(ctx, `SELECT doc FROM authorizations WHERE id = $1`, id).Scan(&doc)
+	if err != nil {
+		return schema.Authorization{}, err
+	}
+	var a schema.Authorization
+	return a, json.Unmarshal(doc, &a)
+}
+
+// Publication is where one public fact landed on the registry substrate.
+type Publication struct {
+	Kind            string    `json:"kind"`
+	SubjectID       string    `json:"subjectId"`
+	SubjectVersion  int       `json:"subjectVersion"`
+	Namespace       string    `json:"namespace"`
+	Registry        string    `json:"registry"`
+	Record          string    `json:"record"`
+	RegistryVersion string    `json:"registryVersion"`
+	Digest          string    `json:"digest"`
+	State           string    `json:"state"`
+	Transparent     bool      `json:"transparent"`
+	PublishedAt     time.Time `json:"publishedAt"`
+}
+
+func recordPublication(ctx context.Context, db *store.DB, msg factMessage, r dedi.Receipt, at time.Time) error {
+	return db.InTx(ctx, func(tx store.Querier) error {
+		_, err := tx.Exec(ctx, `
+			INSERT INTO registry_publications
+				(subject_kind, subject_id, subject_version, namespace, registry, record,
+				 registry_version, digest, state, transparent, published_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+			ON CONFLICT (subject_kind, subject_id, subject_version) DO NOTHING`,
+			msg.Kind, msg.ID, msg.Version, r.Ref.Namespace, r.Ref.Registry, r.Ref.Record,
+			r.Ref.Version, r.Digest, r.State, r.Transparent, at)
+		return err
+	})
+}
+
+func publicationOf(ctx context.Context, q store.Querier, kind, id string, version int) (Publication, error) {
+	var p Publication
+	err := q.QueryRow(ctx, `
+		SELECT subject_kind, subject_id, subject_version, namespace, registry, record,
+		       registry_version, digest, state, transparent, published_at
+		FROM registry_publications
+		WHERE subject_kind = $1 AND subject_id = $2 AND subject_version = $3`,
+		kind, id, version).
+		Scan(&p.Kind, &p.SubjectID, &p.SubjectVersion, &p.Namespace, &p.Registry, &p.Record,
+			&p.RegistryVersion, &p.Digest, &p.State, &p.Transparent, &p.PublishedAt)
+	return p, err
 }

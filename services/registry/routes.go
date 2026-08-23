@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/theflywheel/crest/pkg/httpx"
@@ -13,7 +14,15 @@ import (
 )
 
 func routes(mux *http.ServeMux, d service.Deps) {
-	h := &handlers{d: d}
+	model, err := loadApprovalModel()
+	if err != nil {
+		// Fatal rather than defaulted. A deployment that meant to require a
+		// human approver and silently got automatic approval is a deployment
+		// where nobody's name is on any of it.
+		d.Log.Error("organisation approval model is unusable", "error", err)
+		os.Exit(1)
+	}
+	h := &handlers{d: d, model: model}
 
 	mux.HandleFunc("POST /v1/parties", h.createParty)
 	mux.HandleFunc("GET /v1/parties/{id}", h.getParty)
@@ -25,9 +34,25 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/authorizations", h.createAuthorization)
 	mux.HandleFunc("GET /v1/authorizations/permits", h.permits)
 	mux.HandleFunc("POST /v1/contexts", h.createContext)
+
+	// Onboarding (#20). Organisations apply for themselves; workers are often
+	// enrolled by someone else, and the two paths are deliberately different
+	// shapes rather than one endpoint with a flag.
+	mux.HandleFunc("POST /v1/organisations", h.registerOrganisation)
+	mux.HandleFunc("GET /v1/organisations/{id}/registration", h.getRegistration)
+	mux.HandleFunc("POST /v1/organisations/{id}/terms-acceptance", h.acceptTerms)
+	mux.HandleFunc("POST /v1/organisations/{id}/decision", h.decideRegistration)
+	mux.HandleFunc("POST /v1/enrolments", h.assistedEnrolment)
+	mux.HandleFunc("GET /v1/parties/{id}/enrolment", h.getEnrolment)
+
+	// Where a public fact landed on the registry substrate (§3).
+	mux.HandleFunc("GET /v1/publications/{kind}/{id}", h.publication)
 }
 
-type handlers struct{ d service.Deps }
+type handlers struct {
+	d     service.Deps
+	model approvalModel
+}
 
 func (h *handlers) createParty(w http.ResponseWriter, r *http.Request) {
 	var p schema.Party
@@ -180,7 +205,13 @@ func (h *handlers) createTerms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
-		return insertTerms(r.Context(), tx, t)
+		if err := insertTerms(r.Context(), tx, t); err != nil {
+			return err
+		}
+		// Terms are a public fact (§3). Enqueued in the same transaction as
+		// the row, so a crash cannot leave terms that exist here and nowhere a
+		// verifier can reach.
+		return enqueueFact(r.Context(), tx, "terms", t.ID, t.Version)
 	}); err != nil {
 		httpx.Fail(w, h.d.Log, "create terms", err)
 		return
@@ -207,7 +238,14 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
-		return insertAuthorization(r.Context(), tx, a)
+		if err := insertAuthorization(r.Context(), tx, a); err != nil {
+			return err
+		}
+		// Enqueued for every authorization; the delivery path decides whether
+		// it may be published. A worker's authorization is refused there, with
+		// the reason, rather than being filtered out silently here — see the
+		// design finding in publish.go.
+		return enqueueFact(r.Context(), tx, "authorization", a.ID, 1)
 	}); err != nil {
 		httpx.Fail(w, h.d.Log, "create authorization", err)
 		return
