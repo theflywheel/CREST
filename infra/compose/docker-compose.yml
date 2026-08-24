@@ -141,19 +141,19 @@ services:
       # check is "does it reply at all", not "does it serve me a listing". The
       # previous check treated a correctly secured server as a broken one.
       # Matches any status line, because a 403 means the server is up and
-      # correctly refusing anonymous access. The previous check demanded a
-      # readable listing and so treated a properly secured store as broken.
+      # correctly refusing anonymous access. The first version of this check
+      # demanded a readable listing, and so treated a properly secured store as
+      # broken.
       #
-      # The generous start_period is not decoration. This reported unhealthy on
-      # CI while passing locally, and I could not establish why: the flag
-      # hypothesis (arm64 vs amd64 busybox) was tested and is wrong — both
-      # accept the same flags. What is left is timing. `server` mode starts a
-      # master, a volume server, a filer and the S3 API, on a runner that is
-      # simultaneously building seven Go images, and the old check gave it no
-      # grace period at all. So: more room, and `make test-e2e` now prints this
-      # container's logs on failure, because the next occurrence should name
-      # its own cause instead of costing another investigation (#79).
-      test: ["CMD-SHELL", "wget -S --spider http://localhost:8333/ 2>&1 | grep -q 'HTTP/1'"]
+      # 127.0.0.1 rather than localhost, which is the part that took three CI
+      # runs to find. SeaweedFS binds IPv4; where localhost resolves to ::1
+      # first — as it does on the CI runner and not on this laptop — busybox
+      # wget never reaches it, and the check fails forty times against a server
+      # whose own logs say "Start Seaweed S3 API Server". Two other hypotheses
+      # were tested and disproved first: that the amd64 busybox rejects a flag
+      # the arm64 one accepts, and that the server was simply slow to start.
+      # Neither was true, and the CI log timeline is what ruled the second out.
+      test: ["CMD-SHELL", "wget -S --spider http://127.0.0.1:8333/ 2>&1 | grep -q 'HTTP/1'"]
       interval: 5s
       timeout: 5s
       start_period: 30s
