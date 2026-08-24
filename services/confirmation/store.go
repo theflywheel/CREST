@@ -182,6 +182,10 @@ type issuedCredential struct {
 	// assembled before its status slot is known, and signed after.
 	unit  schema.Unit `json:"-"`
 	route string      `json:"-"`
+
+	// Resolved once, at build time, from the definitions service. Nil where
+	// there is nothing a verifier could check.
+	defProof *schema.WorkEventCredentialCredentialSubjectWorkEventDefinitionProof `json:"-"`
 }
 
 func getCredential(ctx context.Context, q store.Querier, credID string) (issuedCredential, error) {

@@ -212,15 +212,52 @@ func hex(b []byte) string {
 	return string(out)
 }
 
+// Subject is what a credential is being issued about. A struct rather than a
+// parameter list: this had grown to eleven positional arguments, three of them
+// times and two of them strings that could be swapped without the compiler
+// noticing — on a document whose contents decide whether someone gets paid.
+type Subject struct {
+	CredentialID string
+	IssuerID     string
+
+	// SubjectRef is the pairwise reference and nothing else. No name ever
+	// reaches a credential (W8, W9).
+	SubjectRef string
+
+	Unit         schema.Unit
+	Activity     string
+	Confirmation schema.ClaimConfirmationRoute
+	ConfirmedAt  time.Time
+
+	// EvidenceFields are names, never values.
+	EvidenceFields []string
+
+	// DefinitionProof is where a verifier can resolve the definition version
+	// this credential was measured under, and nil when this deployment has no
+	// transparency log behind its registry.
+	//
+	// Nil is a meaningful answer, not a missing one: it says the verifier has
+	// to trust the issuer about what the definition said. Defaulting it to
+	// something would turn "we cannot prove this" into "we did not say".
+	DefinitionProof *schema.WorkEventCredentialCredentialSubjectWorkEventDefinitionProof
+
+	StatusListURL   string
+	StatusListIndex int
+	ValidFrom       time.Time
+}
+
 // Document builds the WorkEventCredential body for an accepted claim.
 //
 // Everything it carries is a fact; nothing it carries is a judgement. The tier
 // is absent on purpose (§6), and so is any name — the subject is the pairwise
 // reference and nothing else (W8, W9).
-func Document(credentialID, issuerID, subjectRef string, unit schema.Unit,
-	confirmation schema.ClaimConfirmationRoute, confirmedAt time.Time,
-	activity string, evidenceFields []string,
-	statusListURL string, statusIndex int, validFrom time.Time) (map[string]any, error) {
+func Document(s Subject) (map[string]any, error) {
+	credentialID, issuerID, subjectRef := s.CredentialID, s.IssuerID, s.SubjectRef
+	unit, activity := s.Unit, s.Activity
+	confirmation, confirmedAt := s.Confirmation, s.ConfirmedAt
+	evidenceFields := s.EvidenceFields
+	statusListURL, statusIndex, validFrom := s.StatusListURL, s.StatusListIndex, s.ValidFrom
+
 	cred := schema.WorkEventCredential{
 		Context:   []string{ContextVC, ContextCREST},
 		ID:        credentialID,
@@ -240,6 +277,9 @@ func Document(credentialID, issuerID, subjectRef string, unit schema.Unit,
 				// evaluate the definition's tier map; nothing that describes a
 				// household.
 				EvidenceFields: evidenceFields,
+				// The pin that makes `definition` above checkable rather than
+				// merely stated (#16). Absent where there is nothing to prove.
+				DefinitionProof: s.DefinitionProof,
 			},
 			Provenance: unit.Provenance,
 			Confirmation: schema.WorkEventCredentialCredentialSubjectConfirmation{

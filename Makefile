@@ -63,6 +63,15 @@ test-contract: ## Fixture-driven: adapters, OpenAPI shapes, credential shape
 # including volumes, so the next run starts from nothing and cannot pass on
 # yesterday's rows.
 test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
+	@# Torn down at BOTH ends, and the leading one is not redundant. The trailing
+	@# teardown only runs if the previous run reached it: an interrupted run, or
+	@# one killed mid-suite, leaves its volumes behind and the next run inherits
+	@# them. That inheritance is invisible until the two runs were configured
+	@# differently — a stack pointed at a real DeDi node leaves publication rows
+	@# saying `transparent: true`, and the next run on the Postgres fallback then
+	@# fails an assertion that is entirely correct about a database that is
+	@# entirely stale. It cost two "is this flaky?" investigations to find.
+	@$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true
 	$(COMPOSE) up -d --build --wait postgres mock-sms mock-rail $(SERVICES)
 	@$(GO) test -tags=e2e -count=1 -timeout=10m ./harness/... ; \
 		status=$$? ; \
