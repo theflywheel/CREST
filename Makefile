@@ -77,7 +77,7 @@ test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
 		status=$$? ; \
 		if [ $$status -ne 0 ]; then \
 			echo "── logs from the failing run ──" ; \
-			$(COMPOSE) logs --tail=80 $(SERVICES) ; \
+			$(COMPOSE) logs --tail=80 $(SERVICES) objectstore ; \
 		fi ; \
 		$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 ; \
 		exit $$status

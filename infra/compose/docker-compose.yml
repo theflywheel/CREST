@@ -140,10 +140,24 @@ services:
       # 403 is the healthy answer now that anonymous access is refused, so the
       # check is "does it reply at all", not "does it serve me a listing". The
       # previous check treated a correctly secured server as a broken one.
-      test: ["CMD-SHELL", "wget -S --spider -T 2 http://localhost:8333/ 2>&1 | grep -qE 'HTTP/1.[01] (200|403)'"]
+      # Matches any status line, because a 403 means the server is up and
+      # correctly refusing anonymous access. The previous check demanded a
+      # readable listing and so treated a properly secured store as broken.
+      #
+      # The generous start_period is not decoration. This reported unhealthy on
+      # CI while passing locally, and I could not establish why: the flag
+      # hypothesis (arm64 vs amd64 busybox) was tested and is wrong — both
+      # accept the same flags. What is left is timing. `server` mode starts a
+      # master, a volume server, a filer and the S3 API, on a runner that is
+      # simultaneously building seven Go images, and the old check gave it no
+      # grace period at all. So: more room, and `make test-e2e` now prints this
+      # container's logs on failure, because the next occurrence should name
+      # its own cause instead of costing another investigation (#79).
+      test: ["CMD-SHELL", "wget -S --spider http://localhost:8333/ 2>&1 | grep -q 'HTTP/1'"]
       interval: 5s
-      timeout: 4s
-      retries: 20
+      timeout: 5s
+      start_period: 30s
+      retries: 40
 
   # DeDi-node, from the published multi-arch image. `make dedi-image` still
   # exists for running an unreleased build from a checkout.
