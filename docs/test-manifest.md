@@ -99,7 +99,9 @@ Spikes prove things about **other people's software**, so they live outside the 
 | Provenance is adapter-attached, never source-asserted | [#14](../../issues/14) | `tests/contract/adapter_test.go` against `csv-asserting-its-own-provenance.csv`: a file's own `source_class`/`capture_method`/`adapter_ref` columns are ignored and kept as enrichment (§8) | Contract | covered |
 | A batch loses no rows | [#22](../../issues/22) | `adapters/csv/csv_test.go` — every data row leaves as a record or a named rejection, and the reference points at the real line even after a quoted newline | Unit | covered |
 | CSV batch adapter | [#22](../../issues/22) | `adapters/csv/csv_test.go` — six bad-value cases reject one row each; a missing mandatory column fails the file and names it | Unit | covered |
-| Source heartbeat / silence detection | [#14](../../issues/14) | Harness stops a source; asserts a silence alert fires rather than nothing happening | E2E | planned |
+| Source heartbeat / silence detection | [#14](../../issues/14) | `harness/scenarios/heartbeat_test.go` — a registered feed goes quiet, the alert fires once per episode rather than once per sweep, its owner is told, and a feed that resumes reads healthy again. A cadence and an owner are both required at registration | E2E | covered |
+| Which key matched is kept, not just that one did | [#14](../../issues/14) | `harness/scenarios/spine_test.go` reads `claim.matched.key` back after a batch that joined on a phone number and requires `contact-route`. A match nobody can explain is a match nobody can dispute | E2E | covered |
+| Idempotency and replay semantics | [#14](../../issues/14) | `TestTheSameRecordTwiceCollidesOnTheDedupeKey` — the same work down a second transport is one unit; six distinguishing mutations must not collide. Receipt time and transport are not inputs | Unit | covered |
 | Strength function `f` | [#15](../../issues/15) | `pkg/strength/testdata/vectors.json` — eleven cases run as a table, readable by a second implementation in any language | Unit | covered |
 | Transport never affects strength | [#15](../../issues/15) | One set of facts through all four transports must give one answer (§8) | Unit | covered |
 | A credential resolves against its pinned definition version | [#15](../../issues/15) | The same facts under v1 and a stricter v2 give different tiers, and v1 does not move | Unit | covered |
@@ -112,7 +114,7 @@ Spikes prove things about **other people's software**, so they live outside the 
 | Identity provider interface | [#17](../../issues/17) | Same contract satisfied by ≥2 provider classes (eSignet + mobile OTP) | Contract | planned |
 | Six OpenAPI descriptions | [#17](../../issues/17) | `schemas/openapi/*.yaml`, one per service, referencing `schemas/` by `$id` rather than restating it. Hand-written from the handlers — nothing yet checks they have not drifted | Contract | partial |
 | Identity assurance is derived, never stored | [#20](../../issues/20) | `registry` computes it from a Party's bindings on request; there is no column to store it in (§4.1) | E2E | covered |
-| Bednet definition, three faces | [#18](../../issues/18) | Seeded through the real endpoints, ratified and activated by the harness, and its tier map drives both the strength vectors and the live verdict. Resolving it from DeDi is still to come | E2E | partial |
+| Bednet definition, three faces | [#18](../../issues/18) | Seeded through the real endpoints, ratified and activated by the harness, and its tier map drives both the strength vectors and the live verdict. `harness/scenarios/registry_test.go` asserts its DeDi publication carries a digest and a version | E2E | covered |
 | A definition's author is never its ratifier | [#21](../../issues/21) | Enforced in the definitions service and in a CHECK constraint; the harness seeds through DRAFT → ratify → activate, so the path is exercised on every run (§7) | E2E | covered |
 
 ## The spine (G2, #25)
