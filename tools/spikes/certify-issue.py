@@ -240,6 +240,15 @@ def main():
     credential = body["credential"]
     print(json.dumps(credential, indent=2)[:2000])
 
+    # Kept when asked for, because the printed-card and offline legs (#66) need
+    # a real credential from the deployed issuer, not a hand-authored one. A
+    # card rendered from a credential we signed ourselves would prove the
+    # renderer and nothing else.
+    if os.environ.get("CREDENTIAL_OUT"):
+        with open(os.environ["CREDENTIAL_OUT"], "w", encoding="utf-8") as fh:
+            json.dump(credential, fh, indent=2)
+        print(f"[kept] credential written to {os.environ['CREDENTIAL_OUT']}")
+
     subject = credential.get("credentialSubject", {})
     # Certify appends `#0` — did:jwk has exactly one key, and #0 is the only
     # valid reference to it.

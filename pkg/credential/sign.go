@@ -175,10 +175,30 @@ func PublicKeyFromMultibase(s string) (ed25519.PublicKey, error) {
 // document), as the cryptosuite specifies. Hashing the options separately is
 // what stops someone lifting a valid signature onto a proof that claims a
 // different purpose or a different key.
+//
+// The proof configuration carries the DOCUMENT's @context, which is easy to
+// miss and expensive to miss. eddsa-jcs-2022 requires it whenever the document
+// has one (VC Data Integrity, "Proof Configuration"), and omitting it produces
+// a signature that is perfectly self-consistent and verifies nowhere else.
+//
+// That is exactly what happened here, and it went unnoticed because every test
+// signed and verified with this same code. The credentials were unforgeable and
+// unreadable at the same time: no spec-conformant verifier could check one, and
+// this package could not check one issued by Certify. "Provable to a stranger"
+// is a claim about somebody else's verifier, so a suite that only ever asks its
+// own is not testing it. Found by #66, printing a real card and trying to read
+// it back.
 func signingInput(doc, options map[string]any) ([]byte, error) {
 	canonDoc, err := CanonicaliseValue(doc)
 	if err != nil {
 		return nil, err
+	}
+	if ctx, ok := doc["@context"]; ok {
+		withContext := map[string]any{"@context": ctx}
+		for k, v := range options {
+			withContext[k] = v
+		}
+		options = withContext
 	}
 	canonOpts, err := CanonicaliseValue(options)
 	if err != nil {

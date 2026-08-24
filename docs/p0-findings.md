@@ -65,6 +65,7 @@ try.
 | C16 | **Certify's CSV data provider keys on the token's `sub`** — the pairwise subject, not any identifier in the file | Right for CREST: the fixture holds no identity number. But it makes the fixture **deployment-bound**, since the subject is only knowable after an authentication against that eSignet. `make certify-bind` re-keys it; the column is still named `individualId` because the plugin's reader names it. |
 | C17 | **The credential type list must match the request exactly, in order.** `VerifiableCredential,WorkEventCredential` works; the reverse fails with `ERROR_SIGNING_QR_DATA: CredentialConfig not found` | The error names the signing step, which is not what went wrong. Cost an hour of looking at the wrong subsystem. |
 | C18 | **The Data Integrity proof config must carry the *document's* `@context`** when verifying, or the signature check fails silently rather than reporting a mismatch | Fixed in `tools/spikes/certify-issue.py`; recorded because a verifier that gets this wrong reports "invalid" for a valid credential, and on this system that is a worker not getting paid. |
+| C19 | **CREST's own signer had C18's bug, and C18 did not catch it.** `pkg/credential` canonicalised the proof configuration without the document's `@context`. Every test in the package signed and verified with that same code, so all of them passed | The credentials were valid against themselves and against nothing else: no conformant verifier could read a CREST-issued credential, and CREST could not read one issued by Certify. C18 was recorded as a quirk of *our verifier script*; nobody asked whether the signer did the same thing. Found by #66 — printing a real card and trying to read it back. Fixed, with a Certify-issued credential checked in as a fixture so the next divergence fails a test instead of a pilot. |
 
 **E7 — the pairwise subject is not salted per deployment.** `make certify-bind` was run
 against the deployed eSignet after the same fixtures had been bound against a local one.
@@ -82,7 +83,9 @@ replacing it with a generated one breaks start-up. Anyone who can pull the image
 holds the key the verifier signs with. Acceptable for a spike; it must be an
 explicit gate before any verification result is trusted by a payer.
 
-**Still open on #1:** issuing a hand-authored `WorkEventCredential` over OpenID4VCI, holding it in a wallet, rendering a printed card via PixelPass, and verifying that card **fully offline**. The offline verification is the part that matters — it is W6 — and it needs a real device with its radios off. A container asserting it has no network is weaker evidence, and the honest place to prove it is the field simulation the test manifest already schedules.
+**The printed card and the offline check now exist** (`make printed-card`, `make offline-verify-sealed`). A credential issued by the deployed Certify is rendered to a PixelPass QR, decodes back byte-identical, and its Ed25519 proof verifies from local files only — the verifier has no HTTP client at all, by construction rather than configuration, and the last run was inside a container started with `--network none`. It reports what it cannot know: validity at issuance, never currency. This is what found C19.
+
+**Still open on #1:** the wallet download through Inji Web against the deployed stack, and the *physical* leg — a printed card scanned on a real device with its radios off. A container asserting it has no network is stronger evidence than a mock and weaker evidence than a phone, and the gap between them is exactly where a QR that is too dense to scan, or a card nobody can hold at the right distance, would show up. That needs a person, a printer and a phone.
 
 ---
 
@@ -161,4 +164,6 @@ The lesson is not about base64. It is that **a test suite built entirely from on
 
 ## What it does not change
 
-No primitive, credential shape or evidence-contract decision moves on the strength of what is here. §3 stands as written. §4's riskiest claim has now been tested and mostly holds — the subject is stable and partitioned — but E6 moves *where* the partition falls, which §4.1 must state. §5 has not yet been tested where it makes its riskiest claim: offline verification. **This memo cannot close, and Phase 1 schemas cannot freeze, until a credential has been verified offline — now [#66](../../issues/66),** split out of #1 when the rest of the substrate work landed. #1 closed against the half it proved; the half it did not is not counted anywhere.
+No primitive, credential shape or evidence-contract decision moves on the strength of what is here. §3 stands as written. §4's riskiest claim has now been tested and mostly holds — the subject is stable and partitioned — but E6 moves *where* the partition falls, which §4.1 must state. §5's riskiest claim — that the offline payload carries the full signed VC and a bare scan verifies it with no network — **has now been tested and holds**, and the testing found C19, which is the most consequential thing in this memo: for the whole of P1 and P2, CREST was issuing credentials no stranger could verify. The claim is upheld; the implementation was not. That is the difference between a design finding and a defect, and this was a defect.
+
+What remains of [#66](../../issues/66) is the physical leg — printed, scanned, radios off — which no amount of tooling can stand in for.

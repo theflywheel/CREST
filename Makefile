@@ -11,7 +11,7 @@ GO ?= go
 
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
-        harness-logs verify-deploy clean todo dedi-image dedi-keys spike-dedi certify-bind certify-issue \
+        harness-logs verify-deploy clean todo dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
         spike-dedi-deployed spike-esignet verify-deployed verify-registry hooks generate generate-check \
         e2e-up e2e-run
 
@@ -222,6 +222,22 @@ certify-bind: ## Key the work-event fixture by this deployment's pairwise subjec
 		--set "CERTIFY_WORK_EVENTS_B64=$$(cat $(CURDIR)/.work_events.b64)" >/dev/null
 	@rm -f $(CURDIR)/.work_events.b64
 	@echo "bound; setting the variable redeploys Certify, which is the restart the CSV needs"
+
+printed-card: ## Issue, print a PixelPass card, and verify it with no network (#66)
+	@mkdir -p tools/spikes/card
+	@CREDENTIAL_OUT=tools/spikes/card/credential.json CERTIFY=$(CERTIFY_URL) \
+		ESIGNET=$(CERTIFY_ESIGNET) MOCK_IDENTITY=$(CERTIFY_MOCK_IDENTITY) \
+		python3 tools/spikes/certify-issue.py >/dev/null
+	@curl -fsS $(CERTIFY_URL)/v1/certify/.well-known/did.json -o tools/spikes/card/issuer-did.json
+	@cd tools/spikes/printedcard && npm install --silent
+	@node tools/spikes/printedcard/card.mjs tools/spikes/card/credential.json tools/spikes/card
+	@$(GO) run ./tools/spikes/offlineverify tools/spikes/card/decoded.json tools/spikes/card/issuer-did.json
+	@echo "card: tools/spikes/card/card.html — open and print it, then scan it with the radios off"
+
+offline-verify-sealed: ## The above's last step in a container with no network at all (#66)
+	@CGO_ENABLED=0 GOOS=linux $(GO) build -o tools/spikes/card/offlineverify ./tools/spikes/offlineverify
+	docker run --rm --network none -v "$(PWD)/tools/spikes/card":/c -w /c alpine:3.20 \
+		./offlineverify decoded.json issuer-did.json
 
 certify-issue: ## Issue a WorkEventCredential over OpenID4VCI and verify it (#1)
 	@CERTIFY=$(CERTIFY_URL) ESIGNET=$(CERTIFY_ESIGNET) MOCK_IDENTITY=$(CERTIFY_MOCK_IDENTITY) \
