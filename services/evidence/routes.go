@@ -102,6 +102,19 @@ func (h *handlers) submitBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	adapter := csvadapter.Adapter{}
+
+	// The source's own vocabulary, from configuration (#25). An unregistered
+	// source gets an empty mapping and the file is read as canonical column
+	// names — which is every fixture in this repo, and the reason registering a
+	// source is a deployment step rather than a precondition for ingesting
+	// anything at all.
+	mapping, err := mappingFor(r.Context(), h.d.DB.Q(), adapter.Ref(), params.ContextID)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "read the source mapping", err)
+		return
+	}
+	params.Source.Mapping = mapping
+
 	rows, rejections, err := adapter.Parse(bytes.NewReader(body), params.Source, h.d.Clock.Now())
 	if err != nil {
 		// A file whose header is unusable is refused whole, and named. There is
@@ -222,11 +235,12 @@ func urlSafe(s string) string { return url.QueryEscape(s) }
 // until it is nobody's.
 func (h *handlers) registerSource(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		AdapterRef    string `json:"adapterRef"`
-		ContextID     string `json:"contextId"`
-		SystemRef     string `json:"systemRef"`
-		ExpectedEvery string `json:"expectedEvery"`
-		OwnerPartyID  string `json:"ownerPartyId"`
+		AdapterRef    string           `json:"adapterRef"`
+		ContextID     string           `json:"contextId"`
+		SystemRef     string           `json:"systemRef"`
+		ExpectedEvery string           `json:"expectedEvery"`
+		OwnerPartyID  string           `json:"ownerPartyId"`
+		Mapping       adapters.Mapping `json:"mapping"`
 	}
 	if !httpx.ReadJSON(w, r, &body) {
 		return
@@ -254,6 +268,7 @@ func (h *handlers) registerSource(w http.ResponseWriter, r *http.Request) {
 		ContextID:     body.ContextID,
 		SystemRef:     body.SystemRef,
 		OwnerPartyID:  body.OwnerPartyID,
+		Mapping:       body.Mapping,
 		RegisteredAt:  h.d.Clock.Now(),
 		expectedEvery: every,
 	}

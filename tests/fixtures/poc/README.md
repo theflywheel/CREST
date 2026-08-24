@@ -75,3 +75,36 @@ Every exit released payment: true
 Nothing was silently dropped: true
 Every held payment has a reason and an owner: true
 ```
+
+## The second batch: a source system's own vocabulary
+
+`riverside-dhis2-native-export.csv` is the same month of work, exported the way
+DHIS2 actually names things — `event`, `eventDate`, `orgUnitName`, and data
+elements named as somebody typed them into a metadata screen. It has no column
+at all for the unit of measure, because that is a fact about the programme
+rather than about the row.
+
+`riverside-dhis2-mapping.json` is what a deployment registers beside the feed.
+Run it with `make poc-dhis2`; it produces **the same 39 credentials, 39 cards and
+38 released payments** as the canonical batch, through identical code.
+
+Three mechanisms, because real exports need all three:
+
+| | |
+|---|---|
+| `columns` | Renames. `period_start` ← `eventDate`. |
+| `constants` | What the file does not carry. A programme's unit of measure is not a property of a row. |
+| `enrichment` | Renames for the columns CREST does not interpret but a **definition** might — `household_id` ← `Household ID`. |
+
+The third one was missed at first, and the PoC is what found it. The canonical
+core mapped cleanly while enrichment did not, so a source calling it
+`Household ID` produced records that silently failed the tier rule requiring
+`household_id`: **a worker paid at a lower tier for a reason having nothing to do
+with the quality of their evidence, and nothing anywhere saying so.**
+
+### What a mapping cannot do
+
+Nothing in it names `sourceClass`, `captureMethod` or `adapterRef`. Provenance is
+attached by the pipeline from what the deployment knows about the source (§8),
+so a mapping cannot argue for its own tier — asserted in
+`tests/contract/adapter_test.go`.

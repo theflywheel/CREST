@@ -336,3 +336,112 @@ func TestDuplicateRowsArePassedThroughIdenticallyRatherThanJudged(t *testing.T) 
 			"deduplication would erase real work", key(first))
 	}
 }
+
+// The same work, in two vocabularies, must become the same record (#25, #30).
+//
+// This is the property that decides whether "the batch/CSV adapter unblocks
+// every source system immediately, whatever their integration maturity" is true
+// or is a sentence about source systems that have already agreed to rename
+// their columns. Before the mapping existed it was the second thing, and the
+// constraint would have surfaced in a partner conversation rather than before
+// one.
+//
+// Configuration only: the two files below are read by identical code, and
+// everything that differs between them is data a deployment supplies when it
+// registers the feed.
+func TestOneSourcesVocabularyAndAnothersBecomeTheSameRecord(t *testing.T) {
+	// Written the way CREST names things.
+	canonical := "activity,outcome_value,outcome_unit,worker_id_kind,worker_id,period_start,period_end," +
+		"geography,source_record_ref,household_id,beneficiary_count\n" +
+		"bednet-distribution,12,bednets-distributed,phone,+15550100011,2026-03-02,2026-03-02T17:00:00Z," +
+		"Riverside/Ward-3,riverside-dhis2-0001,HH-0007,4\n"
+
+	// The same event, exported by a system that names things its own way and
+	// carries no column at all for the unit of measure.
+	native := "event,orgUnitName,eventDate,completedDate,CHW phone number,Bednets distributed," +
+		"Household ID,Beneficiaries reached,programStage\n" +
+		"riverside-dhis2-0001,Riverside/Ward-3,2026-03-02,2026-03-02T17:00:00Z,+15550100011,12," +
+		"HH-0007,4,Bednet distribution\n"
+
+	mapping := adapters.Mapping{
+		Columns: map[string]string{
+			"worker_id": "CHW phone number", "outcome_value": "Bednets distributed",
+			"period_start": "eventDate", "period_end": "completedDate",
+			"geography": "orgUnitName", "source_record_ref": "event",
+		},
+		Enrichment: map[string]string{
+			"household_id": "Household ID", "beneficiary_count": "Beneficiaries reached",
+		},
+		Constants: map[string]string{
+			"activity": "bednet-distribution", "outcome_unit": "bednets-distributed",
+			"worker_id_kind": "phone",
+		},
+	}
+
+	parse := func(body string, src adapters.Source) schema.CanonicalWorkEvidenceRecord {
+		t.Helper()
+		rows, rejected, err := adaptercsv.Adapter{}.Parse(
+			strings.NewReader(body), src, batchReceivedAt)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if len(rejected) != 0 {
+			t.Fatalf("unexpected rejection: %s", rejected[0].Reason)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("want 1 record, got %d", len(rows))
+		}
+		return rows[0].Record
+	}
+
+	mapped := configuredSource
+	mapped.Mapping = mapping
+
+	a := parse(canonical, configuredSource)
+	b := parse(native, mapped)
+
+	// Every field a definition, a tier map or a payment reads.
+	// Period is compared field by field: it holds *time.Time, and struct
+	// equality would compare the pointers rather than the instants.
+	samePeriod := a.Period.Start.Equal(b.Period.Start) &&
+		(a.Period.End == nil) == (b.Period.End == nil) &&
+		(a.Period.End == nil || a.Period.End.Equal(*b.Period.End))
+	if a.Activity != b.Activity || a.Outcome != b.Outcome || !samePeriod ||
+		a.WorkerJoiningIdentifier != b.WorkerJoiningIdentifier {
+		t.Fatalf("the same work in two vocabularies produced different records:\n %+v\n %+v", a, b)
+	}
+	if (a.Geography == nil) != (b.Geography == nil) ||
+		(a.Geography != nil && *a.Geography != *b.Geography) {
+		t.Errorf("geography differs: %v vs %v", a.Geography, b.Geography)
+	}
+	if a.Provenance.SourceRecordRef == nil || b.Provenance.SourceRecordRef == nil ||
+		*a.Provenance.SourceRecordRef != *b.Provenance.SourceRecordRef {
+		t.Error("the source record reference differs, so the two would not deduplicate against each other")
+	}
+
+	// The fields a tier map requires, under the names the definition uses. This
+	// is the half the first implementation missed: the canonical core mapped
+	// cleanly and enrichment did not, so a source with its own names lost a
+	// tier for a reason having nothing to do with the quality of its evidence,
+	// and nothing anywhere said so.
+	for _, field := range []string{"household_id", "beneficiary_count"} {
+		if a.Enrichment[field] != b.Enrichment[field] {
+			t.Errorf("enrichment %q differs: %v vs %v — a definition requiring it would "+
+				"award a different tier for the same work", field, a.Enrichment[field], b.Enrichment[field])
+		}
+	}
+
+	// And the source's own extra columns are still kept, unrenamed.
+	if b.Enrichment["programstage"] != "Bednet distribution" {
+		t.Errorf("a column the mapping does not name was dropped: %v", b.Enrichment)
+	}
+
+	// Provenance is the deployment's, in both. A mapping must not be able to
+	// argue for a tier: nothing in it names sourceClass, captureMethod or
+	// adapterRef, and this is the assertion that keeps it that way.
+	if a.Provenance.SourceClass != b.Provenance.SourceClass ||
+		a.Provenance.CaptureMethod != b.Provenance.CaptureMethod ||
+		a.Provenance.AdapterRef != b.Provenance.AdapterRef {
+		t.Error("the mapping changed provenance; a file's vocabulary must not influence its trust")
+	}
+}

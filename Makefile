@@ -11,7 +11,7 @@ GO ?= go
 
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
-        harness-logs verify-deploy clean todo poc poc-batch dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
+        harness-logs verify-deploy clean todo poc poc-batch poc-dhis2 dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
         spike-dedi-deployed spike-esignet verify-deployed verify-registry hooks generate generate-check \
         e2e-up e2e-run
 
@@ -97,9 +97,16 @@ poc: ## End-to-end PoC: a month of real-shaped evidence in, cards out (#25)
 	@# Needs a stack. `make e2e-up` first, or point the *_URL variables at one.
 	@$(GO) run ./tools/poc
 
-poc-batch: ## Regenerate the PoC batch from its generator
+poc-dhis2: ## The same PoC on a DHIS2-native export, read through a configured mapping (#25)
+	@POC_BATCH=tests/fixtures/poc/riverside-dhis2-native-export.csv \
+		POC_MAPPING=tests/fixtures/poc/riverside-dhis2-mapping.json \
+		$(GO) run ./tools/poc
+
+poc-batch: ## Regenerate the PoC batches from their generators
 	@python3 tools/poc/generate.py > tests/fixtures/poc/riverside-dhis2-march-2026.csv
-	@echo "wrote tests/fixtures/poc/riverside-dhis2-march-2026.csv"
+	@python3 tools/poc/generate.py --roster > tests/fixtures/poc/roster.txt
+	@python3 tools/poc/generate_dhis2.py > tests/fixtures/poc/riverside-dhis2-native-export.csv
+	@echo "wrote tests/fixtures/poc/*.csv"
 
 e2e-up: ## Bring up just what the spine needs, and leave it running
 	$(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail $(SERVICES)

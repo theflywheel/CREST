@@ -1,0 +1,20 @@
+{
+  "columns": {
+    "worker_id": "CHW phone number",
+    "outcome_value": "Bednets distributed",
+    "period_start": "eventDate",
+    "period_end": "completedDate",
+    "geography": "orgUnitName",
+    "source_record_ref": "event"
+  },
+  "constants": {
+    "activity": "bednet-distribution",
+    "outcome_unit": "bednets-distributed",
+    "worker_id_kind": "phone"
+  },
+  "enrichment": {
+    "household_id": "Household ID",
+    "beneficiary_count": "Beneficiaries reached",
+    "supervisor_present": "Supervisor present"
+  }
+}

@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/theflywheel/crest/adapters"
 
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -37,16 +40,24 @@ const (
 
 // Source is a feed this deployment expects evidence from.
 type Source struct {
-	ID            string     `json:"id"`
-	AdapterRef    string     `json:"adapterRef"`
-	ContextID     string     `json:"contextId"`
-	SystemRef     string     `json:"systemRef"`
-	ExpectedEvery string     `json:"expectedEvery"`
-	OwnerPartyID  string     `json:"ownerPartyId"`
-	RegisteredAt  time.Time  `json:"registeredAt"`
-	LastSeenAt    *time.Time `json:"lastSeenAt,omitempty"`
-	SilentSince   *time.Time `json:"silentSince,omitempty"`
-	NotifiedAt    *time.Time `json:"notifiedAt,omitempty"`
+	ID            string `json:"id"`
+	AdapterRef    string `json:"adapterRef"`
+	ContextID     string `json:"contextId"`
+	SystemRef     string `json:"systemRef"`
+	ExpectedEvery string `json:"expectedEvery"`
+	OwnerPartyID  string `json:"ownerPartyId"`
+
+	// Mapping is how this source's own column names reach the canonical record
+	// (#25). Configuration, held beside the rest of what this deployment knows
+	// about this feed rather than in a file somewhere else: the cadence, the
+	// owner and the vocabulary are all facts about the same integration, and
+	// splitting them is how one gets updated and the others do not.
+	Mapping adapters.Mapping `json:"mapping"`
+
+	RegisteredAt time.Time  `json:"registeredAt"`
+	LastSeenAt   *time.Time `json:"lastSeenAt,omitempty"`
+	SilentSince  *time.Time `json:"silentSince,omitempty"`
+	NotifiedAt   *time.Time `json:"notifiedAt,omitempty"`
 
 	// Computed on read.
 	State    SourceState `json:"state"`
@@ -92,23 +103,29 @@ func registerSource(ctx context.Context, tx store.Querier, s Source) (Source, er
 	if s.expectedEvery <= 0 {
 		return Source{}, ErrBadCadence
 	}
+	mappingJSON, err := json.Marshal(s.Mapping)
+	if err != nil {
+		return Source{}, fmt.Errorf("marshal source mapping: %w", err)
+	}
 	// Re-registering updates the cadence and the owner and leaves the history
 	// alone. A source whose owner changed hands is the same source, and
 	// resetting last_seen_at would make it look healthy for one cadence for no
 	// reason other than that somebody edited a row.
 	var secs int64
-	err := tx.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO sources (id, adapter_ref, context_id, system_ref, expected_every,
-		                     owner_party_id, registered_at)
-		VALUES ($1,$2,$3,$4,$5::interval,$6,$7)
+		                     owner_party_id, registered_at, mapping)
+		VALUES ($1,$2,$3,$4,$5::interval,$6,$7,$8)
 		ON CONFLICT (adapter_ref, context_id) DO UPDATE SET
 			expected_every = EXCLUDED.expected_every,
 			owner_party_id = EXCLUDED.owner_party_id,
-			system_ref     = EXCLUDED.system_ref
+			system_ref     = EXCLUDED.system_ref,
+			mapping        = EXCLUDED.mapping
 		RETURNING id, registered_at, last_seen_at,
 		          extract(epoch from expected_every)::bigint`,
 		s.ID, s.AdapterRef, s.ContextID, s.SystemRef,
-		fmt.Sprintf("%d seconds", int64(s.expectedEvery.Seconds())), s.OwnerPartyID, s.RegisteredAt).
+		fmt.Sprintf("%d seconds", int64(s.expectedEvery.Seconds())), s.OwnerPartyID, s.RegisteredAt,
+		mappingJSON).
 		Scan(&s.ID, &s.RegisteredAt, &s.LastSeenAt, &secs)
 	if err != nil {
 		return Source{}, err
@@ -140,7 +157,7 @@ func listSources(ctx context.Context, q store.Querier, now time.Time) ([]Source,
 	rows, err := q.Query(ctx, `
 		SELECT id, adapter_ref, context_id, system_ref,
 		       extract(epoch from expected_every)::bigint,
-		       owner_party_id, registered_at, last_seen_at, silent_since, notified_at
+		       owner_party_id, registered_at, last_seen_at, silent_since, notified_at, mapping
 		FROM sources ORDER BY adapter_ref, context_id`)
 	if err != nil {
 		return nil, err
@@ -149,9 +166,16 @@ func listSources(ctx context.Context, q store.Querier, now time.Time) ([]Source,
 	out, err := store.Collect(rows, func(r store.Row) (Source, error) {
 		var s Source
 		var secs int64
+		var mapping []byte
 		if err := r.Scan(&s.ID, &s.AdapterRef, &s.ContextID, &s.SystemRef, &secs,
-			&s.OwnerPartyID, &s.RegisteredAt, &s.LastSeenAt, &s.SilentSince, &s.NotifiedAt); err != nil {
+			&s.OwnerPartyID, &s.RegisteredAt, &s.LastSeenAt, &s.SilentSince, &s.NotifiedAt,
+			&mapping); err != nil {
 			return Source{}, err
+		}
+		if len(mapping) > 0 {
+			if err := json.Unmarshal(mapping, &s.Mapping); err != nil {
+				return Source{}, fmt.Errorf("source %s has an unreadable mapping: %w", s.ID, err)
+			}
 		}
 		s.expectedEvery = time.Duration(secs) * time.Second
 		s.ExpectedEvery = s.expectedEvery.String()
@@ -159,6 +183,27 @@ func listSources(ctx context.Context, q store.Querier, now time.Time) ([]Source,
 		return s, nil
 	})
 	return out, err
+}
+
+// mappingFor is the configured vocabulary for one feed, or an empty mapping.
+//
+// An empty mapping is not a failure: a file that already speaks CREST's column
+// names needs no translation, which is every fixture in this repo and the case
+// this started as. Registering the source is what a deployment does when its
+// source system speaks its own.
+func mappingFor(ctx context.Context, q store.Querier, adapterRef, contextID string) (adapters.Mapping, error) {
+	var raw []byte
+	err := q.QueryRow(ctx,
+		`SELECT mapping FROM sources WHERE adapter_ref = $1 AND context_id = $2`,
+		adapterRef, contextID).Scan(&raw)
+	if errors.Is(err, store.ErrNotFound) || len(raw) == 0 {
+		return adapters.Mapping{}, nil
+	}
+	if err != nil {
+		return adapters.Mapping{}, err
+	}
+	var m adapters.Mapping
+	return m, json.Unmarshal(raw, &m)
 }
 
 // openSilence records that a source has gone quiet, and reports whether this
