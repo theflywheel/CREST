@@ -197,7 +197,7 @@ Proven by `make test-e2e`: docker compose up, seed through the real endpoints, d
 | The definition link is checkable exactly when the definition reached a log | [#68](../../issues/68), [#21](../../issues/21) | `TestTheTrustChainSaysWhichLinksAVerifierCanCheck` compares the link's `checkable` against the publication's `transparent`, and — when checkable — **fetches the URL it points at**. A `how` nobody can fetch is the promise this field replaces. Passes in both modes: node and fallback | E2E | covered |
 | A valid verdict states what it does not establish | [#68](../../issues/68) | The same scenario asserts `notEstablished` names the subject's authorization. A green verdict reads as "and this person was authorised to do this work", which is exactly what a deployment cannot demonstrate to a stranger — a disclosed limit is not the same as one the verifier discovers by assuming wrongly | E2E | covered |
 | Per-request disclosure consent | [#27](../../issues/27) | Refusal recorded as a value; verification without consent rejected | E2E | planned |
-| Batch verification caps | [#27](../../issues/27) | Cap enforced per the G1 decision; overage rejected and logged | Unit | planned |
+| Batch verification caps | [#27](../../issues/27), [G1 #9](../../issues/9) | **The G1 decision is now made and the row can be written against it:** a per-pass rate cap whose number is configuration and whose existence is not, a distinct authorization scope for bulk checking, and every check in the worker's audit trail regardless of how it arrived. Overage rejected and logged. An audit trail with no cap makes sweeping observable rather than impossible, which is a receipt and not a control | Unit + E2E | planned |
 
 ## Operations
 
