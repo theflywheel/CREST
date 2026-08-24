@@ -11,7 +11,7 @@ GO ?= go
 
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
-        harness-logs verify-deploy clean todo dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
+        harness-logs verify-deploy clean todo poc poc-batch dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
         spike-dedi-deployed spike-esignet verify-deployed verify-registry hooks generate generate-check \
         e2e-up e2e-run
 
@@ -92,6 +92,14 @@ test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
 		fi ; \
 		$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 ; \
 		exit $$status
+
+poc: ## End-to-end PoC: a month of real-shaped evidence in, cards out (#25)
+	@# Needs a stack. `make e2e-up` first, or point the *_URL variables at one.
+	@$(GO) run ./tools/poc
+
+poc-batch: ## Regenerate the PoC batch from its generator
+	@python3 tools/poc/generate.py > tests/fixtures/poc/riverside-dhis2-march-2026.csv
+	@echo "wrote tests/fixtures/poc/riverside-dhis2-march-2026.csv"
 
 e2e-up: ## Bring up just what the spine needs, and leave it running
 	$(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail $(SERVICES)
