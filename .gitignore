@@ -25,3 +25,6 @@ infra/compose/dedi-keys/
 
 # PixelPass is pulled at card-render time; the lockfile is checked in.
 tools/spikes/printedcard/node_modules/
+
+# Stray build artefacts from `go build ./tools/...`
+/poc
