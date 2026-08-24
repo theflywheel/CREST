@@ -1,0 +1,4 @@
+activity,outcome_value,outcome_unit,worker_id_kind,worker_id,period_start,period_end,geography,source_record_ref,household_id,beneficiary_count,supervisor_present
+bednet-distribution,12,bednets-distributed,phone,+15550100011,2026-03-02,2026-03-02T17:00:00Z,Riverside/Ward-3,riverside-dhis2-0001,HH-0007,4,yes
+bednet-distribution,12,bednets-distributed,phone,+15550100011,2026-03-02,2026-03-02T17:00:00Z,Riverside/Ward-3,riverside-dhis2-0001,HH-0007,4,yes
+bednet-distribution,7,bednets-distributed,phone,+15550100011,2026-03-02,2026-03-02T17:00:00Z,Riverside/Ward-3,riverside-dhis2-0004,HH-0009,2,yes
