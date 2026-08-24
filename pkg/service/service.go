@@ -44,6 +44,12 @@ type Deps struct {
 	// under. Kept beside the publisher so no service has to read the
 	// environment a second time and get a different answer.
 	DeDiNamespace string
+
+	// Blobs is the object store, present only for a service that asked for
+	// one. What lives in it is consent artefacts — the voice recording that
+	// is a non-literate worker's only real way to consent (§9) — so it is
+	// deliberately not handed to every service by default.
+	Blobs store.Blobs
 }
 
 // Routes registers a service's own endpoints. Health endpoints are added by httpx.
@@ -75,6 +81,12 @@ type Options struct {
 	// default: most services hold personal data, and personal data never
 	// reaches the node.
 	DeDiRegistries []string
+
+	// NeedsBlobs asks for an object store. Like the registry substrate, a
+	// missing configuration is fatal rather than a silent downgrade: a service
+	// that needs somewhere to put a consent recording and quietly starts
+	// without one will accept a consent it cannot evidence.
+	NeedsBlobs bool
 
 	// OnStart runs once, after migrations and after the registry substrate is
 	// ready, before the service answers anything.
@@ -143,6 +155,25 @@ func Main(name string, opts Options) {
 				}
 			}
 			d.DeDi, d.DeDiNamespace = pub, cfg.Namespace
+		}
+
+		if opts.NeedsBlobs {
+			s3cfg, ok := store.LoadS3Config()
+			if !ok {
+				log.Error("this service stores artefacts and S3_ENDPOINT is not set")
+				os.Exit(1)
+			}
+			blobs, err := store.NewS3(s3cfg)
+			if err != nil {
+				log.Error("object store unusable", "error", err)
+				os.Exit(1)
+			}
+			if err := blobs.EnsureBucket(ctx); err != nil {
+				log.Error("object store unreachable", "error", err)
+				os.Exit(1)
+			}
+			log.Info("object store ready", "bucket", s3cfg.Bucket)
+			d.Blobs = blobs
 		}
 
 		if opts.Deliver != nil {

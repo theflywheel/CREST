@@ -21,6 +21,9 @@ func main() {
 		Migrations: migrations,
 		Dir:        "migrations",
 		Routes:     routes,
+		// Consent artefacts: the voice recording that is a non-literate
+		// worker's only real way to consent (§9, #24).
+		NeedsBlobs: true,
 		// The public half of §3, and only the public half. Workers, contact
 		// routes and identity bindings have no registry here and never will —
 		// what reaches the node is decided field by field in publish.go.
