@@ -83,8 +83,34 @@ type Verdict struct {
 	// verifier discovers by assuming wrongly.
 	NotEstablished []string `json:"notEstablished,omitempty"`
 
+	// Contested is every dispute standing against this credential or the claim
+	// behind it (#58).
+	//
+	// Orthogonal to Valid, and that separation is the decision. `valid` means
+	// this issuer really asserted this and has not withdrawn it — a question
+	// about the document. `contested` means somebody says the underlying record
+	// is wrong — a question about the world. Collapsing them would mean a
+	// worker who disputes one detail loses the whole credential for work they
+	// did do, which is a penalty for objecting, falling on the person the
+	// dispute exists to protect.
+	//
+	// Empty when nothing is disputed. Never populated with the reason or with
+	// who raised it: that is ordinarily the worker speaking about their own
+	// record, and it is between them and the programme.
+	Contested []ContestStanding `json:"contested,omitempty"`
+
 	SignatureValid bool `json:"signatureValid"`
 	Revoked        bool `json:"revoked"`
+}
+
+// ContestStanding is where one dispute stands. Standing only — see Verdict.
+type ContestStanding struct {
+	State    string    `json:"state"`
+	RaisedAt time.Time `json:"raisedAt"`
+	// Against says whether the dispute names this credential or the claim it
+	// projects. A verifier reading "UPHELD" should be able to tell whether
+	// somebody is contesting the document or the work.
+	Against string `json:"against"`
 }
 
 // Link is one step of the trust chain.
@@ -254,6 +280,12 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 	v.Tier = &tier
 	v.Valid = true
 
+	// Resolved from the claim the credential names — which it can, because a
+	// credential carries its claimId (#16). Reported beside the verdict rather
+	// than folded into it: the credential is a historical statement and stays
+	// valid, and the dispute is a separate fact about the same work.
+	v.Contested = h.contests(ctx, credID, cred.CredentialSubject.WorkEvent.ClaimID)
+
 	// Stated on a valid verdict, because that is the one a verifier acts on.
 	// Finding #68: a worker's authorization is not published, so whether this
 	// particular person was authorised for this project is not something a
@@ -362,6 +394,41 @@ func statusListURL(doc map[string]any) string {
 		return u
 	}
 	return "the status list named by the credential"
+}
+
+// contests asks confirmation where any dispute against this credential stands.
+//
+// Best-effort, and the failure mode is stated because it is the wrong way
+// round: an unreachable confirmation service produces a verdict that reports no
+// dispute, which is indistinguishable from there being none. That is logged
+// loudly. It is accepted here because the alternative — refusing to verify a
+// credential because a service that holds *disputes* is down — would make every
+// verification depend on a component that has nothing to do with whether the
+// signature is real.
+func (h *handlers) contests(ctx context.Context, credentialID, claimID string) []ContestStanding {
+	var out []ContestStanding
+	for _, t := range []struct{ kind, id string }{
+		{"credential", credentialID},
+		{"claim", claimID},
+	} {
+		if t.id == "" {
+			continue
+		}
+		var resp struct {
+			Contests []ContestStanding `json:"contests"`
+		}
+		if err := h.confirmation.Get(ctx, fmt.Sprintf("/v1/contests?targetKind=%s&targetId=%s",
+			t.kind, url.QueryEscape(t.id)), &resp); err != nil {
+			h.d.Log.Warn("could not read disputes; this verdict cannot say whether the record is contested",
+				"target", t.kind, "id", t.id, "error", err)
+			continue
+		}
+		for _, c := range resp.Contests {
+			c.Against = t.kind
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // issuerKey resolves the verification key.

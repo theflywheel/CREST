@@ -173,14 +173,15 @@ func (w *world) instruction(claimID string) (instructionView, error) {
 }
 
 type verdict struct {
-	Valid          bool        `json:"valid"`
-	Reasons        []string    `json:"reasons"`
-	Tier           *int        `json:"tier"`
-	TierReason     []string    `json:"tierReason"`
-	TrustChain     []trustLink `json:"trustChain"`
-	NotEstablished []string    `json:"notEstablished"`
-	SignatureValid bool        `json:"signatureValid"`
-	Revoked        bool        `json:"revoked"`
+	Valid          bool              `json:"valid"`
+	Reasons        []string          `json:"reasons"`
+	Tier           *int              `json:"tier"`
+	TierReason     []string          `json:"tierReason"`
+	TrustChain     []trustLink       `json:"trustChain"`
+	Contested      []contestStanding `json:"contested"`
+	NotEstablished []string          `json:"notEstablished"`
+	SignatureValid bool              `json:"signatureValid"`
+	Revoked        bool              `json:"revoked"`
 }
 
 func (w *world) credential(t *testing.T, credID string) map[string]any {
@@ -192,6 +193,31 @@ func (w *world) credential(t *testing.T, credID string) map[string]any {
 		t.Fatalf("read credential %s: %v", credID, err)
 	}
 	return out.Credential
+}
+
+// contestStanding mirrors the verification service's. Declared here rather than
+// imported because the harness talks HTTP only.
+type contestStanding struct {
+	State    string `json:"state"`
+	Against  string `json:"against"`
+	RaisedAt string `json:"raisedAt"`
+}
+
+// verifyRaw returns the verdict as the bytes a verifier actually receives.
+//
+// Some assertions are about what is NOT in the response, and a struct cannot
+// answer those: a field with no Go name is still in the JSON.
+func (w *world) verifyRaw(t *testing.T, cred map[string]any) string {
+	t.Helper()
+	_, body, err := w.Verification.Status(w.ctx, "POST", "/v1/verify", map[string]any{
+		"credential":         cred,
+		"requestedByPartyId": fixtures.OrgID,
+		"purpose":            "checking a work record",
+	})
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	return string(body)
 }
 
 func (w *world) verify(t *testing.T, cred map[string]any) verdict {
