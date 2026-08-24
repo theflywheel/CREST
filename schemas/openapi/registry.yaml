@@ -115,6 +115,92 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "500": { $ref: "#/components/responses/Internal" }
 
+  /v1/parties/{id}/identity-bindings:
+    post:
+      operationId: addIdentityBinding
+      summary: Append an identity binding
+      description: >
+        Records that a provider authenticated this party, and returns the
+        assurance level that now derives from their bindings.
+
+
+        Append-only, and that is the whole design. A binding is never edited and
+        never removed: a superseded one is a true statement about who this party
+        was believed to be at the time, and it is what makes a later dispute
+        about an attribution answerable. Re-sending an identical binding is a
+        retry and changes nothing; the same provider with a different subject is
+        a genuine re-binding and appends.
+
+
+        This is the production trigger for the retroactive upgrade. Assurance is
+        derived from bindings rather than stored, so appending one raises the
+        tier of evidence already captured, with nothing reissued. A worker
+        enrolled by phone in a field visit is not stuck at the assurance they
+        had on the day somebody else typed them into a form.
+      parameters: [{ $ref: "#/components/parameters/PartyID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, providerClass, subjectRef]
+              properties:
+                provider: { type: string, description: The provider instance that authenticated. }
+                providerClass:
+                  type: string
+                  enum: [esignet, mosip-ida, generic-oidc, mobile-otp, document-seen, asserted]
+                  description: >
+                    What kind of check stands behind this, and therefore what it
+                    can honestly assert. The level is derived from this, never sent.
+                subjectRef:
+                  type: string
+                  description: >
+                    The provider's pairwise subject identifier. Never a raw
+                    national identifier — with eSignet this partitions by relying
+                    party, not by client (finding E6).
+                nationalIdHash:
+                  type: object
+                  description: >
+                    For matching only: a salted hash and the salt's identifier,
+                    never the identifier itself, and never for fixtures either.
+                  required: [alg, value, saltRef]
+                  properties:
+                    alg: { type: string, enum: [sha256] }
+                    value: { type: string, pattern: "^[0-9a-f]{64}$" }
+                    saltRef: { type: string }
+                assertedAt: { type: string, format: date-time }
+                expiresAt:
+                  type: string
+                  format: date-time
+                  description: >
+                    After this the binding is no level rather than a lower one —
+                    it says what was true then, and assurance answers what is true now.
+      responses:
+        "201":
+          description: Appended.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [partyId, bindings, identityAssurance, because]
+                properties:
+                  partyId: { type: string }
+                  bindings: { type: array, items: { type: object } }
+                  identityAssurance: { type: string, enum: [IA-0, IA-1, IA-2, IA-3] }
+                  because: { type: array, items: { type: string } }
+        "200": { description: This exact binding was already recorded; nothing was appended. }
+        "400":
+          description: Malformed, or asserted in the future.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404": { description: No such party. }
+        "409":
+          description: >
+            That identifier already resolves to a different party. This is the
+            duplicate case and it holds for review — never an automatic merge.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
   /v1/resolve:
     get:
       operationId: resolve

@@ -673,3 +673,216 @@ func TestACredentialNamesTheChainAVerifierWalks(t *testing.T) {
 	}
 	t.Logf("chain: org %v → qualification %s → grant %s", authority["orgId"], qual, grant)
 }
+
+// The worker whose assurance improves later (#17, §4.1).
+//
+// This is the endpoint that was missing until now, and its absence had a
+// specific victim: a worker enrolled in a field visit by somebody with a phone
+// had exactly one moment at which their identity assurance could ever be
+// established — the moment somebody else typed them into a form. Everything
+// after that was frozen. The Party schema promised append-only bindings the
+// whole time; nothing could append one.
+func TestAWorkerWhoBindsAnAnchorLaterIsUpgradedWithoutLosingAnything(t *testing.T) {
+	w := setup(t)
+	supervisor := fixtures.SupervisorID
+
+	var enrolled struct {
+		Party schema.Party `json:"party"`
+	}
+	if err := w.Registry.Post(w.ctx, "/v1/enrolments", map[string]any{
+		"enrolledBy": supervisor,
+		"method":     "field-visit",
+		"party": schema.Party{
+			Kind:        schema.PartyKindPerson,
+			DisplayName: "Later Anchored " + runID,
+			ContactRoutes: []schema.PartyContactRoutesItem{
+				{Kind: schema.PartyContactRoutesItemKindSupervisor, Value: supervisor},
+			},
+		},
+	}, &enrolled); err != nil {
+		t.Fatalf("assisted enrolment: %v", err)
+	}
+	party := enrolled.Party.ID
+
+	before := assuranceOfParty(t, w, party)
+	if before != string(schema.IdentityAssuranceIA0) {
+		t.Fatalf("a field-enrolled worker starts at %s, want IA-0 — being vouched for is not an identity check", before)
+	}
+
+	// They walk into an assisted-access point and authenticate for themselves.
+	var appended struct {
+		Bindings          []schema.PartyIdentityBindingsItem `json:"bindings"`
+		IdentityAssurance string                             `json:"identityAssurance"`
+		Because           []string                           `json:"because"`
+	}
+	binding := map[string]any{
+		"provider":      "esignet",
+		"providerClass": "esignet",
+		"subjectRef":    "psut-" + runID,
+	}
+	if err := w.Registry.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", binding, &appended); err != nil {
+		t.Fatalf("append identity binding: %v", err)
+	}
+	if appended.IdentityAssurance != string(schema.IdentityAssuranceIA3) {
+		t.Fatalf("assurance after binding = %s, want IA-3 (%v)", appended.IdentityAssurance, appended.Because)
+	}
+	if len(appended.Bindings) != 1 {
+		t.Fatalf("want exactly one binding, got %d", len(appended.Bindings))
+	}
+
+	// Derived, not stored: the same answer from the endpoint that computes it
+	// fresh. If these ever disagree, something cached a judgement.
+	if got := assuranceOfParty(t, w, party); got != string(schema.IdentityAssuranceIA3) {
+		t.Errorf("the append reported IA-3, the derivation says %q", got)
+	}
+
+	// Re-sending the same binding is a retry, not a second identity. History
+	// that grows on every retry is history nobody can read.
+	if err := w.Registry.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", binding, &appended); err != nil {
+		t.Fatalf("re-append: %v", err)
+	}
+	if len(appended.Bindings) != 1 {
+		t.Errorf("an identical binding was appended twice (%d bindings)", len(appended.Bindings))
+	}
+
+	// A genuine re-binding — same provider, different subject — appends rather
+	// than replacing. The old one is a true statement about who we thought this
+	// was, and it is what makes a later dispute about an attribution answerable.
+	if err := w.Registry.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", map[string]any{
+		"provider":      "esignet",
+		"providerClass": "esignet",
+		"subjectRef":    "psut-rebound-" + runID,
+	}, &appended); err != nil {
+		t.Fatalf("re-bind: %v", err)
+	}
+	if len(appended.Bindings) != 2 {
+		t.Errorf("a re-binding did not append: %d bindings, want 2 — history is never rewritten (§4.1)",
+			len(appended.Bindings))
+	}
+	if appended.Bindings[0].SubjectRef != "psut-"+runID {
+		t.Errorf("the first binding was rewritten; it should still say what it said")
+	}
+}
+
+// The same identifier reaching a second party is the duplicate case, and the
+// rule is that it holds. Binding it would attach one worker's history to an
+// identifier another worker is already known by — silently, and in the
+// direction nobody checks.
+func TestAnIdentifierAlreadyHeldByAnotherWorkerIsRefusedRatherThanMerged(t *testing.T) {
+	w := setup(t)
+	hash := fmt.Sprintf("%064x", []byte("shared-identifier-" + runID)[:8])
+
+	first := newWorkerWithBinding(t, w, "First Holder "+runID, hash)
+	second := newWorkerWithBinding(t, w, "Second Claimant "+runID, "")
+
+	code, body, err := w.Registry.Status(w.ctx, http.MethodPost,
+		"/v1/parties/"+second+"/identity-bindings", map[string]any{
+			"provider":      "esignet",
+			"providerClass": "esignet",
+			"subjectRef":    "psut-second-" + runID,
+			"nationalIdHash": map[string]any{
+				"alg": "sha256", "value": hash, "saltRef": "test-1",
+			},
+		})
+	if err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	if code != http.StatusConflict {
+		t.Fatalf("binding an identifier held by %s to %s returned %d, want 409: %s",
+			first, second, code, body)
+	}
+	if !strings.Contains(string(body), "a different party") {
+		t.Errorf("the refusal does not say why: %s", body)
+	}
+
+	// And it refused without changing anything.
+	if got := assuranceOfParty(t, w, second); got != string(schema.IdentityAssuranceIA0) {
+		t.Errorf("the refused binding still moved assurance to %q", got)
+	}
+}
+
+func assuranceOfParty(t *testing.T, w *world, party string) string {
+	t.Helper()
+	var a struct {
+		Level string `json:"identityAssurance"`
+	}
+	if err := w.Registry.Get(w.ctx, "/v1/parties/"+party+"/assurance", &a); err != nil {
+		t.Fatalf("read assurance: %v", err)
+	}
+	return a.Level
+}
+
+func newWorkerWithBinding(t *testing.T, w *world, name, nationalIDHash string) string {
+	t.Helper()
+	p := schema.Party{
+		Kind:        schema.PartyKindPerson,
+		DisplayName: name,
+		ContactRoutes: []schema.PartyContactRoutesItem{
+			{Kind: schema.PartyContactRoutesItemKindSupervisor, Value: fixtures.SupervisorID},
+		},
+	}
+	var created schema.Party
+	if err := w.Registry.Post(w.ctx, "/v1/parties", p, &created); err != nil {
+		t.Fatalf("create party: %v", err)
+	}
+	if nationalIDHash != "" {
+		var out map[string]any
+		if err := w.Registry.Post(w.ctx, "/v1/parties/"+created.ID+"/identity-bindings", map[string]any{
+			"provider":      "esignet",
+			"providerClass": "esignet",
+			"subjectRef":    "psut-" + created.ID,
+			"nationalIdHash": map[string]any{
+				"alg": "sha256", "value": nationalIDHash, "saltRef": "test-1",
+			},
+		}, &out); err != nil {
+			t.Fatalf("seed binding: %v", err)
+		}
+	}
+	return created.ID
+}
+
+// A roster id survives a later write to the party.
+//
+// Roster ids live in the key table and nowhere else — registered through their
+// own endpoint, scoped to a context — while the party's other keys are rebuilt
+// from its document on every write. The rebuild used to delete all of them,
+// so adding an identity binding would silently unregister a worker from their
+// project's roster. The symptom is not an error: it is that worker's evidence
+// arriving in the unclear queue from then on, with nothing to say why.
+func TestAddingABindingDoesNotUnregisterTheWorkersRosterID(t *testing.T) {
+	w := setup(t)
+	party := newWorkerWithBinding(t, w, "Roster Held "+runID, "")
+	rosterID := "roster-" + runID
+	contextID := w.w.Contexts[0].ID
+
+	if err := w.Registry.Post(w.ctx, "/v1/parties/"+party+"/roster-ids", map[string]any{
+		"rosterId": rosterID, "contextId": contextID,
+	}, nil); err != nil {
+		t.Fatalf("register roster id: %v", err)
+	}
+
+	resolves := func(when string) {
+		t.Helper()
+		var m struct {
+			PartyID string `json:"partyId"`
+			Key     string `json:"key"`
+		}
+		q := fmt.Sprintf("/v1/resolve?kind=roster-id&value=%s&contextId=%s",
+			url.QueryEscape(rosterID), url.QueryEscape(contextID))
+		if err := w.Registry.Get(w.ctx, q, &m); err != nil {
+			t.Fatalf("resolve %s: %v", when, err)
+		}
+		if m.PartyID != party {
+			t.Errorf("%s: roster id resolves to %q, want %q", when, m.PartyID, party)
+		}
+	}
+	resolves("before the binding")
+
+	var out map[string]any
+	if err := w.Registry.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", map[string]any{
+		"provider": "esignet", "providerClass": "esignet", "subjectRef": "psut-roster-" + runID,
+	}, &out); err != nil {
+		t.Fatalf("append binding: %v", err)
+	}
+	resolves("after the binding")
+}

@@ -28,6 +28,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/parties/{id}", h.getParty)
 	mux.HandleFunc("GET /v1/parties/{id}/assurance", h.getAssurance)
 	mux.HandleFunc("POST /v1/parties/{id}/roster-ids", h.addRosterID)
+	mux.HandleFunc("POST /v1/parties/{id}/identity-bindings", h.addIdentityBinding)
 	mux.HandleFunc("GET /v1/resolve", h.resolve)
 	mux.HandleFunc("GET /v1/holds", h.listHolds)
 	mux.HandleFunc("POST /v1/terms", h.createTerms)
