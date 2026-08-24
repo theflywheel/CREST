@@ -312,6 +312,19 @@ func TestARecordBecomesACredentialAndAPayment(t *testing.T) {
 		t.Errorf("claim is %s after confirmation, want ACCEPTED", claim.State)
 	}
 
+	// §8 keeps *which* key matched, not merely that one did (#14). The batch
+	// joined on a phone number, so the answer is contact-route — and it has to
+	// be readable off the claim, because a match nobody can explain is a match
+	// nobody can dispute, and identity matching is where a worker gets attached
+	// to work that was not theirs.
+	if claim.Matched == nil {
+		t.Fatal("the claim records no match at all; which key attached this worker is unrecoverable")
+	}
+	if claim.Matched.Key != schema.ClaimMatchedKeyContactRoute {
+		t.Errorf("matched key = %q, want %q — the batch joined on a phone number",
+			claim.Matched.Key, schema.ClaimMatchedKeyContactRoute)
+	}
+
 	// The credential verifies, and the tier is computed rather than read.
 	cred := w.credential(t, exit.Credential.ID)
 	v := w.verify(t, cred)
