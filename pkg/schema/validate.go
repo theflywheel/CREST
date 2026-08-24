@@ -40,10 +40,13 @@ const (
 	IDContest        = "urn:crest:schema:primitives:contest:1"
 	IDLinkedRecord   = "urn:crest:schema:primitives:linked-record:1"
 	IDEvidenceRecord = "urn:crest:schema:evidence:work-evidence-record:1"
-	IDWorkEventCred  = "urn:crest:schema:credentials:work-event-credential:1"
-	IDPaymentSetup   = "urn:crest:schema:profiles:trusted-payments:payment-setup:1"
-	IDPaymentInstr   = "urn:crest:schema:profiles:trusted-payments:payment-instruction:1"
-	IDCompensation   = "urn:crest:schema:profiles:trusted-payments:compensation:1"
+	// Reference data rather than a primitive — §3 files the skill list beside
+	// credential shapes and adapters, not beside Party and Definition.
+	IDSkill         = "urn:crest:schema:reference:skill:1"
+	IDWorkEventCred = "urn:crest:schema:credentials:work-event-credential:1"
+	IDPaymentSetup  = "urn:crest:schema:profiles:trusted-payments:payment-setup:1"
+	IDPaymentInstr  = "urn:crest:schema:profiles:trusted-payments:payment-instruction:1"
+	IDCompensation  = "urn:crest:schema:profiles:trusted-payments:compensation:1"
 )
 
 var (

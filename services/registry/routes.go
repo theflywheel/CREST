@@ -33,6 +33,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/terms", h.createTerms)
 	mux.HandleFunc("POST /v1/authorizations", h.createAuthorization)
 	mux.HandleFunc("GET /v1/authorizations/permits", h.permits)
+	mux.HandleFunc("GET /v1/authorizations", h.listAuthorizations)
 	mux.HandleFunc("POST /v1/contexts", h.createContext)
 
 	// Onboarding (#20). Organisations apply for themselves; workers are often
@@ -51,6 +52,12 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	// The deployment's public self-description (#70). Unauthenticated: one
 	// nobody outside can read is one nobody outside can check.
 	mux.HandleFunc("GET /v1/instance", h.getInstance)
+
+	// The skill list (#16). Reference data rather than a primitive — §3 files
+	// it beside credential shapes and adapters.
+	mux.HandleFunc("POST /v1/skills", h.publishSkill)
+	mux.HandleFunc("GET /v1/skills", h.listSkills)
+	mux.HandleFunc("GET /v1/skills/{code}", h.getSkill)
 }
 
 type handlers struct {
@@ -255,6 +262,59 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, a)
+}
+
+// listAuthorizations answers "which authorization stands behind this?" for one
+// party at one scope (#16).
+//
+// Scoped queries only, and organisations only. An unscoped listing, or one that
+// answered for a person, would be a roster query — and a roster of who works
+// where is precisely what #68 established must not be readable, whether from
+// the log or from here.
+func (h *handlers) listAuthorizations(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	partyID, scopeKind := q.Get("partyId"), q.Get("scope")
+	if partyID == "" || scopeKind == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_query",
+			"partyId and scope are both required; an unscoped listing is a roster query")
+		return
+	}
+	if scopeKind != "instance" && scopeKind != "context" {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_query", "scope is instance or context")
+		return
+	}
+	party, err := getParty(r.Context(), h.d.DB.Q(), partyID)
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "party", err, store.ErrNotFound)
+		return
+	}
+	if party.Kind != schema.PartyKindOrganisation {
+		// Refused rather than filtered to empty. A caller that received an
+		// empty list would conclude the person holds no authorizations, which
+		// is a different and false statement.
+		httpx.WriteError(w, http.StatusForbidden, "not_an_organisation",
+			"authorizations are listable for organisations only; a person's would be a record of who works where (#68)")
+		return
+	}
+
+	at := h.d.Clock.Now()
+	if s := q.Get("at"); s != "" {
+		parsed, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_query", "at is not RFC3339: %v", err)
+			return
+		}
+		at = parsed
+	}
+	list, err := authorizationsFor(r.Context(), h.d.DB.Q(), partyID, scopeKind, q.Get("contextId"), at)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "list authorizations", err)
+		return
+	}
+	if list == nil {
+		list = []schema.Authorization{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"authorizations": list, "count": len(list)})
 }
 
 func (h *handlers) permits(w http.ResponseWriter, r *http.Request) {

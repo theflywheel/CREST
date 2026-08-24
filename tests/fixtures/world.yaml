@@ -130,6 +130,44 @@ authorizations:
     approvedAt: 2026-01-05T10:30:00Z
     state: ACTIVE
 
+  # The organisation's own authorizations — the chain a verifier walks up to
+  # somebody answerable (§3, and the issuerAuthority on a credential).
+  #
+  # §2 collapsed the old Qualification and ProjectGrant into one Authorization
+  # at two scopes, so these two are those: instance-wide is "this organisation
+  # may attest work at all", and context-bound is "…and specifically on this
+  # project". A context grant is always a strict subset of an instance one.
+  #
+  # They are held by the ORGANISATION, not by a person. That distinction is the
+  # whole reason they can be published: a worker's or a supervisor's
+  # authorization is a permanent public record of who works where (#68), and is
+  # deliberately never published — so a verifier walking a chain that ended at a
+  # person would find nothing there.
+  #
+  # In this fixture the programme organisation is also the deployment operator,
+  # which makes the chain shorter than a real one: a ministry would authorise
+  # the NGO, and the NGO would authorise its supervisors.
+  - id: crest:authorization:01JCREST00000000000000QSCP
+    partyId: did:crest:party:01JCREST000000000000000RGN
+    scope: { kind: instance }
+    functions: [attest-work]
+    authorityPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedByPartyId: did:crest:party:01JCREST00000000000000SPEC
+    approvedAt: 2026-01-05T09:00:00Z
+    state: ACTIVE
+    period: { start: 2026-01-05T00:00:00Z }
+    terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
+  - id: crest:authorization:01JCREST00000000000000CSCP
+    partyId: did:crest:party:01JCREST000000000000000RGN
+    scope: { kind: context, contextId: crest:context:01JCREST00000000000000PRJC }
+    functions: [attest-work, submit-work-evidence]
+    authorityPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedByPartyId: did:crest:party:01JCREST00000000000000SPEC
+    approvedAt: 2026-01-05T09:00:00Z
+    state: ACTIVE
+    period: { start: 2026-01-05T00:00:00Z }
+    terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
+
 contexts:
   - id: crest:context:01JCREST00000000000000PRJC
     kind: project
@@ -146,6 +184,23 @@ contexts:
         satisfiedAt: 2026-01-21T09:00:00Z
     state: ACTIVE
 
+# The skill list this deployment has adopted (#16, Blueprint §3).
+#
+# Reference data rather than a primitive: the eleven primitives describe what
+# happened, and this describes a vocabulary several deployments have to agree on
+# for a worker's record to mean the same thing when they cross a border.
+#
+# The version lives inside the code, so v1 and v2 are two rows and the older one
+# stays resolvable forever — credentials were issued against it and cannot be
+# rewritten.
+skills:
+  - code: CREST-SKILL:chw.bednet-distribution.v2
+    label: Insecticide-treated bednet distribution
+    description: >-
+      Distributing insecticide-treated bednets to households and recording each
+      household against the worker who visited it.
+    publishedAt: 2026-01-10T09:00:00Z
+
 definitions:
   # The fully-worked definition (#18): bednet distribution, three faces, tier map.
   #
@@ -156,6 +211,9 @@ definitions:
     version: 1
     state: ACTIVE
     activity: { code: bednet-distribution, label: Bednet distribution }
+    # What this definition evidences somewhere else. `activity.code` is this
+    # deployment's own word for it; the skill code is the part that travels.
+    skillCode: CREST-SKILL:chw.bednet-distribution.v2
     outcomeUnit: bednets-distributed
     faces:
       worker:

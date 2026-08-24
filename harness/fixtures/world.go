@@ -51,6 +51,7 @@ type Instance struct {
 type World struct {
 	Instance       Instance               `json:"instance"`
 	Parties        []schema.Party         `json:"parties"`
+	Skills         []schema.Skill         `json:"skills"`
 	Terms          []schema.Terms         `json:"terms"`
 	Authorizations []schema.Authorization `json:"authorizations"`
 	Contexts       []schema.Context       `json:"contexts"`

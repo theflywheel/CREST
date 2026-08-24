@@ -54,6 +54,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 			db:            d.DB,
 			evidence:      client.New(config.Str("EVIDENCE_URL", "http://evidence:8080")),
 			definitions:   client.New(config.Str("DEFINITIONS_URL", "http://definitions:8080")),
+			registry:      client.New(config.Str("REGISTRY_URL", "http://registry:8080")),
 			issuer:        issuer,
 			log:           d.Log,
 			statusListURL: config.Str("STATUS_LIST_URL", "http://confirmation:8080/v1/status-list"),

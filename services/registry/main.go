@@ -25,7 +25,8 @@ func main() {
 		// routes and identity bindings have no registry here and never will —
 		// what reaches the node is decided field by field in publish.go.
 		DeDiRegistries: []string{
-			registryOrganisations, registryTerms, registryAuthorizations, registryInstances,
+			registryOrganisations, registryTerms, registryAuthorizations,
+			registryInstances, registrySkills,
 		},
 		// Publishes the deployment's own self-description, so a verifier who
 		// resolves a record on the node can find out which deployment owns the

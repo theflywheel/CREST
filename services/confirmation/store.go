@@ -185,7 +185,9 @@ type issuedCredential struct {
 
 	// Resolved once, at build time, from the definitions service. Nil where
 	// there is nothing a verifier could check.
-	defProof *schema.WorkEventCredentialCredentialSubjectWorkEventDefinitionProof `json:"-"`
+	defProof  *schema.WorkEventCredentialCredentialSubjectWorkEventDefinitionProof `json:"-"`
+	skillCode *string                                                              `json:"-"`
+	authority *schema.WorkEventCredentialCredentialSubjectIssuerAuthority          `json:"-"`
 }
 
 func getCredential(ctx context.Context, q store.Querier, credID string) (issuedCredential, error) {

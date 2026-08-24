@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:reference:skill:1",
+  "title": "Skill",
+  "description": "A transferable competence a worker can accumulate evidence of, named by a stable code.\n\nReference data, not a primitive. Blueprint §3 files the skill list beside credential shapes and adapters — 'published releases, adopted by deployments' — rather than beside Party and Definition, and the distinction is real: the eleven primitives describe what happened, while this describes a vocabulary several deployments have to agree on for a worker's record to mean the same thing when they cross a border.\n\nA Skill is not a Definition. A Definition says what counts as one instance of an activity and what evidence proves it; a Skill is what a hundred of those instances add up to. Several definitions across several programmes can evidence one skill, which is the whole reason a worker's record is portable at all.\n\nFINDING: §3 says the global DeDi node carries the canonical copy and national nodes mirror it. CREST has no global node yet, so this deployment publishes to its own — see the memo. A deployment-local skill list is a taxonomy nobody else shares, which is the opposite of what a skill code is for.",
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "pattern": "^CREST-SKILL:[a-z0-9]+(\\.[a-z0-9-]+)*\\.v[0-9]+$",
+      "description": "e.g. CREST-SKILL:chw.bednet-distribution.v2.\n\nThe version is inside the code rather than beside it, and that is deliberate: a skill code appears in issued credentials that cannot be rewritten, so a code whose meaning could change under them would silently restate what a worker's record says they can do. A revised skill is a new code, and `supersedes` links the two."
+    },
+    "label": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "supersedes": {
+      "type": "string",
+      "pattern": "^CREST-SKILL:[a-z0-9]+(\\.[a-z0-9-]+)*\\.v[0-9]+$",
+      "description": "The code this one replaces. Old codes stay resolvable forever, because credentials were issued against them."
+    },
+    "publishedAt": { "type": "string", "format": "date-time" }
+  },
+  "required": ["code", "label", "publishedAt"],
+  "additionalProperties": false
+}
