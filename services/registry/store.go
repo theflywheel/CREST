@@ -59,7 +59,17 @@ func insertParty(ctx context.Context, tx store.Querier, p schema.Party) error {
 	// Keys are derived from the document, never sent separately: two sources of
 	// truth for "what can find this person" is how a person acquires a second
 	// record.
-	if _, err := tx.Exec(ctx, `DELETE FROM party_keys WHERE party_id = $1`, p.ID); err != nil {
+	//
+	// Only the kinds the document actually carries. Roster ids live in this
+	// table and nowhere else — they are registered through their own endpoint
+	// and are scoped to a context — so a rebuild from the document has no
+	// authority over them. Deleting them here would silently unregister a
+	// worker from their project's roster on any later write to the party, and
+	// the visible symptom would be their evidence landing in the unclear queue
+	// with nothing to say why.
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM party_keys WHERE party_id = $1
+		 AND key_kind IN ('national-id-hash', 'contact-route')`, p.ID); err != nil {
 		return err
 	}
 	for _, b := range p.IdentityBindings {
