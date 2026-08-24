@@ -14,6 +14,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -243,4 +245,40 @@ func env(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// Kill stops a container the way a crash does, then brings it back.
+//
+// SIGKILL rather than a graceful stop, and that distinction is the whole point.
+// A service asked politely to shut down could drain its outbox on the way out,
+// and a test built on that proves the drain works rather than that the outbox
+// does. What has to survive is the case nobody gets to handle: the process is
+// gone between the COMMIT that recorded a state change and the call that was
+// supposed to act on it.
+//
+// It shells out to compose because the harness has no other handle on a
+// container, and because "docker compose kill" is exactly what an operator
+// would reach for.
+func Kill(ctx context.Context, service string) error {
+	return compose(ctx, "kill", "-s", "SIGKILL", service)
+}
+
+// Start brings a killed service back up.
+func Start(ctx context.Context, service string) error {
+	return compose(ctx, "up", "-d", "--no-deps", service)
+}
+
+func compose(ctx context.Context, args ...string) error {
+	// The compose file declares `name: crest`, so the project name comes from
+	// the file rather than from where this happens to be run.
+	file := env("COMPOSE_FILE", "infra/compose/docker-compose.yml")
+	full := append([]string{"compose", "-f", file}, args...)
+
+	cmd := exec.CommandContext(ctx, "docker", full...)
+	cmd.Dir = env("CREST_ROOT", "../..")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker %s: %w: %s", strings.Join(full, " "), err, out)
+	}
+	return nil
 }

@@ -72,18 +72,29 @@ test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
 	@# fails an assertion that is entirely correct about a database that is
 	@# entirely stale. It cost two "is this flaky?" investigations to find.
 	@$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true
-	$(COMPOSE) up -d --build --wait postgres mock-sms mock-rail $(SERVICES)
+	@# A stack that fails to come up must say which container and why. Without
+	@# this, `up --wait` aborts the recipe before the log step below, and CI
+	@# reports one line — "container X is unhealthy" — naming no cause at all.
+	@# That is the same shape as #79: a failure nobody can read gets re-run
+	@# rather than investigated.
+	@$(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail $(SERVICES) || { \
+		echo "── the stack did not come up; logs follow ──" ; \
+		$(COMPOSE) ps ; \
+		$(COMPOSE) logs --tail=60 postgres objectstore mock-sms mock-rail $(SERVICES) ; \
+		$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 ; \
+		exit 1 ; \
+	}
 	@$(GO) test -tags=e2e -count=1 -timeout=10m ./harness/... ; \
 		status=$$? ; \
 		if [ $$status -ne 0 ]; then \
 			echo "── logs from the failing run ──" ; \
-			$(COMPOSE) logs --tail=80 $(SERVICES) ; \
+			$(COMPOSE) logs --tail=80 $(SERVICES) objectstore ; \
 		fi ; \
 		$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 ; \
 		exit $$status
 
 e2e-up: ## Bring up just what the spine needs, and leave it running
-	$(COMPOSE) up -d --build --wait postgres mock-sms mock-rail $(SERVICES)
+	$(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail $(SERVICES)
 
 e2e-run: ## Run the spine against an already-running stack (fast iteration)
 	$(GO) test -tags=e2e -count=1 -timeout=10m ./harness/...
