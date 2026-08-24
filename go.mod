@@ -6,6 +6,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	golang.org/x/text v0.29.0
+	rsc.io/qr v0.2.0
 	sigs.k8s.io/yaml v1.6.0
 )
 
