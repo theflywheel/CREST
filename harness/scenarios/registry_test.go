@@ -5,6 +5,7 @@ package scenarios
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -528,4 +529,147 @@ func TestACredentialCarriesItsOwnPinToTheDefinition(t *testing.T) {
 		}
 	}
 	t.Error("the trust chain has no checkable definition link despite the credential carrying a pin")
+}
+
+// The skill list (#16, Blueprint §3).
+//
+// A skill code is the part of a worker's record that means the same thing
+// somewhere else. `activity.code` is this deployment's own word for the work;
+// the skill code is what makes the record portable across programmes and
+// eventually across borders.
+func TestASkillCodeIsPublishedAndImmutable(t *testing.T) {
+	w := setup(t)
+
+	code := "CREST-SKILL:chw.bednet-distribution.v2"
+	var sk struct {
+		Code  string `json:"code"`
+		Label string `json:"label"`
+	}
+	if err := w.Registry.Get(w.ctx, "/v1/skills/"+url.PathEscape(code), &sk); err != nil {
+		t.Fatalf("the seeded skill is not there: %v", err)
+	}
+
+	// Immutable, and refused rather than silently ignored. The code is already
+	// in issued credentials that cannot be rewritten, so a code whose meaning
+	// changed underneath them would restate what a worker's record says they
+	// can do — without anyone reissuing anything.
+	status, body, err := w.Registry.Status(w.ctx, http.MethodPost, "/v1/skills", map[string]any{
+		"code": code, "label": "Something else entirely", "publishedAt": "2026-02-01T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != http.StatusConflict {
+		t.Fatalf("republishing a skill code under a new meaning answered %d: %s", status, body)
+	}
+
+	// A supersession has to name a code that exists, or the chain a worker's
+	// older credentials hang from has a gap nobody would notice until somebody
+	// tried to walk it.
+	status, body, err = w.Registry.Status(w.ctx, http.MethodPost, "/v1/skills", map[string]any{
+		"code": "CREST-SKILL:chw.bednet-distribution.v9", "label": "Future",
+		"supersedes": "CREST-SKILL:chw.does-not-exist.v1", "publishedAt": "2026-02-01T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != http.StatusUnprocessableEntity {
+		t.Errorf("superseding a skill that does not exist answered %d: %s", status, body)
+	}
+
+	// And it reaches the registry substrate, so a verifier can resolve what the
+	// code means without asking this deployment.
+	var pub publication
+	eventually(t, "the skill reaches the registry", 20*time.Second, func() error {
+		return w.Registry.Get(w.ctx, "/v1/publications/skill/"+url.PathEscape(code), &pub)
+	})
+	if pub.Registry != "skills" {
+		t.Errorf("the skill published to %q", pub.Registry)
+	}
+	t.Logf("skill %s published as %s@%s (transparent=%v)", code, pub.Record, pub.RegistryVersion, pub.Transparent)
+}
+
+// #16 complete: the credential carries the whole chain a verifier walks.
+//
+// claimId, skillCode and issuerAuthority. The last is the one that matters
+// most: without it a verifier can confirm the credential is signed and
+// unrevoked and has no way to reach anybody answerable for the claim it makes.
+func TestACredentialNamesTheChainAVerifierWalks(t *testing.T) {
+	w := setup(t)
+
+	phone, err := harness.PhoneOf(w.w, fixtures.WorkerAID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := w.submit(t, batch(row(phone, 7, "HH-CHAIN-"+runID)))
+	if len(res.ClaimIDs) != 1 {
+		t.Fatalf("expected one claim, got %d: %+v", len(res.ClaimIDs), res.Unclear)
+	}
+	claimID := res.ClaimIDs[0]
+	eventually(t, "the confirmation window opens", 15*time.Second, func() error {
+		_, err := w.window(claimID)
+		return err
+	})
+	var exit struct {
+		Credential struct {
+			ID string `json:"id"`
+		} `json:"credential"`
+	}
+	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/confirm",
+		map[string]any{"route": "self"}, &exit); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+
+	cred := w.credential(t, exit.Credential.ID)
+	subject, _ := cred["credentialSubject"].(map[string]any)
+	workEvent, _ := subject["workEvent"].(map[string]any)
+
+	// A Unit says the work happened; a Claim says who performed it. A
+	// credential projects the Claim, so naming only the Unit would leave it
+	// unable to say which of several claims on that Unit it is about.
+	if workEvent["claimId"] != claimID {
+		t.Errorf("claimId = %v, want %s", workEvent["claimId"], claimID)
+	}
+	if workEvent["eventId"] == workEvent["claimId"] {
+		t.Error("the claim and the unit are the same identifier; they are separable by design")
+	}
+
+	// The one field whose purpose is to be read by somebody who is not this
+	// deployment, carried directly so it can be read with no network.
+	if workEvent["skillCode"] != "CREST-SKILL:chw.bednet-distribution.v2" {
+		t.Errorf("skillCode = %v", workEvent["skillCode"])
+	}
+
+	authority, ok := subject["issuerAuthority"].(map[string]any)
+	if !ok {
+		t.Fatal("the credential names no issuer authority; a verifier can reach nobody answerable")
+	}
+	if authority["orgId"] == "" || authority["orgId"] == nil {
+		t.Error("issuerAuthority names no organisation")
+	}
+	// Both scopes of the same primitive: §2 collapsed Qualification and
+	// ProjectGrant into one Authorization at two scopes, and these are those.
+	qual, hasQual := authority["qualificationRef"].(string)
+	grant, hasGrant := authority["grantRef"].(string)
+	if !hasQual || !hasGrant {
+		t.Fatalf("issuerAuthority does not carry both scopes: %v", authority)
+	}
+	if qual == grant {
+		t.Error("the instance-wide and context-bound references are the same authorization")
+	}
+
+	// Every reference must be to an ORGANISATION's authorization, because a
+	// person's is never published (#68) — a chain ending at a supervisor ends
+	// at something a verifier cannot resolve, which is worse than ending
+	// nowhere because it looks like it leads somewhere.
+	for _, ref := range []string{qual, grant} {
+		var pub publication
+		eventually(t, "the authorization behind the credential is resolvable", 20*time.Second, func() error {
+			return w.Registry.Get(w.ctx, "/v1/publications/authorization/"+url.PathEscape(ref), &pub)
+		})
+		if pub.Registry != "authorizations" {
+			t.Errorf("%s published to %q", ref, pub.Registry)
+		}
+	}
+	t.Logf("chain: org %v → qualification %s → grant %s", authority["orgId"], qual, grant)
 }

@@ -224,8 +224,14 @@ type Subject struct {
 	// reaches a credential (W8, W9).
 	SubjectRef string
 
+	// ClaimID is the accepted Claim this credential projects. A Unit says the
+	// work happened; a Claim says who performed it, and a credential is a
+	// projection of the second.
+	ClaimID string
+
 	Unit         schema.Unit
 	Activity     string
+	SkillCode    *string
 	Confirmation schema.ClaimConfirmationRoute
 	ConfirmedAt  time.Time
 
@@ -240,6 +246,12 @@ type Subject struct {
 	// to trust the issuer about what the definition said. Defaulting it to
 	// something would turn "we cannot prove this" into "we did not say".
 	DefinitionProof *schema.WorkEventCredentialCredentialSubjectWorkEventDefinitionProof
+
+	// IssuerAuthority is the chain a verifier walks up to somebody answerable.
+	// Nil where this deployment cannot name one, for the same reason
+	// DefinitionProof is: saying nothing is honest, and inventing a reference
+	// nobody can resolve is not.
+	IssuerAuthority *schema.WorkEventCredentialCredentialSubjectIssuerAuthority
 
 	StatusListURL   string
 	StatusListIndex int
@@ -267,7 +279,9 @@ func Document(s Subject) (map[string]any, error) {
 		CredentialSubject: schema.WorkEventCredentialCredentialSubject{
 			ID: subjectRef,
 			WorkEvent: schema.WorkEventCredentialCredentialSubjectWorkEvent{
+				ClaimID:    s.ClaimID,
 				EventID:    unit.ID,
+				SkillCode:  s.SkillCode,
 				Definition: unit.Definition,
 				Activity:   activity,
 				Outcome:    unit.Outcome,
@@ -281,7 +295,8 @@ func Document(s Subject) (map[string]any, error) {
 				// merely stated (#16). Absent where there is nothing to prove.
 				DefinitionProof: s.DefinitionProof,
 			},
-			Provenance: unit.Provenance,
+			Provenance:      unit.Provenance,
+			IssuerAuthority: s.IssuerAuthority,
 			Confirmation: schema.WorkEventCredentialCredentialSubjectConfirmation{
 				Route: schema.WorkEventCredentialCredentialSubjectConfirmationRoute(confirmation),
 				At:    confirmedAt.UTC(),
