@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/theflywheel/crest/harness"
 	"github.com/theflywheel/crest/harness/fixtures"
+	"github.com/theflywheel/crest/pkg/credential"
 	"github.com/theflywheel/crest/pkg/schema"
 )
 
@@ -1050,4 +1052,104 @@ func TestWithdrawingConsentDoesNotCancelAWindowAlreadyOpen(t *testing.T) {
 		}
 		return nil
 	})
+}
+
+// The printed card a worker without a phone actually walks away with (#24, §5).
+//
+// One of three holding modes, and the only one available to a worker with no
+// phone — which makes it the wallet for exactly the people the inclusion path
+// exists for, not a fallback for them.
+//
+// What this asserts is the whole promise of the offline path: the card carries
+// the entire signed credential, so a stranger with a scanner and no signal can
+// check it. A card holding a link would move the proof back onto a server and
+// the worker back into needing one.
+func TestAWorkerWithoutAPhoneGetsACardThatCarriesTheWholeRecord(t *testing.T) {
+	w := setup(t)
+
+	// Worker C has no phone, which is why they are the right worker for this
+	// test rather than a complication in it. They join on a roster id.
+	if err := w.Registry.Post(w.ctx,
+		"/v1/parties/"+url.PathEscape(fixtures.WorkerCID)+"/roster-ids",
+		map[string]any{"rosterId": "RIV-CARD", "contextId": fixtures.ProjectID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	csv := []byte("activity,outcome_value,outcome_unit,worker_id_kind,worker_id,period_start,household_id,source_record_ref\n" +
+		"bednet-distribution,6,bednets-distributed,roster-id,RIV-CARD,2026-03-02,HH-card," + runID + "-card\n")
+
+	result := w.submit(t, csv)
+	if len(result.ClaimIDs) != 1 {
+		t.Fatalf("the roster id should have matched Worker C, got %+v", result.Unclear)
+	}
+	claimID := result.ClaimIDs[0]
+	eventually(t, "the confirmation window opens", 15*time.Second, func() error {
+		_, err := w.window(claimID)
+		return err
+	})
+
+	var exit struct {
+		Credential struct {
+			ID string `json:"id"`
+		} `json:"credential"`
+	}
+	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/confirm",
+		map[string]any{"route": "self"}, &exit); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+
+	// The payload, as a print station would fetch it.
+	code, payload, err := w.Confirmation.Status(w.ctx, http.MethodGet,
+		"/v1/credentials/"+exit.Credential.ID+"/card?format=payload", nil)
+	if err != nil || code != http.StatusOK {
+		t.Fatalf("fetch the card payload: %d %v", code, err)
+	}
+	if !strings.HasPrefix(string(payload), "NCF") {
+		t.Fatalf("the payload is not a PixelPass card: %.40q", payload)
+	}
+
+	// It decodes back to the credential, and that credential still verifies.
+	// Both halves matter: a card that decodes to something subtly different
+	// fails in a worker's hands, in front of somebody who cannot debug it.
+	back, err := credential.DecodePixelPass(string(payload))
+	if err != nil {
+		t.Fatalf("the printed card does not decode: %v", err)
+	}
+	var scanned map[string]any
+	if err := json.Unmarshal(back, &scanned); err != nil {
+		t.Fatalf("the card decodes to something that is not a credential: %v", err)
+	}
+	if scanned["issuer"] == nil || scanned["proof"] == nil {
+		t.Fatalf("the card carries no issuer or no proof: %v", scanned)
+	}
+
+	v := w.verify(t, scanned)
+	if !v.Valid {
+		t.Fatalf("the credential off the printed card does not verify: %v", v.Reasons)
+	}
+	if v.Tier == nil {
+		t.Error("no tier was derived from the card's own provenance facts")
+	}
+
+	// The card itself carries no tier. Printing one would freeze a judgement
+	// onto paper that outlives the reasons for it, and the tier is derived by
+	// whoever checks — which is what the verdict above just did.
+	for _, forbidden := range []string{"tier", "trustTier", "nationalId", "uin"} {
+		if _, present := scanned[forbidden]; present {
+			t.Errorf("the card carries %q", forbidden)
+		}
+	}
+
+	// And the printable page, which is what actually reaches a printer.
+	code, page, err := w.Confirmation.Status(w.ctx, http.MethodGet,
+		"/v1/credentials/"+exit.Credential.ID+"/card", nil)
+	if err != nil || code != http.StatusOK {
+		t.Fatalf("fetch the printable card: %d %v", code, err)
+	}
+	if !strings.Contains(string(page), "data:image/png;base64,") {
+		t.Error("the card's QR is not inlined; a page that fetches its own image " +
+			"prints as a broken icon exactly where there is no internet")
+	}
+	if strings.Contains(string(page), "http://") || strings.Contains(string(page), "https://") {
+		t.Error("the printable card references something over the network")
+	}
 }

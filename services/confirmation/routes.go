@@ -69,6 +69,11 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/contests", h.contests)
 	mux.HandleFunc("POST /v1/sweep", h.sweep)
 	mux.HandleFunc("GET /v1/credentials/{id}", h.getCredential)
+	// The printed card (#24, §5): the holding mechanism for a worker with no
+	// phone. HTML by default because it is meant to reach a printer;
+	// ?format=payload gives the bare QR string for a print station with its own
+	// stationery.
+	mux.HandleFunc("GET /v1/credentials/{id}/card", h.credentialCard)
 	mux.HandleFunc("POST /v1/credentials/{id}/revoke", h.revoke)
 	mux.HandleFunc("GET /v1/status-list", h.statusList)
 	mux.HandleFunc("GET /v1/issuer", h.issuerInfo)
