@@ -180,3 +180,50 @@ func TestOldCredentialsResolveAgainstTheirPinnedVersion(t *testing.T) {
 		t.Errorf("under v2: tier = %d, want 2 — the same facts, a stricter definition", got.Tier)
 	}
 }
+
+// The retroactive upgrade (§4.1, issue #15). Identity assurance is a separate
+// axis from evidence, derived from the Party at query time rather than frozen
+// into the record. So a worker whose identity binding improves later — a
+// contact-verified party who subsequently anchors against a national identity —
+// must see the tier of evidence already captured rise, with nothing reissued
+// and nothing about the stored provenance touched.
+//
+// The vectors already contain both ends of this as separate cases; what they
+// cannot state is that it is the *same* evidence in both. That is the claim
+// worth a test, because the failure it guards against is someone storing the
+// tier and leaving a worker permanently judged at the assurance they happened
+// to have on the day the work was recorded.
+func TestAssuranceImprovingLaterRaisesTheTierWithNoReissuance(t *testing.T) {
+	def := fixtures.MustLoad().Definition()
+
+	// One captured record. Everything here is a stored provenance fact.
+	stored := schema.Provenance{
+		SourceClass:    schema.SourceClassNationalSystem,
+		CaptureMethod:  schema.CaptureMethodSystemOfRecord,
+		SourceExposure: schema.SourceExposurePushAPI,
+		AdapterRef:     "fixture-adapter@1",
+	}
+	fields := []string{"household_id", "beneficiary_count"}
+
+	before := strength.Evaluate(strength.Facts{
+		Provenance:        stored,
+		PresentFields:     fields,
+		IdentityAssurance: schema.IdentityAssuranceIA1,
+	}, def, nil)
+
+	after := strength.Evaluate(strength.Facts{
+		Provenance:        stored,
+		PresentFields:     fields,
+		IdentityAssurance: schema.IdentityAssuranceIA3,
+	}, def, nil)
+
+	if !before.Acceptable || !after.Acceptable {
+		t.Fatalf("both evaluations must be acceptable: before=%v after=%v", before, after)
+	}
+	if after.Tier <= before.Tier {
+		t.Fatalf("assurance rose IA-1 -> IA-3 and the tier did not: before %s, after %s.\n"+
+			"Evidence already captured must benefit from a later identity binding, or a "+
+			"worker is judged forever at the assurance they had on the day they worked.",
+			before, after)
+	}
+}
