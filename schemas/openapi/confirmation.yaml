@@ -236,6 +236,59 @@ paths:
                   count: { type: integer, description: Expected to be 0.}
         "500": { $ref: "#/components/responses/Internal" }
 
+  /v1/contests:
+    get:
+      operationId: listContests
+      summary: Where does any dispute against this target stand?
+      description: >
+        A dispute never revokes the credential it concerns (#58). A credential is
+        a historical statement - what was asserted, by whom, and when - and
+        revoking it because the worker later objected would mean a worker who
+        disputes one detail loses the whole record of work they did do. That is a
+        penalty for objecting, falling on the person the dispute exists to
+        protect. So the credential stands and the dispute is visible beside it;
+        this endpoint is that visibility.
+
+        Returns STANDING only: never the reason, never who raised it. A dispute
+        reason is ordinarily the worker speaking about their own record, and that
+        is between them and the programme.
+
+        Both parameters are required. An unscoped listing would be a search for
+        disputed workers.
+      parameters:
+        - name: targetKind
+          in: query
+          required: true
+          schema: { type: string, enum: [claim, credential, linked-record] }
+          description: >
+            Never `unit`. A contest against a Unit is not expressible, which is
+            how "a disputed claim never destroys the underlying record" is
+            enforced by shape rather than by review.
+        - name: targetId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Every dispute against that target, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contests, count]
+                properties:
+                  contests:
+                    type: array
+                    items:
+                      type: object
+                      required: [state, raisedAt]
+                      properties:
+                        state: { type: string, enum: [OPEN, UPHELD, REJECTED, WITHDRAWN] }
+                        raisedAt: { type: string, format: date-time }
+                  count: { type: integer }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "500": { $ref: "#/components/responses/Internal" }
+
   # Every CREST service carries these two, added by pkg/httpx.Server.
   /healthz: { $ref: "#/components/pathItems/healthz" }
   /readyz: { $ref: "#/components/pathItems/readyz" }
