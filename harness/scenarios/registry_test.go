@@ -430,3 +430,102 @@ func TestADeploymentSaysWhoItIsAndAVerifierCanResolveIt(t *testing.T) {
 		out.Instance.ID, out.Instance.OperatorPartyID,
 		out.Publication.Record, out.Publication.RegistryVersion, out.Publication.Transparent)
 }
+
+// #16: the credential carries its own resolvable pin to the definition version
+// it was measured under.
+//
+// The distinction this proves is small on the wire and large in what it means.
+// A verifier who resolves the definition by asking CREST is asking the issuer
+// to confirm the issuer. A verifier who reads the pin out of the signature is
+// checking what the issuer committed to at the moment they signed — a
+// commitment nobody, including this deployment, can revise afterwards.
+func TestACredentialCarriesItsOwnPinToTheDefinition(t *testing.T) {
+	w := setup(t)
+
+	phone, err := harness.PhoneOf(w.w, fixtures.WorkerAID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := w.submit(t, batch(row(phone, 6, "HH-PIN-"+runID)))
+	if len(res.ClaimIDs) != 1 {
+		t.Fatalf("expected one claim, got %d: %+v", len(res.ClaimIDs), res.Unclear)
+	}
+	eventually(t, "the confirmation window opens", 15*time.Second, func() error {
+		_, err := w.window(res.ClaimIDs[0])
+		return err
+	})
+	var exit struct {
+		Credential struct {
+			ID string `json:"id"`
+		} `json:"credential"`
+	}
+	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+res.ClaimIDs[0]+"/confirm",
+		map[string]any{"route": "self"}, &exit); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+
+	cred := w.credential(t, exit.Credential.ID)
+	subject, _ := cred["credentialSubject"].(map[string]any)
+	workEvent, _ := subject["workEvent"].(map[string]any)
+	if workEvent == nil {
+		t.Fatal("the credential has no workEvent")
+	}
+
+	var pub publication
+	eventually(t, "the definition's publication is readable", 20*time.Second, func() error {
+		return w.Definitions.Get(w.ctx,
+			"/v1/definitions/"+w.w.Definitions[0].ID+"/publication", &pub)
+	})
+
+	proof, hasProof := workEvent["definitionProof"].(map[string]any)
+	if !pub.Transparent {
+		// Absence is the honest answer where there is nothing to prove, and it
+		// must stay absent rather than becoming an empty object that reads as
+		// a pin nobody can follow.
+		if hasProof {
+			t.Fatalf("the deployment has no transparency log but the credential carries a pin: %v", proof)
+		}
+		t.Log("no transparency log behind this deployment's registry, and the credential says nothing rather than something empty")
+		return
+	}
+
+	if !hasProof {
+		t.Fatal("the definition is on a transparency log and the credential carries no pin to it")
+	}
+	// The pin must name the version that was actually published. A pin to a
+	// different version is worse than no pin: it resolves, it verifies, and it
+	// describes a definition this credential was not measured under.
+	if proof["version"] != pub.RegistryVersion {
+		t.Errorf("the credential pins registry version %v, the definition was published as %s",
+			proof["version"], pub.RegistryVersion)
+	}
+	if proof["digest"] != pub.Digest {
+		t.Errorf("the credential pins digest %v, the published record's digest is %s",
+			proof["digest"], pub.Digest)
+	}
+	// No node address inside the signature. Where the log lives is the
+	// deployment's published self-description (#70), which can be corrected;
+	// an address baked into a signed credential is a redirect nobody can ever
+	// withdraw.
+	for _, forbidden := range []string{"url", "endpoint", "node"} {
+		if _, found := proof[forbidden]; found {
+			t.Errorf("the signed pin carries %q; a node address in a signature cannot be withdrawn", forbidden)
+		}
+	}
+
+	// And the verifier is pointed at it.
+	v := w.verify(t, cred)
+	if !v.Valid {
+		t.Fatalf("the credential does not verify: %v", v.Reasons)
+	}
+	for _, l := range v.TrustChain {
+		if strings.Contains(l.Claim, "measured under") && l.Checkable {
+			if !strings.Contains(l.Claim, pub.Digest) {
+				t.Errorf("the trust chain does not tell the verifier which digest to expect: %q", l.Claim)
+			}
+			t.Logf("verifier follows the credential's own pin to %s", l.How)
+			return
+		}
+	}
+	t.Error("the trust chain has no checkable definition link despite the credential carrying a pin")
+}

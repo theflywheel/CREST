@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"net/http"
+	"net/url"
 	"sort"
 	"time"
 
@@ -35,8 +38,10 @@ import (
 type exiter struct {
 	db            *store.DB
 	evidence      *client.Client
+	definitions   *client.Client
 	issuer        *credential.Issuer
 	statusListURL string
+	log           *slog.Logger
 	clock         interface{ Now() time.Time }
 }
 
@@ -175,7 +180,58 @@ func (e *exiter) buildCredential(ctx context.Context, w Window, route string, no
 		IssuedAt:   now,
 		unit:       unit,
 		route:      route,
+		defProof:   e.definitionProof(ctx, unit.Definition),
 	}, nil
+}
+
+// definitionProof resolves where a verifier can check the definition version
+// this credential was measured under (#16).
+//
+// Best-effort, and that is a deliberate choice rather than laziness. This runs
+// on the path that releases a worker's payment, and every T=7 exit releases
+// payment — so a definitions service that is slow or down must not be able to
+// stop a credential being issued. The consequence of failing here is a
+// credential a verifier has to trust the issuer about, which is exactly what
+// CREST was before #69; the consequence of failing hard would be a worker not
+// paid because a lookup timed out.
+//
+// A nil result is therefore ambiguous between "no transparency log" and "could
+// not reach definitions", and that ambiguity is the price. It is logged so the
+// second case is visible to an operator rather than silently indistinguishable.
+func (e *exiter) definitionProof(ctx context.Context,
+	ref schema.VersionedRef) *schema.WorkEventCredentialCredentialSubjectWorkEventDefinitionProof {
+	var pub struct {
+		Namespace       string `json:"namespace"`
+		Registry        string `json:"registry"`
+		Record          string `json:"record"`
+		RegistryVersion string `json:"registryVersion"`
+		Digest          string `json:"digest"`
+		Transparent     bool   `json:"transparent"`
+	}
+	err := e.definitions.Get(ctx, fmt.Sprintf("/v1/definitions/%s/publication?version=%d",
+		url.PathEscape(ref.ID), ref.Version), &pub)
+	switch {
+	case client.Code(err) == http.StatusNotFound:
+		// Not published. Normal on a deployment with no node, and normal
+		// briefly right after activation.
+		return nil
+	case err != nil:
+		e.log.Warn("could not read the definition's publication; issuing without a resolvable pin",
+			"definition", ref.ID, "version", ref.Version, "error", err)
+		return nil
+	case !pub.Transparent:
+		// Published to the Postgres fallback. There is a record, and no proof —
+		// so there is nothing to point a verifier at, and pointing them at it
+		// anyway would dress up "trust us" as "check this".
+		return nil
+	}
+	return &schema.WorkEventCredentialCredentialSubjectWorkEventDefinitionProof{
+		Namespace: pub.Namespace,
+		Registry:  pub.Registry,
+		Record:    pub.Record,
+		Version:   pub.RegistryVersion,
+		Digest:    pub.Digest,
+	}
 }
 
 // evidenceFieldsOf lists what the source record carried, by name.
@@ -201,9 +257,20 @@ func evidenceFieldsOf(unit schema.Unit) []string {
 // setStatusIndex finishes the credential once its status slot is known, then
 // signs it. Signing last is what makes the status entry part of what is signed.
 func (c *issuedCredential) setStatusIndex(idx int, listURL string, iss *credential.Issuer, now time.Time) error {
-	doc, err := credential.Document(c.ID, iss.ID(), c.SubjectRef, c.unit,
-		schema.ClaimConfirmationRoute(c.route), now, c.unit.Definition.ID,
-		evidenceFieldsOf(c.unit), listURL, idx, now)
+	doc, err := credential.Document(credential.Subject{
+		CredentialID:    c.ID,
+		IssuerID:        iss.ID(),
+		SubjectRef:      c.SubjectRef,
+		Unit:            c.unit,
+		Activity:        c.unit.Definition.ID,
+		Confirmation:    schema.ClaimConfirmationRoute(c.route),
+		ConfirmedAt:     now,
+		EvidenceFields:  evidenceFieldsOf(c.unit),
+		DefinitionProof: c.defProof,
+		StatusListURL:   listURL,
+		StatusListIndex: idx,
+		ValidFrom:       now,
+	})
 	if err != nil {
 		return fmt.Errorf("the credential does not satisfy its own schema: %w", err)
 	}

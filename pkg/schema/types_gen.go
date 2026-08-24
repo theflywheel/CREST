@@ -829,7 +829,24 @@ const (
 type WorkEventCredentialCredentialSubjectWorkEvent struct {
 	Activity   string       `json:"activity"`
 	Definition VersionedRef `json:"definition"`
-	EventID    string       `json:"eventId"`
+
+	// Where the definition version this credential was measured under can
+	// be resolved, and the digest it had when this credential was issued
+	// (#16, Blueprint §3 and §5). `definition` above is the reference;
+	// this is what makes it provable. Without it a verifier asking "what
+	// did this definition actually say?" can only ask the issuer, and an
+	// issuer confirming their own definition establishes nothing.
+	// OPTIONAL, and its absence is meaningful rather than incidental: a
+	// deployment whose registry has no transparency log behind it has no
+	// proof to offer, and saying nothing is the honest answer. A verifier
+	// that treats a missing definitionProof as equivalent to a present one
+	// has skipped the only check that distinguishes them. It deliberately
+	// carries no node URL. Where the log lives is the deployment's
+	// published self-description (#70), which can be corrected; an address
+	// baked into a signed credential is a redirect nobody can ever
+	// withdraw.
+	DefinitionProof *WorkEventCredentialCredentialSubjectWorkEventDefinitionProof `json:"definitionProof,omitempty"`
+	EventID         string                                                        `json:"eventId"`
 
 	// The names of the fields the source record carried — names only,
 	// never values. A definition's tier map can require a field, and a
@@ -842,6 +859,37 @@ type WorkEventCredentialCredentialSubjectWorkEvent struct {
 	Geography      *string  `json:"geography,omitempty"`
 	Outcome        Outcome  `json:"outcome"`
 	Period         Period   `json:"period"`
+}
+
+// Where the definition version this credential was measured under can be
+// resolved, and the digest it had when this credential was issued (#16,
+// Blueprint §3 and §5). `definition` above is the reference; this is
+// what makes it provable. Without it a verifier asking "what did this
+// definition actually say?" can only ask the issuer, and an issuer
+// confirming their own definition establishes nothing. OPTIONAL, and its
+// absence is meaningful rather than incidental: a deployment whose
+// registry has no transparency log behind it has no proof to offer, and
+// saying nothing is the honest answer. A verifier that treats a missing
+// definitionProof as equivalent to a present one has skipped the only
+// check that distinguishes them. It deliberately carries no node URL.
+// Where the log lives is the deployment's published self-description
+// (#70), which can be corrected; an address baked into a signed credential
+// is a redirect nobody can ever withdraw.
+type WorkEventCredentialCredentialSubjectWorkEventDefinitionProof struct {
+
+	// The record's content digest at issuance. A verifier who resolves the
+	// record later and finds a different digest has learned something
+	// important.
+	Digest    string `json:"digest"`
+	Namespace string `json:"namespace"`
+	Record    string `json:"record"`
+	Registry  string `json:"registry"`
+
+	// The registry version to pin the lookup to. A pin that is not checked
+	// against what came back is not a pin — the node ignores an
+	// unrecognised parameter and answers with the latest version
+	// (DeDi-node#65).
+	Version string `json:"version"`
 }
 
 type WorkEventCredentialProof struct {
