@@ -243,6 +243,9 @@ printed-card: ## Issue, print a PixelPass card, and verify it with no network (#
 	@cd tools/spikes/printedcard && npm install --silent
 	@node tools/spikes/printedcard/card.mjs tools/spikes/card/credential.json tools/spikes/card
 	@$(GO) run ./tools/spikes/offlineverify tools/spikes/card/decoded.json tools/spikes/card/issuer-did.json
+	@# The interop direction a Go test cannot check: their reader on our card.
+	@$(GO) run ./tools/spikes/gocard tools/spikes/card/credential.json tools/spikes/card/go-card.txt
+	@node tools/spikes/printedcard/reads-ours.mjs tools/spikes/card/go-card.txt tools/spikes/card/credential.json
 	@echo "card: tools/spikes/card/card.html — open and print it, then scan it with the radios off"
 
 offline-verify-sealed: ## The above's last step in a container with no network at all (#66)
