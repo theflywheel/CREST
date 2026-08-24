@@ -902,8 +902,9 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 
 	recording := bytes.Repeat([]byte{0x4f, 0x67, 0x67, 0x53, 0x00, 0x02}, 300)
 	path := fmt.Sprintf("/v1/parties/%s/consents?moment=enrolment&captureMethod=voice"+
-		"&purpose=%s&capturedBy=%s",
-		party, url.QueryEscape("hold and fetch evidence of my work"), url.QueryEscape(supervisor))
+		"&purpose=%s&capturedBy=%s&contextId=%s",
+		party, url.QueryEscape("hold and fetch evidence of my work"),
+		url.QueryEscape(supervisor), url.QueryEscape(w.w.Contexts[0].ID))
 
 	var consent struct {
 		ID             string `json:"id"`
@@ -972,7 +973,7 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 			ID    string `json:"id"`
 			State string `json:"state"`
 		} `json:"consents"`
-		EnrolmentConsent string `json:"enrolmentConsent"`
+		EnrolmentConsent map[string]string `json:"enrolmentConsent"`
 	}
 	if err := w.Registry.Get(w.ctx, "/v1/parties/"+party+"/consents", &listed); err != nil {
 		t.Fatal(err)
@@ -980,8 +981,8 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 	if len(listed.Consents) != 1 || listed.Consents[0].ID != consent.ID {
 		t.Fatalf("the consent record did not survive withdrawal: %+v", listed)
 	}
-	if listed.EnrolmentConsent != "WITHDRAWN" {
-		t.Errorf("enrolmentConsent = %q, want WITHDRAWN", listed.EnrolmentConsent)
+	if got := listed.EnrolmentConsent[w.w.Contexts[0].ID]; got != "WITHDRAWN" {
+		t.Errorf("enrolmentConsent for the programme = %q, want WITHDRAWN", got)
 	}
 }
 
@@ -993,8 +994,9 @@ func TestAVoiceConsentWithNoRecordingIsRefused(t *testing.T) {
 	party := newWorkerWithBinding(t, w, "No Recording "+runID, "")
 
 	code, body, err := w.Registry.Status(w.ctx, http.MethodPost,
-		fmt.Sprintf("/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s",
-			party, url.QueryEscape("hold evidence"), url.QueryEscape(fixtures.SupervisorID)), nil)
+		fmt.Sprintf("/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
+			party, url.QueryEscape("hold evidence"), url.QueryEscape(fixtures.SupervisorID),
+			url.QueryEscape(w.w.Contexts[0].ID)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1003,5 +1005,95 @@ func TestAVoiceConsentWithNoRecordingIsRefused(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "recording") {
 		t.Errorf("the refusal does not say what is missing: %s", body)
+	}
+}
+
+// One programme's consent is not another's (#24, §9).
+//
+// This is a correction, not a new feature. Enrolment consent was first recorded
+// per party for the whole deployment, reading §9's "recorded once" as once per
+// person — so a worker who agreed to one programme holding their work history
+// had thereby agreed to every other organisation on the same deployment holding
+// it too. Nobody asked them that.
+//
+// "Recorded once" means once per relationship. A worker who joins a second
+// programme is asked again, because it is a second question.
+func TestConsentGivenToOneProgrammeDoesNotCoverAnother(t *testing.T) {
+	w := setup(t)
+	// A phone, because the consent state is read back through resolve and that
+	// is the key a real batch would join on.
+	phone := "+1555020" + runID[len(runID)-4:]
+	var created schema.Party
+	if err := w.Registry.Post(w.ctx, "/v1/parties", schema.Party{
+		Kind:        schema.PartyKindPerson,
+		DisplayName: "Two Programmes " + runID,
+		ContactRoutes: []schema.PartyContactRoutesItem{
+			{Kind: schema.PartyContactRoutesItemKindPhone, Value: phone},
+		},
+	}, &created); err != nil {
+		t.Fatalf("create party: %v", err)
+	}
+	party := created.ID
+	first := w.w.Contexts[0].ID
+
+	// A second programme, owned by the same operator. Nothing about it is
+	// unusual — that is the point. It is simply somebody else's project.
+	var second struct {
+		ID string `json:"id"`
+	}
+	if err := w.Registry.Post(w.ctx, "/v1/contexts", map[string]any{
+		"kind":         "project",
+		"name":         "Second programme " + runID,
+		"ownerPartyId": fixtures.OrgID,
+		"period":       map[string]any{"start": "2026-02-01T00:00:00Z"},
+		"state":        "ACTIVE",
+	}, &second); err != nil {
+		t.Fatalf("create a second context: %v", err)
+	}
+
+	consentTo := func(contextID string) string {
+		t.Helper()
+		var c struct {
+			ID string `json:"id"`
+		}
+		if err := w.Registry.PostRaw(w.ctx, fmt.Sprintf(
+			"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
+			party, url.QueryEscape("hold evidence of my work"),
+			url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(contextID)),
+			"audio/ogg", []byte("agreed"), &c); err != nil {
+			t.Fatalf("consent to %s: %v", contextID, err)
+		}
+		return c.ID
+	}
+	stateIn := func(contextID string) string {
+		t.Helper()
+		var m struct {
+			EnrolmentConsent string `json:"enrolmentConsent"`
+		}
+		if err := w.Registry.Get(w.ctx, fmt.Sprintf("/v1/resolve?kind=contact-route&value=%s&contextId=%s",
+			url.QueryEscape(phone), url.QueryEscape(contextID)), &m); err != nil {
+			t.Fatalf("resolve in %s: %v", contextID, err)
+		}
+		return m.EnrolmentConsent
+	}
+
+	consentTo(first)
+
+	if got := stateIn(first); got != "GRANTED" {
+		t.Fatalf("consent in the programme it was given to reads %q, want GRANTED", got)
+	}
+	if got := stateIn(second.ID); got != "NONE" {
+		t.Fatalf("the second programme inherited the first's consent (%q). A worker who "+
+			"agreed to one programme has not agreed to every organisation on the deployment", got)
+	}
+
+	// Asked again, they can agree to the second too — and the two live side by
+	// side, because they are answers to two different questions.
+	consentTo(second.ID)
+	if got := stateIn(second.ID); got != "GRANTED" {
+		t.Errorf("consent to the second programme did not take: %q", got)
+	}
+	if got := stateIn(first); got != "GRANTED" {
+		t.Errorf("consenting to the second programme disturbed the first: %q", got)
 	}
 }

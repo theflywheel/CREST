@@ -941,9 +941,9 @@ func TestWithdrawingConsentStopsNewEvidenceAndKeepsTheOld(t *testing.T) {
 		ID string `json:"id"`
 	}
 	if err := w.Registry.PostRaw(w.ctx, fmt.Sprintf(
-		"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s",
+		"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 		party, url.QueryEscape("hold and fetch evidence of my work"),
-		url.QueryEscape(fixtures.SupervisorID)),
+		url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(fixtures.ProjectID)),
 		"audio/ogg", []byte("a recording of the worker agreeing"), &consent); err != nil {
 		t.Fatalf("record consent: %v", err)
 	}
@@ -978,4 +978,76 @@ func TestWithdrawingConsentStopsNewEvidenceAndKeepsTheOld(t *testing.T) {
 	if claim.ID != keptClaim {
 		t.Errorf("claim %s came back as %s", keptClaim, claim.ID)
 	}
+}
+
+// A window already open when consent is withdrawn still exits, and still
+// releases payment (#24, §9).
+//
+// Decided rather than inherited. The consent gate sits at ingest, so this
+// behaviour falls out of where the check is — and behaviour that is true by
+// accident of placement is behaviour nobody has agreed to. Stating it: the work
+// was done and recorded while consent stood, the seven days are the worker's
+// window to object to a record that already exists, and withdrawal governs what
+// may be collected next rather than what was.
+//
+// The alternative — a withdrawal silently cancelling money owed for work
+// already done — would make withdrawal cost a worker their pay, which is the
+// clearest possible penalty for exercising a right.
+func TestWithdrawingConsentDoesNotCancelAWindowAlreadyOpen(t *testing.T) {
+	w := setup(t)
+
+	phone, err := harness.PhoneOf(w.w, fixtures.WorkerBID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	party := fixtures.WorkerBID
+
+	var consent struct {
+		ID string `json:"id"`
+	}
+	if err := w.Registry.PostRaw(w.ctx, fmt.Sprintf(
+		"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
+		party, url.QueryEscape("hold and fetch evidence of my work"),
+		url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(fixtures.ProjectID)),
+		"audio/ogg", []byte("a recording of the worker agreeing"), &consent); err != nil {
+		t.Fatalf("record consent: %v", err)
+	}
+
+	result := w.submit(t, batch(row(phone, 7, "HH-inflight")))
+	if len(result.ClaimIDs) != 1 {
+		t.Fatalf("want one claim, got %d", len(result.ClaimIDs))
+	}
+	claimID := result.ClaimIDs[0]
+	eventually(t, "the confirmation window opens", 15*time.Second, func() error {
+		_, err := w.window(claimID)
+		return err
+	})
+
+	// The worker withdraws while the window is open.
+	if err := w.Registry.Post(w.ctx, "/v1/consents/"+consent.ID+"/withdraw",
+		map[string]any{"reason": "changed my mind about the programme"}, nil); err != nil {
+		t.Fatalf("withdraw: %v", err)
+	}
+
+	// The window still exits, and the money still moves.
+	var exit struct {
+		Credential struct {
+			ID string `json:"id"`
+		} `json:"credential"`
+	}
+	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/confirm",
+		map[string]any{"route": "self"}, &exit); err != nil {
+		t.Fatalf("confirming after withdrawal failed: %v.\n"+
+			"Work recorded while consent stood must still complete its window", err)
+	}
+	eventually(t, "the payment for work done under consent is released", 20*time.Second, func() error {
+		win, err := w.window(claimID)
+		if err != nil {
+			return err
+		}
+		if win.PaymentReleasedAt == nil {
+			return fmt.Errorf("the window exited but released no payment")
+		}
+		return nil
+	})
 }

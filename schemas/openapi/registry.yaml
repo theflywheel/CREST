@@ -229,6 +229,15 @@ paths:
         - { name: purpose, in: query, required: true, schema: { type: string }, description: What is being consented to. Consent to something unstated is not consent. }
         - { name: captureMethod, in: query, required: true, schema: { type: string, enum: [screen, sms, ussd, voice, assisted] } }
         - { name: capturedBy, in: query, schema: { type: string }, description: Required for voice and assisted — a consent taken by somebody else with nobody named is one nobody can be asked about. }
+        - name: contextId
+          in: query
+          schema: { type: string }
+          description: >
+            The programme this consent is given to. Required for enrolment.
+            Consent is per relationship: a worker who agreed to one programme
+            holding their work history has not agreed to every other
+            organisation on the deployment holding it, and an unscoped consent
+            would assert exactly that on their behalf.
       requestBody:
         required: false
         content:
@@ -263,7 +272,14 @@ paths:
                 properties:
                   partyId: { type: string }
                   consents: { type: array, items: { $ref: "#/components/schemas/Consent" } }
-                  enrolmentConsent: { type: string, enum: [NONE, GRANTED, WITHDRAWN] }
+                  enrolmentConsent:
+                    type: object
+                    description: >
+                      One state per programme, keyed by context id. There is no
+                      single answer: a worker can be consented to one programme
+                      and withdrawn from another, and flattening that would hide
+                      the distinction.
+                    additionalProperties: { type: string, enum: [NONE, GRANTED, WITHDRAWN] }
         "500": { $ref: "#/components/responses/Internal" }
 
   /v1/consents/{id}/artefact:
@@ -572,6 +588,7 @@ components:
         artefactRef: { type: string }
         artefactDigest: { type: string }
         artefactType: { type: string }
+        contextId: { type: string, description: The programme this consent is given to. Required for enrolment. }
         revokedAt: { type: string, format: date-time }
         revokedReason: { type: string }
         state: { type: string, enum: [NONE, GRANTED, WITHDRAWN] }
