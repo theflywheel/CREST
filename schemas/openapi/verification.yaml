@@ -240,6 +240,22 @@ components:
           items: { type: string }
           description: Per-field detail from schema validation, when there is any.
 
+    ContestStanding:
+      type: object
+      description: >
+        Where one dispute stands. Standing ONLY - never the reason, never who
+        raised it. A dispute reason is ordinarily the worker saying something
+        about their own record, and a verifier's legitimate interest is that the
+        record is contested and where that stands.
+      required: [state, raisedAt, against]
+      properties:
+        state: { type: string, enum: [OPEN, UPHELD, REJECTED, WITHDRAWN] }
+        raisedAt: { type: string, format: date-time }
+        against:
+          type: string
+          enum: [credential, claim]
+          description: Whether the dispute names the document or the work behind it.
+
     TrustLink:
       type: object
       description: One step of the trust chain, and whether the verifier can confirm it themselves.
@@ -294,6 +310,20 @@ components:
           type: array
           items: { type: string }
           description: What a valid verdict does not prove. Present on valid verdicts.
+        contested:
+          type: array
+          items: { $ref: "#/components/schemas/ContestStanding" }
+          description: >
+            Disputes standing against this credential or the claim behind it.
+            Absent when nothing is disputed.
+
+            Orthogonal to `valid`, and the separation is the decision (#58).
+            `valid` means this issuer really asserted this and has not withdrawn
+            it - a question about the document. `contested` means somebody says
+            the underlying record is wrong - a question about the world.
+            Collapsing them would mean a worker who disputes one detail loses
+            the whole credential for work they did do, which is a penalty for
+            objecting that falls on the person the dispute exists to protect.
         signatureValid: { type: boolean }
         revoked: { type: boolean }
   responses:

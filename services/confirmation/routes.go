@@ -66,6 +66,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/windows/{claimId}", h.getWindow)
 	mux.HandleFunc("POST /v1/claims/{claimId}/confirm", h.confirm)
 	mux.HandleFunc("POST /v1/claims/{claimId}/dispute", h.dispute)
+	mux.HandleFunc("GET /v1/contests", h.contests)
 	mux.HandleFunc("POST /v1/sweep", h.sweep)
 	mux.HandleFunc("GET /v1/credentials/{id}", h.getCredential)
 	mux.HandleFunc("POST /v1/credentials/{id}/revoke", h.revoke)
@@ -207,6 +208,42 @@ func (h *handlers) dispute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.finish(w, r, routeDispute)
+}
+
+// contests reports where any dispute against one target stands (#58).
+//
+// A dispute never revokes the credential it concerns. A credential is a
+// historical statement — what was asserted, by whom, and when — and revoking it
+// because the worker later objected would mean a worker who disputes one detail
+// loses the whole record of work they did do. That is a penalty for objecting,
+// and it falls on the person the dispute exists to protect.
+//
+// So the credential stands and the dispute is visible beside it. This endpoint
+// is that visibility. It returns standing only: never the reason, never who
+// raised it.
+func (h *handlers) contests(w http.ResponseWriter, r *http.Request) {
+	kind, target := r.URL.Query().Get("targetKind"), r.URL.Query().Get("targetId")
+	if kind == "" || target == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_query",
+			"targetKind and targetId are both required; an unscoped listing is a search for disputed workers")
+		return
+	}
+	switch kind {
+	case "claim", "credential", "linked-record":
+	default:
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_query",
+			"targetKind is claim, credential or linked-record — never unit, because a contest against a Unit is not expressible (W5)")
+		return
+	}
+	standing, err := contestsAgainst(r.Context(), h.d.DB.Q(), kind, target)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "read contests", err)
+		return
+	}
+	if standing == nil {
+		standing = []ContestStanding{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"contests": standing, "count": len(standing)})
 }
 
 // sweep auto-confirms every window whose time has run out.

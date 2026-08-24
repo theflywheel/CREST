@@ -243,3 +243,40 @@ func insertContest(ctx context.Context, tx store.Querier, c schema.Contest) erro
 		string(c.State), doc, c.RaisedAt)
 	return err
 }
+
+// ContestStanding is what a stranger may learn about a dispute.
+//
+// Deliberately not the Contest itself. A contest carries a free-text reason and
+// the party who raised it, and both are ordinarily the worker saying something
+// about their own record — "it was six, not nine". That is between the worker
+// and the programme. A verifier's legitimate interest is that the record is
+// disputed and where the dispute stands, not what the worker said or that it
+// was the worker who said it.
+//
+// So this is a projection, not a filter applied at the edge: there is no path
+// that returns the reason to a caller, rather than a path that usually
+// remembers not to.
+type ContestStanding struct {
+	State    string    `json:"state"`
+	RaisedAt time.Time `json:"raisedAt"`
+}
+
+// contestsAgainst returns the standing of every contest against one target.
+//
+// Plural because a claim can be disputed more than once — a dispute rejected in
+// March does not prevent one in June, and a verifier who saw only the latest
+// would miss a pattern that is the whole point of keeping them.
+func contestsAgainst(ctx context.Context, q store.Querier, targetKind, targetID string) ([]ContestStanding, error) {
+	rows, err := q.Query(ctx, `
+		SELECT state, created_at FROM contests
+		WHERE target_kind = $1 AND target_id = $2
+		ORDER BY created_at`, targetKind, targetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.Collect(rows, func(r store.Row) (ContestStanding, error) {
+		var c ContestStanding
+		return c, r.Scan(&c.State, &c.RaisedAt)
+	})
+}
