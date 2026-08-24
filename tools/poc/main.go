@@ -84,9 +84,8 @@ func main() {
 			roster = append(roster, p)
 		}
 	}
-	named := phonesIn(raw)
-	say("batch %s — %d rows, %d workers named, %d of them enrolled",
-		batch, strings.Count(string(raw), "\n")-1, len(named), len(roster))
+	say("batch %s — %d rows, %d workers enrolled on the roster",
+		batch, strings.Count(string(raw), "\n")-1, len(roster))
 
 	// 1 ── the roster. A source system names workers; it does not create them.
 	// Somebody enrolled these people, and the PoC has to stand that up before
@@ -99,7 +98,26 @@ func main() {
 	}
 	say("roster: %d workers registered with enrolment consent", registered)
 
-	// 2 ── ingest.
+	// 2 ── the source, and its vocabulary.
+	//
+	// Registered only when a mapping is supplied. A file that already speaks
+	// CREST's column names needs no translation, and requiring registration to
+	// ingest anything at all would be a step for nobody's benefit.
+	if mappingPath := os.Getenv("POC_MAPPING"); mappingPath != "" {
+		mapping, err := os.ReadFile(mappingPath)
+		if err != nil {
+			die("read the source mapping: %v", err)
+		}
+		body := fmt.Sprintf(`{"adapterRef":"csv-batch@1","contextId":%q,"systemRef":"riverside-dhis2",
+			"expectedEvery":"168h","ownerPartyId":%q,"mapping":%s}`,
+			contextID, supervisor, mapping)
+		if err := s.post(s.evidence+"/v1/sources", "application/json", []byte(body), nil); err != nil {
+			die("register the source: %v", err)
+		}
+		say("source registered with a column mapping — its own vocabulary, as configuration")
+	}
+
+	// 3 ── ingest.
 	q := url.Values{
 		"contextId": {contextID}, "definitionId": {definitionID}, "submittedBy": {supervisor},
 		"sourceClass": {"programme-system"}, "captureMethod": {"digital-capture"},
@@ -144,7 +162,7 @@ func main() {
 		say("  unclear  %d row(s): %s", n, reason)
 	}
 
-	// 3 ── the windows open across a service boundary, carried by the outbox.
+	// 4 ── the windows open across a service boundary, carried by the outbox.
 	// Polled rather than slept through: a fixed sleep is a race that passes on
 	// a fast machine and fails on a loaded one.
 	opened := 0
@@ -168,7 +186,7 @@ func main() {
 	say("confirmation: %d of %d windows opened, each one a worker who was told before it counted",
 		opened, len(ingest.ClaimIDs))
 
-	// 4 ── the seven days. Driven rather than waited for.
+	// 5 ── the seven days. Driven rather than waited for.
 	if err := s.driveClock("2026-03-30T09:00:00Z"); err != nil {
 		say("(clock not driveable: %v — windows will close on their own schedule)", err)
 	}
@@ -184,7 +202,7 @@ func main() {
 	say("T=7: %d windows due, %d auto-confirmed, %d held because the worker was never reached",
 		swept.Due, len(swept.AutoConfirmed), len(swept.Held))
 
-	// 5 ── what a worker ends up holding.
+	// 6 ── what a worker ends up holding.
 	cards, credentials, paid := 0, 0, 0
 	for _, claimID := range ingest.ClaimIDs {
 		var win struct {
@@ -316,23 +334,6 @@ func (s *stack) driveClock(at string) error {
 		}
 	}
 	return nil
-}
-
-func phonesIn(csv []byte) []string {
-	var out []string
-	seen := map[string]bool{}
-	for _, line := range strings.Split(string(csv), "\n")[1:] {
-		fields := strings.Split(line, ",")
-		if len(fields) < 5 {
-			continue
-		}
-		v := strings.TrimSpace(fields[4])
-		if strings.HasPrefix(v, "+") && !seen[v] {
-			seen[v] = true
-			out = append(out, v)
-		}
-	}
-	return out
 }
 
 func (s *stack) post(u, contentType string, body []byte, out any) error {

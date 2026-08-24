@@ -251,6 +251,47 @@ paths:
                   type: string
                   description: A positive Go duration, e.g. "24h".
                 ownerPartyId: { type: string }
+                mapping:
+                  type: object
+                  description: >
+                    How this source's own file vocabulary reaches the canonical
+                    record. Configuration, and it could not be anything else:
+                    what a source system calls its columns is the definition of
+                    a thing two deployments disagree about while both remain
+                    CREST. Omit it for a file that already uses CREST's column
+                    names.
+
+
+                    Note what a mapping cannot name: `sourceClass`,
+                    `captureMethod` and `adapterRef`. Provenance is attached by
+                    the pipeline from what the deployment knows about the source
+                    (§8), so a file's vocabulary can never argue for its own
+                    trust tier.
+                  properties:
+                    columns:
+                      type: object
+                      description: 'Canonical field to the column carrying it: {"period_start": "eventDate"}.'
+                      additionalProperties: { type: string }
+                    constants:
+                      type: object
+                      description: >
+                        Canonical fields the file does not carry at all. A
+                        programme's unit of measure is a fact about the
+                        programme, not about a row. A column always wins over a
+                        constant.
+                      additionalProperties: { type: string }
+                    enrichment:
+                      type: object
+                      description: >
+                        Renames for columns CREST does not interpret but a
+                        definition might. A tier map names the fields it
+                        requires in the deployment's vocabulary, so a source
+                        calling it "Household ID" would otherwise silently miss
+                        a rule requiring `household_id` — and a worker would be
+                        paid at a lower tier for a reason having nothing to do
+                        with their evidence.
+                      additionalProperties: { type: string }
+                  additionalProperties: false
       responses:
         "201":
           description: The registered source, with its derived state.
