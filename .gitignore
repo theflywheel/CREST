@@ -22,3 +22,6 @@ infra/compose/dedi-keys/
 /verification
 /payments
 /notify
+
+# PixelPass is pulled at card-render time; the lockfile is checked in.
+tools/spikes/printedcard/node_modules/

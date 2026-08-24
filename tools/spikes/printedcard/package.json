@@ -1,0 +1,7 @@
+{
+  "name": "crest-printed-card",
+  "private": true,
+  "type": "module",
+  "description": "Renders the printed PixelPass card from an issued credential (#66)",
+  "dependencies": { "@mosip/pixelpass": "^0.6.0" }
+}
