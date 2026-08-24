@@ -147,6 +147,8 @@ func registryFor(kind string) (string, error) {
 		return registryAuthorizations, nil
 	case "instance":
 		return registryInstances, nil
+	case "skill":
+		return registrySkills, nil
 	default:
 		return "", fmt.Errorf("no registry for fact kind %q", kind)
 	}
@@ -262,6 +264,12 @@ func projectFact(ctx context.Context, d service.Deps, msg factMessage) (map[stri
 			inst.Registry.Transparent = d.DeDi.Transparent()
 		}
 		return instanceFace(inst), nil
+	case "skill":
+		sk, err := getSkill(ctx, d.DB.Q(), msg.ID)
+		if err != nil {
+			return nil, err
+		}
+		return skillFace(sk), nil
 	case "authorization":
 		a, err := getAuthorization(ctx, d.DB.Q(), msg.ID)
 		if err != nil {

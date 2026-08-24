@@ -410,9 +410,24 @@ type Definition struct {
 	// Must differ from authoredByPartyId. Separation of duties is an L1
 	// rule enforced in the definitions service, not left to product UI
 	// (§7).
-	RatifiedByPartyID *string         `json:"ratifiedByPartyId,omitempty"`
-	State             DefinitionState `json:"state"`
-	SupersededBy      *VersionedRef   `json:"supersededBy,omitempty"`
+	RatifiedByPartyID *string `json:"ratifiedByPartyId,omitempty"`
+
+	// The skill this definition evidences
+	// (urn:crest:schema:reference:skill:1). Distinct from `activity`,
+	// which names what this definition is about in this deployment's own
+	// words. The skill code is the part that means the same thing
+	// somewhere else — it is what makes a worker's record portable
+	// across programmes and eventually across borders, and `activity.code`
+	// deliberately is not. OPTIONAL, because a deployment can define work
+	// before it has adopted a skill taxonomy, and refusing to let it
+	// record work until it has is the wrong trade for a worker whose
+	// payment depends on the record existing. A definition with no skill
+	// code produces credentials with no skill code, which are still
+	// perfectly valid evidence of the work — just not yet portable in
+	// the way §3 intends.
+	SkillCode    *string         `json:"skillCode,omitempty"`
+	State        DefinitionState `json:"state"`
+	SupersededBy *VersionedRef   `json:"supersededBy,omitempty"`
 
 	// L2 data read by the L1 strength function (§6). Rules are evaluated
 	// in order; the first whose conditions all hold gives the tier. The
@@ -683,6 +698,40 @@ type Provenance struct {
 	SourceRecordRef *string `json:"sourceRecordRef,omitempty"`
 }
 
+// A transferable competence a worker can accumulate evidence of, named by
+// a stable code. Reference data, not a primitive. Blueprint §3 files the
+// skill list beside credential shapes and adapters — 'published
+// releases, adopted by deployments' — rather than beside Party and
+// Definition, and the distinction is real: the eleven primitives describe
+// what happened, while this describes a vocabulary several deployments
+// have to agree on for a worker's record to mean the same thing when they
+// cross a border. A Skill is not a Definition. A Definition says what
+// counts as one instance of an activity and what evidence proves it; a
+// Skill is what a hundred of those instances add up to. Several
+// definitions across several programmes can evidence one skill, which is
+// the whole reason a worker's record is portable at all. FINDING: §3 says
+// the global DeDi node carries the canonical copy and national nodes
+// mirror it. CREST has no global node yet, so this deployment publishes to
+// its own — see the memo. A deployment-local skill list is a taxonomy
+// nobody else shares, which is the opposite of what a skill code is for.
+type Skill struct {
+
+	// e.g. CREST-SKILL:chw.bednet-distribution.v2. The version is inside
+	// the code rather than beside it, and that is deliberate: a skill code
+	// appears in issued credentials that cannot be rewritten, so a code
+	// whose meaning could change under them would silently restate what a
+	// worker's record says they can do. A revised skill is a new code, and
+	// `supersedes` links the two.
+	Code        string    `json:"code"`
+	Description *string   `json:"description,omitempty"`
+	Label       string    `json:"label"`
+	PublishedAt time.Time `json:"publishedAt"`
+
+	// The code this one replaces. Old codes stay resolvable forever,
+	// because credentials were issued against them.
+	Supersedes *string `json:"supersedes,omitempty"`
+}
+
 // What kind of system the record came from. Adapter-attached, never
 // source-asserted (§8).
 type SourceClass string
@@ -804,6 +853,19 @@ type WorkEventCredentialCredentialSubject struct {
 	// never a name (W8, W9).
 	ID string `json:"id"`
 
+	// Who stands behind this credential, and where a verifier can check it
+	// (§3, §8). §8's sketch named `qualificationRef` and `grantRef` as
+	// two separate things. §2 had already collapsed them: Qualification
+	// and ProjectGrant became ONE Authorization at two scopes,
+	// instance-wide and context-bound, where a context grant is always a
+	// strict subset of an instance one. So these are two references to the
+	// same primitive at its two scopes, not to two primitives. Every
+	// reference here is to an ORGANISATION's authorization. A person's is
+	// never published (#68) — it would be a permanent public record of
+	// who works where — so a chain that ended at a supervisor would end
+	// at something a verifier cannot resolve.
+	IssuerAuthority *WorkEventCredentialCredentialSubjectIssuerAuthority `json:"issuerAuthority,omitempty"`
+
 	// The facts the strength function reads. A credential that stated its
 	// own tier would freeze a judgement verifiers must be free to make
 	// differently.
@@ -826,8 +888,44 @@ const (
 	WorkEventCredentialCredentialSubjectConfirmationRouteAssisted WorkEventCredentialCredentialSubjectConfirmationRoute = "assisted"
 )
 
+// Who stands behind this credential, and where a verifier can check it
+// (§3, §8). §8's sketch named `qualificationRef` and `grantRef` as two
+// separate things. §2 had already collapsed them: Qualification and
+// ProjectGrant became ONE Authorization at two scopes, instance-wide and
+// context-bound, where a context grant is always a strict subset of an
+// instance one. So these are two references to the same primitive at its
+// two scopes, not to two primitives. Every reference here is to an
+// ORGANISATION's authorization. A person's is never published (#68) — it
+// would be a permanent public record of who works where — so a chain
+// that ended at a supervisor would end at something a verifier cannot
+// resolve.
+type WorkEventCredentialCredentialSubjectIssuerAuthority struct {
+
+	// The organisation's CONTEXT-scoped Authorization for this unit's
+	// project — the old ProjectGrant. Always a strict subset of the
+	// instance one.
+	GrantRef *string `json:"grantRef,omitempty"`
+
+	// The deployment operator, as published in its own instance record
+	// (#70).
+	OrgID string `json:"orgId"`
+
+	// The organisation's INSTANCE-scoped Authorization — the old
+	// Qualification. 'This organisation may attest work at all.'
+	QualificationRef *string `json:"qualificationRef,omitempty"`
+}
+
 type WorkEventCredentialCredentialSubjectWorkEvent struct {
-	Activity   string       `json:"activity"`
+	Activity string `json:"activity"`
+
+	// The accepted Claim this credential projects. Distinct from
+	// `eventId`, and the distinction is the object model's: a Unit says
+	// the work happened, a Claim says who performed it. A credential is a
+	// projection of the Claim, so naming only the Unit would leave the
+	// credential unable to say which of several claims on that Unit it is
+	// about — and a disputed claim must never destroy the underlying
+	// Unit, which only works if the two are separately addressable.
+	ClaimID    string       `json:"claimId"`
 	Definition VersionedRef `json:"definition"`
 
 	// Where the definition version this credential was measured under can
@@ -859,6 +957,17 @@ type WorkEventCredentialCredentialSubjectWorkEvent struct {
 	Geography      *string  `json:"geography,omitempty"`
 	Outcome        Outcome  `json:"outcome"`
 	Period         Period   `json:"period"`
+
+	// The skill this work evidences, copied from the definition at
+	// issuance (urn:crest:schema:reference:skill:1). Copied rather than
+	// referenced through the definition, because it is the one field whose
+	// entire purpose is to be read by somebody who is not this deployment
+	// — and a verifier who has to resolve the definition first to learn
+	// what skill this was is a verifier who cannot answer the question
+	// offline. OPTIONAL: a definition that names no skill produces a
+	// credential that names none. The work is still evidenced; it is
+	// simply not yet portable in the way §3 intends.
+	SkillCode *string `json:"skillCode,omitempty"`
 }
 
 // Where the definition version this credential was measured under can be

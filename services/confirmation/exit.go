@@ -39,6 +39,7 @@ type exiter struct {
 	db            *store.DB
 	evidence      *client.Client
 	definitions   *client.Client
+	registry      *client.Client
 	issuer        *credential.Issuer
 	statusListURL string
 	log           *slog.Logger
@@ -181,7 +182,95 @@ func (e *exiter) buildCredential(ctx context.Context, w Window, route string, no
 		unit:       unit,
 		route:      route,
 		defProof:   e.definitionProof(ctx, unit.Definition),
+		skillCode:  e.skillCodeOf(ctx, unit.Definition),
+		authority:  e.issuerAuthority(ctx, unit.ContextID),
 	}, nil
+}
+
+// skillCodeOf reads the skill the definition evidences, so the credential can
+// carry it directly (#16).
+//
+// Copied into the credential rather than left as a reference, because it is the
+// one field whose entire purpose is to be read by somebody who is not this
+// deployment — and a verifier who must resolve the definition first to learn
+// what skill this was cannot answer the question offline, which is the case
+// that matters.
+func (e *exiter) skillCodeOf(ctx context.Context, ref schema.VersionedRef) *string {
+	var def schema.Definition
+	if err := e.definitions.Get(ctx, fmt.Sprintf("/v1/definitions/%s?version=%d",
+		url.PathEscape(ref.ID), ref.Version), &def); err != nil {
+		e.log.Warn("could not read the definition's skill code",
+			"definition", ref.ID, "version", ref.Version, "error", err)
+		return nil
+	}
+	return def.SkillCode
+}
+
+// issuerAuthority resolves the chain a verifier walks up to somebody answerable
+// (#16, Blueprint §3 and §8).
+//
+// §8's sketch named qualificationRef and grantRef as two things. §2 had already
+// collapsed them into one Authorization at two scopes — instance-wide was the
+// old Qualification, context-bound the old ProjectGrant — so this resolves the
+// same primitive twice rather than two primitives once.
+//
+// Every reference is to an ORGANISATION's authorization. A person's is never
+// published (#68) because it would be a permanent public record of who works
+// where, so a chain ending at a supervisor would end at something a verifier
+// cannot resolve — which is worse than ending nowhere, because it looks like it
+// leads somewhere.
+//
+// Best-effort, like the definition pin and for the same reason: this is on the
+// path that releases payment.
+func (e *exiter) issuerAuthority(ctx context.Context,
+	contextID string) *schema.WorkEventCredentialCredentialSubjectIssuerAuthority {
+	var inst struct {
+		Instance struct {
+			OperatorPartyID string `json:"operatorPartyId"`
+		} `json:"instance"`
+	}
+	if err := e.registry.Get(ctx, "/v1/instance", &inst); err != nil ||
+		inst.Instance.OperatorPartyID == "" {
+		// Without an operator there is no authority to name. Nil rather than a
+		// half-filled object: a chain with no root is not a shorter chain, it
+		// is not a chain.
+		e.log.Warn("could not read this deployment's operator; issuing without an issuer authority", "error", err)
+		return nil
+	}
+	out := &schema.WorkEventCredentialCredentialSubjectIssuerAuthority{
+		OrgID: inst.Instance.OperatorPartyID,
+	}
+	if id := e.firstAuthorization(ctx, inst.Instance.OperatorPartyID, "instance", ""); id != "" {
+		out.QualificationRef = &id
+	}
+	if id := e.firstAuthorization(ctx, inst.Instance.OperatorPartyID, "context", contextID); id != "" {
+		out.GrantRef = &id
+	}
+	return out
+}
+
+// firstAuthorization returns the id of one active authorization at a scope, or
+// empty. Deterministic by id order, so two credentials issued a second apart
+// name the same one.
+func (e *exiter) firstAuthorization(ctx context.Context, partyID, scope, contextID string) string {
+	q := url.Values{"partyId": {partyID}, "scope": {scope}}
+	if contextID != "" {
+		q.Set("contextId", contextID)
+	}
+	var out struct {
+		Authorizations []struct {
+			ID string `json:"id"`
+		} `json:"authorizations"`
+	}
+	if err := e.registry.Get(ctx, "/v1/authorizations?"+q.Encode(), &out); err != nil {
+		e.log.Warn("could not read the issuing organisation's authorizations",
+			"party", partyID, "scope", scope, "error", err)
+		return ""
+	}
+	if len(out.Authorizations) == 0 {
+		return ""
+	}
+	return out.Authorizations[0].ID
 }
 
 // definitionProof resolves where a verifier can check the definition version
@@ -261,8 +350,11 @@ func (c *issuedCredential) setStatusIndex(idx int, listURL string, iss *credenti
 		CredentialID:    c.ID,
 		IssuerID:        iss.ID(),
 		SubjectRef:      c.SubjectRef,
+		ClaimID:         c.ClaimID,
 		Unit:            c.unit,
 		Activity:        c.unit.Definition.ID,
+		SkillCode:       c.skillCode,
+		IssuerAuthority: c.authority,
 		Confirmation:    schema.ClaimConfirmationRoute(c.route),
 		ConfirmedAt:     now,
 		EvidenceFields:  evidenceFieldsOf(c.unit),

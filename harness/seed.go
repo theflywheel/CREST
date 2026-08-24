@@ -3,6 +3,7 @@ package harness
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/theflywheel/crest/harness/fixtures"
@@ -30,6 +31,21 @@ func (s *Stack) Seed(ctx context.Context) (*fixtures.World, error) {
 	for _, p := range w.Parties {
 		if err := s.Registry.Post(ctx, "/v1/parties", p, nil); err != nil {
 			return nil, fmt.Errorf("party %s: %w", p.DisplayName, err)
+		}
+	}
+	// Skills before definitions: a definition names a skill code, and a
+	// deployment that has not adopted the taxonomy would be publishing a
+	// definition pointing at a vocabulary entry nobody can resolve.
+	for _, sk := range w.Skills {
+		// A skill code already published is the normal case on a stack that is
+		// already up, and refusing it is right — the code is immutable — so
+		// the seeder skips rather than treating "it is already correct" as a
+		// failure.
+		if err := s.Registry.Get(ctx, "/v1/skills/"+url.PathEscape(sk.Code), nil); err == nil {
+			continue
+		}
+		if err := s.Registry.Post(ctx, "/v1/skills", sk, nil); err != nil {
+			return nil, fmt.Errorf("skill %s: %w", sk.Code, err)
 		}
 	}
 	for _, t := range w.Terms {

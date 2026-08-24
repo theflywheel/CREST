@@ -313,3 +313,38 @@ func publicationOf(ctx context.Context, q store.Querier, kind, id string, versio
 			&p.RegistryVersion, &p.Digest, &p.State, &p.Transparent, &p.PublishedAt)
 	return p, err
 }
+
+// authorizationsFor finds an organisation's authorizations at a given scope.
+//
+// This is what makes the credential's issuerAuthority resolvable (#16): a
+// verifier walking up from a credential needs the authorization that stands
+// behind it, and it has to be one that was actually published — which, per #68,
+// means one held by an organisation rather than by a person.
+//
+// Scoped queries only. There is deliberately no "all authorizations for this
+// party" here, because the caller that wanted that would be a caller browsing a
+// roster.
+func authorizationsFor(ctx context.Context, q store.Querier,
+	partyID, scopeKind, contextID string, at time.Time) ([]schema.Authorization, error) {
+	rows, err := q.Query(ctx, `
+		SELECT doc FROM authorizations
+		WHERE party_id = $1
+		  AND scope_kind = $2
+		  AND ($3 = '' OR context_id = $3)
+		  AND state = 'ACTIVE'
+		  AND period_start <= $4
+		  AND (period_end IS NULL OR period_end >= $4)
+		ORDER BY id`, partyID, scopeKind, contextID, at)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.Collect(rows, func(r store.Row) (schema.Authorization, error) {
+		var doc []byte
+		if err := r.Scan(&doc); err != nil {
+			return schema.Authorization{}, err
+		}
+		var a schema.Authorization
+		return a, json.Unmarshal(doc, &a)
+	})
+}
