@@ -52,6 +52,7 @@ type Consent struct {
 	Moment         string       `json:"moment"`
 	Purpose        string       `json:"purpose"`
 	CaptureMethod  string       `json:"captureMethod"`
+	ContextID      *string      `json:"contextId,omitempty"`
 	CapturedBy     *string      `json:"capturedBy,omitempty"`
 	CapturedAt     time.Time    `json:"capturedAt"`
 	ArtefactKey    *string      `json:"artefactRef,omitempty"`
@@ -67,17 +68,17 @@ var ErrNoArtefact = errors.New("this consent has no artefact")
 
 func insertConsent(ctx context.Context, tx store.Querier, c Consent) error {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO consents (id, party_id, moment, purpose, capture_method,
+		INSERT INTO consents (id, party_id, moment, purpose, capture_method, context_id,
 		                      captured_by, captured_at, artefact_key, artefact_digest, artefact_type)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-		c.ID, c.PartyID, c.Moment, c.Purpose, c.CaptureMethod,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		c.ID, c.PartyID, c.Moment, c.Purpose, c.CaptureMethod, c.ContextID,
 		c.CapturedBy, c.CapturedAt, c.ArtefactKey, c.ArtefactDigest, c.ArtefactType)
 	return err
 }
 
 func getConsent(ctx context.Context, q store.Querier, consentID string) (Consent, error) {
 	row := q.QueryRow(ctx, `
-		SELECT id, party_id, moment, purpose, capture_method, captured_by, captured_at,
+		SELECT id, party_id, moment, purpose, capture_method, context_id, captured_by, captured_at,
 		       artefact_key, artefact_digest, artefact_type, revoked_at, revoked_reason
 		FROM consents WHERE id = $1`, consentID)
 	return scanConsent(row)
@@ -85,7 +86,7 @@ func getConsent(ctx context.Context, q store.Querier, consentID string) (Consent
 
 func scanConsent(row store.Row) (Consent, error) {
 	var c Consent
-	if err := row.Scan(&c.ID, &c.PartyID, &c.Moment, &c.Purpose, &c.CaptureMethod,
+	if err := row.Scan(&c.ID, &c.PartyID, &c.Moment, &c.Purpose, &c.CaptureMethod, &c.ContextID,
 		&c.CapturedBy, &c.CapturedAt, &c.ArtefactKey, &c.ArtefactDigest, &c.ArtefactType,
 		&c.RevokedAt, &c.RevokedReason); err != nil {
 		return Consent{}, err
@@ -99,7 +100,7 @@ func scanConsent(row store.Row) (Consent, error) {
 
 func listConsents(ctx context.Context, q store.Querier, partyID string) ([]Consent, error) {
 	rows, err := q.Query(ctx, `
-		SELECT id, party_id, moment, purpose, capture_method, captured_by, captured_at,
+		SELECT id, party_id, moment, purpose, capture_method, context_id, captured_by, captured_at,
 		       artefact_key, artefact_digest, artefact_type, revoked_at, revoked_reason
 		FROM consents WHERE party_id = $1 ORDER BY captured_at`, partyID)
 	if err != nil {
@@ -118,19 +119,26 @@ func listConsents(ctx context.Context, q store.Querier, partyID string) ([]Conse
 	return out, rows.Err()
 }
 
-// enrolmentConsentOf is what resolve reports and what evidence acts on.
+// enrolmentConsentOf is what resolve reports and what evidence acts on, for one
+// party in one context.
+//
+// Scoped, because consent is per relationship. A worker who agreed to one
+// programme holding their work history has not thereby agreed to every other
+// organisation on the same deployment holding it — nobody asked them that.
+// Asking again when they join a second programme is asking a second question,
+// which is what it is.
 //
 // A withdrawn consent and a never-granted one are different facts and are kept
 // different: "this worker asked us to stop" needs a different answer from "no
 // consent was ever recorded", and collapsing them would let a deployment that
 // simply never captures consent look identical to one honouring a withdrawal.
-func enrolmentConsentOf(ctx context.Context, q store.Querier, partyID string) (ConsentState, error) {
+func enrolmentConsentOf(ctx context.Context, q store.Querier, partyID, contextID string) (ConsentState, error) {
 	var live, withdrawn int
 	if err := q.QueryRow(ctx, `
 		SELECT count(*) FILTER (WHERE revoked_at IS NULL),
 		       count(*) FILTER (WHERE revoked_at IS NOT NULL)
-		FROM consents WHERE party_id = $1 AND moment = 'enrolment'`,
-		partyID).Scan(&live, &withdrawn); err != nil {
+		FROM consents WHERE party_id = $1 AND moment = 'enrolment' AND context_id = $2`,
+		partyID, contextID).Scan(&live, &withdrawn); err != nil {
 		return ConsentNone, err
 	}
 	switch {
@@ -147,7 +155,7 @@ func withdrawConsent(ctx context.Context, tx store.Querier, consentID, reason st
 	row := tx.QueryRow(ctx, `
 		UPDATE consents SET revoked_at = $2, revoked_reason = $3
 		WHERE id = $1 AND revoked_at IS NULL
-		RETURNING id, party_id, moment, purpose, capture_method, captured_by, captured_at,
+		RETURNING id, party_id, moment, purpose, capture_method, context_id, captured_by, captured_at,
 		          artefact_key, artefact_digest, artefact_type, revoked_at, revoked_reason`,
 		consentID, at, reason)
 	return scanConsent(row)
@@ -195,6 +203,15 @@ func (h *handlers) recordConsent(w http.ResponseWriter, r *http.Request) {
 	if c.Purpose == "" || c.CaptureMethod == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_request",
 			"a consent needs a purpose and a captureMethod; consent to something unstated is not consent")
+		return
+	}
+	if ctxID := q.Get("contextId"); ctxID != "" {
+		c.ContextID = &ctxID
+	} else if c.Moment == "enrolment" {
+		httpx.WriteError(w, http.StatusBadRequest, "enrolment_consent_needs_a_context",
+			"an enrolment consent names the programme it is given to. An unscoped one would "+
+				"mean this worker agreed to every organisation on this deployment holding "+
+				"their history, which nobody asked them")
 		return
 	}
 	if _, err := getParty(r.Context(), h.d.DB.Q(), partyID); err != nil {
@@ -257,13 +274,23 @@ func (h *handlers) listPartyConsents(w http.ResponseWriter, r *http.Request) {
 	if consents == nil {
 		consents = []Consent{}
 	}
-	state, err := enrolmentConsentOf(r.Context(), h.d.DB.Q(), partyID)
-	if err != nil {
-		httpx.Fail(w, h.d.Log, "derive consent state", err)
-		return
+	// One state per programme, because there is no single answer any more:
+	// a worker can be consented to one and withdrawn from another, and
+	// flattening that would hide exactly the distinction this scoping adds.
+	states := map[string]ConsentState{}
+	for _, c := range consents {
+		if c.Moment != "enrolment" || c.ContextID == nil {
+			continue
+		}
+		state, err := enrolmentConsentOf(r.Context(), h.d.DB.Q(), partyID, *c.ContextID)
+		if err != nil {
+			httpx.Fail(w, h.d.Log, "derive consent state", err)
+			return
+		}
+		states[*c.ContextID] = state
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"partyId": partyID, "consents": consents, "enrolmentConsent": state,
+		"partyId": partyID, "consents": consents, "enrolmentConsent": states,
 	})
 }
 
