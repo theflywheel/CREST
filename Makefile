@@ -72,7 +72,7 @@ test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
 	@# fails an assertion that is entirely correct about a database that is
 	@# entirely stale. It cost two "is this flaky?" investigations to find.
 	@$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true
-	$(COMPOSE) up -d --build --wait postgres mock-sms mock-rail $(SERVICES)
+	$(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail $(SERVICES)
 	@$(GO) test -tags=e2e -count=1 -timeout=10m ./harness/... ; \
 		status=$$? ; \
 		if [ $$status -ne 0 ]; then \
@@ -83,7 +83,7 @@ test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
 		exit $$status
 
 e2e-up: ## Bring up just what the spine needs, and leave it running
-	$(COMPOSE) up -d --build --wait postgres mock-sms mock-rail $(SERVICES)
+	$(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail $(SERVICES)
 
 e2e-run: ## Run the spine against an already-running stack (fast iteration)
 	$(GO) test -tags=e2e -count=1 -timeout=10m ./harness/...

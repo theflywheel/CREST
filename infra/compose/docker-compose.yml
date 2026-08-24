@@ -51,7 +51,14 @@ x-service: &crest-service
     REGISTRY_ORG_APPROVAL: "${REGISTRY_ORG_APPROVAL:-manual}"
 
     CERTIFY_URL: http://inji-certify:8090
+
+    # The object store holding consent artefacts. Credentials come from the
+    # environment in every deployment including this one — the values in
+    # .env.example are local-only and the file says so.
     S3_ENDPOINT: http://objectstore:8333
+    S3_BUCKET: "${S3_BUCKET:-crest-artefacts}"
+    S3_ACCESS_KEY: "${S3_ACCESS_KEY:-crest-local}"
+    S3_SECRET_KEY: "${S3_SECRET_KEY:-crest-local-secret}"
 
     # Services find each other by name. There is no service discovery and there
     # should not be one yet: seven names in a compose file is a dependency graph
@@ -118,14 +125,24 @@ services:
   # docs/COMPONENTS.md. Swappable: pkg/store speaks the S3 API, not this server.
   objectstore:
     image: chrislusf/seaweedfs:3.80
-    command: "server -dir=/data -s3 -s3.port=8333 -master.volumeSizeLimitMB=64"
+    #
+    # -s3.config supplies an identity, which makes the server REFUSE anonymous
+    # requests. Without it SeaweedFS serves an open bucket, and a signing bug
+    # in pkg/store would pass every test by being ignored — while a deployment
+    # that copied this file would hold workers' consent recordings in a store
+    # anyone who can reach it can read.
+    command: "server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -master.volumeSizeLimitMB=64"
     ports: ["${S3_PORT:-58333}:8333"]
     volumes:
       - objectdata:/data
+      - ./objectstore/s3.json:/etc/seaweedfs/s3.json:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8333/ >/dev/null 2>&1 || exit 1"]
+      # 403 is the healthy answer now that anonymous access is refused, so the
+      # check is "does it reply at all", not "does it serve me a listing". The
+      # previous check treated a correctly secured server as a broken one.
+      test: ["CMD-SHELL", "wget -S --spider -T 2 http://localhost:8333/ 2>&1 | grep -qE 'HTTP/1.[01] (200|403)'"]
       interval: 5s
-      timeout: 3s
+      timeout: 4s
       retries: 20
 
   # DeDi-node, from the published multi-arch image. `make dedi-image` still

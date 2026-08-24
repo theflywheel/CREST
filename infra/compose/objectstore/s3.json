@@ -1,0 +1,14 @@
+{
+  "identities": [
+    {
+      "name": "crest",
+      "credentials": [
+        {
+          "accessKey": "crest-local",
+          "secretKey": "crest-local-secret"
+        }
+      ],
+      "actions": ["Read", "Write", "List", "Tagging", "Admin"]
+    }
+  ]
+}

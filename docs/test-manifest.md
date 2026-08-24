@@ -148,7 +148,12 @@ Proven by `make test-e2e`: docker compose up, seed through the real endpoints, d
 | The tier is never stored | [#5](../../issues/5), [#27](../../issues/27) | The credential is asserted to carry no `tier` field; the verdict computes one per request | E2E | covered |
 | W6 — verifiable without CREST | [#27](../../issues/27) | **Not proven.** `verification` resolves the issuer key, the status list and the definition over HTTP. The credential now carries `evidenceFields` so a tier map can be evaluated offline, but no offline verifier exists and the printed-card path (#1) is untouched | E2E | planned |
 | W10 — a held payment has a reason and an owner | [#26](../../issues/26) | A CHECK constraint makes a hold without an owner unrepresentable, and `/v1/reconciliation` reports gaps that have no reason. **No scenario yet forces a hold** | E2E | partial |
-| The outbox survives a crash between a state change and its side effect | [#47](../../issues/47) | **Not proven.** The transaction is structurally right; nothing yet kills a service mid-exit and asserts recovery | E2E | planned |
+| The outbox survives a crash between a state change and its side effect | [#47](../../issues/47) | `harness/scenarios/outbox_test.go` — payments is killed, a claim is confirmed, the exit commits with nothing delivered, then confirmation is **SIGKILLed** and both restarted. The release lands afterwards, exactly once | E2E | covered |
+| A consent artefact round-trips and can be withdrawn | [#47](../../issues/47) | `harness/scenarios/blobs_test.go` against the SeaweedFS in compose: stored, read back byte-identical, deleted, and a withdrawn artefact reads `ErrNotFound`. Deleting twice is not an error | E2E | covered |
+| The object store authenticates | [#47](../../issues/47) | A client with the wrong secret is refused. Without this every signing test is decorative — a broken signature would pass by being ignored | E2E | covered |
+| SigV4 is right, not merely self-consistent | [#47](../../issues/47) | `pkg/store/s3_test.go` reproduces AWS's published "PUT Object" example signature byte for byte. The lesson of C19: signing and verifying with the same code proves only that the two halves agree | Unit | covered |
+| An artefact key discloses nothing | [#47](../../issues/47) | Keys are minted by the store, never supplied — `Put` takes a kind, not a key, so a caller cannot write `consent/<phone>.ogg`. 500 mints, all unique and opaque; a kind containing a path separator is refused | Unit | covered |
+| An oversized artefact is refused, not truncated | [#47](../../issues/47) | A part-stored consent recording stops before the person says what they agreed to, and is indistinguishable from a complete one | Unit | covered |
 
 ## Registry and definitions
 
