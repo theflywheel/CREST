@@ -1,0 +1,18 @@
+-- A source's own vocabulary, as configuration (#25, #30).
+--
+-- Until now the CSV adapter read canonical column names directly, so "the
+-- batch/CSV adapter unblocks every source system immediately, whatever their
+-- integration maturity" (§Phase 2) quietly meant "every source system that
+-- agrees to rename its columns to CREST's first". That is the opposite of
+-- unblocking, and it is the constraint that would have shaped the first partner
+-- conversation — after the file arrived, not before.
+--
+-- Configuration by the layering test, and not marginally: what a source system
+-- calls its columns is the definition of something two deployments disagree
+-- about while both remain CREST. Nothing about the canonical record changes.
+--
+-- Two mechanisms because real exports need both. `columns` renames — a DHIS2
+-- event export calls its date `eventDate`. `constants` supply what the file
+-- does not carry at all — an export has no column for the unit of measure,
+-- because that is a fact about the programme rather than about the row.
+ALTER TABLE sources ADD COLUMN mapping jsonb NOT NULL DEFAULT '{}'::jsonb;

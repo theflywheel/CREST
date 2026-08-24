@@ -66,10 +66,18 @@ func (a Adapter) Parse(r io.Reader, src adapters.Source, receivedAt time.Time) (
 	for i, name := range header {
 		index[strings.TrimSpace(strings.ToLower(name))] = i
 	}
+	// Mandatory-core check, asked through the mapping rather than of the raw
+	// header. A source that calls its date column `eventDate` is not missing a
+	// date, and refusing its file for that reason is how "unblocks every source
+	// system" turns into "rename your columns first".
 	for _, required := range []string{colActivity, colOutcome, colOutcomeUnit, colWorkerValue, colStart} {
-		if _, ok := index[required]; !ok {
-			return nil, nil, fmt.Errorf("the file has no %q column; the mandatory core of a "+
-				"work-evidence record cannot be assembled without it (§8)", required)
+		if _, ok := src.Mapping.Resolve(required, func(name string) (string, bool) {
+			_, present := index[name]
+			return "", present
+		}); !ok {
+			return nil, nil, fmt.Errorf("nothing supplies %q: the file has no such column, the "+
+				"source's mapping names none, and no constant is configured. The mandatory core "+
+				"of a work-evidence record cannot be assembled without it (§8)", required)
 		}
 	}
 
@@ -115,12 +123,16 @@ func (a Adapter) Parse(r io.Reader, src adapters.Source, receivedAt time.Time) (
 
 func (a Adapter) row(header []string, index map[string]int, record []string,
 	src adapters.Source, receivedAt time.Time, ref string) (adapters.Row, string) {
-	get := func(col string) string {
-		i, ok := index[col]
+	column := func(name string) (string, bool) {
+		i, ok := index[name]
 		if !ok || i >= len(record) {
-			return ""
+			return "", false
 		}
-		return strings.TrimSpace(record[i])
+		return strings.TrimSpace(record[i]), true
+	}
+	get := func(field string) string {
+		v, _ := src.Mapping.Resolve(field, column)
+		return v
 	}
 
 	value, err := strconv.ParseFloat(get(colOutcome), 64)
@@ -162,11 +174,17 @@ func (a Adapter) row(header []string, index map[string]int, record []string,
 	}
 	for i, name := range header {
 		key := strings.TrimSpace(strings.ToLower(name))
-		if known[key] || i >= len(record) {
+		// A column the mapping consumed is not an extra. Keeping it would file
+		// the same fact twice — once interpreted, once raw — and a tier map
+		// reading the raw copy would be reading around the adapter.
+		if known[key] || src.Mapping.Mapped(key) || i >= len(record) {
 			continue
 		}
 		if v := strings.TrimSpace(record[i]); v != "" {
-			enrichment[key] = v
+			// Filed under the deployment's name for it where one is
+			// configured. A definition's tier map names the fields it
+			// requires, and it names them in the deployment's vocabulary.
+			enrichment[src.Mapping.EnrichmentName(key)] = v
 		}
 	}
 
