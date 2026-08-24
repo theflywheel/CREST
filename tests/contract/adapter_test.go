@@ -2,6 +2,7 @@ package contract
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -286,4 +287,52 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// The duplicate golden file (#41). A batch containing the same work twice is
+// not an error the adapter should invent an opinion about: the adapter's job is
+// translation, and rejecting the second row here would throw away the only copy
+// of a record that might be the legitimate one. Deduplication belongs to
+// evidence ingest, where there is a transaction and a stored history to compare
+// against — see TestTheSameRecordTwiceCollidesOnTheDedupeKey.
+//
+// What the adapter owes the deduplicator is determinism: two identical input
+// rows must translate to records identical in every field the dedupe key reads,
+// and a row that differs in the work performed must not.
+func TestDuplicateRowsArePassedThroughIdenticallyRatherThanJudged(t *testing.T) {
+	rows, rejected := parseFixture(t, "csv-with-the-same-record-twice.csv")
+	if len(rejected) != 0 {
+		t.Fatalf("unexpected rejection: %s", rejected[0].Reason)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("want 3 records — the adapter must not drop the repeat, got %d", len(rows))
+	}
+
+	first, repeat, distinct := rows[0].Record, rows[1].Record, rows[2].Record
+
+	key := func(r schema.CanonicalWorkEvidenceRecord) string {
+		ref := ""
+		if r.Provenance.SourceRecordRef != nil {
+			ref = *r.Provenance.SourceRecordRef
+		}
+		end := ""
+		if r.Period.End != nil {
+			end = r.Period.End.UTC().Format(time.RFC3339)
+		}
+		return strings.Join([]string{
+			r.Activity, string(r.WorkerJoiningIdentifier.Kind), r.WorkerJoiningIdentifier.Value,
+			r.Period.Start.UTC().Format(time.RFC3339), end,
+			fmt.Sprintf("%v %s", r.Outcome.Value, r.Outcome.Unit), ref,
+		}, "\x1f")
+	}
+
+	if key(first) != key(repeat) {
+		t.Errorf("two identical rows translated to distinguishable records:\n %q\n %q\n"+
+			"a deduplicator downstream cannot catch what the adapter has already made different",
+			key(first), key(repeat))
+	}
+	if key(first) == key(distinct) {
+		t.Errorf("a row recording different work translated to the same key as %q — "+
+			"deduplication would erase real work", key(first))
+	}
 }
