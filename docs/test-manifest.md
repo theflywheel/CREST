@@ -208,6 +208,8 @@ Proven by `make test-e2e`: docker compose up, seed through the real endpoints, d
 | MOSIP's own reader reads the card CREST prints | [#24](../../issues/24) | `make printed-card` feeds a Go-produced payload to `@mosip/pixelpass` and requires the credential back unchanged. The interop direction a Go test cannot check, and the only one that matters for a card read by somebody else's scanner | Spike | spike |
 | We read the format MOSIP's library emits | [#24](../../issues/24) | `pkg/credential/pixelpass_test.go` decodes a card their library produced. **A card holding JSON comes back as CBOR, not JSON** — asserted as the current behaviour and tracked in [#92](../../issues/92) | Unit | partial |
 | A credential survives a round trip through a card | [#24](../../issues/24) | A real Certify-issued credential encodes, decodes and still verifies. Compression that round-trips but perturbs a byte would pass a naive check and fail in front of a verifier | Unit | covered |
+| A month of real-shaped evidence, end to end | [#25](../../issues/25) | `make poc` against a live stack: 47 rows in, 40 accepted, 7 unclear, 1 deduped, 39 credentials, 39 cards, 38 payments released and 1 held with a reason. Asserts every exit released payment, nothing was silently dropped, and every held payment has an owner | Spike | spike |
+| G2 · a real CSV from a real source system | [#25](../../issues/25) | **Not proven.** `make poc`'s batch is authored in this repo, and #25 asks for no hand-authored data anywhere in the path. Needs a partner export | E2E | planned |
 | The physical scan | [#66](../../issues/66) | **Not proven.** Printed on paper and scanned on a real device with its radios off. Needs a person, a printer and a phone | E2E | planned |
 
 ## Payments and verification

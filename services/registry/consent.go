@@ -247,6 +247,29 @@ func (h *handlers) recordConsent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The programme has to exist. Without this the failure is a foreign-key
+	// violation surfacing as a bare 500 — which is what the first PoC run got,
+	// fifteen times, saying nothing about which of the two ids was wrong.
+	if c.ContextID != nil {
+		var exists bool
+		if err := h.d.DB.Q().QueryRow(r.Context(),
+			`SELECT EXISTS (SELECT 1 FROM contexts WHERE id = $1)`, *c.ContextID).Scan(&exists); err != nil {
+			httpx.Fail(w, h.d.Log, "check context", err)
+			return
+		}
+		if !exists {
+			if c.ArtefactKey != nil && h.d.Blobs != nil {
+				if derr := h.d.Blobs.Delete(r.Context(), *c.ArtefactKey); derr != nil {
+					h.d.Log.Error("orphaned a consent artefact", "key", *c.ArtefactKey, "error", derr)
+				}
+			}
+			httpx.WriteError(w, http.StatusBadRequest, "no_such_context",
+				"there is no programme %q on this deployment, so a consent cannot be scoped to it",
+				*c.ContextID)
+			return
+		}
+	}
+
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		return insertConsent(r.Context(), tx, c)
 	}); err != nil {
