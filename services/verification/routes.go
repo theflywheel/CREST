@@ -214,7 +214,7 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 	// can resolve the exact version this credential pinned and check its
 	// inclusion proof. Where it is not — the Postgres fallback — the link says
 	// so rather than quietly reading the same either way.
-	v.TrustChain = append(v.TrustChain, h.definitionLink(ctx, def))
+	v.TrustChain = append(v.TrustChain, h.definitionLink(ctx, def, cred.CredentialSubject.WorkEvent.DefinitionProof))
 
 	if !issuerAuthorised(def, issuerID) {
 		v.Reasons = append(v.Reasons, fmt.Sprintf(
@@ -276,8 +276,37 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 
 // definitionLink resolves where, if anywhere, the verifier can fetch the
 // definition version this credential pinned.
-func (h *handlers) definitionLink(ctx context.Context, def schema.Definition) Link {
+func (h *handlers) definitionLink(ctx context.Context, def schema.Definition,
+	pin *schema.WorkEventCredentialCredentialSubjectWorkEventDefinitionProof) Link {
 	claim := fmt.Sprintf("measured under %s@%d, %s", def.ID, def.Version, def.Activity.Label)
+
+	// The pin the credential itself carries is preferred over anything this
+	// deployment can look up (#16).
+	//
+	// The difference is the whole point. A pin read from our own definitions
+	// service is this deployment's current opinion about where that version
+	// lives; a pin inside the signature is what the issuer committed to at the
+	// moment they signed, and it cannot be revised afterwards by anyone —
+	// including us. A verifier following the second is checking the issuer's
+	// claim; a verifier following the first is asking the issuer to confirm
+	// themselves.
+	if pin != nil {
+		// The digest goes in the claim, not the URL. `how` is fetched — by a
+		// verifier, and by the e2e scenario that asserts it answers — so
+		// anything appended to it stops being an address.
+		claim += fmt.Sprintf(", pinned to registry record %s@%s with digest %s",
+			pin.Record, pin.Version, pin.Digest)
+		if h.dediURL == "" {
+			// We know exactly what to resolve and not where the log is. The
+			// deployment's published self-description carries that (#70) and
+			// nothing reads it yet — recorded honestly rather than guessed.
+			return asserted(claim,
+				"the credential names the registry record to check, and this deployment does not publish where its registry node can be reached")
+		}
+		return checkable(claim, fmt.Sprintf("%s/dedi/lookup/%s/%s/%s?version_id=%s&proof=inclusion",
+			strings.TrimRight(h.dediURL, "/"), pin.Namespace, pin.Registry,
+			url.PathEscape(pin.Record), url.QueryEscape(pin.Version)))
+	}
 
 	var pub struct {
 		Namespace       string `json:"namespace"`
