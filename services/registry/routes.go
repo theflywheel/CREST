@@ -200,7 +200,13 @@ func (h *handlers) resolve(w http.ResponseWriter, r *http.Request) {
 	// Derived here rather than joined in, so the answer cannot be stale for the
 	// same reason the assurance level is derived: a cached "consented" is a
 	// worker's withdrawal that has not taken effect yet.
-	consent, err := enrolmentConsentOf(r.Context(), h.d.DB.Q(), match.PartyID)
+	//
+	// A resolve with no contextId reports NONE, because consent is per
+	// programme and there is no programme to answer about. NONE is the
+	// permissive value, which is safe here only because the evidence pipeline
+	// always resolves within the context of the batch it is ingesting — a
+	// caller that omitted it could not act on the answer anyway.
+	consent, err := enrolmentConsentOf(r.Context(), h.d.DB.Q(), match.PartyID, contextID)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "derive consent state", err)
 		return
