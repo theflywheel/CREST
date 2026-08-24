@@ -3,6 +3,7 @@
 package scenarios
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -885,4 +886,122 @@ func TestAddingABindingDoesNotUnregisterTheWorkersRosterID(t *testing.T) {
 		t.Fatalf("append binding: %v", err)
 	}
 	resolves("after the binding")
+}
+
+// Enrolment consent, captured as a recording (#24, §9).
+//
+// This is the inclusion path's hardest requirement and the reason assisted
+// enrolment sits in the core phase rather than being bolted on later. §9 says a
+// voice recording is a valid capture for non-literate workers; for a worker who
+// cannot read the form it is the only consent record that is actually theirs,
+// because everything else is somebody else's account of what they said.
+func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
+	w := setup(t)
+	supervisor := fixtures.SupervisorID
+	party := newWorkerWithBinding(t, w, "Voice Consent "+runID, "")
+
+	recording := bytes.Repeat([]byte{0x4f, 0x67, 0x67, 0x53, 0x00, 0x02}, 300)
+	path := fmt.Sprintf("/v1/parties/%s/consents?moment=enrolment&captureMethod=voice"+
+		"&purpose=%s&capturedBy=%s",
+		party, url.QueryEscape("hold and fetch evidence of my work"), url.QueryEscape(supervisor))
+
+	var consent struct {
+		ID             string `json:"id"`
+		State          string `json:"state"`
+		CaptureMethod  string `json:"captureMethod"`
+		ArtefactRef    string `json:"artefactRef"`
+		ArtefactDigest string `json:"artefactDigest"`
+		CapturedBy     string `json:"capturedBy"`
+	}
+	if err := w.Registry.PostRaw(w.ctx, path, "audio/ogg", recording, &consent); err != nil {
+		t.Fatalf("record a voice consent: %v", err)
+	}
+	if consent.State != "GRANTED" || consent.ArtefactRef == "" || consent.ArtefactDigest == "" {
+		t.Fatalf("unexpected consent: %+v", consent)
+	}
+	if consent.CapturedBy != supervisor {
+		t.Errorf("capturedBy = %q; a consent taken by somebody else with nobody named "+
+			"is one nobody can be asked about", consent.CapturedBy)
+	}
+
+	// The worker is entitled to hear it back. A consent you cannot review is
+	// one you cannot meaningfully withdraw.
+	code, played, err := w.Registry.Status(w.ctx, http.MethodGet,
+		"/v1/consents/"+consent.ID+"/artefact", nil)
+	if err != nil || code != http.StatusOK {
+		t.Fatalf("play back the recording: %d %v", code, err)
+	}
+	if !bytes.Equal(played, recording) {
+		t.Errorf("the recording came back changed: %d bytes stored, %d returned",
+			len(recording), len(played))
+	}
+
+	// Withdrawal deletes the recording and keeps the record. Both halves
+	// matter: the row is what makes the withdrawal auditable, the deletion is
+	// what makes it real.
+	var withdrawn struct {
+		State       string `json:"state"`
+		RevokedAt   string `json:"revokedAt"`
+		ArtefactRef string `json:"artefactRef"`
+	}
+	if err := w.Registry.Post(w.ctx, "/v1/consents/"+consent.ID+"/withdraw",
+		map[string]any{"reason": "asked to be removed from the programme"}, &withdrawn); err != nil {
+		t.Fatalf("withdraw: %v", err)
+	}
+	if withdrawn.State != "WITHDRAWN" || withdrawn.RevokedAt == "" {
+		t.Fatalf("withdrawal did not take: %+v", withdrawn)
+	}
+	if withdrawn.ArtefactRef != "" {
+		t.Errorf("the consent still points at an artefact after withdrawal")
+	}
+
+	code, _, err = w.Registry.Status(w.ctx, http.MethodGet,
+		"/v1/consents/"+consent.ID+"/artefact", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != http.StatusNotFound {
+		t.Errorf("the recording is still served after withdrawal (%d); a withdrawal that "+
+			"leaves it in place has withdrawn nothing", code)
+	}
+
+	// The record survives, because that consent was given and later taken back
+	// is history, and history is not rewritten.
+	var listed struct {
+		Consents []struct {
+			ID    string `json:"id"`
+			State string `json:"state"`
+		} `json:"consents"`
+		EnrolmentConsent string `json:"enrolmentConsent"`
+	}
+	if err := w.Registry.Get(w.ctx, "/v1/parties/"+party+"/consents", &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Consents) != 1 || listed.Consents[0].ID != consent.ID {
+		t.Fatalf("the consent record did not survive withdrawal: %+v", listed)
+	}
+	if listed.EnrolmentConsent != "WITHDRAWN" {
+		t.Errorf("enrolmentConsent = %q, want WITHDRAWN", listed.EnrolmentConsent)
+	}
+}
+
+// A voice consent with no recording is a claim that somebody spoke, with
+// nothing to show. For a non-literate worker it would be their whole consent
+// record, so it is refused rather than stored as an empty gesture.
+func TestAVoiceConsentWithNoRecordingIsRefused(t *testing.T) {
+	w := setup(t)
+	party := newWorkerWithBinding(t, w, "No Recording "+runID, "")
+
+	code, body, err := w.Registry.Status(w.ctx, http.MethodPost,
+		fmt.Sprintf("/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s",
+			party, url.QueryEscape("hold evidence"), url.QueryEscape(fixtures.SupervisorID)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != http.StatusBadRequest {
+		t.Fatalf("a voice consent with no recording returned %d, want 400: %s", code, body)
+	}
+	if !strings.Contains(string(body), "recording") {
+		t.Errorf("the refusal does not say what is missing: %s", body)
+	}
 }

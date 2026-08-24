@@ -201,6 +201,127 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "500": { $ref: "#/components/responses/Internal" }
 
+  /v1/parties/{id}/consents:
+    post:
+      operationId: recordConsent
+      summary: Capture a consent moment, with its artefact
+      description: >
+        Records one of §9's three consent moments. The artefact — a voice
+        recording, a photographed signed form — is the request BODY, with the
+        metadata in the query string; a field device on a bad link should not
+        have to assemble a multipart document, and a truncated multipart upload
+        fails with a parse error that names nothing.
+
+
+        A voice consent with no body is refused. §9 makes a voice recording a
+        valid capture for non-literate workers, and for a worker who cannot read
+        the form it is their entire consent record — so "voice" with nothing
+        attached is a claim that somebody spoke, with nothing to show.
+
+
+        The artefact is stored before the row. If the row were written first and
+        the upload then failed, the record would assert a recording that does not
+        exist; in this order the worst case is an object with no row pointing at
+        it, which misdescribes nobody's consent.
+      parameters:
+        - $ref: "#/components/parameters/PartyID"
+        - { name: moment, in: query, schema: { type: string, enum: [enrolment, issuance-confirmation, disclosure], default: enrolment } }
+        - { name: purpose, in: query, required: true, schema: { type: string }, description: What is being consented to. Consent to something unstated is not consent. }
+        - { name: captureMethod, in: query, required: true, schema: { type: string, enum: [screen, sms, ussd, voice, assisted] } }
+        - { name: capturedBy, in: query, schema: { type: string }, description: Required for voice and assisted — a consent taken by somebody else with nobody named is one nobody can be asked about. }
+      requestBody:
+        required: false
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "201":
+          description: Recorded.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Consent" } } }
+        "400":
+          description: Missing purpose or captureMethod, or a voice consent with no recording.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404": { description: No such party. }
+        "413":
+          description: The artefact exceeds this deployment's limit. It was not stored — a truncated consent recording stops before the part that matters.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "503": { description: This deployment has no object store, so an artefact cannot be kept. }
+        "500": { $ref: "#/components/responses/Internal" }
+
+    get:
+      operationId: listPartyConsents
+      summary: This party's consent record
+      parameters: [{ $ref: "#/components/parameters/PartyID" }]
+      responses:
+        "200":
+          description: Every consent moment recorded, and the derived enrolment state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [partyId, consents, enrolmentConsent]
+                properties:
+                  partyId: { type: string }
+                  consents: { type: array, items: { $ref: "#/components/schemas/Consent" } }
+                  enrolmentConsent: { type: string, enum: [NONE, GRANTED, WITHDRAWN] }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/consents/{id}/artefact:
+    get:
+      operationId: consentArtefact
+      summary: Play back a stored consent artefact
+      description: >
+        A consent you cannot review is one you cannot meaningfully withdraw, so
+        the recording is retrievable. Served with no-store: this is a recording
+        of a person and nothing in between should keep a copy.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: The artefact, with its stored content type. }
+        "404": { description: No such consent, or it has no artefact — including because it was withdrawn. }
+        "503": { description: This deployment has no object store configured. }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/consents/{id}/withdraw:
+    post:
+      operationId: withdrawConsent
+      summary: Take consent back
+      description: >
+        Marks the record withdrawn and DELETES the artefact. Both halves are the
+        point: the row is what makes the withdrawal auditable — that consent was
+        given and later taken back is history, and history is not rewritten —
+        and deleting the recording is what makes it real, because a withdrawal
+        that leaves it in place has withdrawn nothing.
+
+
+        Withdrawing enrolment consent has an effect beyond this record. `/v1/resolve`
+        reports the state and the evidence pipeline stops recording new work for
+        that worker (§9: enrolment consent is the right to fetch and hold
+        evidence). Work already recorded is untouched — consent governs what may
+        be collected next, and removing somebody's history would make withdrawal
+        a penalty for exercising it.
+
+
+        Idempotent: withdrawing an already-withdrawn consent returns it unchanged.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { reason: { type: string } }
+      responses:
+        "200":
+          description: Withdrawn.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Consent" } } }
+        "404": { description: No such consent. }
+        "500":
+          description: >
+            Withdrawn, but the recording could not be deleted. Reported rather
+            than swallowed, because somebody has to remove it; the key is in the
+            service log.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
   /v1/resolve:
     get:
       operationId: resolve
@@ -432,6 +553,29 @@ components:
       description: The party identifier.
 
   schemas:
+    Consent:
+      type: object
+      description: >
+        One recorded consent moment (§9). `artefactRef` is an object-store key,
+        never a URL, and `artefactDigest` is stored beside it so an artefact
+        swapped underneath is detectable rather than trusted — which matters
+        precisely because this is the evidence that a person agreed to something.
+      required: [id, partyId, moment, purpose, captureMethod, capturedAt, state]
+      properties:
+        id: { type: string }
+        partyId: { type: string }
+        moment: { type: string, enum: [enrolment, issuance-confirmation, disclosure] }
+        purpose: { type: string }
+        captureMethod: { type: string, enum: [screen, sms, ussd, voice, assisted] }
+        capturedBy: { type: string }
+        capturedAt: { type: string, format: date-time }
+        artefactRef: { type: string }
+        artefactDigest: { type: string }
+        artefactType: { type: string }
+        revokedAt: { type: string, format: date-time }
+        revokedReason: { type: string }
+        state: { type: string, enum: [NONE, GRANTED, WITHDRAWN] }
+
     Error:
       type: object
       description: >

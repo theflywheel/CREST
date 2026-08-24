@@ -376,6 +376,15 @@ services:
       args:
         SERVICE: registry
     ports: ["${REGISTRY_PORT:-59001}:8080"]
+    # registry is the one service that stores consent artefacts (#24), so it
+    # needs the object store before it will start. Refusing to start is the
+    # right behaviour: a registry that came up without somewhere to put a
+    # recording would accept a voice consent it cannot evidence.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      objectstore:
+        condition: service_healthy
 
   definitions:
     <<: [*crest-service, *crest-healthcheck]
