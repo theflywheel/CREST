@@ -1,3 +1,3 @@
-# scratch-disk verify
+# scratch-disk verify (attempt 2)
 
-Triggers a pr-reviewer run to prove the git clone now lands on the /workspace scratch disk (fix for ENOSPC on large repos).
+Re-trigger after the driver hclspec fix. Expect the clone to land on /workspace/repo.
