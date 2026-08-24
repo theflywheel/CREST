@@ -29,6 +29,14 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/parties/{id}/assurance", h.getAssurance)
 	mux.HandleFunc("POST /v1/parties/{id}/roster-ids", h.addRosterID)
 	mux.HandleFunc("POST /v1/parties/{id}/identity-bindings", h.addIdentityBinding)
+
+	// Enrolment consent (§9, #24). The artefact route is separate from the
+	// record route because one is a stream of somebody's voice and the other
+	// is metadata, and they should never be served by the same handler.
+	mux.HandleFunc("POST /v1/parties/{id}/consents", h.recordConsent)
+	mux.HandleFunc("GET /v1/parties/{id}/consents", h.listPartyConsents)
+	mux.HandleFunc("GET /v1/consents/{id}/artefact", h.consentArtefact)
+	mux.HandleFunc("POST /v1/consents/{id}/withdraw", h.withdrawConsent)
 	mux.HandleFunc("GET /v1/resolve", h.resolve)
 	mux.HandleFunc("GET /v1/holds", h.listHolds)
 	mux.HandleFunc("POST /v1/terms", h.createTerms)
@@ -189,6 +197,15 @@ func (h *handlers) resolve(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSON(w, http.StatusConflict, hold)
 		return
 	}
+	// Derived here rather than joined in, so the answer cannot be stale for the
+	// same reason the assurance level is derived: a cached "consented" is a
+	// worker's withdrawal that has not taken effect yet.
+	consent, err := enrolmentConsentOf(r.Context(), h.d.DB.Q(), match.PartyID)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "derive consent state", err)
+		return
+	}
+	match.EnrolmentConsent = consent
 	httpx.WriteJSON(w, http.StatusOK, match)
 }
 

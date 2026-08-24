@@ -917,3 +917,65 @@ type trustLink struct {
 	How       string `json:"how,omitempty"`
 	Trusting  string `json:"trusting,omitempty"`
 }
+
+// Withdrawing enrolment consent stops new evidence and touches nothing already
+// recorded (#24, §9).
+//
+// §9 defines enrolment consent as the right to fetch and hold evidence about
+// the worker, and says it is revocable. A withdrawal that changes nothing is a
+// checkbox, so this asserts both halves of what it should mean — and the second
+// half matters more than the first. A worker who withdraws must not lose the
+// record of work they already did, because that would make withdrawal a penalty
+// and leave them choosing between their privacy and their history.
+func TestWithdrawingConsentStopsNewEvidenceAndKeepsTheOld(t *testing.T) {
+	w := setup(t)
+
+	phone, err := harness.PhoneOf(w.w, fixtures.WorkerAID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	party := fixtures.WorkerAID
+
+	// Consent first, then work. This is the ordinary path.
+	var consent struct {
+		ID string `json:"id"`
+	}
+	if err := w.Registry.PostRaw(w.ctx, fmt.Sprintf(
+		"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s",
+		party, url.QueryEscape("hold and fetch evidence of my work"),
+		url.QueryEscape(fixtures.SupervisorID)),
+		"audio/ogg", []byte("a recording of the worker agreeing"), &consent); err != nil {
+		t.Fatalf("record consent: %v", err)
+	}
+
+	before := w.submit(t, batch(row(phone, 11, "HH-consent-1")))
+	if before.Batch.RowsAccepted != 1 {
+		t.Fatalf("work done while consented was not accepted: %+v", before)
+	}
+	keptClaim := before.ClaimIDs[0]
+
+	// The worker asks to be left alone.
+	if err := w.Registry.Post(w.ctx, "/v1/consents/"+consent.ID+"/withdraw",
+		map[string]any{"reason": "leaving the programme"}, nil); err != nil {
+		t.Fatalf("withdraw: %v", err)
+	}
+
+	// New evidence about them stops, with a reason a person can read rather
+	// than a silent drop.
+	after := w.submit(t, batch(row(phone, 4, "HH-consent-2")))
+	if after.Batch.RowsAccepted != 0 {
+		t.Fatalf("evidence was still recorded after consent was withdrawn: %+v", after)
+	}
+	if len(after.Unclear) != 1 || !strings.Contains(after.Unclear[0].Reason, "withdrawn") {
+		t.Fatalf("the refusal does not name consent as the reason: %+v", after.Unclear)
+	}
+
+	// And the work they already did is exactly where it was.
+	var claim schema.Claim
+	if err := w.Evidence.Get(w.ctx, "/v1/claims/"+keptClaim, &claim); err != nil {
+		t.Fatalf("the earlier claim is gone after withdrawal: %v", err)
+	}
+	if claim.ID != keptClaim {
+		t.Errorf("claim %s came back as %s", keptClaim, claim.ID)
+	}
+}

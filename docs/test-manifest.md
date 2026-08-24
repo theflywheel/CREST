@@ -195,7 +195,13 @@ Proven by `make test-e2e`: docker compose up, seed through the real endpoints, d
 | Identity matching via hashed keys | [#22](../../issues/22) | Match provenance records *which key matched*; ambiguous match → unclear queue | Unit | planned |
 | Unclear queue has an owner | [#22](../../issues/22) | No record can be dropped silently; queue depth is observable | E2E | planned |
 | T=7 state machine | [#23](../../issues/23) | All transitions incl. disallowed ones; clock driven by harness, never slept | Unit | planned |
-| Assisted enrolment + voice consent | [#24](../../issues/24) | Consent artefact retrievable and bound to the enrolment; worker with no phone completes | E2E | planned |
+| A worker who cannot read consents in their own voice | [#24](../../issues/24) | `harness/scenarios/registry_test.go` — a recording is stored against the enrolment, played back byte-identical, and the capture names who took it | E2E | covered |
+| A voice consent with no recording is refused | [#24](../../issues/24) | 400 naming what is missing, and a database constraint saying the same thing. For a non-literate worker this would be their entire consent record | E2E | covered |
+| Withdrawal deletes the recording and keeps the record | [#24](../../issues/24) | The row survives and reads WITHDRAWN; the artefact 404s. The row makes it auditable, the deletion makes it real | E2E | covered |
+| Withdrawing consent stops new evidence and keeps the old | [#24](../../issues/24) | `harness/scenarios/spine_test.go` — a batch after withdrawal is refused with consent named as the reason, and the claim recorded before it is still there. §9: consent governs what may be collected next, never what was | E2E | covered |
+| A worker with no phone completes enrolment | [#24](../../issues/24) | `TestAWorkerWithNoPhoneCanStillBeEnrolled` — shipped with #20; being vouched for raises no assurance | E2E | covered |
+| Worker DID at enrolment | [#24](../../issues/24) | Every party is minted `did:crest:party:<ULID>` including assisted enrolments, asserted throughout the harness. **Blueprint §4 still says `did:crest:worker:`, which #55 corrects** | E2E | covered |
+| Printed card from an enrolment | [#24](../../issues/24) | **Not proven.** `make printed-card` renders one from an issued credential (#66); nothing renders a card at enrolment time, and the physical scan is still #66's | E2E | planned |
 
 ## Payments and verification
 

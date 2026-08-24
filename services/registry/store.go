@@ -20,6 +20,13 @@ type Match struct {
 	PartyID    string  `json:"partyId"`
 	Key        string  `json:"key"`
 	Confidence float64 `json:"confidence"`
+
+	// EnrolmentConsent travels with the match because evidence has to know it
+	// for every row, and asking separately would be a second call per row
+	// against the same party. §9 makes enrolment consent the right to fetch and
+	// hold evidence about this worker, so it is exactly as relevant to "who is
+	// this row about" as the identity is.
+	EnrolmentConsent ConsentState `json:"enrolmentConsent"`
 }
 
 // Hold is an ambiguous match. It is a row rather than an error because someone

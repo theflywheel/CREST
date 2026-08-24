@@ -298,6 +298,25 @@ func (in *ingestor) consider(ctx context.Context, row adapters.Row, def schema.D
 		return err.Error(), unit, claim
 	}
 
+	// §9 defines enrolment consent as the right to fetch and hold evidence
+	// about this worker. A worker who has withdrawn it has asked us to stop,
+	// and a withdrawal that does not stop anything is a checkbox.
+	//
+	// Only WITHDRAWN refuses. NONE does not, and that asymmetry is deliberate:
+	// a deployment that has not yet captured consent for its existing roster
+	// would otherwise stop recording work for everyone the day this shipped,
+	// and a worker whose evidence silently stopped counting because of a
+	// migration gap is exactly the harm this is supposed to prevent. Closing
+	// that gap is a deployment's own job and #24 says so.
+	//
+	// Work already recorded is untouched. Consent governs what may be
+	// collected next; taking away the record of work somebody did because they
+	// later withdrew would make withdrawal cost them their history.
+	if match.EnrolmentConsent == "WITHDRAWN" {
+		return "this worker has withdrawn enrolment consent, so no new evidence about " +
+			"them is recorded (§9). Work already recorded is unaffected", unit, claim
+	}
+
 	unit = schema.Unit{
 		ID:         id.New(in.clock, "unit"),
 		Definition: schema.VersionedRef{ID: def.ID, Version: def.Version},
@@ -359,9 +378,10 @@ func (in *ingestor) resolveWorker(ctx context.Context,
 }
 
 type match struct {
-	PartyID    string  `json:"partyId"`
-	Key        string  `json:"key"`
-	Confidence float64 `json:"confidence"`
+	PartyID          string  `json:"partyId"`
+	Key              string  `json:"key"`
+	Confidence       float64 `json:"confidence"`
+	EnrolmentConsent string  `json:"enrolmentConsent"`
 }
 
 func (in *ingestor) permits(ctx context.Context, p ingestParams) (bool, error) {
