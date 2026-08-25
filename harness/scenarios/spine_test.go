@@ -67,8 +67,9 @@ func row(phone string, count int, householdID string) string {
 
 type world struct {
 	*harness.Stack
-	w   *fixtures.World
-	ctx context.Context
+	w    *fixtures.World
+	ctx  context.Context
+	oidc *harness.OIDC
 }
 
 func setup(t *testing.T) *world {
@@ -82,11 +83,19 @@ func setup(t *testing.T) *world {
 	if err := s.Reset(ctx); err != nil {
 		t.Fatalf("reset the mocks: %v", err)
 	}
+	// The identity provider is polled like everything else. A stack whose
+	// services are up but whose issuer is not yet serving keys rejects every
+	// token, and every scenario then fails with a 401 that has nothing to do
+	// with what it was testing.
+	oidc := harness.NewOIDC()
+	if err := oidc.WaitReady(ctx, 60*time.Second); err != nil {
+		t.Fatalf("the identity provider never came up: %v\n\nis mock-oidc running? `make e2e-up`", err)
+	}
 	w, err := s.Seed(ctx)
 	if err != nil {
 		t.Fatalf("seed the fixture world: %v", err)
 	}
-	return &world{Stack: s, w: w, ctx: ctx}
+	return &world{Stack: s, w: w, ctx: ctx, oidc: oidc}
 }
 
 // submit sends a batch as the supervisor, from the programme's own system.
@@ -300,7 +309,7 @@ func TestARecordBecomesACredentialAndAPayment(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"credential"`
 	}
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/confirm",
+	if err := w.confirmClaim(t, claimID,
 		map[string]any{"route": "self"}, &exit); err != nil {
 		t.Fatalf("confirm: %v", err)
 	}
@@ -439,7 +448,7 @@ func TestSilenceStillPaysAndStaysDisputable(t *testing.T) {
 
 	// W3's second half: the seven days are a window for objecting, not a
 	// deadline for noticing. The worker can still dispute afterwards.
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/dispute", map[string]any{
+	if err := w.disputeClaim(t, claimID, map[string]any{
 		"reason":          "I did not do this round",
 		"raisedByPartyId": fixtures.WorkerBID,
 	}, nil); err != nil {
@@ -466,7 +475,7 @@ func TestADisputeStillReleasesPayment(t *testing.T) {
 		return err
 	})
 
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/dispute", map[string]any{
+	if err := w.disputeClaim(t, claimID, map[string]any{
 		"reason":          "the count is wrong, it was six not nine",
 		"raisedByPartyId": fixtures.WorkerAID,
 	}, nil); err != nil {
@@ -565,7 +574,7 @@ func TestReassessingASourceDowngradesAnUnchangedCredential(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"credential"`
 	}
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/confirm", nil, &exit); err != nil {
+	if err := w.confirmClaim(t, claimID, nil, &exit); err != nil {
 		t.Fatal(err)
 	}
 	cred := w.credential(t, exit.Credential.ID)
@@ -623,7 +632,7 @@ func TestARevokedCredentialStopsVerifying(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"credential"`
 	}
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/confirm", nil, &exit); err != nil {
+	if err := w.confirmClaim(t, claimID, nil, &exit); err != nil {
 		t.Fatal(err)
 	}
 	cred := w.credential(t, exit.Credential.ID)
@@ -663,8 +672,7 @@ func TestNoWindowExitedWithoutReleasingPayment(t *testing.T) {
 			_, err := w.window(result.ClaimIDs[0])
 			return err
 		})
-		if err := w.Confirmation.Post(w.ctx,
-			"/v1/claims/"+result.ClaimIDs[0]+"/confirm", nil, nil); err != nil {
+		if err := w.confirmClaim(t, result.ClaimIDs[0], nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -731,7 +739,7 @@ func TestResubmittingTheSameBatchDoesNotPayTwice(t *testing.T) {
 		_, err := w.window(claimID)
 		return err
 	})
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/confirm", nil, nil); err != nil {
+	if err := w.confirmClaim(t, claimID, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var in instructionView
@@ -762,7 +770,7 @@ func TestAZeroOutcomeIsHeldWithAReasonRatherThanPaidAsZero(t *testing.T) {
 		_, err := w.window(claimID)
 		return err
 	})
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/confirm", nil, nil); err != nil {
+	if err := w.confirmClaim(t, claimID, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -956,7 +964,7 @@ func TestWithdrawingConsentStopsNewEvidenceAndKeepsTheOld(t *testing.T) {
 	keptClaim := before.ClaimIDs[0]
 
 	// The worker asks to be left alone.
-	if err := w.Registry.Post(w.ctx, "/v1/consents/"+consent.ID+"/withdraw",
+	if err := w.withdraw(t, consent.ID, party,
 		map[string]any{"reason": "leaving the programme"}, nil); err != nil {
 		t.Fatalf("withdraw: %v", err)
 	}
@@ -1022,7 +1030,7 @@ func TestWithdrawingConsentDoesNotCancelAWindowAlreadyOpen(t *testing.T) {
 	})
 
 	// The worker withdraws while the window is open.
-	if err := w.Registry.Post(w.ctx, "/v1/consents/"+consent.ID+"/withdraw",
+	if err := w.withdraw(t, consent.ID, party,
 		map[string]any{"reason": "changed my mind about the programme"}, nil); err != nil {
 		t.Fatalf("withdraw: %v", err)
 	}
@@ -1033,7 +1041,7 @@ func TestWithdrawingConsentDoesNotCancelAWindowAlreadyOpen(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"credential"`
 	}
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/confirm",
+	if err := w.confirmClaim(t, claimID,
 		map[string]any{"route": "self"}, &exit); err != nil {
 		t.Fatalf("confirming after withdrawal failed: %v.\n"+
 			"Work recorded while consent stood must still complete its window", err)
@@ -1088,7 +1096,7 @@ func TestAWorkerWithoutAPhoneGetsACardThatCarriesTheWholeRecord(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"credential"`
 	}
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/confirm",
+	if err := w.confirmClaim(t, claimID,
 		map[string]any{"route": "self"}, &exit); err != nil {
 		t.Fatalf("confirm: %v", err)
 	}

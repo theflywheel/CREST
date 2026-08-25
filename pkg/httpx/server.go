@@ -27,10 +27,15 @@ type Server struct {
 	srv  *http.Server
 }
 
+// Middleware wraps a handler. Applied outermost-first, so the first one given
+// sees a request before the second does.
+type Middleware func(http.Handler) http.Handler
+
 // New builds a server for a service. The mux is the service's own routes;
 // health endpoints are added here so every service reports readiness the same
 // way — the harness polls these instead of sleeping.
-func New(name, addr string, mux *http.ServeMux, clk clock.Clock, log *slog.Logger, ready ReadyFunc) *Server {
+func New(name, addr string, mux *http.ServeMux, clk clock.Clock, log *slog.Logger, ready ReadyFunc,
+	mw ...Middleware) *Server {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"service": name,
@@ -59,12 +64,21 @@ func New(name, addr string, mux *http.ServeMux, clk clock.Clock, log *slog.Logge
 		writeJSON(w, http.StatusOK, map[string]any{"service": name, "status": "ready"})
 	})
 
+	// The health endpoints are registered above so they are inside whatever
+	// middleware is applied here; each middleware is responsible for letting
+	// them through, because a readiness probe that needs a token is a service
+	// that never becomes ready.
+	var handler http.Handler = mux
+	for i := len(mw) - 1; i >= 0; i-- {
+		handler = mw[i](handler)
+	}
+
 	return &Server{
 		name: name,
 		log:  log,
 		srv: &http.Server{
 			Addr:              addr,
-			Handler:           logging(log, mux),
+			Handler:           logging(log, handler),
 			ReadHeaderTimeout: 10 * time.Second,
 			ReadTimeout:       30 * time.Second,
 			WriteTimeout:      60 * time.Second,

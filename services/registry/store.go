@@ -85,12 +85,22 @@ func insertParty(ctx context.Context, tx store.Querier, p schema.Party) error {
 	// worker from their project's roster on any later write to the party, and
 	// the visible symptom would be their evidence landing in the unclear queue
 	// with nothing to say why.
+	//
+	// identity-subject is rebuilt here with the other document-derived kinds.
+	// It is what a bearer token resolves through (#89), and rebuilding it from
+	// the document is what keeps it honest: a subject that is no longer in
+	// identityBindings is a subject nobody should still be able to log in as.
 	if _, err := tx.Exec(ctx,
 		`DELETE FROM party_keys WHERE party_id = $1
-		 AND key_kind IN ('national-id-hash', 'contact-route')`, p.ID); err != nil {
+		 AND key_kind IN ('national-id-hash', 'contact-route', 'identity-subject')`, p.ID); err != nil {
 		return err
 	}
 	for _, b := range p.IdentityBindings {
+		if authenticating(b.ProviderClass) && b.SubjectRef != "" {
+			if err := putKey(ctx, tx, p.ID, keyIdentitySubject, b.SubjectRef, nil); err != nil {
+				return err
+			}
+		}
 		if b.NationalIDHash == nil {
 			continue
 		}
@@ -518,4 +528,68 @@ func removeKey(ctx context.Context, tx store.Querier, partyID, kind, value strin
 		`DELETE FROM party_keys WHERE party_id = $1 AND key_kind = $2 AND key_value = $3`,
 		partyID, kind, value)
 	return err
+}
+
+// keyIdentitySubject is the party_keys kind a verified token resolves through.
+//
+// Deliberately absent from resolve()'s precedence list. That function answers
+// "whose work is this?" from an identifier a source system supplied; this one
+// answers "who is making this request?" from a token. A subject that could do
+// both would let somebody's login attach a CSV row to them.
+const keyIdentitySubject = "identity-subject"
+
+// authenticating reports whether a binding's provider class is one somebody
+// can present a token from. See migration 0008 for why the list is these three.
+func authenticating(class schema.PartyIdentityBindingsItemProviderClass) bool {
+	switch class {
+	case schema.PartyIdentityBindingsItemProviderClassEsignet,
+		schema.PartyIdentityBindingsItemProviderClassMosipIda,
+		schema.PartyIdentityBindingsItemProviderClassGenericOidc:
+		return true
+	default:
+		return false
+	}
+}
+
+// partyForSubject answers which Party an authenticated subject is.
+//
+// Returns "" with no error when nobody is bound. That is an ordinary state,
+// not a failure: somebody authenticated by the national system who has not been
+// enrolled in this deployment is exactly who enrolment is for, and reporting it
+// as an error would make every one of those requests look like a fault.
+//
+// Two parties on one subject cannot happen — 0008's unique index refuses it —
+// and the query still refuses to choose if it somehow does, because a silent
+// choice here is one person acting as another.
+func partyForSubject(ctx context.Context, q store.Querier, subject string) (string, error) {
+	rows, err := q.Query(ctx,
+		`SELECT party_id FROM party_keys WHERE key_kind = $1 AND key_value = $2 LIMIT 2`,
+		keyIdentitySubject, subject)
+	if err != nil {
+		return "", err
+	}
+	ids, err := store.Collect(rows, func(r store.Row) (string, error) {
+		var v string
+		return v, r.Scan(&v)
+	})
+	rows.Close()
+	if err != nil {
+		return "", err
+	}
+	if len(ids) != 1 {
+		if len(ids) > 1 {
+			return "", fmt.Errorf("subject resolves to %d parties; refusing to choose", len(ids))
+		}
+		return "", nil
+	}
+	// Through any merge, so that somebody whose duplicate was closed keeps
+	// logging in as themselves rather than as the record that was absorbed.
+	survivors, err := followMerges(ctx, q, ids)
+	if err != nil {
+		return "", err
+	}
+	if len(survivors) != 1 {
+		return "", nil
+	}
+	return survivors[0], nil
 }

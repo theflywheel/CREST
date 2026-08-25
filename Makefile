@@ -77,7 +77,7 @@ test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
 	@# reports one line — "container X is unhealthy" — naming no cause at all.
 	@# That is the same shape as #79: a failure nobody can read gets re-run
 	@# rather than investigated.
-	@$(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail $(SERVICES) || { \
+	@$(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail mock-oidc $(SERVICES) || { \
 		echo "── the stack did not come up; logs follow ──" ; \
 		$(COMPOSE) ps ; \
 		$(COMPOSE) logs --tail=60 postgres objectstore mock-sms mock-rail $(SERVICES) ; \
@@ -109,7 +109,7 @@ poc-batch: ## Regenerate the PoC batches from their generators
 	@echo "wrote tests/fixtures/poc/*.csv"
 
 e2e-up: ## Bring up just what the spine needs, and leave it running
-	$(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail $(SERVICES)
+	$(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail mock-oidc $(SERVICES)
 
 e2e-run: ## Run the spine against an already-running stack (fast iteration)
 	$(GO) test -tags=e2e -count=1 -timeout=10m ./harness/...

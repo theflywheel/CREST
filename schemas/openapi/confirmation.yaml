@@ -69,7 +69,8 @@ paths:
         that is what the sweep does - and `dispute` has its own endpoint, because
         conflating "I agree" with "I object" in one field is how a wrong record gets
         recorded as agreed.
-      parameters: [{ $ref: "#/components/parameters/ClaimID" }]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/ClaimID" }, { $ref: "#/components/parameters/OnBehalfOf" }]
       requestBody:
         required: false
         content:
@@ -79,6 +80,19 @@ paths:
               properties:
                 route: { type: string, enum: [self, assisted], default: self }
       responses:
+        "401":
+          description: >
+            No verified caller, or a token that did not verify. This endpoint acts
+            in somebody's name and will not act on an asserted party id.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "403":
+          description: >
+            The caller is authenticated and may not do this — `subject_not_enrolled`
+            when no party here is bound to their identity (an ordinary state for
+            somebody not yet enrolled), `party_not_proven` when the request names a
+            party other than the one it authenticated as, `not_permitted_to_act_for`
+            when it asks to act for somebody without the authorization.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "200":
           description: Window closed, credential issued, payment released.
           content: { application/json: { schema: { $ref: "#/components/schemas/ExitResult" } } }
@@ -100,7 +114,8 @@ paths:
         dispute contests the record, not the money. Withholding the money while the
         record is argued about is the failure this endpoint is shaped to prevent. A
         reason is required, because a dispute nobody can act on is not a dispute.
-      parameters: [{ $ref: "#/components/parameters/ClaimID" }]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/ClaimID" }, { $ref: "#/components/parameters/OnBehalfOf" }]
       requestBody:
         required: true
         content:
@@ -112,6 +127,19 @@ paths:
                 reason: { type: string }
                 raisedByPartyId: { type: string }
       responses:
+        "401":
+          description: >
+            No verified caller, or a token that did not verify. This endpoint acts
+            in somebody's name and will not act on an asserted party id.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "403":
+          description: >
+            The caller is authenticated and may not do this — `subject_not_enrolled`
+            when no party here is bound to their identity (an ordinary state for
+            somebody not yet enrolled), `party_not_proven` when the request names a
+            party other than the one it authenticated as, `not_permitted_to_act_for`
+            when it asks to act for somebody without the authorization.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "200":
           description: Contest recorded, window closed, payment released like any other exit.
           content: { application/json: { schema: { $ref: "#/components/schemas/ExitResult" } } }
@@ -396,7 +424,39 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        An OIDC access token from the deployment's identity provider (#89, §4.1).
+        In a deployment that is eSignet; locally it is tools/mocks/oidc, which
+        mints real ES256 tokens against a real JWKS so the verification path
+        under test is the production one.
+
+
+        The provider's `sub` is never used directly. CREST re-salts it under a
+        per-deployment key before anything stores or compares it, because #52
+        and #63 are open against eSignet's pairwise subject — it partitions by
+        relying party rather than by client, and derives without a
+        per-deployment salt. Two deployments reading the same eSignet therefore
+        cannot correlate their workers by subject.
+
   parameters:
+    OnBehalfOf:
+      name: X-CREST-On-Behalf-Of
+      in: header
+      required: false
+      schema: { type: string }
+      description: >
+        The party this request acts for, when somebody is acting for somebody
+        else. The assisted paths are a requirement rather than a loophole — a
+        worker with no phone confirming through a supervisor is one of the four
+        T=7 exits — and what makes them safe is that they are recorded as
+        themselves. Refused with 403 unless the caller holds `act-for-party` in
+        the context.
+
     ClaimID:
       name: claimId
       in: path
