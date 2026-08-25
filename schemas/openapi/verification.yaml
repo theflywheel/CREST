@@ -57,6 +57,86 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "500": { $ref: "#/components/responses/Internal" }
 
+  /v1/verify/batch:
+    post:
+      operationId: verifyBatch
+      summary: Verify many credentials, boundedly
+      description: >
+        The bounded door for a need that would otherwise arrive through a loop
+        (§16, #107). Every batch declares a purpose — free text, 10-200
+        characters, shown to each worker in their check trail — and names who is
+        asking; both refusals are L1. The size cap defaults to 100 and is
+        deployment configuration (CREST_VERIFY_BATCH_CAP) that can be moved but
+        not removed. Per-credential verdicts only, deliberately no aggregate
+        answers; every credential writes its own presentation entry, so "who
+        checked me" reads the same whether the check arrived alone or among a
+        hundred.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credentials, requestedByPartyId, purpose]
+              properties:
+                credentials:
+                  type: array
+                  items: { type: object }
+                requestedByPartyId: { type: string }
+                purpose: { type: string, minLength: 10, maxLength: 200 }
+      responses:
+        "200":
+          description: One verdict per credential, in order.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verdicts:
+                    type: array
+                    items: { $ref: "#/components/schemas/Verdict" }
+                  count: { type: integer }
+        "400":
+          description: No purpose, no requester, or no credentials.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "413":
+          description: Over the deployment's cap; the refusal names the number.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/parties/{id}/credentials:
+    get:
+      operationId: partyCredentials
+      summary: Resolve a person to their credentials
+      description: >
+        What a verifier resolving a party sees (§16, #104): every credential in
+        the person's chain, following any merge — and nothing about the chain
+        itself. No identifier list, no merged flag, no count of underlying
+        records; "this person was recorded twice" is a fact about the worker a
+        verifier has no claim on. Each credential returned writes a presentation
+        entry in the worker's check trail. What the credentials' own subject
+        fields reveal is a property of the credentials, stated in §16.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: requestedByPartyId, in: query, schema: { type: string } }
+        - { name: purpose, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: The chain's credentials, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credentials:
+                    type: array
+                    items: { type: object }
+                  count: { type: integer }
+        "503":
+          description: The credential record could not be read; refused rather than under-reported.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
   /v1/source-assessments:
     post:
       operationId: assessSource

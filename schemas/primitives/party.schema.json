@@ -32,7 +32,7 @@
           "provider": { "type": "string", "minLength": 1 },
           "providerClass": {
             "type": "string",
-            "enum": ["esignet", "mosip-ida", "generic-oidc", "mobile-otp", "document-seen", "asserted"]
+            "enum": ["esignet", "mosip-ida", "generic-oidc", "mobile-otp", "document-seen", "asserted", "recovery"]
           },
           "subjectRef": {
             "type": "string",

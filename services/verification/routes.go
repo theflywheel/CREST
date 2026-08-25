@@ -30,10 +30,13 @@ func routes(mux *http.ServeMux, d service.Deps) {
 		dediURL:      config.Str("DEDI_URL", ""),
 	}
 	mux.HandleFunc("POST /v1/verify", h.verify)
+	mux.HandleFunc("POST /v1/verify/batch", h.verifyBatch)
 	mux.HandleFunc("POST /v1/source-assessments", h.assess)
 	mux.HandleFunc("GET /v1/source-assessments", h.assessments)
 	mux.HandleFunc("DELETE /v1/source-assessments/{adapterRef}", h.clearAssessment)
 	mux.HandleFunc("GET /v1/presentations", h.presentations)
+	// A verifier resolving a person rather than checking a document (#104).
+	mux.HandleFunc("GET /v1/parties/{id}/credentials", h.partyCredentials)
 }
 
 type handlers struct {
@@ -394,6 +397,66 @@ func statusListURL(doc map[string]any) string {
 		return u
 	}
 	return "the status list named by the credential"
+}
+
+// partyCredentials is what a verifier resolving a party sees: every credential
+// in the person's chain, and nothing about the chain itself (#104, §16).
+//
+// The ruling this implements: continuity wins over hiding history, and the
+// merge itself is not disclosed. A worker whose duplicate record was closed
+// proves their whole history here — asking about either id returns the same
+// credentials — but the response carries no identifier list, no merged flag,
+// and no count of underlying records, because "this worker was recorded twice"
+// is a fact about them they never volunteered. What the credentials' own
+// subject fields reveal is a property of the credentials, stated in §16 rather
+// than papered over here.
+//
+// Each credential returned is recorded in the presentation trail, one entry
+// per credential — a worker asking "who checked me" must see this kind of
+// check like any other (§9).
+func (h *handlers) partyCredentials(w http.ResponseWriter, r *http.Request) {
+	partyID := r.PathValue("id")
+	var out struct {
+		Credentials []json.RawMessage `json:"credentials"`
+	}
+	if err := h.confirmation.Get(r.Context(),
+		"/v1/credentials?partyId="+url.QueryEscape(partyID), &out); err != nil {
+		// Refused rather than emptied: an empty list reads as "this person has
+		// no history", which is a different and false statement.
+		httpx.WriteError(w, http.StatusServiceUnavailable, "confirmation_unavailable",
+			"the credential record could not be read, so this answer would be incomplete without saying so")
+		return
+	}
+	requestedBy := r.URL.Query().Get("requestedByPartyId")
+	purpose := r.URL.Query().Get("purpose")
+	scope := "bare"
+	if requestedBy != "" || purpose != "" {
+		scope = "scoped"
+	}
+	now := h.d.Clock.Now()
+	for _, doc := range out.Credentials {
+		var cred struct {
+			ID      string `json:"id"`
+			Subject struct {
+				ID string `json:"id"`
+			} `json:"credentialSubject"`
+		}
+		_ = json.Unmarshal(doc, &cred)
+		if err := h.record(r.Context(), presentation{
+			ID: id.New(h.d.Clock, "presentation"), CredentialID: cred.ID,
+			SubjectRef: cred.Subject.ID, RequestedBy: requestedBy, Purpose: purpose,
+			Scope: scope, Outcome: "listed", CreatedAt: now,
+		}); err != nil {
+			httpx.Fail(w, h.d.Log, "record presentation", err)
+			return
+		}
+	}
+	if out.Credentials == nil {
+		out.Credentials = []json.RawMessage{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"credentials": out.Credentials, "count": len(out.Credentials),
+	})
 }
 
 // contests asks confirmation where any dispute against this credential stands.

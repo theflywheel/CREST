@@ -218,6 +218,42 @@ paths:
                   autoConfirmed: { type: array, items: { type: string } }
         "500": { $ref: "#/components/responses/Internal" }
 
+  /v1/credentials:
+    get:
+      operationId: listCredentials
+      summary: Every credential issued to one worker
+      description: >
+        Follows any merge, like every other party-scoped read (#100, #104): asking
+        by the survivor's id or an absorbed one returns the same whole history.
+        The response is credentials and nothing else — no identifier list, no
+        marker that a merge happened. Revoked credentials are included; the
+        status list is how a verifier finds that out, and filtering them here
+        would make this listing quietly disagree with it.
+      parameters:
+        - name: partyId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The chain's credentials, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credentials:
+                    type: array
+                    items: { $ref: "urn:crest:schema:credentials:work-event-credential:1" }
+                  count: { type: integer }
+        "400":
+          description: partyId is required.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "503":
+          description: The registry could not say which ids are this party.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
   /v1/credentials/{id}:
     get:
       operationId: getCredential
