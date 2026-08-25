@@ -1,6 +1,6 @@
 # CREST design documents
 
-Everything the implementation builds against. Each is a self-contained HTML page — clone and open in a browser.
+Everything the implementation builds against. Each is a self-contained HTML page — clone and open in a browser, or read the hosted rendering at **https://crest-docs-production.up.railway.app** (the markdown docs rendered by Quartz, the HTML design docs served beside them; see DEPLOYMENT.md for how it publishes).
 
 | Document | Role | Sections |
 |---|---|---|
