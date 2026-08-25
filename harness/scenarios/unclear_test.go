@@ -252,7 +252,7 @@ func (w *world) withdrawEnrolmentConsent(t *testing.T, partyID string) {
 	if err := w.Registry.Post(w.ctx, path, nil, &consent); err != nil {
 		t.Fatalf("record consent: %v", err)
 	}
-	if err := w.Registry.Post(w.ctx, "/v1/consents/"+consent.ID+"/withdraw",
+	if err := w.withdraw(t, consent.ID, partyID,
 		map[string]any{"reason": "asked to be removed from the programme"}, nil); err != nil {
 		t.Fatalf("withdraw consent: %v", err)
 	}

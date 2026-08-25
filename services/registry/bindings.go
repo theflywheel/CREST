@@ -56,6 +56,21 @@ func appendBinding(ctx context.Context, tx store.Querier, partyID string,
 		}
 	}
 
+	// A subject reaching a second Party would mean one login authenticating as
+	// two people, and the service picking one. Refused for the same reason the
+	// national identifier below is, and more sharply: this one is not a
+	// question about whose work a row is, it is a question about who is
+	// holding the phone, and there is no queue that can resolve it later.
+	if authenticating(b.ProviderClass) && b.SubjectRef != "" {
+		owner, err := ownerOfKey(ctx, tx, keyIdentitySubject, b.SubjectRef)
+		if err != nil {
+			return schema.Party{}, false, err
+		}
+		if owner != "" && owner != partyID {
+			return schema.Party{}, false, fmt.Errorf("%w: %s", ErrBindingBelongsToAnother, owner)
+		}
+	}
+
 	// A national identifier reaching a second Party is not a re-binding, it is
 	// two records for one person — the duplicate case, and the rule is that it
 	// holds rather than merging. Refusing here is the conservative half of that:

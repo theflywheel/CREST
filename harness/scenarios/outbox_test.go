@@ -61,7 +61,7 @@ func TestAPaymentReleaseSurvivesTheConfirmationServiceBeingKilled(t *testing.T) 
 			ID string `json:"id"`
 		} `json:"credential"`
 	}
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/confirm",
+	if err := w.confirmClaim(t, claimID,
 		map[string]any{"route": "self"}, &exit); err != nil {
 		t.Fatalf("confirm while payments is down: %v.\n"+
 			"The exit must not depend on the downstream being reachable — that dependency "+

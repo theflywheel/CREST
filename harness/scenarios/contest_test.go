@@ -49,7 +49,7 @@ func (w *world) issueThenDispute(t *testing.T, household string) (string, string
 			ID string `json:"id"`
 		} `json:"credential"`
 	}
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/confirm",
+	if err := w.confirmClaim(t, claimID,
 		map[string]any{"route": "self"}, &exit); err != nil {
 		t.Fatalf("confirm: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestADisputeDoesNotRevokeTheCredential(t *testing.T) {
 		t.Fatalf("before any dispute: valid=%v contested=%v", before.Valid, before.Contested)
 	}
 
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/dispute", map[string]any{
+	if err := w.disputeClaim(t, claimID, map[string]any{
 		"reason":          "the household count is wrong; it was six, not nine",
 		"raisedByPartyId": fixtures.WorkerAID,
 	}, nil); err != nil {
@@ -112,7 +112,7 @@ func TestAVerifierLearnsTheStandingNotTheReason(t *testing.T) {
 	claimID, credID := w.issueThenDispute(t, "HH-PRIVATE")
 
 	const reason = "my supervisor recorded this against the wrong person"
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/dispute", map[string]any{
+	if err := w.disputeClaim(t, claimID, map[string]any{
 		"reason": reason, "raisedByPartyId": fixtures.WorkerAID,
 	}, nil); err != nil {
 		t.Fatalf("dispute: %v", err)

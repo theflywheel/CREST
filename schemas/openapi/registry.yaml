@@ -467,7 +467,8 @@ paths:
 
 
         Idempotent: withdrawing an already-withdrawn consent returns it unchanged.
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }, { $ref: "#/components/parameters/OnBehalfOf" }]
       requestBody:
         required: false
         content:
@@ -476,6 +477,19 @@ paths:
               type: object
               properties: { reason: { type: string } }
       responses:
+        "401":
+          description: >
+            No verified caller, or a token that did not verify. This endpoint acts
+            in somebody's name and will not act on an asserted party id.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "403":
+          description: >
+            The caller is authenticated and may not do this — `subject_not_enrolled`
+            when no party here is bound to their identity (an ordinary state for
+            somebody not yet enrolled), `party_not_proven` when the request names a
+            party other than the one it authenticated as, `not_permitted_to_act_for`
+            when it asks to act for somebody without the authorization.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "200":
           description: Withdrawn.
           content: { application/json: { schema: { $ref: "#/components/schemas/Consent" } } }
@@ -708,8 +722,143 @@ paths:
           description: Neither an instant nor a duration, or a duration that does not parse.
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
 
+  /v1/organisations/{id}/decision:
+    post:
+      operationId: decideRegistration
+      summary: Approve or reject a registering organisation
+      description: >
+        The rest of the onboarding surface (#20) is not yet in this document; this
+        one path is here because caller identity changed its contract, and a
+        changed contract with no written form is the gap this file exists to close.
+
+
+        `decidedBy` is now checked rather than recorded. The self-approval rule —
+        an organisation may not approve itself — was always a constraint on a value
+        the caller chose, which made it a rule about typing: an applicant satisfied
+        it by naming somebody else. It becomes a rule about people only once the
+        name has been proved, which is what the bearer token does.
+
+
+        A rejection needs a reason, for the same reason a held payment does: a
+        closed door with no explanation attached leaves the applicant with nothing
+        to act on.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/PartyID" }, { $ref: "#/components/parameters/OnBehalfOf" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approve, decidedBy]
+              properties:
+                approve: { type: boolean }
+                decidedBy:
+                  type: string
+                  description: >
+                    Must be the party the caller authenticated as, or one they hold
+                    `act-for-party` for.
+                reason: { type: string, description: Required when rejecting. }
+      responses:
+        "401":
+          description: >
+            No verified caller, or a token that did not verify. This endpoint acts
+            in somebody's name and will not act on an asserted party id.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "403":
+          description: >
+            The caller is authenticated and may not do this — `subject_not_enrolled`
+            when no party here is bound to their identity (an ordinary state for
+            somebody not yet enrolled), `party_not_proven` when the request names a
+            party other than the one it authenticated as, `not_permitted_to_act_for`
+            when it asks to act for somebody without the authorization.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "200":
+          description: The registration, in its new state.
+        "400":
+          description: No decidedBy, or a rejection with no reason.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: >
+            Self-approval, or approval before terms were accepted. Both are
+            enforced in the service and by a CHECK constraint, so a future code
+            path that forgets still cannot write the row.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /internal/identity/subjects/{subject}:
+    get:
+      operationId: partyForSubject
+      summary: Which party a verified subject is
+      description: >
+        Turns a verified token's subject into the party it is bound to, for the six
+        services that do not own the parties table.
+
+
+        Under `/internal/` and deliberately unauthenticated: a service resolving who
+        its caller is cannot itself require a resolved caller, and requiring a token
+        here would be a bootstrap that never completes. What that costs is stated
+        rather than hidden — a subject reaching this endpoint gets a party id back
+        without a token. It is not something a stranger can act on, since the
+        subject is this deployment's salted pairwise value and knowing one means
+        having already authenticated as that person, but restricting `/internal/` to
+        the service network is the deployment's job and is not done by this code.
+      parameters:
+        - name: subject
+          in: path
+          required: true
+          schema: { type: string }
+          description: This deployment's salted pairwise subject, not the provider's `sub`.
+      responses:
+        "200":
+          description: The party bound to that subject.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { partyId: { type: string } }
+        "404":
+          description: >
+            Nobody is bound to that subject. An ordinary state rather than an error:
+            somebody the identity provider knows who has not been enrolled here, which
+            enrolment fixes and a retry does not.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        An OIDC access token from the deployment's identity provider (#89, §4.1).
+        In a deployment that is eSignet; locally it is tools/mocks/oidc, which
+        mints real ES256 tokens against a real JWKS so the verification path
+        under test is the production one.
+
+
+        The provider's `sub` is never used directly. CREST re-salts it under a
+        per-deployment key before anything stores or compares it, because #52
+        and #63 are open against eSignet's pairwise subject — it partitions by
+        relying party rather than by client, and derives without a
+        per-deployment salt. Two deployments reading the same eSignet therefore
+        cannot correlate their workers by subject.
+
   parameters:
+    OnBehalfOf:
+      name: X-CREST-On-Behalf-Of
+      in: header
+      required: false
+      schema: { type: string }
+      description: >
+        The party this request acts for, when somebody is acting for somebody
+        else. The assisted paths are a requirement rather than a loophole — a
+        worker with no phone confirming through a supervisor is one of the four
+        T=7 exits — and what makes them safe is that they are recorded as
+        themselves. Refused with 403 unless the caller holds `act-for-party` in
+        the context.
+
     PartyID:
       name: id
       in: path
