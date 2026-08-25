@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/theflywheel/crest/pkg/client"
@@ -17,10 +17,19 @@ import (
 )
 
 func routes(mux *http.ServeMux, d service.Deps) {
+	msgs, err := loadTemplates()
+	if err != nil {
+		// Fatal rather than defaulted, like the registry's approval model: a
+		// deployment that configured templates and silently got English has
+		// workers who were never actually told anything (#59).
+		d.Log.Error("message templates are unusable", "error", err)
+		os.Exit(1)
+	}
 	h := &handlers{
 		d:        d,
 		registry: client.New(config.Str("REGISTRY_URL", "http://registry:8080")),
 		sms:      client.New(config.Str("SMS_URL", "http://mock-sms:8080")),
+		msgs:     msgs,
 	}
 	mux.HandleFunc("POST /v1/notifications", h.send)
 	mux.HandleFunc("GET /v1/notifications", h.list)
@@ -30,6 +39,7 @@ type handlers struct {
 	d        service.Deps
 	registry *client.Client
 	sms      *client.Client
+	msgs     templates
 }
 
 type notification struct {
@@ -87,7 +97,12 @@ func (h *handlers) send(w http.ResponseWriter, r *http.Request) {
 	default:
 		n.Channel = string(route.Kind)
 		n.Destination = route.Value
-		n.Body = body(req.Kind, req.Subject, req.ClosesAt)
+		rendered, err := h.msgs.render(req.Kind, req.Subject, req.ClosesAt)
+		if err != nil {
+			httpx.Fail(w, h.d.Log, "render the message", err)
+			return
+		}
+		n.Body = rendered
 		if err := h.deliver(r.Context(), *route, n.Body); err != nil {
 			msg := err.Error()
 			n.State, n.Failure = "FAILED", &msg
@@ -151,27 +166,6 @@ func (h *handlers) deliver(ctx context.Context, route schema.PartyContactRoutesI
 // body is the worker-facing wording. It says what was recorded, by when they
 // can object, and that they will be paid either way — because the alternative
 // is a message that reads like a threat.
-func body(kind, subject string, closesAt time.Time) string {
-	switch kind {
-	case "confirm-your-work":
-		return fmt.Sprintf(
-			"We have a record of work you did. Reply YES if it is right, or NO if it is not. "+
-				"If you do not reply by %s we will accept it as recorded. You will be paid either way.",
-			closesAt.Format("2 Jan"))
-	case "source-went-quiet":
-		// Addressed to an operator rather than a worker, and worded so it says
-		// what to do. "Source X is unhealthy" tells somebody who already knows
-		// the system; this tells somebody who has to go and ask a question —
-		// and names the feed, because an alert that does not say which thing
-		// broke is one nobody can act on.
-		return fmt.Sprintf(
-			"%s has stopped sending us work records. Work done since then is not being recorded. "+
-				"Please check that feed.", subjectOr(subject, "A system that sends us work records"))
-	default:
-		return "There is an update about your work record."
-	}
-}
-
 // subjectOr keeps the message readable when there is nothing to name.
 func subjectOr(subject, fallback string) string {
 	if subject == "" {

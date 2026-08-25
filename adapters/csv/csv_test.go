@@ -27,7 +27,14 @@ const header = "activity,outcome_value,outcome_unit,worker_id_kind,worker_id,per
 
 func parse(t *testing.T, body string) ([]adapters.Row, []adapters.Rejection) {
 	t.Helper()
-	rows, rejected, err := adaptercsv.Adapter{}.Parse(strings.NewReader(body), source, receivedAt)
+	return parseWith(t, adapters.Mapping{}, body)
+}
+
+func parseWith(t *testing.T, m adapters.Mapping, body string) ([]adapters.Row, []adapters.Rejection) {
+	t.Helper()
+	src := source
+	src.Mapping = m
+	rows, rejected, err := adaptercsv.Adapter{}.Parse(strings.NewReader(body), src, receivedAt)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -221,6 +228,34 @@ func TestUnrecognisedColumnsAreKeptVerbatimInEnrichment(t *testing.T) {
 	// without depending on how the exporter capitalised it.
 	if got := enrichment["supervisor present"]; got != "yes" {
 		t.Errorf("enrichment[supervisor present] = %v, want %q", got, "yes")
+	}
+}
+
+// The other half of #56, decided: adapters map source vocabulary to the
+// deployment's canonical names, so definitions stay source-independent. A
+// source that says "Household ID" reaches a tier map that requires
+// household_id — through configuration, never through a definition rewritten
+// per source. Without this rename the tier rule silently never matches, and
+// the credential resolves at the floor with every assertion still passing,
+// which is exactly the shape #56 was found in.
+func TestAMappedEnrichmentColumnArrivesUnderItsCanonicalName(t *testing.T) {
+	rows, rejected := parseWith(t, adapters.Mapping{
+		Enrichment: map[string]string{"household_id": "Household ID"},
+	},
+		"activity,outcome_value,outcome_unit,worker_id,period_start,Household ID\n"+
+			"bednet-distribution,12,bednets-distributed,+15550100011,2026-03-02,HH-77\n")
+	if len(rejected) != 0 {
+		t.Fatalf("unexpected rejection: %s", rejected[0].Reason)
+	}
+	enrichment := rows[0].Record.Enrichment
+	if got := enrichment["household_id"]; got != "HH-77" {
+		t.Errorf("enrichment[household_id] = %v, want HH-77 — the source's spelling "+
+			"must arrive under the deployment's name, or the tier rule requiring it "+
+			"never matches and nothing says so", got)
+	}
+	if _, still := enrichment["household id"]; still {
+		t.Errorf("the source's own spelling is also present; the same fact twice is " +
+			"a second copy a tier map might read")
 	}
 }
 
