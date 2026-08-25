@@ -85,6 +85,19 @@ func DecodePixelPass(payload string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decompress: %w", err)
 	}
+	// Their library CBOR-encodes any input that parsed as JSON, so a card
+	// Inji's wallet produced from a credential is CBOR inside (#92). Unwrapped
+	// here so that both libraries' cards decode to the same thing: the JSON.
+	// A CBOR payload outside the JSON subset is refused with an error naming
+	// CBOR — the one thing the previous behaviour (returning the raw bytes as
+	// success) could never tell the caller.
+	if looksLikeCBOR(out) {
+		doc, err := cborToJSON(out)
+		if err != nil {
+			return nil, fmt.Errorf("%w: the card holds %w", ErrNotPixelPass, err)
+		}
+		return doc, nil
+	}
 	return out, nil
 }
 
