@@ -41,7 +41,11 @@ async function choose(p){
   clearErr();
   try {
     if (p.id) { await loginAs(p.id); S.me = { partyId: p.id, label: p.who }; }
-    else if (p.face === "agent") { await loginAs(FIX.custodian); S.me = { partyId: FIX.custodian, label: "A registering agent" }; }
+    else if (p.face === "agent") {
+      // The agent is somebody who may act for the workers they enrol — in the
+      // fixture world, the supervisor's context-scoped act-for-party grant.
+      await loginAs(FIX.supervisor); S.me = { partyId: FIX.supervisor, label: "A registering agent" };
+    }
     else { setSession(null); S.me = { partyId: null, label: p.who }; }
     S.face = p.face; S.view = null; render();
   } catch(e){ fail(e); }
