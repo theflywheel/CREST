@@ -2,27 +2,71 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:crest:schema:primitives:authorization:1",
   "title": "Authorization",
-  "description": "Party X may exercise functions F, in scope G, for period T, per authority A — evidenced, approved, never transferable. One object at two scopes: instance-wide, and context-bound as a strict subset of an instance one.",
+  "description": "Party X may exercise functions F, in scope G, for period T, per authority A \u2014 evidenced, approved, never transferable. One object at two scopes: instance-wide, and context-bound as a strict subset of an instance one.",
   "type": "object",
   "properties": {
-    "id": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
-    "partyId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" },
-    "terms": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/versionedRef" },
+    "id": {
+      "$ref": "urn:crest:schema:primitives:common:1#/$defs/id"
+    },
+    "partyId": {
+      "$ref": "urn:crest:schema:primitives:common:1#/$defs/did"
+    },
+    "terms": {
+      "$ref": "urn:crest:schema:primitives:common:1#/$defs/versionedRef"
+    },
     "scope": {
       "type": "object",
       "properties": {
-        "kind": { "type": "string", "enum": ["instance", "context"] },
-        "contextId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" }
+        "kind": {
+          "type": "string",
+          "enum": [
+            "instance",
+            "context"
+          ]
+        },
+        "contextId": {
+          "$ref": "urn:crest:schema:primitives:common:1#/$defs/id"
+        }
       },
-      "required": ["kind"],
+      "required": [
+        "kind"
+      ],
       "additionalProperties": false,
-      "allOf": [{
-        "if": { "properties": { "kind": { "const": "context" } }, "required": ["kind"] },
-        "then": { "required": ["contextId"] }
-      }]
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "context"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "contextId"
+            ]
+          }
+        }
+      ]
     },
-    "functions": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
-    "period": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/period" },
+    "functions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "period": {
+      "$ref": "urn:crest:schema:primitives:common:1#/$defs/period"
+    },
+    "reviewBy": {
+      "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp",
+      "description": "When somebody should look at this again (\u00a716). Passing it changes nothing by itself: the authorization keeps working and becomes visibly overdue, because an administrative lapse must never silently stop a worker being paid \u2014 every consequence of staleness is a flag a person reads, not a gate a worker hits."
+    },
     "authorityPartyId": {
       "$ref": "urn:crest:schema:primitives:common:1#/$defs/did",
       "description": "Who says so. A verifier walks this."
@@ -32,18 +76,51 @@
       "items": {
         "type": "object",
         "properties": {
-          "kind": { "type": "string", "minLength": 1 },
-          "ref": { "type": "string", "minLength": 1 }
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1
+          }
         },
-        "required": ["kind", "ref"],
+        "required": [
+          "kind",
+          "ref"
+        ],
         "additionalProperties": false
       }
     },
-    "approvedByPartyId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" },
-    "approvedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" },
-    "state": { "type": "string", "enum": ["ACTIVE", "REVOKED", "EXPIRED"] },
-    "revokedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" }
+    "approvedByPartyId": {
+      "$ref": "urn:crest:schema:primitives:common:1#/$defs/did"
+    },
+    "approvedAt": {
+      "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "ACTIVE",
+        "REVOKED",
+        "EXPIRED"
+      ]
+    },
+    "revokedAt": {
+      "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp"
+    }
   },
-  "required": ["id", "partyId", "terms", "scope", "functions", "period", "authorityPartyId", "approvedByPartyId", "approvedAt", "state"],
+  "required": [
+    "id",
+    "partyId",
+    "terms",
+    "scope",
+    "functions",
+    "period",
+    "authorityPartyId",
+    "approvedByPartyId",
+    "approvedAt",
+    "state"
+  ],
   "additionalProperties": false
 }

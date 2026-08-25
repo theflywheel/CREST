@@ -54,12 +54,19 @@ func registerIdentityRoutes(mux *http.ServeMux, d service.Deps) {
 
 // registerMergeRoutes exposes which party ids are one person (#100).
 //
-// Public rather than /internal/, because it is not only a service's question.
-// A worker whose duplicate was closed asking "where is the rest of my record"
-// is asking exactly this, and so is anybody auditing whether a merge was
-// carried through the reads.
+// Two doors to the same answer, because #104 ruled that the answer is not for
+// everyone. The merge is the worker's own history — "where is the rest of my
+// record" — and the services' plumbing; it is NOT a verifier's business, since
+// "this person was recorded twice" is a fact about the worker they never
+// volunteered, and a verifier gets the chain's credentials without the chain
+// (see verification). So:
+//
+//   - /internal/... is for the other services (remoteSameParty), unauthenticated
+//     for the same reason the subject-binding route is: restricting /internal/
+//     to the service network is the deployment's job, stated in remote.go.
+//   - /v1/... answers only the worker, or somebody authorised to act for them.
 func registerMergeRoutes(mux *http.ServeMux, d service.Deps) {
-	mux.HandleFunc("GET /v1/parties/{id}/identifiers", func(w http.ResponseWriter, r *http.Request) {
+	answer := func(w http.ResponseWriter, r *http.Request) {
 		ids, err := identifiersOf(r.Context(), d.DB.Q(), r.PathValue("id"))
 		if err != nil {
 			httpx.Fail(w, d.Log, "resolve party identifiers", err)
@@ -74,6 +81,14 @@ func registerMergeRoutes(mux *http.ServeMux, d service.Deps) {
 			"identifiers": ids,
 			"merged":      len(ids) > 1,
 		})
+	}
+	mux.HandleFunc("GET /internal/parties/{id}/identifiers", answer)
+	mux.HandleFunc("GET /v1/parties/{id}/identifiers", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := identity.Authorize(w, r, d.Log, r.PathValue("id"), "",
+			d.Authenticating, d.Permits); !ok {
+			return
+		}
+		answer(w, r)
 	})
 }
 
@@ -95,6 +110,7 @@ func localBinder(d service.Deps) identity.Binder {
 // HTTP, which would deadlock a single-threaded moment and is absurd regardless.
 func localPermits(d service.Deps) identity.PermitsFunc {
 	return func(ctx context.Context, partyID, function, contextID string) (bool, error) {
-		return permits(ctx, d.DB.Q(), partyID, function, contextID, d.Clock.Now())
+		ok, _, err := permits(ctx, d.DB.Q(), partyID, function, contextID, d.Clock.Now())
+		return ok, err
 	}
 }

@@ -231,7 +231,7 @@ func TestAskingAboutTheAbsorbedRecordGivesTheWholeHistory(t *testing.T) {
 		Merged      bool     `json:"merged"`
 	}
 	if err := w.Registry.Get(w.ctx,
-		"/v1/parties/"+url.PathEscape(absorbed)+"/identifiers", &ids); err != nil {
+		"/internal/parties/"+url.PathEscape(absorbed)+"/identifiers", &ids); err != nil {
 		t.Fatalf("read identifiers: %v", err)
 	}
 	if ids.PartyID != survivor {
@@ -263,7 +263,7 @@ func TestAPartyThatWasNeverMergedReadsTheSameAsBefore(t *testing.T) {
 		Merged      bool     `json:"merged"`
 	}
 	if err := w.Registry.Get(w.ctx,
-		"/v1/parties/"+url.PathEscape(worker)+"/identifiers", &ids); err != nil {
+		"/internal/parties/"+url.PathEscape(worker)+"/identifiers", &ids); err != nil {
 		t.Fatalf("read identifiers: %v", err)
 	}
 	if ids.Merged || len(ids.Identifiers) != 1 {

@@ -432,7 +432,7 @@ func remoteSameParty(registryBase string) SamePartyFunc {
 		var out struct {
 			Identifiers []string `json:"identifiers"`
 		}
-		err := c.Get(ctx, "/v1/parties/"+url.PathEscape(partyID)+"/identifiers", &out)
+		err := c.Get(ctx, "/internal/parties/"+url.PathEscape(partyID)+"/identifiers", &out)
 		if err != nil {
 			// A party the registry has never heard of is not an error here.
 			// Services hold records for parties that were deleted or that
