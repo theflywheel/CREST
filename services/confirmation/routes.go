@@ -65,6 +65,8 @@ func routes(mux *http.ServeMux, d service.Deps) {
 
 	mux.HandleFunc("POST /v1/windows", h.openWindow)
 	mux.HandleFunc("GET /v1/windows/{claimId}", h.getWindow)
+	// A worker's confirmation history, following any merge (#100).
+	mux.HandleFunc("GET /v1/windows", h.listWindows)
 	mux.HandleFunc("POST /v1/claims/{claimId}/confirm", h.confirm)
 	mux.HandleFunc("POST /v1/claims/{claimId}/dispute", h.dispute)
 	mux.HandleFunc("GET /v1/contests", h.contests)
@@ -205,6 +207,32 @@ func (h *handlers) confirm(w http.ResponseWriter, r *http.Request) {
 		route = actual
 	}
 	h.finish(w, r, route)
+}
+
+// listWindows is a worker's whole confirmation history in one read.
+//
+// It requires a partyId. A list of every window in the deployment is not a
+// worker's record, it is a report, and serving one from the endpoint a worker's
+// own client calls is how a bulk export gets built by accident.
+func (h *handlers) listWindows(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("partyId") == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "missing_parameter",
+			"partyId is required: this endpoint answers what happened to one worker's claims")
+		return
+	}
+	ids, ok := sameParty(w, r, h.d)
+	if !ok {
+		return
+	}
+	windows, err := windowsFor(r.Context(), h.d.DB.Q(), ids)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "list windows", err)
+		return
+	}
+	if windows == nil {
+		windows = []Window{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"windows": windows, "count": len(windows)})
 }
 
 // windowFor loads the confirmation window a request is about, answering 404

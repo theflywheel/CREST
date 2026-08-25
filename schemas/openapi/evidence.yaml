@@ -111,6 +111,17 @@ paths:
       description: >
         A claim links a party to a unit (W3). Filterable by party and state, which
         is how a worker-facing view answers "what have I been credited with".
+
+
+        `partyId` follows merges (#100). A party absorbed into another still owns
+        every record written before the merge, and those records still name it —
+        a statement about whose work it was at the time is true and is not
+        rewritten — so this filter expands to every id in the merge chain.
+        Otherwise the survivor's history would have a hole exactly where the
+        system corrected itself about who they were. Asking about an absorbed id
+        gives the same answer, because the printed cards and saved links that
+        name it have to keep working.
+
       parameters:
         - { name: partyId, in: query, schema: { type: string } }
         - { name: state, in: query, schema: { type: string } }

@@ -52,6 +52,38 @@ func registerIdentityRoutes(mux *http.ServeMux, d service.Deps) {
 	})
 }
 
+// registerMergeRoutes exposes which party ids are one person (#100).
+//
+// Public rather than /internal/, because it is not only a service's question.
+// A worker whose duplicate was closed asking "where is the rest of my record"
+// is asking exactly this, and so is anybody auditing whether a merge was
+// carried through the reads.
+func registerMergeRoutes(mux *http.ServeMux, d service.Deps) {
+	mux.HandleFunc("GET /v1/parties/{id}/identifiers", func(w http.ResponseWriter, r *http.Request) {
+		ids, err := identifiersOf(r.Context(), d.DB.Q(), r.PathValue("id"))
+		if err != nil {
+			httpx.Fail(w, d.Log, "resolve party identifiers", err)
+			return
+		}
+		if len(ids) == 0 {
+			httpx.WriteError(w, http.StatusNotFound, "not_found", "no such party")
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
+			"partyId":     ids[0],
+			"identifiers": ids,
+			"merged":      len(ids) > 1,
+		})
+	})
+}
+
+// localIdentifiers answers the same question without a network hop.
+func localIdentifiers(d service.Deps) service.SamePartyFunc {
+	return func(ctx context.Context, partyID string) ([]string, error) {
+		return identifiersOf(ctx, d.DB.Q(), partyID)
+	}
+}
+
 // localBinder resolves subjects from the registry's own table.
 func localBinder(d service.Deps) identity.Binder {
 	return identity.BinderFunc(func(ctx context.Context, subject string) (string, error) {
