@@ -934,11 +934,8 @@ type trustLink struct {
 func TestWithdrawingConsentStopsNewEvidenceAndKeepsTheOld(t *testing.T) {
 	w := setup(t)
 
-	phone, err := harness.PhoneOf(w.w, fixtures.WorkerAID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	party := fixtures.WorkerAID
+	phone := sharedNumber(101)
+	party := newWorkerWithPhone(t, w, "Consent Withdrawer", phone)
 
 	// Consent first, then work. This is the ordinary path.
 	var consent struct {
@@ -1000,11 +997,8 @@ func TestWithdrawingConsentStopsNewEvidenceAndKeepsTheOld(t *testing.T) {
 func TestWithdrawingConsentDoesNotCancelAWindowAlreadyOpen(t *testing.T) {
 	w := setup(t)
 
-	phone, err := harness.PhoneOf(w.w, fixtures.WorkerBID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	party := fixtures.WorkerBID
+	phone := sharedNumber(102)
+	party := newWorkerWithPhone(t, w, "In-flight Withdrawer", phone)
 
 	var consent struct {
 		ID string `json:"id"`
@@ -1154,4 +1148,28 @@ func TestAWorkerWithoutAPhoneGetsACardThatCarriesTheWholeRecord(t *testing.T) {
 	if strings.Contains(string(page), "http://") || strings.Contains(string(page), "https://") {
 		t.Error("the printable card references something over the network")
 	}
+}
+
+// newWorkerWithPhone creates a worker this scenario owns, reachable on a number
+// unique to this run.
+//
+// Used by the consent-withdrawal scenarios, which used to withdraw on behalf of
+// fixture Worker A and Worker B. Withdrawal is permanent and these scenarios
+// share a stack, so the second run of `make e2e-run` against a stack left up
+// found both fixture workers already withdrawn and eight unrelated tests failed
+// with rows in the unclear queue. `make test-e2e` tears its volumes down and
+// never saw it; the fast path people actually use did.
+func newWorkerWithPhone(t *testing.T, w *world, name, phone string) string {
+	t.Helper()
+	var created schema.Party
+	if err := w.Registry.Post(w.ctx, "/v1/parties", schema.Party{
+		Kind:        schema.PartyKindPerson,
+		DisplayName: name + " " + runID,
+		ContactRoutes: []schema.PartyContactRoutesItem{
+			{Kind: schema.PartyContactRoutesItemKindPhone, Value: phone},
+		},
+	}, &created); err != nil {
+		t.Fatalf("create worker: %v", err)
+	}
+	return created.ID
 }
