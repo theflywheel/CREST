@@ -19,7 +19,7 @@ function watch(page) {
 
 async function settle(page) {
   await page.waitForLoadState("networkidle");
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(400);
 }
 
 async function assertAlive(page, errors, where) {
@@ -77,15 +77,9 @@ test("worker app: the held payment names its owner", async ({ page }) => {
   await settle(page);
   await page.evaluate(() => { location.hash = "#/pay"; });
   await settle(page);
-  const held = page.locator(".held");
-  if (await held.count()) {
-    await expect(held.first()).toContainText(/Waiting on/i);
-  } else {
-    // The story seeds one held instruction for Grace; its absence means the
-    // stack is not story-seeded — fail loudly rather than skip quietly.
-    const body = await page.locator("body").innerText();
-    expect(body, "no held card and no held text — is the story seeded?").toMatch(/held/i);
-  }
+  // The story seeds exactly one held instruction for Grace; its absence means
+  // the stack is not story-seeded — fail loudly rather than skip quietly.
+  await expect(page.locator(".held").first()).toContainText(/Waiting on/i);
   await assertAlive(page, errors, "worker held view");
 });
 

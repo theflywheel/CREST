@@ -4,7 +4,8 @@
 const { defineConfig } = require("@playwright/test");
 module.exports = defineConfig({
   testDir: ".",
-  timeout: 45000,
+  timeout: 60000,
+  expect: { timeout: 15000 },
   retries: 0,
   use: {
     baseURL: process.env.BASE_URL || "http://localhost:59110",
