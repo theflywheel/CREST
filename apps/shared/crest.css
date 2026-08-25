@@ -187,3 +187,38 @@ h1{font:300 38px/1.15 Roboto;letter-spacing:-.9px}
 .tbl td{font:400 13px/1.45 Roboto;padding:10px 13px;border-bottom:1px solid var(--generic-bg)}
 .tbl tr:last-child td{border-bottom:none}
 .tblwrap{overflow-x:auto;border-radius:8px}
+
+/* ————— mobile (designed in Pencil: console sidebar becomes a chip rail,
+   stats stack, verify panel goes full-bleed; worker/enrolment shells
+   lose their desktop gutter) ————— */
+@media (max-width: 720px){
+  /* console: sidebar → horizontally scrollable chip rail under the appbar */
+  .console-body{flex-direction:column}
+  .sidebar{width:100%;flex-direction:row;align-items:center;gap:8px;
+    padding:8px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    border-right:none;border-bottom:1px solid var(--generic-bg)}
+  .sidebar .cap{display:none}
+  .sidebar button{width:auto;flex:none;border-left:none;border:1px solid var(--divider);
+    border-radius:16px;padding:7px 13px;background:var(--paper-1);white-space:nowrap}
+  .sidebar button.active{background:var(--p1);border-color:var(--p1);color:#fff}
+  .pane{padding:16px;min-height:0}
+  .pane-narrow{max-width:none}
+  .appbar{padding:0 16px}
+  .appbar .who{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:50%}
+
+  /* stats: side-by-side cards stack */
+  .stats{flex-direction:column}
+  .stats[style*="max-width"]{max-width:none !important}
+
+  /* verify / external panel: full-bleed sheet instead of a floating card */
+  .panel-shell{max-width:none;margin:0;border-radius:0;border-left:none;border-right:none;
+    box-shadow:none;padding:18px 16px 20px}
+
+  /* worker / enrolment shells: fill the phone, no desktop gutter */
+  .mobile-shell{max-width:none;box-shadow:none}
+
+  /* forms and long ids never force horizontal scroll */
+  input,textarea,select{max-width:100%}
+  .kv .row .v{word-break:break-all}
+  .btn-row{flex-wrap:wrap}
+}
