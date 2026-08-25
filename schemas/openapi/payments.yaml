@@ -3,6 +3,23 @@ info:
   title: CREST payments
   version: "1"
   description: |
+    ## Who may call what (#102)
+
+    Every service verifies bearer tokens; this section is who each surface
+    answers. Four kinds of path:
+
+    - **Party-authorized** — acts in a named party's name; the caller must be
+      that party or hold act-for-party where the action is scoped
+      (X-CREST-On-Behalf-Of names the party). Marked `security: bearerAuth`.
+    - **Authenticated** — any signed-in caller (custodian queues, operations
+      lists). Also `bearerAuth`.
+    - **Open by design** — verification, status list, instance, capability
+      reads by unguessable id, and the bootstrap plane; each carries a comment
+      saying why.
+    - **`/internal/*`** — the other services' doors, unauthenticated by the
+      service-identity ruling (§16, 2026-08-25): service traffic lives on
+      internal routes and fencing them to the service network is the
+      deployment's job.
     Turning a window exit into a payment instruction, and keeping a reason attached
     to every one that does not move money.
 

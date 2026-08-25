@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/theflywheel/crest/pkg/httpx"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/store"
 )
 
@@ -79,6 +80,14 @@ func (h *handlers) resolveHold(w http.ResponseWriter, r *http.Request) {
 			"a distinct decision takes nothing away from anybody, so it needs no "+
 				"confirmation; asking one worker to ratify a fact about another is "+
 				"disclosure, not consent")
+		return
+	}
+
+	// The named custodian must be the caller, or somebody permitted to act
+	// for them (#102): a merge alters who the system thinks somebody is, and
+	// until now nothing established that resolvedByPartyId was anyone at all.
+	if _, ok := identity.Authorize(w, r, h.d.Log, body.ResolvedBy, "",
+		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
 

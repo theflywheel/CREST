@@ -14,6 +14,7 @@ import (
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
@@ -27,8 +28,14 @@ func routes(mux *http.ServeMux, d service.Deps) {
 		payerOwner:  config.Str("HELD_PAYMENT_OWNER", "did:crest:party:programme-operations"),
 	}
 
-	mux.HandleFunc("POST /v1/instructions", h.release)
+	// Releasing an instruction is the confirmation service's exit speaking —
+	// internal only (#102, service-identity ruling). Nothing human calls it:
+	// a person who could release payments by POST would be a payment path
+	// with no T=7 exit behind it.
+	mux.HandleFunc("POST /internal/instructions", h.release)
 	mux.HandleFunc("GET /v1/instructions", h.list)
+	// Capability read (#102): the claim id names one instruction, the same
+	// judgement as record reads on evidence.
 	mux.HandleFunc("GET /v1/instructions/by-claim/{claimId}", h.byClaim)
 	mux.HandleFunc("GET /v1/reconciliation", h.reconciliation)
 }
@@ -126,7 +133,7 @@ func (h *handlers) release(w http.ResponseWriter, r *http.Request) {
 // precisely the silent failure W10 exists to prevent.
 func (h *handlers) amountFor(ctx context.Context, unitID string) (int64, string, *HeldReason) {
 	var unit schema.Unit
-	if err := h.evidence.Get(ctx, "/v1/units/"+url.PathEscape(unitID), &unit); err != nil {
+	if err := h.evidence.Get(ctx, "/internal/units/"+url.PathEscape(unitID), &unit); err != nil {
 		return 0, "", &HeldReason{
 			Code:         "unit_unreadable",
 			Explanation:  fmt.Sprintf("the work record %s could not be read, so the amount cannot be worked out", unitID),
@@ -200,8 +207,19 @@ func (h *handlers) amountFor(ctx context.Context, unitID string) (int64, string,
 }
 
 func (h *handlers) list(w http.ResponseWriter, r *http.Request) {
+	// Party-filtered: the worker's own money, answered to them or their actor
+	// — expanded across any merge first, so the survivor owns the whole
+	// history (#100). Unfiltered: a signed-in operations surface (#102).
 	ids, ok := sameParty(w, r, h.d)
 	if !ok {
+		return
+	}
+	if r.URL.Query().Get("partyId") != "" {
+		if _, ok := identity.Authorize(w, r, h.d.Log, ids[0], "",
+			h.d.Authenticating, h.d.Permits); !ok {
+			return
+		}
+	} else if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
 		return
 	}
 	instructions, err := listInstructions(r.Context(), h.d.DB.Q(), ids, r.URL.Query().Get("state"))
@@ -225,6 +243,10 @@ func (h *handlers) byClaim(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) reconciliation(w http.ResponseWriter, r *http.Request) {
+	// The money-vs-record gap, with reasons and owners: operations (#102).
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	gaps, err := reconcile(r.Context(), h.d.DB.Q())
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "reconcile", err)

@@ -51,21 +51,23 @@ func (w *world) login(t *testing.T, partyID string) harness.Caller {
 	providerSub := fmt.Sprintf("%s|%s", runID, strings.TrimPrefix(partyID, "did:crest:party:"))
 	subject := w.oidc.Subject(providerSub)
 
-	// Bound through the real endpoint, which is what makes this a test of the
-	// binding path rather than of a fixture. It also means the assurance
-	// upgrade in #17 is exercised on every run: a party that logs in is a party
-	// with a live generic-oidc binding, which is IA-3.
-	if err := w.Parties.Post(w.ctx, "/v1/parties/"+partyID+"/identity-bindings", map[string]any{
-		"provider":      "mock-oidc",
-		"providerClass": "generic-oidc",
-		"subjectRef":    subject,
-	}, nil); err != nil {
-		t.Fatalf("bind %s to a subject: %v", partyID, err)
-	}
-
+	// Token first, then bind WITH it (#102). The binding endpoint's self-proof
+	// is possession of the token whose subject is being bound — the one proof
+	// that needs no prior binding, which is what makes first login possible at
+	// all. Still bound through the real endpoint, so the assurance upgrade in
+	// #17 is exercised on every run: a party that logs in holds a live
+	// generic-oidc binding, which is IA-3.
 	token, err := w.oidc.Token(w.ctx, providerSub)
 	if err != nil {
 		t.Fatalf("mint a token for %s: %v", partyID, err)
+	}
+	if err := w.Parties.As(harness.Caller{Token: token}).
+		Post(w.ctx, "/v1/parties/"+partyID+"/identity-bindings", map[string]any{
+			"provider":      "mock-oidc",
+			"providerClass": "generic-oidc",
+			"subjectRef":    subject,
+		}, nil); err != nil {
+		t.Fatalf("bind %s to a subject: %v", partyID, err)
 	}
 	return harness.Caller{Token: token}
 }
@@ -95,7 +97,7 @@ func (w *world) consentOf(t *testing.T, party string) string {
 	var consent struct {
 		ID string `json:"id"`
 	}
-	if err := w.Parties.PostRaw(w.ctx, fmt.Sprintf(
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).PostRaw(w.ctx, fmt.Sprintf(
 		"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 		party, url.QueryEscape("hold and fetch evidence of my work"),
 		url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(fixtures.ProjectID)),
@@ -113,8 +115,9 @@ func (w *world) consentState(t *testing.T, party string) string {
 	}
 	// Scoped to the project, because consent is per programme and there is no
 	// single answer about a worker without naming one (§9).
-	if err := w.Parties.Get(w.ctx, "/v1/parties/"+party+"/enrolment-consent?contextId="+
-		url.QueryEscape(fixtures.ProjectID), &out); err != nil {
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).Get(w.ctx,
+		"/v1/parties/"+party+"/enrolment-consent?contextId="+
+			url.QueryEscape(fixtures.ProjectID), &out); err != nil {
 		t.Fatalf("read enrolment consent for %s: %v", party, err)
 	}
 	return out.State
@@ -382,11 +385,12 @@ func TestOneSubjectCannotBeTwoPeople(t *testing.T) {
 		"providerClass": "generic-oidc",
 		"subjectRef":    w.oidc.Subject(runID + "|shared-subject"),
 	}
-	if err := w.Parties.Post(w.ctx, "/v1/parties/"+first+"/identity-bindings", binding, nil); err != nil {
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, first)).Post(w.ctx,
+		"/v1/parties/"+first+"/identity-bindings?contextId="+url.QueryEscape(fixtures.ProjectID), binding, nil); err != nil {
 		t.Fatalf("bind the first party: %v", err)
 	}
-	code, body, err := w.Parties.Status(w.ctx, http.MethodPost,
-		"/v1/parties/"+second+"/identity-bindings", binding)
+	code, body, err := w.Parties.As(w.assist(t, fixtures.SupervisorID, second)).Status(w.ctx, http.MethodPost,
+		"/v1/parties/"+second+"/identity-bindings?contextId="+url.QueryEscape(fixtures.ProjectID), binding)
 	if err != nil {
 		t.Fatalf("bind the second party: %v", err)
 	}

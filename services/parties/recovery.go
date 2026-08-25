@@ -40,6 +40,7 @@ import (
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
@@ -129,6 +130,13 @@ func (h *recoveryHandlers) open(w http.ResponseWriter, r *http.Request) {
 				"nobody for no reason is not a record anybody can audit")
 		return
 	}
+	// The opener is the caller (#102). The worker themselves cannot be — the
+	// premise of a recovery is that they cannot authenticate — which is why
+	// the opener is named and checked instead.
+	if _, ok := identity.Authorize(w, r, h.d.Log, body.OpenedBy, "",
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
 	rec := Recovery{
 		ID: id.New(h.d.Clock, "recovery"), PartyID: body.PartyID,
 		OpenedBy: body.OpenedBy, Reason: body.Reason, State: "OPEN",
@@ -175,6 +183,12 @@ func (h *recoveryHandlers) confirm(w http.ResponseWriter, r *http.Request) {
 	if body.ConfirmerPartyID == "" || body.AuthorityPartyID == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "missing_field",
 			"confirmerPartyId and authorityPartyId are both required")
+		return
+	}
+	// A voice must belong to the person speaking (#102): the confirmer is the
+	// caller. Without this, one person could be all three voices.
+	if _, ok := identity.Authorize(w, r, h.d.Log, body.ConfirmerPartyID, "",
+		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
 	now := h.d.Clock.Now()
@@ -272,6 +286,12 @@ func (h *recoveryHandlers) override(w http.ResponseWriter, r *http.Request) {
 				"that it is hard to obtain but that it can never be quiet")
 		return
 	}
+	// The overrider is the caller (#102) — before their function is even
+	// checked, they must be who the body says.
+	if _, ok := identity.Authorize(w, r, h.d.Log, body.ByPartyID, "",
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
 	now := h.d.Clock.Now()
 	permitted, _, err := permits(r.Context(), h.d.DB.Q(),
 		body.ByPartyID, FunctionOverrideRecovery, "", now)
@@ -338,6 +358,13 @@ func (h *recoveryHandlers) override(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *recoveryHandlers) complete(w http.ResponseWriter, r *http.Request) {
+	// Completion needs a signed-in caller — the agent binding the new subject
+	// — but not a named identity check: the authority for the completion is
+	// the decided recovery itself, and the binding it appends is inert until
+	// the worker actually authenticates as that subject (#102).
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	var body struct {
 		// The new subject the worker will authenticate as from now on —
 		// whatever route they now hold. Appended, never substituted: the old
@@ -401,6 +428,9 @@ func (h *recoveryHandlers) complete(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, h.d.Log, "complete recovery", err)
 		return
 	}
+	if h.d.ForgetSubject != nil {
+		h.d.ForgetSubject(body.SubjectRef)
+	}
 	httpx.WriteJSON(w, http.StatusOK, rec)
 }
 
@@ -417,6 +447,13 @@ func (h *recoveryHandlers) get(w http.ResponseWriter, r *http.Request) {
 // recoveries whose review-by date has passed — the queue "flagged for review,
 // never silent" promises somebody is reading.
 func (h *recoveryHandlers) list(w http.ResponseWriter, r *http.Request) {
+	// The audit surface: signed-in callers (#102). Reading ONE recovery stays
+	// open below — the id is unguessable and the worker it belongs to may
+	// hold it printed on paper, which is exactly who must never be locked out
+	// of reading it.
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	where, args := ``, []any{}
 	if r.URL.Query().Get("overdue") == "true" {
 		where = `WHERE review_by IS NOT NULL AND review_by < $1`

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/theflywheel/crest/pkg/httpx"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -126,6 +127,28 @@ func (h *handlers) addIdentityBinding(w http.ResponseWriter, r *http.Request) {
 	if !httpx.ReadJSON(w, r, &b) {
 		return
 	}
+	// Appending a binding raises assurance, and assurance raises the tier of
+	// evidence already captured — so anyone who could append to anyone could
+	// upgrade anyone (#102). Two legitimate callers: somebody permitted to act
+	// for the party (an enrolment agent), or the subject themselves — proven
+	// not by naming the party but by HOLDING the token whose subject is being
+	// bound, which is the one proof that needs no prior binding and so does
+	// not chicken-and-egg first login.
+	if h.d.Authenticating {
+		caller := identity.From(r.Context())
+		selfProof := caller.Authenticated() && b.SubjectRef != "" && caller.Subject == b.SubjectRef
+		if !selfProof {
+			// The agent's act-for-party grant is ordinarily context-scoped
+			// ("an instance-wide grant to act for anybody is a grant to be
+			// anybody" — fixtures), so the enrolment context rides as a query
+			// parameter for the authorization check. It scopes the CHECK, not
+			// the binding: a binding has no context.
+			if _, ok := identity.Authorize(w, r, h.d.Log, r.PathValue("id"),
+				r.URL.Query().Get("contextId"), h.d.Authenticating, h.d.Permits); !ok {
+				return
+			}
+		}
+	}
 	if b.AssertedAt.IsZero() {
 		b.AssertedAt = h.d.Clock.Now()
 	}
@@ -147,6 +170,12 @@ func (h *handlers) addIdentityBinding(w http.ResponseWriter, r *http.Request) {
 		party, appended, err = appendBinding(r.Context(), tx, partyID, b)
 		return err
 	})
+	if err == nil && appended && h.d.ForgetSubject != nil && b.SubjectRef != "" {
+		// The bind request itself primed the middleware's cache with "nobody"
+		// on the way in; drop that so the very next request from this subject
+		// is somebody (#102).
+		h.d.ForgetSubject(b.SubjectRef)
+	}
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		httpx.WriteError(w, http.StatusNotFound, "not_found", "no such party")

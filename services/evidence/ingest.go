@@ -364,7 +364,7 @@ func (in *ingestor) resolveWorker(ctx context.Context,
 	}
 
 	var m match
-	err := in.registry.Get(ctx, fmt.Sprintf("/v1/resolve?kind=%s&value=%s&contextId=%s",
+	err := in.registry.Get(ctx, fmt.Sprintf("/internal/resolve?kind=%s&value=%s&contextId=%s",
 		kind, urlSafe(value), urlSafe(contextID)), &m)
 	switch client.Code(err) {
 	case 0:

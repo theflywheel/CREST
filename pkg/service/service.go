@@ -58,6 +58,12 @@ type Deps struct {
 	// which is the safe reading of "we cannot check".
 	Permits identity.PermitsFunc
 
+	// ForgetSubject invalidates the identity middleware's binding cache for
+	// one subject. Non-nil only when identity is configured; the parties
+	// service calls it when a binding lands, so a first login is not held to
+	// the cached "nobody" its own bind request primed.
+	ForgetSubject identity.Forget
+
 	// Authenticating is whether this deployment has an identity provider. It
 	// is what handlers pass to identity.Actor: true means an endpoint acting
 	// in somebody's name refuses an unauthenticated request rather than
@@ -278,21 +284,25 @@ func Main(name string, opts Options) {
 		}
 	}
 
-	mux := http.NewServeMux()
-	if opts.Routes != nil {
-		opts.Routes(mux, d)
-	}
-	if driveable != nil {
-		registerClockControl(mux, driveable, log)
-	}
-
 	var mw []httpx.Middleware
+	// CORS is outermost so a browser's preflight is answered before identity
+	// looks for a token the preflight never carries. Off unless the
+	// deployment names its web origins.
+	if origins := config.Str("CREST_CORS_ORIGINS", ""); origins != "" {
+		mw = append(mw, httpx.CORSFromOrigins(origins))
+	}
+	// Identity is wired BEFORE routes so the handlers' copy of Deps carries
+	// ForgetSubject — a handler holding a Deps snapshot from before this line
+	// would silently never invalidate the binding cache, which is exactly the
+	// first-login bug Forget exists to prevent.
 	if haveIdentity {
 		binder := identity.RemoteBinder(config.Str("PARTIES_URL", ""))
 		if opts.Binder != nil {
 			binder = opts.Binder(d)
 		}
-		mw = append(mw, identity.Middleware(identity.NewVerifier(idCfg), binder, clk, log))
+		m, forget := identity.Middleware(identity.NewVerifier(idCfg), binder, clk, log)
+		mw = append(mw, m)
+		d.ForgetSubject = forget
 		log.Info("callers are authenticated", "issuer", idCfg.Issuer, "jwks", idCfg.JWKSURL)
 	} else {
 		// Loud on purpose. This is the state the whole package exists to end,
@@ -300,6 +310,14 @@ func Main(name string, opts Options) {
 		// to one that did not.
 		log.Warn("no identity provider is configured: callers are not authenticated",
 			"consequence", "an endpoint that acts in somebody's name will refuse rather than guess")
+	}
+
+	mux := http.NewServeMux()
+	if opts.Routes != nil {
+		opts.Routes(mux, d)
+	}
+	if driveable != nil {
+		registerClockControl(mux, driveable, log)
 	}
 
 	if err := httpx.New(name, cfg.Addr, mux, clk, log, ready, mw...).Run(); err != nil {
@@ -409,7 +427,7 @@ func remotePermits(registryBase string) identity.PermitsFunc {
 		var out struct {
 			Permitted bool `json:"permitted"`
 		}
-		if err := c.Get(ctx, "/v1/authorizations/permits?"+q.Encode(), &out); err != nil {
+		if err := c.Get(ctx, "/internal/authorizations/permits?"+q.Encode(), &out); err != nil {
 			return false, err
 		}
 		return out.Permitted, nil

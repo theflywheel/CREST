@@ -101,6 +101,9 @@ x-service: &crest-service
     # their defaults.
     CREST_OIDC_JWKS_CACHE: "${CREST_OIDC_JWKS_CACHE:-30s}"
     CREST_OIDC_JWKS_MIN_REFRESH: "${CREST_OIDC_JWKS_MIN_REFRESH:-5s}"
+    # The dev web app's origin (apps/web, served on 59100). CORS is off unless
+    # a deployment names its origins - never a wildcard (#102).
+    CREST_CORS_ORIGINS: "${CREST_CORS_ORIGINS:-http://localhost:59100}"
 
     # The seven-day window, and a clock the harness can move through it. Both
     # are refused in production — see pkg/service.chooseClock for why a

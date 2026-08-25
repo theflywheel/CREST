@@ -107,7 +107,9 @@ func (w *world) submit(t *testing.T, csv []byte) ingestResult {
 		fixtures.ProjectID, fixtures.DefinitionID, fixtures.SupervisorID)
 
 	var out ingestResult
-	if err := w.Evidence.PostRaw(w.ctx, path, "text/csv", csv, &out); err != nil {
+	// As the supervisor (#102): submittedBy must be the caller now.
+	if err := w.Evidence.As(w.login(t, fixtures.SupervisorID)).
+		PostRaw(w.ctx, path, "text/csv", csv, &out); err != nil {
 		t.Fatalf("submit batch: %v", err)
 	}
 	return out
@@ -547,7 +549,7 @@ func TestAnUnattributableRowGoesToTheUnclearQueue(t *testing.T) {
 	var queue struct {
 		Count int `json:"count"`
 	}
-	if err := w.Evidence.Get(w.ctx, "/v1/unclear", &queue); err != nil {
+	if err := w.Evidence.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/unclear", &queue); err != nil {
 		t.Fatal(err)
 	}
 	if queue.Count == 0 {
@@ -588,12 +590,13 @@ func TestReassessingASourceDowngradesAnUnchangedCredential(t *testing.T) {
 	// An assessment left behind would make the next run start already
 	// downgraded, and the run after that would "pass" while proving nothing.
 	t.Cleanup(func() {
-		if _, _, err := w.Verification.Status(w.ctx, "DELETE",
-			"/v1/source-assessments/"+url.PathEscape("csv-batch@1"), nil); err != nil {
-			t.Errorf("could not lift the source assessment: %v", err)
+		code, _, err := w.Verification.As(w.login(t, fixtures.OrgID)).Status(w.ctx, "DELETE",
+			"/v1/source-assessments/"+url.PathEscape("csv-batch@1"), nil)
+		if err != nil || code >= 300 {
+			t.Errorf("could not lift the source assessment: %d %v", code, err)
 		}
 	})
-	if err := w.Verification.Post(w.ctx, "/v1/source-assessments", map[string]any{
+	if err := w.Verification.As(w.login(t, fixtures.OrgID)).Post(w.ctx, "/v1/source-assessments", map[string]any{
 		"adapterRef":        "csv-batch@1",
 		"maxTier":           1,
 		"reason":            "under investigation after a bulk edit",
@@ -640,7 +643,7 @@ func TestARevokedCredentialStopsVerifying(t *testing.T) {
 	if v := w.verify(t, cred); !v.Valid {
 		t.Fatalf("not valid before revocation: %v", v.Reasons)
 	}
-	if err := w.Confirmation.Post(w.ctx,
+	if err := w.Confirmation.As(w.login(t, fixtures.OrgID)).Post(w.ctx,
 		"/v1/credentials/"+exit.Credential.ID+"/revoke", nil, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -681,7 +684,7 @@ func TestNoWindowExitedWithoutReleasingPayment(t *testing.T) {
 		Count   int       `json:"count"`
 		Windows []winView `json:"windows"`
 	}
-	if err := w.Confirmation.Get(w.ctx, "/v1/unreleased", &out); err != nil {
+	if err := w.Confirmation.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/unreleased", &out); err != nil {
 		t.Fatal(err)
 	}
 	if out.Count != 0 {
@@ -715,7 +718,7 @@ func TestResubmittingTheSameBatchDoesNotPayTwice(t *testing.T) {
 	var claims struct {
 		Claims []schema.Claim `json:"claims"`
 	}
-	if err := w.Evidence.Get(w.ctx,
+	if err := w.Evidence.As(w.login(t, fixtures.WorkerAID)).Get(w.ctx,
 		"/v1/claims?partyId="+url.QueryEscape(fixtures.WorkerAID), &claims); err != nil {
 		t.Fatal(err)
 	}
@@ -811,7 +814,7 @@ func TestAnUnmatchedNationalIdentifierIsNeverStoredRaw(t *testing.T) {
 			Record map[string]any `json:"record"`
 		} `json:"unclear"`
 	}
-	if err := w.Evidence.Get(w.ctx, "/v1/unclear", &queue); err != nil {
+	if err := w.Evidence.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/unclear", &queue); err != nil {
 		t.Fatal(err)
 	}
 	for _, u := range queue.Unclear {
@@ -836,7 +839,7 @@ func TestAnUnreachedWorkerIsNotAutoConfirmedAgainst(t *testing.T) {
 	w := setup(t)
 
 	// A roster id, so the row matches Worker C without needing a phone.
-	if err := w.Parties.Post(w.ctx,
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, fixtures.WorkerCID)).Post(w.ctx,
 		"/v1/parties/"+url.PathEscape(fixtures.WorkerCID)+"/roster-ids",
 		map[string]any{"rosterId": "RIV-0003", "contextId": fixtures.ProjectID}, nil); err != nil {
 		t.Fatal(err)
@@ -949,7 +952,7 @@ func TestWithdrawingConsentStopsNewEvidenceAndKeepsTheOld(t *testing.T) {
 	var consent struct {
 		ID string `json:"id"`
 	}
-	if err := w.Parties.PostRaw(w.ctx, fmt.Sprintf(
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).PostRaw(w.ctx, fmt.Sprintf(
 		"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 		party, url.QueryEscape("hold and fetch evidence of my work"),
 		url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(fixtures.ProjectID)),
@@ -1011,7 +1014,7 @@ func TestWithdrawingConsentDoesNotCancelAWindowAlreadyOpen(t *testing.T) {
 	var consent struct {
 		ID string `json:"id"`
 	}
-	if err := w.Parties.PostRaw(w.ctx, fmt.Sprintf(
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).PostRaw(w.ctx, fmt.Sprintf(
 		"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 		party, url.QueryEscape("hold and fetch evidence of my work"),
 		url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(fixtures.ProjectID)),
@@ -1073,7 +1076,7 @@ func TestAWorkerWithoutAPhoneGetsACardThatCarriesTheWholeRecord(t *testing.T) {
 
 	// Worker C has no phone, which is why they are the right worker for this
 	// test rather than a complication in it. They join on a roster id.
-	if err := w.Parties.Post(w.ctx,
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, fixtures.WorkerCID)).Post(w.ctx,
 		"/v1/parties/"+url.PathEscape(fixtures.WorkerCID)+"/roster-ids",
 		map[string]any{"rosterId": "RIV-CARD", "contextId": fixtures.ProjectID}, nil); err != nil {
 		t.Fatal(err)

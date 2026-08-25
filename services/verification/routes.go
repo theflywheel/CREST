@@ -15,6 +15,7 @@ import (
 	"github.com/theflywheel/crest/pkg/credential"
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
@@ -420,7 +421,7 @@ func (h *handlers) partyCredentials(w http.ResponseWriter, r *http.Request) {
 		Credentials []json.RawMessage `json:"credentials"`
 	}
 	if err := h.confirmation.Get(r.Context(),
-		"/v1/credentials?partyId="+url.QueryEscape(partyID), &out); err != nil {
+		"/internal/credentials?partyId="+url.QueryEscape(partyID), &out); err != nil {
 		// Refused rather than emptied: an empty list reads as "this person has
 		// no history", which is a different and false statement.
 		httpx.WriteError(w, http.StatusServiceUnavailable, "confirmation_unavailable",
@@ -480,7 +481,7 @@ func (h *handlers) contests(ctx context.Context, credentialID, claimID string) [
 		var resp struct {
 			Contests []ContestStanding `json:"contests"`
 		}
-		if err := h.confirmation.Get(ctx, fmt.Sprintf("/v1/contests?targetKind=%s&targetId=%s",
+		if err := h.confirmation.Get(ctx, fmt.Sprintf("/internal/contests?targetKind=%s&targetId=%s",
 			t.kind, url.QueryEscape(t.id)), &resp); err != nil {
 			h.d.Log.Warn("could not read disputes; this verdict cannot say whether the record is contested",
 				"target", t.kind, "id", t.id, "error", err)
@@ -561,7 +562,7 @@ func (h *handlers) assurance(ctx context.Context, partyID string) schema.Identit
 		IdentityAssurance schema.IdentityAssurance `json:"identityAssurance"`
 	}
 	if err := h.registry.Get(ctx,
-		"/v1/parties/"+url.PathEscape(partyID)+"/assurance", &out); err != nil {
+		"/internal/parties/"+url.PathEscape(partyID)+"/assurance", &out); err != nil {
 		// A subject this deployment cannot resolve is IA-0, not an error: a
 		// credential from elsewhere is still verifiable, it is simply the
 		// weakest identity claim available.
@@ -605,6 +606,10 @@ func parse(doc map[string]any) (schema.WorkEventCredential, error) {
 // assess records how this deployment regards a source. One call downgrades
 // every credential that source produced, immediately and with no reissuance.
 func (h *handlers) assess(w http.ResponseWriter, r *http.Request) {
+	// Re-grading a source moves every affected credential's tier — a signed-in operations surface (#102).
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	var req struct {
 		AdapterRef string `json:"adapterRef"`
 		MaxTier    int    `json:"maxTier"`
@@ -647,6 +652,10 @@ func (h *handlers) assess(w http.ResponseWriter, r *http.Request) {
 // the tier was never stored. A system that can only ever downgrade a source
 // ratchets one way and eventually trusts nothing.
 func (h *handlers) clearAssessment(w http.ResponseWriter, r *http.Request) {
+	// Lifting a downgrade restores trust — a signed-in operations surface (#102).
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		_, err := tx.Exec(r.Context(),
 			`DELETE FROM source_assessments WHERE adapter_ref = $1`, r.PathValue("adapterRef"))
@@ -674,6 +683,10 @@ func (h *handlers) assessmentFor(ctx context.Context, adapterRef string) (*stren
 }
 
 func (h *handlers) assessments(w http.ResponseWriter, r *http.Request) {
+	// The current view of every source — a signed-in operations surface (#102).
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	rows, err := h.d.DB.Q().Query(r.Context(),
 		`SELECT adapter_ref, max_tier, reason, assessed_by, assessed_at
 		 FROM source_assessments ORDER BY adapter_ref`)
@@ -728,6 +741,19 @@ func (h *handlers) record(ctx context.Context, p presentation) error {
 }
 
 func (h *handlers) presentations(w http.ResponseWriter, r *http.Request) {
+	// "Who checked me" is the worker's answer (W8), and nobody else's to
+	// browse: a subject-filtered read answers that worker or their actor, an
+	// unfiltered one a signed-in operator (#102). The verify endpoints
+	// themselves stay open by design — an offline stranger with a credential
+	// is the whole point (§11).
+	if subject := r.URL.Query().Get("subjectRef"); subject != "" {
+		if _, ok := identity.Authorize(w, r, h.d.Log, subject, "",
+			h.d.Authenticating, h.d.Permits); !ok {
+			return
+		}
+	} else if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	rows, err := h.d.DB.Q().Query(r.Context(), `
 		SELECT id, coalesce(credential_id,''), coalesce(subject_ref,''), coalesce(requested_by,''),
 		       coalesce(purpose,''), scope, outcome, tier, created_at
