@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -71,6 +72,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/claims/{claimId}/dispute", h.dispute)
 	mux.HandleFunc("GET /v1/contests", h.contests)
 	mux.HandleFunc("POST /v1/sweep", h.sweep)
+	mux.HandleFunc("GET /v1/credentials", h.listCredentials)
 	mux.HandleFunc("GET /v1/credentials/{id}", h.getCredential)
 	// The printed card (#24, §5): the holding mechanism for a worker with no
 	// phone. HTML by default because it is meant to reach a printer;
@@ -233,6 +235,35 @@ func (h *handlers) listWindows(w http.ResponseWriter, r *http.Request) {
 		windows = []Window{}
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"windows": windows, "count": len(windows)})
+}
+
+// listCredentials answers "every credential issued to this person", following
+// any merge the same way every other party-scoped read does (#100, #104). The
+// response is credentials and nothing else — deliberately not the identifier
+// list, not which id each credential was issued under beyond what the
+// credential itself says, and no marker that a merge happened. Whether the
+// requester learns about the merge from the subjects inside the credentials is
+// a property of the credentials, recorded as such in §16; this endpoint adds
+// nothing to it.
+func (h *handlers) listCredentials(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("partyId") == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "missing_parameter",
+			"partyId is required: this endpoint answers what was issued to one worker")
+		return
+	}
+	ids, ok := sameParty(w, r, h.d)
+	if !ok {
+		return
+	}
+	creds, err := credentialsFor(r.Context(), h.d.DB.Q(), ids)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "list credentials", err)
+		return
+	}
+	if creds == nil {
+		creds = []json.RawMessage{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"credentials": creds, "count": len(creds)})
 }
 
 // windowFor loads the confirmation window a request is about, answering 404

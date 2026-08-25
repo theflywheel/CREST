@@ -29,6 +29,15 @@ import (
 // matching on driver errors.
 var ErrNotFound = errors.New("not found")
 
+// IsUniqueViolation reports whether an error is Postgres refusing a duplicate
+// key. Here rather than in a service because pgx is deliberately fenced into
+// this package: services express invariants as unique indexes and ask this one
+// question about the answer.
+func IsUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
 // DB is a pool plus the migration and outbox machinery.
 type DB struct {
 	pool   *pgxpool.Pool

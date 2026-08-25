@@ -637,9 +637,65 @@ paths:
                 required: [permitted, at]
                 properties:
                   permitted: { type: boolean }
+                  overdue:
+                    type: boolean
+                    description: >
+                      Every authorization behind this yes is past its review-by
+                      date (§16). Never changes `permitted` — "flag overdue, keep
+                      working" — and a caller that ignores it loses nothing a
+                      worker needed.
                   at: { type: string, format: date-time }
         "400":
           description: "`at` is not RFC3339."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/authorizations/overdue:
+    get:
+      operationId: overdueAuthorizations
+      summary: The review queue
+      description: >
+        Every ACTIVE authorization past its `reviewBy` date (§16). Listing it is
+        the entire consequence of being overdue — nothing reads this to refuse
+        anything, because a missed calendar entry must never withhold a worker's
+        payment. A custodian surface, like /v1/holds.
+      responses:
+        "200":
+          description: Overdue authorizations, oldest review date first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorizations:
+                    type: array
+                    items: { $ref: "urn:crest:schema:primitives:authorization:1" }
+                  count: { type: integer }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/authorizations/{id}/revoke:
+    post:
+      operationId: revokeAuthorization
+      summary: Revoke an authorization
+      description: >
+        The narrowing instrument (§16, J3). Narrowing binds at submission:
+        revocation stops NEW work — the next permits() check answers no — and
+        touches nothing in flight, because evidence already submitted was checked
+        when it entered and the worker cannot un-perform the work. To narrow
+        rather than remove, revoke and create the narrower grant; there is
+        deliberately no edit, because an edited grant has no record of what it
+        used to allow. Idempotent.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The authorization, now REVOKED.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:authorization:1"
+        "404":
+          description: No such authorization.
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "500": { $ref: "#/components/responses/Internal" }
 
@@ -847,9 +903,15 @@ paths:
         system punishing them for its own correction.
 
 
-        Public rather than under `/internal/`: a worker asking where the rest of
-        their record went is asking exactly this.
-      parameters: [{ $ref: "#/components/parameters/PartyID" }]
+        Answered only to the worker, or somebody authorised to act for them
+        (#104): "this person was recorded twice" is a fact about the worker a
+        stranger has no claim on, and a verifier resolving a party gets the
+        chain's credentials from verification without this mapping. The services
+        follow merges through an internal twin of this route instead.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/PartyID" }
+        - { $ref: "#/components/parameters/OnBehalfOf" }
       responses:
         "200":
           description: The ids that are this person.
@@ -868,8 +930,212 @@ paths:
                   merged:
                     type: boolean
                     description: Whether this person has more than one id at all.
+        "401":
+          description: No usable token.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "403":
+          description: The caller is not this party and is not authorised to act for them.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "404":
           description: No such party.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/recoveries:
+    post:
+      operationId: openRecovery
+      summary: Open a recovery for a worker who lost their device
+      description: >
+        The way back in (§16, #106). A recovery collects confirmations — two,
+        from confirmers appointed by DIFFERENT authorities, because a panel
+        appointed by one organisation is that organisation's decision wearing
+        several names — or, where two confirmers cannot be reached, an
+        operator's override. One live recovery per person.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [partyId, openedByPartyId, reason]
+              properties:
+                partyId: { type: string }
+                openedByPartyId: { type: string }
+                reason: { type: string }
+      responses:
+        "201":
+          description: Opened.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Recovery" } } }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "404":
+          description: No such party.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: A recovery for this party is already in progress.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+    get:
+      operationId: listRecoveries
+      summary: The recovery audit surface
+      description: >
+        Every recovery, override included — an override nobody can read back is
+        quiet, which is the one thing it must never be. `overdue=true` narrows
+        to overridden recoveries past their review-by date: flagged for review,
+        never silent.
+      parameters:
+        - { name: overdue, in: query, schema: { type: string, enum: ["true"] } }
+      responses:
+        "200":
+          description: Recoveries, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recoveries:
+                    type: array
+                    items: { $ref: "#/components/schemas/Recovery" }
+                  count: { type: integer }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/recoveries/{id}:
+    get:
+      operationId: getRecovery
+      summary: Read a recovery, override and all
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The full record.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Recovery" } } }
+        "404":
+          description: No such recovery.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/recoveries/{id}/confirmations:
+    post:
+      operationId: confirmRecovery
+      summary: One voice saying this is the same person
+      description: >
+        What a confirmer confirms is the narrow question — that the person
+        asking is the person the record is about — never that they should have
+        access. The confirmer must be somebody the declared authority currently
+        stands behind (an ACTIVE authorization), must not be the worker, and at
+        most one confirmation per authority counts, enforced by the table
+        itself. The second distinct voice moves the recovery to CONFIRMED.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmerPartyId, authorityPartyId]
+              properties:
+                confirmerPartyId: { type: string }
+                authorityPartyId:
+                  type: string
+                  description: >
+                    Declared and then verified rather than inferred: a confirmer
+                    holding authorizations from two organisations must say which
+                    hat they are wearing.
+      responses:
+        "200":
+          description: Recorded; state is OPEN or CONFIRMED.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Recovery" } } }
+        "400":
+          description: Missing fields, or the worker confirming themselves.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "403":
+          description: The declared authority does not stand behind this confirmer.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: No such recovery.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: >
+            This confirmer — or another from the same authority — already
+            confirmed. One org, one voice.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/recoveries/{id}/override:
+    post:
+      operationId: overrideRecovery
+      summary: The operator's exception, which can never be quiet
+      description: >
+        For the worker two confirmers cannot reach. Requires the
+        `override-recovery` function under an instance-scoped grant — an
+        operator-level power, never a context one (G1, #10) — and is refused
+        outright for the worker's own supervisor, whatever they hold: the
+        person who caused a lockout is frequently the supervisor, and a path
+        they can invoke is one they can invoke against the worker. Refused
+        without a reason, here and by a database constraint; the record is
+        permanent and carries a review-by date.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [byPartyId, reason]
+              properties:
+                byPartyId: { type: string }
+                reason: { type: string }
+      responses:
+        "200":
+          description: Overridden, with the reason, owner and review date on the record.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Recovery" } } }
+        "400":
+          description: No reason or no owner — impossible to express, not merely discouraged.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "403":
+          description: Not permitted, or the worker's own supervisor.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: No such recovery.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: The recovery is past the point where an override applies.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/recoveries/{id}/complete:
+    post:
+      operationId: completeRecovery
+      summary: Bind the worker's new subject
+      description: >
+        The destination of both paths: an APPENDED identity binding of class
+        `recovery` for the subject the worker will authenticate as from now on.
+        Never an edit — the old bindings stay (§4.1). The binding derives IA-1
+        until the worker re-anchors with a real provider, at which point the
+        stronger binding simply wins: vouching is community knowledge, not a
+        national identity check.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectRef]
+              properties:
+                subjectRef: { type: string }
+      responses:
+        "200":
+          description: Completed; the subject now resolves to the worker.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Recovery" } } }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "404":
+          description: No such recovery.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: Not decided yet, or the subject already authenticates another party.
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "500": { $ref: "#/components/responses/Internal" }
 
@@ -915,6 +1181,32 @@ components:
       description: The party identifier.
 
   schemas:
+    Recovery:
+      type: object
+      description: >
+        A recovery, override and all. Deliberately fully readable afterwards —
+        by the worker, and by an auditor asking whether the override power is
+        being used well.
+      properties:
+        id: { type: string }
+        partyId: { type: string }
+        openedByPartyId: { type: string }
+        reason: { type: string }
+        state: { type: string, enum: [OPEN, CONFIRMED, OVERRIDDEN, COMPLETED] }
+        createdAt: { type: string, format: date-time }
+        confirmations:
+          type: array
+          items:
+            type: object
+            properties:
+              confirmerPartyId: { type: string }
+              authorityPartyId: { type: string }
+              confirmedAt: { type: string, format: date-time }
+        overrideByPartyId: { type: string }
+        overrideReason: { type: string }
+        overrideAt: { type: string, format: date-time }
+        reviewBy: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time }
     Consent:
       type: object
       description: >

@@ -61,6 +61,14 @@ func levelFor(class schema.PartyIdentityBindingsItemProviderClass) schema.Identi
 		return schema.IdentityAssuranceIA2
 	case schema.PartyIdentityBindingsItemProviderClassMobileOtp:
 		return schema.IdentityAssuranceIA1
+	case schema.PartyIdentityBindingsItemProviderClassRecovery:
+		// Two people vouching — or one supervisor overriding — is community
+		// knowledge, not a national identity check, and the level must not say
+		// otherwise (§16, #106). IA-1 until the worker re-anchors with a real
+		// provider, at which point the stronger binding simply wins above:
+		// "drops until re-anchored" is not a stored penalty, it is what
+		// deriving from the bindings naturally produces.
+		return schema.IdentityAssuranceIA1
 	default:
 		return schema.IdentityAssuranceIA0
 	}
