@@ -9,6 +9,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -64,6 +65,21 @@ type Deps struct {
 	//
 	// Always true in production — Main refuses to start otherwise.
 	Authenticating bool
+
+	// SameParty answers which party ids are one person, after any merge
+	// (#100). Survivor first.
+	//
+	// Every read that filters by party goes through it. A merge deliberately
+	// rewrites nothing — the claims, windows and instructions already written
+	// still name the party they were recorded against, because that was a true
+	// statement at the time — so a read that asked about one id only would
+	// find a hole exactly where the system corrected itself about who somebody
+	// was.
+	//
+	// Never nil. With no registry reachable it returns the id it was given,
+	// which is the pre-merge behaviour and is stated rather than silent: see
+	// remoteSameParty.
+	SameParty SamePartyFunc
 
 	// Blobs is the object store, present only for a service that asked for
 	// one. What lives in it is consent artefacts — the voice recording that
@@ -126,6 +142,10 @@ type Options struct {
 	// Permits overrides how this service checks an authorization. Same
 	// reasoning as Binder: the registry answers it locally, the others ask.
 	Permits func(d Deps) identity.PermitsFunc
+
+	// SameParty overrides how this service expands a party across merges.
+	// Only the registry sets it; it owns the parties table.
+	SameParty func(d Deps) SamePartyFunc
 
 	Routes Routes
 }
@@ -227,6 +247,11 @@ func Main(name string, opts Options) {
 		log.Error("refusing to start", "why", why,
 			"set", "CREST_OIDC_ISSUER, CREST_OIDC_JWKS_URL, CREST_SUBJECT_SALT")
 		os.Exit(1)
+	}
+
+	d.SameParty = remoteSameParty(config.Str("REGISTRY_URL", ""))
+	if opts.SameParty != nil {
+		d.SameParty = opts.SameParty(d)
 	}
 
 	d.Authenticating = haveIdentity
@@ -392,4 +417,40 @@ func startupRefusal(env string, haveIdentity bool) string {
 		return "no identity provider is configured, so every caller would be whoever they say they are"
 	}
 	return ""
+}
+
+// SamePartyFunc answers which party ids are one person, survivor first.
+type SamePartyFunc func(ctx context.Context, partyID string) ([]string, error)
+
+// remoteSameParty asks the registry which ids are one person.
+func remoteSameParty(registryBase string) SamePartyFunc {
+	c := client.New(registryBase)
+	return func(ctx context.Context, partyID string) ([]string, error) {
+		if partyID == "" {
+			return nil, nil
+		}
+		var out struct {
+			Identifiers []string `json:"identifiers"`
+		}
+		err := c.Get(ctx, "/v1/parties/"+url.PathEscape(partyID)+"/identifiers", &out)
+		if err != nil {
+			// A party the registry has never heard of is not an error here.
+			// Services hold records for parties that were deleted or that
+			// arrived through a fixture, and answering "just this one" is the
+			// same answer as before merges existed.
+			if client.Code(err) == 404 {
+				return []string{partyID}, nil
+			}
+			// Anything else is an outage, and it is reported rather than
+			// swallowed. Falling back to the single id would return a history
+			// with a hole in it and no indication that anything was missing —
+			// which is worse than a failed read, because the caller would
+			// believe it.
+			return nil, fmt.Errorf("registry could not say which ids are %s: %w", partyID, err)
+		}
+		if len(out.Identifiers) == 0 {
+			return []string{partyID}, nil
+		}
+		return out.Identifiers, nil
+	}
 }

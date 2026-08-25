@@ -593,3 +593,61 @@ func partyForSubject(ctx context.Context, q store.Querier, subject string) (stri
 	}
 	return survivors[0], nil
 }
+
+// identifiersOf answers which party ids are one person.
+//
+// This is the read side of a merge (#100). `mergeParty` records that one party
+// was absorbed into another and deliberately rewrites nothing: the absorbed
+// party keeps its id, its keys and its history, and every claim, window and
+// payment instruction already written still names it. That is the right choice
+// — a claim that said whose work it was at the time is a true statement, and
+// editing it would destroy the only record of what the system believed before
+// it was corrected — but it means a read that asks only about the survivor
+// finds a hole exactly where the correction happened.
+//
+// So reads follow the pointer instead. Asking about anybody in a merge chain
+// returns the whole chain, survivor first, and a service filtering by party
+// filters by all of them.
+//
+// Recursive rather than a single hop, because merges compose: A into B and
+// later B into C leaves A two steps from the answer. Cycles cannot arise
+// through the resolution endpoint — it refuses to merge into an
+// already-merged party — and `UNION` rather than `UNION ALL` means the query
+// terminates even if one somehow exists, which matters because this runs on
+// every list read.
+func identifiersOf(ctx context.Context, q store.Querier, partyID string) ([]string, error) {
+	// The survivor first, so that a stale bookmark naming an absorbed id gets
+	// the same answer as one naming the survivor.
+	survivors, err := followMerges(ctx, q, []string{partyID})
+	if err != nil {
+		return nil, err
+	}
+	if len(survivors) != 1 {
+		// followMerges drops an id whose party no longer exists. Asking about
+		// somebody who is not there is not an error and not a merge; it is an
+		// empty history, and the caller should get exactly that rather than a
+		// list containing an id nothing knows about.
+		return nil, nil
+	}
+	survivor := survivors[0]
+
+	rows, err := q.Query(ctx, `
+		WITH RECURSIVE chain AS (
+		    SELECT id FROM parties WHERE id = $1
+		    UNION
+		    SELECT p.id FROM parties p JOIN chain c ON p.merged_into = c.id
+		)
+		SELECT id FROM chain WHERE id <> $1 ORDER BY id`, survivor)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	absorbed, err := store.Collect(rows, func(r store.Row) (string, error) {
+		var v string
+		return v, r.Scan(&v)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return append([]string{survivor}, absorbed...), nil
+}

@@ -23,8 +23,9 @@ func main() {
 		Routes:     routes,
 		// The registry owns the parties table, so it answers both identity
 		// questions locally. Everybody else asks it over HTTP.
-		Binder:  localBinder,
-		Permits: localPermits,
+		Binder:    localBinder,
+		Permits:   localPermits,
+		SameParty: localIdentifiers,
 		// Consent artefacts: the voice recording that is a non-literate
 		// worker's only real way to consent (§9, #24).
 		NeedsBlobs: true,
