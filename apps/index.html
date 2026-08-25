@@ -22,26 +22,26 @@
     <div class="eyebrow" style="margin-bottom:10px">CREST · Actor Journeys</div>
     <h1 style="font-size:31px">Four products, one record</h1>
     <p class="muted" style="font-size:13.5px;max-width:56ch">The Actor Journeys reference, built as the separate applications it
-    outlines — all reading and writing the same live CREST services. Nothing on
+    outlines, each shipped as its own deployment the way its product would be — all reading and writing the same live CREST services. Nothing on
     any screen is fixture data held in the browser.</p>
   </div>
   <div class="apps">
-    <a class="app-card" href="/worker/"><div class="card">
+    <a class="app-card" href="https://crest-worker-production.up.railway.app/" data-local="/worker/"><div class="card">
       <span class="chip brand" style="align-self:flex-start">Worker · W-1</span>
       <h3>The worker's app</h3>
       <p class="muted">The wallet, not a dashboard — my record, my money and why any of it is held, who checked me, what I agreed to.</p>
     </div></a>
-    <a class="app-card" href="/enrolment/"><div class="card">
+    <a class="app-card" href="https://crest-field-production.up.railway.app/" data-local="/enrolment/"><div class="card">
       <span class="chip warn" style="align-self:flex-start">Field · W-2 / W-4</span>
       <h3>The field app</h3>
       <p class="muted">Registering a worker who cannot self-register; voice consent read aloud; confirm what you saw; close the roster.</p>
     </div></a>
-    <a class="app-card" href="/console/"><div class="card">
+    <a class="app-card" href="https://crest-console-production.up.railway.app/" data-local="/console/"><div class="card">
       <span class="chip info" style="align-self:flex-start">Console · G / P / F</span>
       <h3>The console</h3>
       <p class="muted">One console, role-based views — instance, organisation, project, defining the work, payment set-up, the custodian's queues.</p>
     </div></a>
-    <a class="app-card" href="/verify/"><div class="card">
+    <a class="app-card" href="https://crest-verifier-production.up.railway.app/" data-local="/verify/"><div class="card">
       <span class="chip ok" style="align-self:flex-start">Verifier · V-1 / V-2</span>
       <h3>Verification</h3>
       <p class="muted">Account-free checking: yes, plus facts, nothing identifying. Refusals shown as refusals. Bounded batches.</p>
@@ -51,5 +51,11 @@
     <span class="txt">The earlier single-page proof of concept lives separately and is unchanged.
     Credential custody belongs to the Inji wallet; these apps are the CREST product surfaces Inji does not cover.</span></div>
 </div>
+<script>
+  // Local dev serves all four apps behind this one door; production ships
+  // each as its own deployment and the cards link there.
+  if (["localhost","127.0.0.1"].includes(location.hostname))
+    document.querySelectorAll("[data-local]").forEach(a => { a.href = a.dataset.local; });
+</script>
 </body>
 </html>
