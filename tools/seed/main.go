@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/theflywheel/crest/harness"
@@ -25,4 +26,10 @@ func main() {
 	fmt.Printf("seeded %q: %d parties, %d authorizations, %d definitions\n",
 		w.Instance.Name, len(w.Parties), len(w.Authorizations), len(w.Definitions))
 	fmt.Println("web app: http://localhost:59100")
+	if os.Getenv("SEED_HOLD") == "true" {
+		// One-shot service on a platform that restarts exited containers:
+		// seed once, then hold, so the deployment is not re-seeded in a loop.
+		fmt.Println("holding (SEED_HOLD=true)")
+		select {}
+	}
 }
