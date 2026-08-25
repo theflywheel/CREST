@@ -42,7 +42,7 @@ func (w *world) grantSubmitter(t *testing.T, name string, reviewBy *time.Time) (
 		State:             schema.AuthorizationStateACTIVE,
 	}
 	var created schema.Authorization
-	if err := w.Registry.Post(w.ctx, "/v1/authorizations", auth, &created); err != nil {
+	if err := w.Parties.Post(w.ctx, "/v1/authorizations", auth, &created); err != nil {
 		t.Fatalf("create authorization: %v", err)
 	}
 	return party, created.ID
@@ -86,7 +86,7 @@ func TestAnOverdueAuthorizationStillPermitsAndIsListedForReview(t *testing.T) {
 		Permitted bool `json:"permitted"`
 		Overdue   bool `json:"overdue"`
 	}
-	if err := w.Registry.Get(w.ctx, fmt.Sprintf(
+	if err := w.Parties.Get(w.ctx, fmt.Sprintf(
 		"/v1/authorizations/permits?partyId=%s&function=submit-work-evidence&contextId=%s",
 		url.QueryEscape(submitter), url.QueryEscape(fixtures.ProjectID)), &perm); err != nil {
 		t.Fatalf("permits: %v", err)
@@ -110,7 +110,7 @@ func TestAnOverdueAuthorizationStillPermitsAndIsListedForReview(t *testing.T) {
 	var list struct {
 		Authorizations []schema.Authorization `json:"authorizations"`
 	}
-	if err := w.Registry.Get(w.ctx, "/v1/authorizations/overdue", &list); err != nil {
+	if err := w.Parties.Get(w.ctx, "/v1/authorizations/overdue", &list); err != nil {
 		t.Fatalf("list overdue: %v", err)
 	}
 	found := false
@@ -152,7 +152,7 @@ func TestARevokedGrantStopsNewWorkButNotWorkInFlight(t *testing.T) {
 	})
 
 	// The narrowing.
-	if err := w.Registry.Post(w.ctx,
+	if err := w.Parties.Post(w.ctx,
 		"/v1/authorizations/"+url.PathEscape(authID)+"/revoke", nil, nil); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}

@@ -64,7 +64,7 @@ x-service: &crest-service
     # should not be one yet: seven names in a compose file is a dependency graph
     # a person can read, and the day it stops being readable is the day it needs
     # something better.
-    REGISTRY_URL: http://registry:8080
+    PARTIES_URL: http://parties:8080
     DEFINITIONS_URL: http://definitions:8080
     EVIDENCE_URL: http://evidence:8080
     CONFIRMATION_URL: http://confirmation:8080
@@ -412,17 +412,18 @@ services:
 
   # ── CREST services: ours ─────────────────────────────────────────────────
 
-  registry:
+  parties:
     <<: [*crest-service, *crest-healthcheck]
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile.service
       args:
-        SERVICE: registry
-    ports: ["${REGISTRY_PORT:-59001}:8080"]
-    # registry is the one service that stores consent artefacts (#24), so it
+        SERVICE: parties
+    ports: ["${PARTIES_PORT:-59001}:8080"]
+    # parties (né registry, #50) is the one service that stores consent
+    # artefacts (#24), so it
     # needs the object store before it will start. Refusing to start is the
-    # right behaviour: a registry that came up without somewhere to put a
+    # right behaviour: a parties service that came up without somewhere to put a
     # recording would accept a voice consent it cannot evidence.
     depends_on:
       postgres:

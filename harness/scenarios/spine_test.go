@@ -836,7 +836,7 @@ func TestAnUnreachedWorkerIsNotAutoConfirmedAgainst(t *testing.T) {
 	w := setup(t)
 
 	// A roster id, so the row matches Worker C without needing a phone.
-	if err := w.Registry.Post(w.ctx,
+	if err := w.Parties.Post(w.ctx,
 		"/v1/parties/"+url.PathEscape(fixtures.WorkerCID)+"/roster-ids",
 		map[string]any{"rosterId": "RIV-0003", "contextId": fixtures.ProjectID}, nil); err != nil {
 		t.Fatal(err)
@@ -949,7 +949,7 @@ func TestWithdrawingConsentStopsNewEvidenceAndKeepsTheOld(t *testing.T) {
 	var consent struct {
 		ID string `json:"id"`
 	}
-	if err := w.Registry.PostRaw(w.ctx, fmt.Sprintf(
+	if err := w.Parties.PostRaw(w.ctx, fmt.Sprintf(
 		"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 		party, url.QueryEscape("hold and fetch evidence of my work"),
 		url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(fixtures.ProjectID)),
@@ -1011,7 +1011,7 @@ func TestWithdrawingConsentDoesNotCancelAWindowAlreadyOpen(t *testing.T) {
 	var consent struct {
 		ID string `json:"id"`
 	}
-	if err := w.Registry.PostRaw(w.ctx, fmt.Sprintf(
+	if err := w.Parties.PostRaw(w.ctx, fmt.Sprintf(
 		"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 		party, url.QueryEscape("hold and fetch evidence of my work"),
 		url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(fixtures.ProjectID)),
@@ -1073,7 +1073,7 @@ func TestAWorkerWithoutAPhoneGetsACardThatCarriesTheWholeRecord(t *testing.T) {
 
 	// Worker C has no phone, which is why they are the right worker for this
 	// test rather than a complication in it. They join on a roster id.
-	if err := w.Registry.Post(w.ctx,
+	if err := w.Parties.Post(w.ctx,
 		"/v1/parties/"+url.PathEscape(fixtures.WorkerCID)+"/roster-ids",
 		map[string]any{"rosterId": "RIV-CARD", "contextId": fixtures.ProjectID}, nil); err != nil {
 		t.Fatal(err)
@@ -1170,7 +1170,7 @@ func TestAWorkerWithoutAPhoneGetsACardThatCarriesTheWholeRecord(t *testing.T) {
 func newWorkerWithPhone(t *testing.T, w *world, name, phone string) string {
 	t.Helper()
 	var created schema.Party
-	if err := w.Registry.Post(w.ctx, "/v1/parties", schema.Party{
+	if err := w.Parties.Post(w.ctx, "/v1/parties", schema.Party{
 		Kind:        schema.PartyKindPerson,
 		DisplayName: name + " " + runID,
 		ContactRoutes: []schema.PartyContactRoutesItem{

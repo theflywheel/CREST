@@ -6,7 +6,7 @@
 
 SHELL := bash
 COMPOSE := docker compose -f infra/compose/docker-compose.yml
-SERVICES := registry definitions evidence confirmation verification payments notify
+SERVICES := parties definitions evidence confirmation verification payments notify
 GO ?= go
 
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
@@ -220,7 +220,7 @@ harness-up: ## Bring the whole stack up and leave it running for debugging
 harness-down: ## Tear the stack down, including volumes
 	$(COMPOSE) down -v
 
-harness-logs: ## Logs for one service: make harness-logs SERVICE=registry
+harness-logs: ## Logs for one service: make harness-logs SERVICE=parties
 	@test -n "$(SERVICE)" || { echo "usage: make harness-logs SERVICE=<name>"; exit 1; }
 	$(COMPOSE) logs -f $(SERVICE)
 
