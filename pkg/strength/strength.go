@@ -55,6 +55,14 @@ type SourceAssessment struct {
 	Reason  string
 }
 
+// ExternalInstitutionCeiling is the highest tier evidence from an institution
+// outside this deployment can reach.
+//
+// Exported so a second implementation of f — a verifier written by somebody
+// else, in another language — can be held to the same number rather than
+// having to infer it from the vectors.
+const ExternalInstitutionCeiling = 2
+
 // Result is a judgement with its reasoning attached. The reasoning is not a
 // nicety: §6 says the tier is always displayed to worker and verifier alike,
 // and a number with no account of itself is not something either can argue with.
@@ -101,6 +109,41 @@ func Evaluate(f Facts, def schema.Definition, assessment *SourceAssessment) Resu
 			MatchedRule: i,
 			Because: []string{fmt.Sprintf("rule %d of the definition awards tier %d for %s evidence captured as %s",
 				i, rule.Tier, f.Provenance.SourceClass, f.Provenance.CaptureMethod)},
+		}
+
+		// Evidence from an institution outside this deployment cannot reach
+		// the top tier, whatever a definition's map says (§16, ruling below).
+		//
+		// The reasoning is what the tier means. Tier 3 says the record came
+		// from a system whose capture this deployment can account for. An
+		// external institution's system record is a good record — far better
+		// than a letter on letterhead, and the two must not land in the same
+		// place — but the account of how it was captured is the institution's,
+		// not ours, and there is no accreditation anywhere in CREST that would
+		// let anybody check it. Awarding tier 3 on that basis is trusting a
+		// claim nobody verified, which is the one thing §6 says f must never
+		// do.
+		//
+		// This *narrows* an earlier position rather than reversing it. G1 #8
+		// established that an institution's own system record earns more than
+		// its letterhead does; that distinction survives intact, at 2 against
+		// 1 instead of 3 against 1. What moved is the ceiling, not the
+		// ordering.
+		//
+		// L1 rather than a mapping entry, and that is the deliberate part.
+		// §16 noted it could be either. As a mapping entry, one deployment
+		// awards tier 3 to an institution and another does not, and a verifier
+		// reading a tier 3 credential learns nothing from it — the number stops
+		// meaning the same thing in two places, which is the whole value f is
+		// supposed to have. When source-class accreditation exists this becomes
+		// a real question again, and the cap should be revisited then rather
+		// than inherited.
+		if f.Provenance.SourceClass == schema.SourceClassInstitutionalSystem &&
+			res.Tier > ExternalInstitutionCeiling {
+			res.Because = append(res.Because,
+				fmt.Sprintf("capped to tier %d: evidence from an institution outside this deployment, "+
+					"whose capture nobody here can account for (§16)", ExternalInstitutionCeiling))
+			res.Tier = ExternalInstitutionCeiling
 		}
 
 		// A definition may promise less than its own map could award. The
