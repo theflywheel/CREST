@@ -138,11 +138,24 @@ func getClaim(ctx context.Context, q store.Querier, claimID string) (schema.Clai
 	return c, json.Unmarshal(doc, &c)
 }
 
-func listClaims(ctx context.Context, q store.Querier, partyID, state string) ([]schema.Claim, error) {
+// listClaims returns a worker's claims, across any merge (#100).
+//
+// partyIDs rather than one id: a party absorbed into another still owns every
+// claim recorded before the merge, and those claims still name it, because a
+// claim that said whose work it was at the time is a true statement and is not
+// rewritten. Filtering on one id would leave the survivor's history with a
+// hole exactly where the system corrected itself about who they were.
+//
+// An empty slice means no filter, which is the same as before merges existed.
+func listClaims(ctx context.Context, q store.Querier, partyIDs []string, state string) ([]schema.Claim, error) {
 	rows, err := q.Query(ctx, `
 		SELECT doc FROM claims
-		WHERE ($1 = '' OR party_id = $1) AND ($2 = '' OR state = $2)
-		ORDER BY id`, partyID, state)
+		-- COALESCE because a nil slice arrives as a NULL array, not an empty
+		-- one, and cardinality(NULL) is NULL rather than 0 — which makes the
+		-- whole predicate NULL and the unfiltered list silently empty.
+		WHERE (COALESCE(cardinality($1::text[]), 0) = 0 OR party_id = ANY($1))
+		  AND ($2 = '' OR state = $2)
+		ORDER BY id`, partyIDs, state)
 	if err != nil {
 		return nil, err
 	}

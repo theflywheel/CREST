@@ -200,8 +200,11 @@ func (h *handlers) amountFor(ctx context.Context, unitID string) (int64, string,
 }
 
 func (h *handlers) list(w http.ResponseWriter, r *http.Request) {
-	instructions, err := listInstructions(r.Context(), h.d.DB.Q(),
-		r.URL.Query().Get("partyId"), r.URL.Query().Get("state"))
+	ids, ok := sameParty(w, r, h.d)
+	if !ok {
+		return
+	}
+	instructions, err := listInstructions(r.Context(), h.d.DB.Q(), ids, r.URL.Query().Get("state"))
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list instructions", err)
 		return

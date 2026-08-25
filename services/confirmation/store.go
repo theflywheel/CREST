@@ -280,3 +280,23 @@ func contestsAgainst(ctx context.Context, q store.Querier, targetKind, targetID 
 		return c, r.Scan(&c.State, &c.RaisedAt)
 	})
 }
+
+// windowsFor returns every confirmation window belonging to a worker, across
+// any merge (#100).
+//
+// This is the confirmation service's answer to "show me my record": each row
+// carries how the window ended, whether the payment was released, and the
+// credential it issued. Until now the service could only be asked about one
+// claim at a time, so there was no way to ask it about a person at all — which
+// made the merge gap invisible here rather than absent.
+func windowsFor(ctx context.Context, q store.Querier, partyIDs []string) ([]Window, error) {
+	rows, err := q.Query(ctx, `
+		SELECT `+windowColumns+` FROM windows
+		 WHERE party_id = ANY($1)
+		 ORDER BY opened_at, claim_id`, partyIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.Collect(rows, scanWindow)
+}

@@ -15,6 +15,46 @@ servers:
 
 paths:
   /v1/windows:
+    get:
+      operationId: listWindows
+      summary: One worker's confirmation history
+      description: >
+        What happened to each of a worker's claims: how the window ended, whether
+        the payment was released, and the credential it issued.
+
+
+        `partyId` is required. A list of every window in the deployment is not a
+        worker's record, it is a report, and serving one from the endpoint a
+        worker's own client calls is how a bulk export gets built by accident.
+
+
+        It follows merges (#100). Windows opened before a merge still name the
+        party they were opened against, because that was true when they were
+        opened, so this expands `partyId` to every id in the merge chain — and
+        asking about an absorbed id returns the whole history for the same
+        reason.
+      parameters:
+        - { name: partyId, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The worker's windows, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  windows: { type: array, items: { $ref: "#/components/schemas/Window" } }
+                  count: { type: integer }
+        "400":
+          description: No partyId.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "503":
+          description: >
+            The registry could not say which ids are this party, so the list would be
+            incomplete without saying so. Reported rather than answered with a partial
+            history the caller would believe.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
     post:
       operationId: openWindow
       summary: Open a confirmation window for a claim

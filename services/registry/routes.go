@@ -59,8 +59,10 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/enrolments", h.assistedEnrolment)
 	mux.HandleFunc("GET /v1/parties/{id}/enrolment", h.getEnrolment)
 
-	// Turning a verified token's subject into a Party (#89). See identity.go.
+	// Turning a verified token's subject into a Party (#89), and which party
+	// ids are one person after a merge (#100). See identity.go.
 	registerIdentityRoutes(mux, d)
+	registerMergeRoutes(mux, d)
 
 	// Where a public fact landed on the registry substrate (§3).
 	mux.HandleFunc("GET /v1/publications/{kind}/{id}", h.publication)
