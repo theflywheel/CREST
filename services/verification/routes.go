@@ -25,7 +25,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	h := &handlers{
 		d:            d,
 		definitions:  client.New(config.Str("DEFINITIONS_URL", "http://definitions:8080")),
-		registry:     client.New(config.Str("REGISTRY_URL", "http://registry:8080")),
+		registry:     client.New(config.Str("PARTIES_URL", "http://parties:8080")),
 		confirmation: client.New(config.Str("CONFIRMATION_URL", "http://confirmation:8080")),
 		dediURL:      config.Str("DEDI_URL", ""),
 	}

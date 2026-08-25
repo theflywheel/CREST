@@ -410,7 +410,7 @@ provenance (adapter-attached, never source-asserted):
 <p>Six service boundaries, named by what they answer:</p>
 <div class="tblwrap"><table>
 <tr><th>Service</th><th>Answers</th><th>Substrate beneath</th></tr>
-<tr><td><code>registry</code></td><td>Who exists, under what terms, on which projects?</td><td>DeDi (public) + private store</td></tr>
+<tr><td><code>parties</code></td><td>Who exists, under what terms, on which projects? Renamed from <code>registry</code> (#50): "registry" already meant two other things in this document — DeDi itself (§3's substrate), and the ten logical registries split across it — and this service is neither. It is the <em>boundary</em> between the public log and the private store, plus the policy a log cannot hold (approval state, identity matching, the hold queue), and <code>Party</code> is its primitive. From here on: "the log" or "DeDi" for the substrate, "the public faces" for the ten registries, <code>parties</code> for the service.</td><td>DeDi (public) + private store</td></tr>
 <tr><td><code>definitions</code></td><td>What counts as done, in which version, per which face?</td><td>DeDi</td></tr>
 <tr><td><code>evidence</code></td><td>What happened? (adapters in → units + claims out, validation, unclear-queue)</td><td>Private store</td></tr>
 <tr><td><code>confirmation</code></td><td>Is it true? (T=7 window → Certify issuance)</td><td>Private store + Inji Certify</td></tr>

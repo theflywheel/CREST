@@ -99,6 +99,13 @@ type Options struct {
 	Migrations fs.FS
 	Dir        string
 
+	// FormerName is what this service — and therefore its schema — used to be
+	// called. On startup, a database holding the old schema and not the new
+	// one has it renamed in place, so a deployment crosses a service rename
+	// (#50: registry → parties) without a data migration anybody has to
+	// remember to run.
+	FormerName string
+
 	// Deliver builds the function that drains this service's outbox. It is a
 	// factory rather than the function itself because delivering a message
 	// usually means recording what happened — a payment sent, a notification
@@ -173,6 +180,13 @@ func Main(name string, opts Options) {
 			os.Exit(1)
 		}
 		defer db.Close()
+
+		if opts.FormerName != "" {
+			if err := db.AdoptLegacySchema(ctx, opts.FormerName); err != nil {
+				log.Error("could not adopt the former schema", "former", opts.FormerName, "error", err)
+				os.Exit(1)
+			}
+		}
 
 		// Fatal on purpose. A service that starts with its schema half-applied
 		// answers requests it cannot honour, and the failure surfaces later as
@@ -249,7 +263,7 @@ func Main(name string, opts Options) {
 		os.Exit(1)
 	}
 
-	d.SameParty = remoteSameParty(config.Str("REGISTRY_URL", ""))
+	d.SameParty = remoteSameParty(config.Str("PARTIES_URL", ""))
 	if opts.SameParty != nil {
 		d.SameParty = opts.SameParty(d)
 	}
@@ -260,7 +274,7 @@ func Main(name string, opts Options) {
 		if opts.Permits != nil {
 			d.Permits = opts.Permits(d)
 		} else {
-			d.Permits = remotePermits(config.Str("REGISTRY_URL", ""))
+			d.Permits = remotePermits(config.Str("PARTIES_URL", ""))
 		}
 	}
 
@@ -274,7 +288,7 @@ func Main(name string, opts Options) {
 
 	var mw []httpx.Middleware
 	if haveIdentity {
-		binder := identity.RemoteBinder(config.Str("REGISTRY_URL", ""))
+		binder := identity.RemoteBinder(config.Str("PARTIES_URL", ""))
 		if opts.Binder != nil {
 			binder = opts.Binder(d)
 		}

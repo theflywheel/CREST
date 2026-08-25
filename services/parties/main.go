@@ -17,7 +17,11 @@ import (
 var migrations embed.FS
 
 func main() {
-	service.Main("registry", service.Options{
+	service.Main("parties", service.Options{
+		// né "registry" (#50): the word already meant DeDi and the ten public
+		// faces, and this service is neither — it is the boundary between the
+		// public log and the private store, and Party is its primitive.
+		FormerName: "registry",
 		Migrations: migrations,
 		Dir:        "migrations",
 		Routes:     routes,

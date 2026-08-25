@@ -91,7 +91,7 @@ func TestAVerifierSeesTheWholeChainsCredentialsAndNotTheMerge(t *testing.T) {
 
 	// And the registry's own mapping is not anonymous reading. The worker (or
 	// somebody acting for them) may ask; a stranger may not.
-	code, _, err = w.Registry.Status(w.ctx, http.MethodGet,
+	code, _, err = w.Parties.Status(w.ctx, http.MethodGet,
 		"/v1/parties/"+url.PathEscape(survivor)+"/identifiers", nil)
 	if err != nil {
 		t.Fatalf("read identifiers anonymously: %v", err)
@@ -105,7 +105,7 @@ func TestAVerifierSeesTheWholeChainsCredentialsAndNotTheMerge(t *testing.T) {
 		Identifiers []string `json:"identifiers"`
 		Merged      bool     `json:"merged"`
 	}
-	if err := w.Registry.As(w.login(t, survivor)).Get(w.ctx,
+	if err := w.Parties.As(w.login(t, survivor)).Get(w.ctx,
 		"/v1/parties/"+url.PathEscape(survivor)+"/identifiers", &ids); err != nil {
 		t.Fatalf("the worker cannot read their own identifier history: %v", err)
 	}

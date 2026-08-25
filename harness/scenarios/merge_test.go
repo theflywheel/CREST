@@ -58,7 +58,7 @@ type instructionList struct {
 // is exactly what the registry refuses to do.
 func (w *world) rosterWork(t *testing.T, party, rosterID, household string) string {
 	t.Helper()
-	if err := w.Registry.Post(w.ctx, "/v1/parties/"+url.PathEscape(party)+"/roster-ids",
+	if err := w.Parties.Post(w.ctx, "/v1/parties/"+url.PathEscape(party)+"/roster-ids",
 		map[string]any{"rosterId": rosterID, "contextId": fixtures.ProjectID}, nil); err != nil {
 		t.Fatalf("register roster id %s: %v", rosterID, err)
 	}
@@ -230,7 +230,7 @@ func TestAskingAboutTheAbsorbedRecordGivesTheWholeHistory(t *testing.T) {
 		Identifiers []string `json:"identifiers"`
 		Merged      bool     `json:"merged"`
 	}
-	if err := w.Registry.Get(w.ctx,
+	if err := w.Parties.Get(w.ctx,
 		"/internal/parties/"+url.PathEscape(absorbed)+"/identifiers", &ids); err != nil {
 		t.Fatalf("read identifiers: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestAPartyThatWasNeverMergedReadsTheSameAsBefore(t *testing.T) {
 		Identifiers []string `json:"identifiers"`
 		Merged      bool     `json:"merged"`
 	}
-	if err := w.Registry.Get(w.ctx,
+	if err := w.Parties.Get(w.ctx,
 		"/internal/parties/"+url.PathEscape(worker)+"/identifiers", &ids); err != nil {
 		t.Fatalf("read identifiers: %v", err)
 	}
@@ -288,13 +288,13 @@ func TestAnIncompleteHistoryIsRefusedRatherThanServed(t *testing.T) {
 		t.Fatalf("expected one claim, got %+v", res)
 	}
 
-	if err := harness.Kill(w.ctx, "registry"); err != nil {
+	if err := harness.Kill(w.ctx, "parties"); err != nil {
 		t.Fatalf("kill the registry: %v", err)
 	}
 	// Brought back whatever happens below, or every scenario after this one
 	// fails for a reason that has nothing to do with what it was testing.
 	t.Cleanup(func() {
-		if err := harness.Start(context.Background(), "registry"); err != nil {
+		if err := harness.Start(context.Background(), "parties"); err != nil {
 			t.Fatalf("restart the registry: %v", err)
 		}
 		if err := w.WaitReady(context.Background(), 90*time.Second); err != nil {

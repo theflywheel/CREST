@@ -78,7 +78,7 @@ jobs:
       - name: Build one service image
         run: |
           docker build -f infra/compose/Dockerfile.service \
-            --build-arg SERVICE=registry -t crest-registry:ci .
+            --build-arg SERVICE=parties -t crest-parties:ci .
 
       - name: Build the mocks
         run: |
