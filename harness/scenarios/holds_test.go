@@ -67,7 +67,7 @@ func (w *world) twoPartiesOneNumber(t *testing.T, phone string) (string, string,
 	ids := make([]string, 0, 2)
 	for _, name := range []string{"Shared Handset A ", "Shared Handset B "} {
 		var created schema.Party
-		if err := w.Registry.Post(w.ctx, "/v1/parties", schema.Party{
+		if err := w.Parties.Post(w.ctx, "/v1/parties", schema.Party{
 			Kind:        schema.PartyKindPerson,
 			DisplayName: name + runID,
 			ContactRoutes: []schema.PartyContactRoutesItem{
@@ -80,7 +80,7 @@ func (w *world) twoPartiesOneNumber(t *testing.T, phone string) (string, string,
 	}
 
 	// Resolving now must be a 409 with a hold, not a pick.
-	code, body, err := w.Registry.Status(w.ctx, http.MethodGet,
+	code, body, err := w.Parties.Status(w.ctx, http.MethodGet,
 		fmt.Sprintf("/v1/resolve?kind=contact-route&value=%s&contextId=%s",
 			url.QueryEscape(phone), fixtures.ProjectID), nil)
 	if err != nil {
@@ -99,7 +99,7 @@ func (w *world) twoPartiesOneNumber(t *testing.T, phone string) (string, string,
 func (w *world) resolveHold(t *testing.T, holdID string, body map[string]any) (int, holdResolution) {
 	t.Helper()
 	var out holdResolution
-	code, raw, err := w.Registry.Status(w.ctx, http.MethodPost, "/v1/holds/"+holdID+"/resolve", body)
+	code, raw, err := w.Parties.Status(w.ctx, http.MethodPost, "/v1/holds/"+holdID+"/resolve", body)
 	if err != nil {
 		t.Fatalf("resolve hold: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestAMergeWithoutTheWorkersConfirmationCannotBeExpressed(t *testing.T) {
 	var metrics struct {
 		MergesWithoutConfirmation int `json:"mergesWithoutConfirmation"`
 	}
-	if err := w.Registry.Get(w.ctx, "/v1/holds/metrics", &metrics); err != nil {
+	if err := w.Parties.Get(w.ctx, "/v1/holds/metrics", &metrics); err != nil {
 		t.Fatal(err)
 	}
 	if metrics.MergesWithoutConfirmation != 0 {
@@ -161,7 +161,7 @@ func TestAConfirmedMergeMakesTheIdentifierResolveToTheSurvivor(t *testing.T) {
 	var match struct {
 		PartyID string `json:"partyId"`
 	}
-	if err := w.Registry.Get(w.ctx,
+	if err := w.Parties.Get(w.ctx,
 		fmt.Sprintf("/v1/resolve?kind=contact-route&value=%s&contextId=%s",
 			url.QueryEscape(phone), fixtures.ProjectID), &match); err != nil {
 		t.Fatalf("resolve after merge: %v", err)
@@ -174,7 +174,7 @@ func TestAConfirmedMergeMakesTheIdentifierResolveToTheSurvivor(t *testing.T) {
 	// put a hole in a worker's history exactly where the system corrected its
 	// own mistake about who they were.
 	var gone schema.Party
-	if err := w.Registry.Get(w.ctx, "/v1/parties/"+absorbed, &gone); err != nil {
+	if err := w.Parties.Get(w.ctx, "/v1/parties/"+absorbed, &gone); err != nil {
 		t.Fatalf("the absorbed party was deleted: %v", err)
 	}
 	if gone.MergedInto == nil || *gone.MergedInto != survivor {
@@ -202,7 +202,7 @@ func TestTwoPeopleSharingAPhoneAreNotMerged(t *testing.T) {
 	var match struct {
 		PartyID string `json:"partyId"`
 	}
-	if err := w.Registry.Get(w.ctx,
+	if err := w.Parties.Get(w.ctx,
 		fmt.Sprintf("/v1/resolve?kind=contact-route&value=%s&contextId=%s",
 			url.QueryEscape(phone), fixtures.ProjectID), &match); err != nil {
 		t.Fatalf("resolve after distinct: %v", err)
@@ -215,7 +215,7 @@ func TestTwoPeopleSharingAPhoneAreNotMerged(t *testing.T) {
 	// by everything else about them. They shared a handset; that is not a
 	// reason to take their record apart.
 	var still schema.Party
-	if err := w.Registry.Get(w.ctx, "/v1/parties/"+other, &still); err != nil {
+	if err := w.Parties.Get(w.ctx, "/v1/parties/"+other, &still); err != nil {
 		t.Fatalf("the other party disappeared: %v", err)
 	}
 	if still.MergedInto != nil {
@@ -232,7 +232,7 @@ func TestTheHoldQueueDoesNotHandOutTheCollidingIdentifier(t *testing.T) {
 	phone := sharedNumber(4)
 	w.twoPartiesOneNumber(t, phone)
 
-	code, raw, err := w.Registry.Status(w.ctx, http.MethodGet, "/v1/holds", nil)
+	code, raw, err := w.Parties.Status(w.ctx, http.MethodGet, "/v1/holds", nil)
 	if err != nil || code != http.StatusOK {
 		t.Fatalf("list holds: %d %v", code, err)
 	}

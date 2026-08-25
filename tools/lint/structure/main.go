@@ -44,7 +44,7 @@ var ignoredDir = map[string]bool{
 // Exactly the services named in the blueprint. A new top-level service is a
 // design decision, not a directory someone creates on a Tuesday.
 var knownServices = map[string]bool{
-	"registry": true, "definitions": true, "evidence": true,
+	"parties": true, "definitions": true, "evidence": true,
 	"confirmation": true, "verification": true, "payments": true,
 	"notify": true,
 }

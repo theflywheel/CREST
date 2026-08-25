@@ -34,7 +34,7 @@ func (w *world) vouchedParty(t *testing.T, name, authority string) string {
 	party := w.newWorker(t, name)
 	epoch := w.w.Instance.Epoch
 	end := epoch.Add(300 * 24 * time.Hour)
-	if err := w.Registry.Post(w.ctx, "/v1/authorizations", schema.Authorization{
+	if err := w.Parties.Post(w.ctx, "/v1/authorizations", schema.Authorization{
 		PartyID: party,
 		Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
 		Scope: schema.AuthorizationScope{
@@ -58,7 +58,7 @@ func (w *world) vouchedParty(t *testing.T, name, authority string) string {
 func (w *world) newOrganisation(t *testing.T, name string) string {
 	t.Helper()
 	var created schema.Party
-	if err := w.Registry.Post(w.ctx, "/v1/parties", schema.Party{
+	if err := w.Parties.Post(w.ctx, "/v1/parties", schema.Party{
 		Kind:        schema.PartyKindOrganisation,
 		DisplayName: name,
 		ContactRoutes: []schema.PartyContactRoutesItem{{
@@ -80,7 +80,7 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 	confirmerB := w.vouchedParty(t, "Confirmer B "+runID, orgB)
 
 	var rec recoveryView
-	if err := w.Registry.Post(w.ctx, "/v1/recoveries", map[string]any{
+	if err := w.Parties.Post(w.ctx, "/v1/recoveries", map[string]any{
 		"partyId": worker, "openedByPartyId": fixtures.SupervisorID,
 		"reason": "handset lost in the river crossing",
 	}, &rec); err != nil {
@@ -88,7 +88,7 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 	}
 
 	// Nobody vouches for themselves.
-	code, body, _ := w.Registry.Status(w.ctx, http.MethodPost,
+	code, body, _ := w.Parties.Status(w.ctx, http.MethodPost,
 		"/v1/recoveries/"+rec.ID+"/confirmations",
 		map[string]any{"confirmerPartyId": worker, "authorityPartyId": fixtures.OrgID})
 	if code != http.StatusBadRequest {
@@ -96,7 +96,7 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 	}
 
 	// A confirmer the declared authority does not stand behind is refused.
-	code, body, _ = w.Registry.Status(w.ctx, http.MethodPost,
+	code, body, _ = w.Parties.Status(w.ctx, http.MethodPost,
 		"/v1/recoveries/"+rec.ID+"/confirmations",
 		map[string]any{"confirmerPartyId": confirmerA, "authorityPartyId": orgB})
 	if code != http.StatusForbidden {
@@ -104,7 +104,7 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 	}
 
 	// First voice.
-	if err := w.Registry.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/confirmations",
+	if err := w.Parties.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/confirmations",
 		map[string]any{"confirmerPartyId": confirmerA, "authorityPartyId": fixtures.OrgID}, &rec); err != nil {
 		t.Fatalf("first confirmation: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 
 	// A second voice from the SAME authority does not count — one org, one
 	// voice, enforced by the table itself.
-	code, body, _ = w.Registry.Status(w.ctx, http.MethodPost,
+	code, body, _ = w.Parties.Status(w.ctx, http.MethodPost,
 		"/v1/recoveries/"+rec.ID+"/confirmations",
 		map[string]any{"confirmerPartyId": confirmerA2, "authorityPartyId": fixtures.OrgID})
 	if code != http.StatusConflict {
@@ -124,7 +124,7 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 	}
 
 	// A voice from a different authority completes the panel.
-	if err := w.Registry.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/confirmations",
+	if err := w.Parties.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/confirmations",
 		map[string]any{"confirmerPartyId": confirmerB, "authorityPartyId": orgB}, &rec); err != nil {
 		t.Fatalf("second confirmation: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 	// Completion appends a binding for the worker's new subject; the worker
 	// can authenticate again, and their assurance says honestly what happened.
 	newSubject := w.oidc.Subject(runID + "|recovered-worker")
-	if err := w.Registry.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/complete",
+	if err := w.Parties.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/complete",
 		map[string]any{"subjectRef": newSubject}, &rec); err != nil {
 		t.Fatalf("complete recovery: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 	var bound struct {
 		PartyID string `json:"partyId"`
 	}
-	if err := w.Registry.Get(w.ctx,
+	if err := w.Parties.Get(w.ctx,
 		"/internal/identity/subjects/"+newSubject, &bound); err != nil {
 		t.Fatalf("the recovered subject does not resolve: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 	var assurance struct {
 		Level string `json:"identityAssurance"`
 	}
-	if err := w.Registry.Get(w.ctx, "/v1/parties/"+worker+"/assurance", &assurance); err != nil {
+	if err := w.Parties.Get(w.ctx, "/v1/parties/"+worker+"/assurance", &assurance); err != nil {
 		t.Fatalf("read assurance: %v", err)
 	}
 	if assurance.Level != "IA-1" {
@@ -169,7 +169,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 
 	worker := w.newWorker(t, "Remote Worker "+runID)
 	var rec recoveryView
-	if err := w.Registry.Post(w.ctx, "/v1/recoveries", map[string]any{
+	if err := w.Parties.Post(w.ctx, "/v1/recoveries", map[string]any{
 		"partyId": worker, "openedByPartyId": fixtures.SupervisorID,
 		"reason": "no second confirmer within a day's travel",
 	}, &rec); err != nil {
@@ -177,7 +177,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	}
 
 	// No reason, no override — the refusal this whole path is built around.
-	code, body, _ := w.Registry.Status(w.ctx, http.MethodPost,
+	code, body, _ := w.Parties.Status(w.ctx, http.MethodPost,
 		"/v1/recoveries/"+rec.ID+"/override",
 		map[string]any{"byPartyId": fixtures.SupervisorID})
 	if code != http.StatusBadRequest {
@@ -188,7 +188,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	}
 
 	// Nobody without the function overrides, reason or not.
-	code, body, _ = w.Registry.Status(w.ctx, http.MethodPost,
+	code, body, _ = w.Parties.Status(w.ctx, http.MethodPost,
 		"/v1/recoveries/"+rec.ID+"/override",
 		map[string]any{"byPartyId": fixtures.SupervisorID, "reason": "confirmers unreachable"})
 	if code != http.StatusForbidden {
@@ -202,7 +202,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	epoch := w.w.Instance.Epoch
 	end := epoch.Add(300 * 24 * time.Hour)
 	grantOverride := func(party string) {
-		if err := w.Registry.Post(w.ctx, "/v1/authorizations", schema.Authorization{
+		if err := w.Parties.Post(w.ctx, "/v1/authorizations", schema.Authorization{
 			PartyID:           party,
 			Terms:             schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
 			Scope:             schema.AuthorizationScope{Kind: schema.AuthorizationScopeKindInstance},
@@ -223,7 +223,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	// the worker. newWorker names the fixture supervisor as the worker's
 	// supervisor route, which is exactly the relationship being tested.
 	grantOverride(fixtures.SupervisorID)
-	code, body, _ = w.Registry.Status(w.ctx, http.MethodPost,
+	code, body, _ = w.Parties.Status(w.ctx, http.MethodPost,
 		"/v1/recoveries/"+rec.ID+"/override",
 		map[string]any{"byPartyId": fixtures.SupervisorID, "reason": "confirmers unreachable"})
 	if code != http.StatusForbidden || !strings.Contains(string(body), "own_supervisor_cannot_override") {
@@ -231,7 +231,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	}
 
 	grantOverride(fixtures.CustodianID)
-	if err := w.Registry.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/override", map[string]any{
+	if err := w.Parties.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/override", map[string]any{
 		"byPartyId": fixtures.CustodianID, "reason": "confirmers unreachable; verified in person",
 	}, &rec); err != nil {
 		t.Fatalf("override: %v", err)
@@ -241,7 +241,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	}
 
 	// Completion binds the new subject, exactly as the 2-of-3 path does.
-	if err := w.Registry.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/complete",
+	if err := w.Parties.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/complete",
 		map[string]any{"subjectRef": w.oidc.Subject(runID + "|overridden-worker")}, &rec); err != nil {
 		t.Fatalf("complete after override: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	// The override is readable afterwards — by the worker, by an auditor, by
 	// anybody asking whether this power is being used well.
 	var read recoveryView
-	if err := w.Registry.Get(w.ctx, "/v1/recoveries/"+rec.ID, &read); err != nil {
+	if err := w.Parties.Get(w.ctx, "/v1/recoveries/"+rec.ID, &read); err != nil {
 		t.Fatalf("read the recovery back: %v", err)
 	}
 	if read.OverrideBy == nil || read.OverrideRsn == nil {
@@ -263,7 +263,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	var overdue struct {
 		Recoveries []recoveryView `json:"recoveries"`
 	}
-	if err := w.Registry.Get(w.ctx, "/v1/recoveries?overdue=true", &overdue); err != nil {
+	if err := w.Parties.Get(w.ctx, "/v1/recoveries?overdue=true", &overdue); err != nil {
 		t.Fatalf("list overdue overrides: %v", err)
 	}
 	found := false

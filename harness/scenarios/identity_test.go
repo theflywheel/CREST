@@ -55,7 +55,7 @@ func (w *world) login(t *testing.T, partyID string) harness.Caller {
 	// binding path rather than of a fixture. It also means the assurance
 	// upgrade in #17 is exercised on every run: a party that logs in is a party
 	// with a live generic-oidc binding, which is IA-3.
-	if err := w.Registry.Post(w.ctx, "/v1/parties/"+partyID+"/identity-bindings", map[string]any{
+	if err := w.Parties.Post(w.ctx, "/v1/parties/"+partyID+"/identity-bindings", map[string]any{
 		"provider":      "mock-oidc",
 		"providerClass": "generic-oidc",
 		"subjectRef":    subject,
@@ -95,7 +95,7 @@ func (w *world) consentOf(t *testing.T, party string) string {
 	var consent struct {
 		ID string `json:"id"`
 	}
-	if err := w.Registry.PostRaw(w.ctx, fmt.Sprintf(
+	if err := w.Parties.PostRaw(w.ctx, fmt.Sprintf(
 		"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 		party, url.QueryEscape("hold and fetch evidence of my work"),
 		url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(fixtures.ProjectID)),
@@ -113,7 +113,7 @@ func (w *world) consentState(t *testing.T, party string) string {
 	}
 	// Scoped to the project, because consent is per programme and there is no
 	// single answer about a worker without naming one (§9).
-	if err := w.Registry.Get(w.ctx, "/v1/parties/"+party+"/enrolment-consent?contextId="+
+	if err := w.Parties.Get(w.ctx, "/v1/parties/"+party+"/enrolment-consent?contextId="+
 		url.QueryEscape(fixtures.ProjectID), &out); err != nil {
 		t.Fatalf("read enrolment consent for %s: %v", party, err)
 	}
@@ -127,7 +127,7 @@ func (w *world) consentState(t *testing.T, party string) string {
 func (w *world) newWorker(t *testing.T, name string) string {
 	t.Helper()
 	var created schema.Party
-	if err := w.Registry.Post(w.ctx, "/v1/parties", schema.Party{
+	if err := w.Parties.Post(w.ctx, "/v1/parties", schema.Party{
 		Kind:        schema.PartyKindPerson,
 		DisplayName: name,
 		// Reachable through their supervisor and by no other route. That is
@@ -155,7 +155,7 @@ func TestAnUnauthenticatedCallerCannotWithdrawAWorkersConsent(t *testing.T) {
 	worker := w.newWorker(t, "Unprotected Worker "+runID)
 	consentID := w.consentOf(t, worker)
 
-	code, body, err := w.Registry.Status(w.ctx, http.MethodPost,
+	code, body, err := w.Parties.Status(w.ctx, http.MethodPost,
 		"/v1/consents/"+consentID+"/withdraw", map[string]any{"reason": "not mine to give"})
 	if err != nil {
 		t.Fatalf("withdraw: %v", err)
@@ -180,7 +180,7 @@ func TestOneWorkerCannotWithdrawAnothersConsent(t *testing.T) {
 	// Authenticated, and authenticated as somebody else. This is the case the
 	// old code could not see at all: the request was well formed, the consent
 	// id was real, and there was nothing to compare the caller against.
-	code, body, err := w.Registry.As(w.login(t, fixtures.WorkerBID)).
+	code, body, err := w.Parties.As(w.login(t, fixtures.WorkerBID)).
 		Status(w.ctx, http.MethodPost, "/v1/consents/"+consentID+"/withdraw",
 			map[string]any{"reason": "not mine to give"})
 	if err != nil {
@@ -203,7 +203,7 @@ func TestAWorkerWithdrawsTheirOwnConsent(t *testing.T) {
 	worker := w.newWorker(t, "Consent Withdrawer "+runID)
 	consentID := w.consentOf(t, worker)
 
-	if err := w.Registry.As(w.login(t, worker)).Post(w.ctx,
+	if err := w.Parties.As(w.login(t, worker)).Post(w.ctx,
 		"/v1/consents/"+consentID+"/withdraw",
 		map[string]any{"reason": "changed my mind"}, nil); err != nil {
 		t.Fatalf("a worker could not withdraw their own consent: %v", err)
@@ -224,7 +224,7 @@ func TestASupervisorWithdrawsForAWorkerWhoCannotDoItThemselves(t *testing.T) {
 	worker := w.newWorker(t, "Assisted Withdrawer "+runID)
 	consentID := w.consentOf(t, worker)
 
-	if err := w.Registry.As(w.assist(t, fixtures.SupervisorID, worker)).Post(w.ctx,
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, worker)).Post(w.ctx,
 		"/v1/consents/"+consentID+"/withdraw",
 		map[string]any{"reason": "asked me to, has no phone"}, nil); err != nil {
 		t.Fatalf("a supervisor could not withdraw for a worker: %v", err)
@@ -245,7 +245,7 @@ func TestAWorkerCannotActForAnotherWorkerJustByAsking(t *testing.T) {
 
 	caller := w.login(t, fixtures.WorkerBID)
 	caller.OnBehalfOf = worker
-	code, body, err := w.Registry.As(caller).Status(w.ctx, http.MethodPost,
+	code, body, err := w.Parties.As(caller).Status(w.ctx, http.MethodPost,
 		"/v1/consents/"+consentID+"/withdraw", map[string]any{"reason": "helping"})
 	if err != nil {
 		t.Fatalf("withdraw: %v", err)
@@ -267,7 +267,7 @@ func TestAWorkerCannotActForAnotherWorkerJustByAsking(t *testing.T) {
 // unable to tell "the token was refused" from "the consent was not found".
 func (w *world) refusedToken(t *testing.T, token string) (int, []byte) {
 	t.Helper()
-	code, body, err := w.Registry.As(harness.Caller{Token: token}).
+	code, body, err := w.Parties.As(harness.Caller{Token: token}).
 		Status(w.ctx, http.MethodPost, "/v1/consents/crest:consent:does-not-exist/withdraw",
 			map[string]any{"reason": "no"})
 	if err != nil {
@@ -355,7 +355,7 @@ func TestAnAuthenticatedStrangerIsNotAnybodyHere(t *testing.T) {
 	worker := w.newWorker(t, "Stranger's Target "+runID)
 	consentID := w.consentOf(t, worker)
 
-	code, body, err := w.Registry.As(harness.Caller{Token: token}).
+	code, body, err := w.Parties.As(harness.Caller{Token: token}).
 		Status(w.ctx, http.MethodPost, "/v1/consents/"+consentID+"/withdraw",
 			map[string]any{"reason": "no"})
 	if err != nil {
@@ -382,10 +382,10 @@ func TestOneSubjectCannotBeTwoPeople(t *testing.T) {
 		"providerClass": "generic-oidc",
 		"subjectRef":    w.oidc.Subject(runID + "|shared-subject"),
 	}
-	if err := w.Registry.Post(w.ctx, "/v1/parties/"+first+"/identity-bindings", binding, nil); err != nil {
+	if err := w.Parties.Post(w.ctx, "/v1/parties/"+first+"/identity-bindings", binding, nil); err != nil {
 		t.Fatalf("bind the first party: %v", err)
 	}
-	code, body, err := w.Registry.Status(w.ctx, http.MethodPost,
+	code, body, err := w.Parties.Status(w.ctx, http.MethodPost,
 		"/v1/parties/"+second+"/identity-bindings", binding)
 	if err != nil {
 		t.Fatalf("bind the second party: %v", err)
@@ -405,7 +405,7 @@ func TestAnOrganisationApprovalNamesSomebodyWhoProvedIt(t *testing.T) {
 	// the organisation is now refused.
 	orgID := w.apply(t, "Impersonating Trust "+runID)
 
-	code, body, err := w.Registry.As(w.login(t, orgID)).Status(w.ctx, http.MethodPost,
+	code, body, err := w.Parties.As(w.login(t, orgID)).Status(w.ctx, http.MethodPost,
 		"/v1/organisations/"+orgID+"/decision",
 		map[string]any{"approve": true, "decidedBy": fixtures.SpecifierID})
 	if err != nil {
@@ -455,7 +455,7 @@ func (w *world) disputeClaim(t *testing.T, claimID string, body map[string]any, 
 // withdraw takes a party's consent back, as that party.
 func (w *world) withdraw(t *testing.T, consentID, party string, body, out any) error {
 	t.Helper()
-	return w.Registry.As(w.login(t, party)).
+	return w.Parties.As(w.login(t, party)).
 		Post(w.ctx, "/v1/consents/"+consentID+"/withdraw", body, out)
 }
 

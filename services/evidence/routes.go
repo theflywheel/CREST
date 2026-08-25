@@ -38,7 +38,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	hs := &handlers{
 		d: d,
 		in: &ingestor{
-			registry:    client.New(config.Str("REGISTRY_URL", "http://registry:8080")),
+			registry:    client.New(config.Str("PARTIES_URL", "http://parties:8080")),
 			definitions: client.New(config.Str("DEFINITIONS_URL", "http://definitions:8080")),
 			clock:       d.Clock,
 		},

@@ -60,7 +60,7 @@ func (w *world) apply(t *testing.T, name string) string {
 		Party        schema.Party `json:"party"`
 		Registration registration `json:"registration"`
 	}
-	if err := w.Registry.Post(w.ctx, "/v1/organisations", orgParty(name), &out); err != nil {
+	if err := w.Parties.Post(w.ctx, "/v1/organisations", orgParty(name), &out); err != nil {
 		t.Fatalf("register organisation: %v", err)
 	}
 	if out.Registration.State != "APPLIED" {
@@ -80,7 +80,7 @@ func TestAnOrganisationCannotApproveItself(t *testing.T) {
 	// Authenticated as the organisation, and naming itself. The rule still
 	// holds, and now it holds against somebody who proved who they were rather
 	// than against whatever they typed.
-	code, body, err := w.Registry.As(w.login(t, orgID)).Status(w.ctx, http.MethodPost,
+	code, body, err := w.Parties.As(w.login(t, orgID)).Status(w.ctx, http.MethodPost,
 		"/v1/organisations/"+orgID+"/decision",
 		map[string]any{"approve": true, "decidedBy": orgID})
 	if err != nil {
@@ -98,7 +98,7 @@ func TestAnOrganisationCannotBeApprovedBeforeAcceptingTerms(t *testing.T) {
 	w := setup(t)
 	orgID := w.apply(t, "Hasty Trust "+runID)
 
-	code, body, err := w.Registry.As(w.login(t, fixtures.SpecifierID)).Status(w.ctx, http.MethodPost,
+	code, body, err := w.Parties.As(w.login(t, fixtures.SpecifierID)).Status(w.ctx, http.MethodPost,
 		"/v1/organisations/"+orgID+"/decision",
 		map[string]any{"approve": true, "decidedBy": fixtures.SpecifierID})
 	if err != nil {
@@ -117,7 +117,7 @@ func TestAnApprovedOrganisationReachesTheRegistry(t *testing.T) {
 	terms := w.w.Terms[0]
 
 	var reg registration
-	if err := w.Registry.Post(w.ctx, "/v1/organisations/"+orgID+"/terms-acceptance",
+	if err := w.Parties.Post(w.ctx, "/v1/organisations/"+orgID+"/terms-acceptance",
 		map[string]any{"termsId": terms.ID, "termsVersion": terms.Version, "acceptedBy": orgID}, &reg); err != nil {
 		t.Fatalf("accept terms: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestAnApprovedOrganisationReachesTheRegistry(t *testing.T) {
 	// Not published yet. An applicant that has signed terms is still not an
 	// approved organisation, and an append-only log that recorded both the same
 	// way could never tell them apart afterwards.
-	code, _, err := w.Registry.Status(w.ctx, http.MethodGet, "/v1/publications/organisation/"+orgID, nil)
+	code, _, err := w.Parties.Status(w.ctx, http.MethodGet, "/v1/publications/organisation/"+orgID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestAnApprovedOrganisationReachesTheRegistry(t *testing.T) {
 	}
 
 	if reg.State == "TERMS_ACCEPTED" {
-		if err := w.Registry.As(w.login(t, fixtures.SpecifierID)).Post(w.ctx,
+		if err := w.Parties.As(w.login(t, fixtures.SpecifierID)).Post(w.ctx,
 			"/v1/organisations/"+orgID+"/decision",
 			map[string]any{"approve": true, "decidedBy": fixtures.SpecifierID}, &reg); err != nil {
 			t.Fatalf("approve: %v", err)
@@ -146,7 +146,7 @@ func TestAnApprovedOrganisationReachesTheRegistry(t *testing.T) {
 
 	var pub publication
 	eventually(t, "the approved organisation reaches the registry", 20*time.Second, func() error {
-		return w.Registry.Get(w.ctx, "/v1/publications/organisation/"+orgID, &pub)
+		return w.Parties.Get(w.ctx, "/v1/publications/organisation/"+orgID, &pub)
 	})
 	if pub.Registry != "organisations" || pub.Record != orgID {
 		t.Fatalf("published to %s/%s, want organisations/%s", pub.Registry, pub.Record, orgID)
@@ -191,7 +191,7 @@ func TestAWorkerWithNoPhoneCanStillBeEnrolled(t *testing.T) {
 			},
 		},
 	}
-	if err := w.Registry.Post(w.ctx, "/v1/enrolments", body, &out); err != nil {
+	if err := w.Parties.Post(w.ctx, "/v1/enrolments", body, &out); err != nil {
 		t.Fatalf("assisted enrolment: %v", err)
 	}
 	if out.Party.ID == "" {
@@ -207,7 +207,7 @@ func TestAWorkerWithNoPhoneCanStillBeEnrolled(t *testing.T) {
 		Level   string   `json:"identityAssurance"`
 		Because []string `json:"because"`
 	}
-	if err := w.Registry.Get(w.ctx, "/v1/parties/"+out.Party.ID+"/assurance", &assurance); err != nil {
+	if err := w.Parties.Get(w.ctx, "/v1/parties/"+out.Party.ID+"/assurance", &assurance); err != nil {
 		t.Fatalf("read assurance: %v", err)
 	}
 	if assurance.Level != out.IdentityAssurance {
@@ -219,7 +219,7 @@ func TestAWorkerWithNoPhoneCanStillBeEnrolled(t *testing.T) {
 		EnrolledBy string `json:"enrolledBy"`
 		Method     string `json:"method"`
 	}
-	if err := w.Registry.Get(w.ctx, "/v1/parties/"+out.Party.ID+"/enrolment", &enrolment); err != nil {
+	if err := w.Parties.Get(w.ctx, "/v1/parties/"+out.Party.ID+"/enrolment", &enrolment); err != nil {
 		t.Fatalf("read enrolment provenance: %v", err)
 	}
 	if enrolment.EnrolledBy != supervisor {
@@ -235,7 +235,7 @@ func TestAWorkerNeverReachesTheRegistrySubstrate(t *testing.T) {
 	workerID := w.w.Parties[0].ID
 
 	for _, kind := range []string{"organisation", "authorization"} {
-		code, body, err := w.Registry.Status(w.ctx, http.MethodGet,
+		code, body, err := w.Parties.Status(w.ctx, http.MethodGet,
 			fmt.Sprintf("/v1/publications/%s/%s", kind, workerID), nil)
 		if err != nil {
 			t.Fatal(err)
@@ -409,7 +409,7 @@ func TestADeploymentSaysWhoItIsAndAVerifierCanResolveIt(t *testing.T) {
 	// Unauthenticated on purpose: a public self-description nobody outside can
 	// read is one nobody outside can check.
 	eventually(t, "the deployment publishes its own identity", 20*time.Second, func() error {
-		if err := w.Registry.Get(w.ctx, "/v1/instance", &out); err != nil {
+		if err := w.Parties.Get(w.ctx, "/v1/instance", &out); err != nil {
 			return err
 		}
 		if out.Publication.Record == "" {
@@ -552,7 +552,7 @@ func TestASkillCodeIsPublishedAndImmutable(t *testing.T) {
 		Code  string `json:"code"`
 		Label string `json:"label"`
 	}
-	if err := w.Registry.Get(w.ctx, "/v1/skills/"+url.PathEscape(code), &sk); err != nil {
+	if err := w.Parties.Get(w.ctx, "/v1/skills/"+url.PathEscape(code), &sk); err != nil {
 		t.Fatalf("the seeded skill is not there: %v", err)
 	}
 
@@ -560,7 +560,7 @@ func TestASkillCodeIsPublishedAndImmutable(t *testing.T) {
 	// in issued credentials that cannot be rewritten, so a code whose meaning
 	// changed underneath them would restate what a worker's record says they
 	// can do — without anyone reissuing anything.
-	status, body, err := w.Registry.Status(w.ctx, http.MethodPost, "/v1/skills", map[string]any{
+	status, body, err := w.Parties.Status(w.ctx, http.MethodPost, "/v1/skills", map[string]any{
 		"code": code, "label": "Something else entirely", "publishedAt": "2026-02-01T00:00:00Z",
 	})
 	if err != nil {
@@ -573,7 +573,7 @@ func TestASkillCodeIsPublishedAndImmutable(t *testing.T) {
 	// A supersession has to name a code that exists, or the chain a worker's
 	// older credentials hang from has a gap nobody would notice until somebody
 	// tried to walk it.
-	status, body, err = w.Registry.Status(w.ctx, http.MethodPost, "/v1/skills", map[string]any{
+	status, body, err = w.Parties.Status(w.ctx, http.MethodPost, "/v1/skills", map[string]any{
 		"code": "CREST-SKILL:chw.bednet-distribution.v9", "label": "Future",
 		"supersedes": "CREST-SKILL:chw.does-not-exist.v1", "publishedAt": "2026-02-01T00:00:00Z",
 	})
@@ -588,7 +588,7 @@ func TestASkillCodeIsPublishedAndImmutable(t *testing.T) {
 	// code means without asking this deployment.
 	var pub publication
 	eventually(t, "the skill reaches the registry", 20*time.Second, func() error {
-		return w.Registry.Get(w.ctx, "/v1/publications/skill/"+url.PathEscape(code), &pub)
+		return w.Parties.Get(w.ctx, "/v1/publications/skill/"+url.PathEscape(code), &pub)
 	})
 	if pub.Registry != "skills" {
 		t.Errorf("the skill published to %q", pub.Registry)
@@ -672,7 +672,7 @@ func TestACredentialNamesTheChainAVerifierWalks(t *testing.T) {
 	for _, ref := range []string{qual, grant} {
 		var pub publication
 		eventually(t, "the authorization behind the credential is resolvable", 20*time.Second, func() error {
-			return w.Registry.Get(w.ctx, "/v1/publications/authorization/"+url.PathEscape(ref), &pub)
+			return w.Parties.Get(w.ctx, "/v1/publications/authorization/"+url.PathEscape(ref), &pub)
 		})
 		if pub.Registry != "authorizations" {
 			t.Errorf("%s published to %q", ref, pub.Registry)
@@ -696,7 +696,7 @@ func TestAWorkerWhoBindsAnAnchorLaterIsUpgradedWithoutLosingAnything(t *testing.
 	var enrolled struct {
 		Party schema.Party `json:"party"`
 	}
-	if err := w.Registry.Post(w.ctx, "/v1/enrolments", map[string]any{
+	if err := w.Parties.Post(w.ctx, "/v1/enrolments", map[string]any{
 		"enrolledBy": supervisor,
 		"method":     "field-visit",
 		"party": schema.Party{
@@ -727,7 +727,7 @@ func TestAWorkerWhoBindsAnAnchorLaterIsUpgradedWithoutLosingAnything(t *testing.
 		"providerClass": "esignet",
 		"subjectRef":    "psut-" + runID,
 	}
-	if err := w.Registry.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", binding, &appended); err != nil {
+	if err := w.Parties.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", binding, &appended); err != nil {
 		t.Fatalf("append identity binding: %v", err)
 	}
 	if appended.IdentityAssurance != string(schema.IdentityAssuranceIA3) {
@@ -745,7 +745,7 @@ func TestAWorkerWhoBindsAnAnchorLaterIsUpgradedWithoutLosingAnything(t *testing.
 
 	// Re-sending the same binding is a retry, not a second identity. History
 	// that grows on every retry is history nobody can read.
-	if err := w.Registry.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", binding, &appended); err != nil {
+	if err := w.Parties.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", binding, &appended); err != nil {
 		t.Fatalf("re-append: %v", err)
 	}
 	if len(appended.Bindings) != 1 {
@@ -755,7 +755,7 @@ func TestAWorkerWhoBindsAnAnchorLaterIsUpgradedWithoutLosingAnything(t *testing.
 	// A genuine re-binding — same provider, different subject — appends rather
 	// than replacing. The old one is a true statement about who we thought this
 	// was, and it is what makes a later dispute about an attribution answerable.
-	if err := w.Registry.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", map[string]any{
+	if err := w.Parties.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", map[string]any{
 		"provider":      "esignet",
 		"providerClass": "esignet",
 		"subjectRef":    "psut-rebound-" + runID,
@@ -789,7 +789,7 @@ func TestAnIdentifierAlreadyHeldByAnotherWorkerIsRefusedRatherThanMerged(t *test
 	first := newWorkerWithBinding(t, w, "First Holder "+runID, hash)
 	second := newWorkerWithBinding(t, w, "Second Claimant "+runID, "")
 
-	code, body, err := w.Registry.Status(w.ctx, http.MethodPost,
+	code, body, err := w.Parties.Status(w.ctx, http.MethodPost,
 		"/v1/parties/"+second+"/identity-bindings", map[string]any{
 			"provider":      "esignet",
 			"providerClass": "esignet",
@@ -820,7 +820,7 @@ func assuranceOfParty(t *testing.T, w *world, party string) string {
 	var a struct {
 		Level string `json:"identityAssurance"`
 	}
-	if err := w.Registry.Get(w.ctx, "/v1/parties/"+party+"/assurance", &a); err != nil {
+	if err := w.Parties.Get(w.ctx, "/v1/parties/"+party+"/assurance", &a); err != nil {
 		t.Fatalf("read assurance: %v", err)
 	}
 	return a.Level
@@ -836,12 +836,12 @@ func newWorkerWithBinding(t *testing.T, w *world, name, nationalIDHash string) s
 		},
 	}
 	var created schema.Party
-	if err := w.Registry.Post(w.ctx, "/v1/parties", p, &created); err != nil {
+	if err := w.Parties.Post(w.ctx, "/v1/parties", p, &created); err != nil {
 		t.Fatalf("create party: %v", err)
 	}
 	if nationalIDHash != "" {
 		var out map[string]any
-		if err := w.Registry.Post(w.ctx, "/v1/parties/"+created.ID+"/identity-bindings", map[string]any{
+		if err := w.Parties.Post(w.ctx, "/v1/parties/"+created.ID+"/identity-bindings", map[string]any{
 			"provider":      "esignet",
 			"providerClass": "esignet",
 			"subjectRef":    "psut-" + created.ID,
@@ -869,7 +869,7 @@ func TestAddingABindingDoesNotUnregisterTheWorkersRosterID(t *testing.T) {
 	rosterID := "roster-" + runID
 	contextID := w.w.Contexts[0].ID
 
-	if err := w.Registry.Post(w.ctx, "/v1/parties/"+party+"/roster-ids", map[string]any{
+	if err := w.Parties.Post(w.ctx, "/v1/parties/"+party+"/roster-ids", map[string]any{
 		"rosterId": rosterID, "contextId": contextID,
 	}, nil); err != nil {
 		t.Fatalf("register roster id: %v", err)
@@ -883,7 +883,7 @@ func TestAddingABindingDoesNotUnregisterTheWorkersRosterID(t *testing.T) {
 		}
 		q := fmt.Sprintf("/v1/resolve?kind=roster-id&value=%s&contextId=%s",
 			url.QueryEscape(rosterID), url.QueryEscape(contextID))
-		if err := w.Registry.Get(w.ctx, q, &m); err != nil {
+		if err := w.Parties.Get(w.ctx, q, &m); err != nil {
 			t.Fatalf("resolve %s: %v", when, err)
 		}
 		if m.PartyID != party {
@@ -893,7 +893,7 @@ func TestAddingABindingDoesNotUnregisterTheWorkersRosterID(t *testing.T) {
 	resolves("before the binding")
 
 	var out map[string]any
-	if err := w.Registry.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", map[string]any{
+	if err := w.Parties.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", map[string]any{
 		"provider": "esignet", "providerClass": "esignet", "subjectRef": "psut-roster-" + runID,
 	}, &out); err != nil {
 		t.Fatalf("append binding: %v", err)
@@ -927,7 +927,7 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 		ArtefactDigest string `json:"artefactDigest"`
 		CapturedBy     string `json:"capturedBy"`
 	}
-	if err := w.Registry.PostRaw(w.ctx, path, "audio/ogg", recording, &consent); err != nil {
+	if err := w.Parties.PostRaw(w.ctx, path, "audio/ogg", recording, &consent); err != nil {
 		t.Fatalf("record a voice consent: %v", err)
 	}
 	if consent.State != "GRANTED" || consent.ArtefactRef == "" || consent.ArtefactDigest == "" {
@@ -940,7 +940,7 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 
 	// The worker is entitled to hear it back. A consent you cannot review is
 	// one you cannot meaningfully withdraw.
-	code, played, err := w.Registry.Status(w.ctx, http.MethodGet,
+	code, played, err := w.Parties.Status(w.ctx, http.MethodGet,
 		"/v1/consents/"+consent.ID+"/artefact", nil)
 	if err != nil || code != http.StatusOK {
 		t.Fatalf("play back the recording: %d %v", code, err)
@@ -969,7 +969,7 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 		t.Errorf("the consent still points at an artefact after withdrawal")
 	}
 
-	code, _, err = w.Registry.Status(w.ctx, http.MethodGet,
+	code, _, err = w.Parties.Status(w.ctx, http.MethodGet,
 		"/v1/consents/"+consent.ID+"/artefact", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -988,7 +988,7 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 		} `json:"consents"`
 		EnrolmentConsent map[string]string `json:"enrolmentConsent"`
 	}
-	if err := w.Registry.Get(w.ctx, "/v1/parties/"+party+"/consents", &listed); err != nil {
+	if err := w.Parties.Get(w.ctx, "/v1/parties/"+party+"/consents", &listed); err != nil {
 		t.Fatal(err)
 	}
 	if len(listed.Consents) != 1 || listed.Consents[0].ID != consent.ID {
@@ -1006,7 +1006,7 @@ func TestAVoiceConsentWithNoRecordingIsRefused(t *testing.T) {
 	w := setup(t)
 	party := newWorkerWithBinding(t, w, "No Recording "+runID, "")
 
-	code, body, err := w.Registry.Status(w.ctx, http.MethodPost,
+	code, body, err := w.Parties.Status(w.ctx, http.MethodPost,
 		fmt.Sprintf("/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 			party, url.QueryEscape("hold evidence"), url.QueryEscape(fixtures.SupervisorID),
 			url.QueryEscape(w.w.Contexts[0].ID)), nil)
@@ -1037,7 +1037,7 @@ func TestConsentGivenToOneProgrammeDoesNotCoverAnother(t *testing.T) {
 	// is the key a real batch would join on.
 	phone := "+1555020" + runID[len(runID)-4:]
 	var created schema.Party
-	if err := w.Registry.Post(w.ctx, "/v1/parties", schema.Party{
+	if err := w.Parties.Post(w.ctx, "/v1/parties", schema.Party{
 		Kind:        schema.PartyKindPerson,
 		DisplayName: "Two Programmes " + runID,
 		ContactRoutes: []schema.PartyContactRoutesItem{
@@ -1054,7 +1054,7 @@ func TestConsentGivenToOneProgrammeDoesNotCoverAnother(t *testing.T) {
 	var second struct {
 		ID string `json:"id"`
 	}
-	if err := w.Registry.Post(w.ctx, "/v1/contexts", map[string]any{
+	if err := w.Parties.Post(w.ctx, "/v1/contexts", map[string]any{
 		"kind":         "project",
 		"name":         "Second programme " + runID,
 		"ownerPartyId": fixtures.OrgID,
@@ -1069,7 +1069,7 @@ func TestConsentGivenToOneProgrammeDoesNotCoverAnother(t *testing.T) {
 		var c struct {
 			ID string `json:"id"`
 		}
-		if err := w.Registry.PostRaw(w.ctx, fmt.Sprintf(
+		if err := w.Parties.PostRaw(w.ctx, fmt.Sprintf(
 			"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 			party, url.QueryEscape("hold evidence of my work"),
 			url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(contextID)),
@@ -1083,7 +1083,7 @@ func TestConsentGivenToOneProgrammeDoesNotCoverAnother(t *testing.T) {
 		var m struct {
 			EnrolmentConsent string `json:"enrolmentConsent"`
 		}
-		if err := w.Registry.Get(w.ctx, fmt.Sprintf("/v1/resolve?kind=contact-route&value=%s&contextId=%s",
+		if err := w.Parties.Get(w.ctx, fmt.Sprintf("/v1/resolve?kind=contact-route&value=%s&contextId=%s",
 			url.QueryEscape(phone), url.QueryEscape(contextID)), &m); err != nil {
 			t.Fatalf("resolve in %s: %v", contextID, err)
 		}

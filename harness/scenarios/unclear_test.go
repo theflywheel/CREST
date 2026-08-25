@@ -249,7 +249,7 @@ func (w *world) withdrawEnrolmentConsent(t *testing.T, partyID string) {
 	var consent struct {
 		ID string `json:"id"`
 	}
-	if err := w.Registry.Post(w.ctx, path, nil, &consent); err != nil {
+	if err := w.Parties.Post(w.ctx, path, nil, &consent); err != nil {
 		t.Fatalf("record consent: %v", err)
 	}
 	if err := w.withdraw(t, consent.ID, partyID,

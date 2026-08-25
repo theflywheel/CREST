@@ -8,6 +8,32 @@ import (
 	"strings"
 )
 
+// AdoptLegacySchema renames the schema a service used to own to the name it
+// owns now — the data-continuity half of renaming a service (#50).
+//
+// A rename in code alone would have the new binary CREATE SCHEMA an empty
+// namespace beside the full old one, and every read would answer "nothing
+// here" about data that is three millimetres to the left. Refuses nothing and
+// races nothing: if the new schema already exists the rename already happened
+// (or this is a fresh database), and if neither exists Migrate creates the new
+// one as usual.
+func (db *DB) AdoptLegacySchema(ctx context.Context, former string) error {
+	var hasNew, hasOld bool
+	err := db.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $1),
+		       EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = $2)`,
+		db.schema, former).Scan(&hasNew, &hasOld)
+	if err != nil {
+		return err
+	}
+	if hasNew || !hasOld {
+		return nil
+	}
+	_, err = db.pool.Exec(ctx, fmt.Sprintf("ALTER SCHEMA %s RENAME TO %s",
+		quoteIdent(former), quoteIdent(db.schema)))
+	return err
+}
+
 // Migrate applies every .sql file in dir, in filename order, exactly once.
 //
 // Deliberately small. A migration framework is a dependency that has to be

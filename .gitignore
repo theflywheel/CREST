@@ -16,6 +16,7 @@ infra/compose/dedi-keys/
 # repo root. One of them (`registry`) was committed in eec03af — a 12MB Mach-O
 # that only builds on one architecture, tracked as though it were source.
 /registry
+/parties
 /definitions
 /evidence
 /confirmation
