@@ -1,6 +1,6 @@
 # CREST design documents
 
-Everything the implementation builds against. Each is a self-contained HTML page — clone and open in a browser.
+Everything the implementation builds against. Each is a self-contained HTML page — clone and open in a browser, or read the hosted rendering at **https://crest-docs-production.up.railway.app** (the markdown docs rendered by Quartz, the HTML design docs served beside them; see DEPLOYMENT.md for how it publishes).
 
 | Document | Role | Sections |
 |---|---|---|
@@ -11,6 +11,7 @@ Everything the implementation builds against. Each is a self-contained HTML page
 | [COMPONENTS.md](COMPONENTS.md) | What we run vs what we build, and the repository shape. | — |
 | [TESTING.md](TESTING.md) | The four test layers, the harness contract, and why in-toto waits. | — |
 | [test-manifest.md](test-manifest.md) | Every feature and how it is proven. Maintained by hand. | — |
+| [DEMO.md](DEMO.md) | The demo layer — `apps/web` and the story seeder: what they demonstrate and refuse to fake. | — |
 
 ## Blueprint sections
 

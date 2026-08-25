@@ -3,7 +3,9 @@
 One static app, six faces, each built from its journey in
 `docs/reference/CREST — Actor Journeys_17Aug.html` and backed only by
 endpoints that exist. Where the document promises a screen the backend cannot
-serve yet, the face says so and names the issue.
+serve yet, the face says so and names the issue. The design decisions behind
+this app and the story seeder that feeds it are recorded in
+[`docs/DEMO.md`](../../docs/DEMO.md).
 
 ```sh
 make web-up          # stack + web app + fixture world
