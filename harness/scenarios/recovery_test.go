@@ -80,23 +80,33 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 	confirmerB := w.vouchedParty(t, "Confirmer B "+runID, orgB)
 
 	var rec recoveryView
-	if err := w.Parties.Post(w.ctx, "/v1/recoveries", map[string]any{
+	if err := w.Parties.As(w.login(t, fixtures.SupervisorID)).Post(w.ctx, "/v1/recoveries", map[string]any{
 		"partyId": worker, "openedByPartyId": fixtures.SupervisorID,
 		"reason": "handset lost in the river crossing",
 	}, &rec); err != nil {
 		t.Fatalf("open recovery: %v", err)
 	}
 
-	// Nobody vouches for themselves.
-	code, body, _ := w.Parties.Status(w.ctx, http.MethodPost,
-		"/v1/recoveries/"+rec.ID+"/confirmations",
-		map[string]any{"confirmerPartyId": worker, "authorityPartyId": fixtures.OrgID})
+	// Nobody vouches for themselves — shown on a second recovery whose subject
+	// CAN authenticate, because the main worker must stay unbound: logging
+	// them in would bind an anchor and quietly raise the assurance this test
+	// asserts at the end.
+	var recA recoveryView
+	if err := w.Parties.As(w.login(t, fixtures.SupervisorID)).Post(w.ctx, "/v1/recoveries", map[string]any{
+		"partyId": confirmerA, "openedByPartyId": fixtures.SupervisorID,
+		"reason": "self-confirmation probe",
+	}, &recA); err != nil {
+		t.Fatalf("open probe recovery: %v", err)
+	}
+	code, body, _ := w.Parties.As(w.login(t, confirmerA)).Status(w.ctx, http.MethodPost,
+		"/v1/recoveries/"+recA.ID+"/confirmations",
+		map[string]any{"confirmerPartyId": confirmerA, "authorityPartyId": fixtures.OrgID})
 	if code != http.StatusBadRequest {
 		t.Fatalf("self-confirmation was answered %d, not 400: %s", code, body)
 	}
 
 	// A confirmer the declared authority does not stand behind is refused.
-	code, body, _ = w.Parties.Status(w.ctx, http.MethodPost,
+	code, body, _ = w.Parties.As(w.login(t, confirmerA)).Status(w.ctx, http.MethodPost,
 		"/v1/recoveries/"+rec.ID+"/confirmations",
 		map[string]any{"confirmerPartyId": confirmerA, "authorityPartyId": orgB})
 	if code != http.StatusForbidden {
@@ -104,7 +114,7 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 	}
 
 	// First voice.
-	if err := w.Parties.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/confirmations",
+	if err := w.Parties.As(w.login(t, confirmerA)).Post(w.ctx, "/v1/recoveries/"+rec.ID+"/confirmations",
 		map[string]any{"confirmerPartyId": confirmerA, "authorityPartyId": fixtures.OrgID}, &rec); err != nil {
 		t.Fatalf("first confirmation: %v", err)
 	}
@@ -114,7 +124,7 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 
 	// A second voice from the SAME authority does not count — one org, one
 	// voice, enforced by the table itself.
-	code, body, _ = w.Parties.Status(w.ctx, http.MethodPost,
+	code, body, _ = w.Parties.As(w.login(t, confirmerA2)).Status(w.ctx, http.MethodPost,
 		"/v1/recoveries/"+rec.ID+"/confirmations",
 		map[string]any{"confirmerPartyId": confirmerA2, "authorityPartyId": fixtures.OrgID})
 	if code != http.StatusConflict {
@@ -124,7 +134,7 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 	}
 
 	// A voice from a different authority completes the panel.
-	if err := w.Parties.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/confirmations",
+	if err := w.Parties.As(w.login(t, confirmerB)).Post(w.ctx, "/v1/recoveries/"+rec.ID+"/confirmations",
 		map[string]any{"confirmerPartyId": confirmerB, "authorityPartyId": orgB}, &rec); err != nil {
 		t.Fatalf("second confirmation: %v", err)
 	}
@@ -135,7 +145,7 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 	// Completion appends a binding for the worker's new subject; the worker
 	// can authenticate again, and their assurance says honestly what happened.
 	newSubject := w.oidc.Subject(runID + "|recovered-worker")
-	if err := w.Parties.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/complete",
+	if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Post(w.ctx, "/v1/recoveries/"+rec.ID+"/complete",
 		map[string]any{"subjectRef": newSubject}, &rec); err != nil {
 		t.Fatalf("complete recovery: %v", err)
 	}
@@ -156,7 +166,7 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 	var assurance struct {
 		Level string `json:"identityAssurance"`
 	}
-	if err := w.Parties.Get(w.ctx, "/v1/parties/"+worker+"/assurance", &assurance); err != nil {
+	if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/internal/parties/"+worker+"/assurance", &assurance); err != nil {
 		t.Fatalf("read assurance: %v", err)
 	}
 	if assurance.Level != "IA-1" {
@@ -169,7 +179,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 
 	worker := w.newWorker(t, "Remote Worker "+runID)
 	var rec recoveryView
-	if err := w.Parties.Post(w.ctx, "/v1/recoveries", map[string]any{
+	if err := w.Parties.As(w.login(t, fixtures.SupervisorID)).Post(w.ctx, "/v1/recoveries", map[string]any{
 		"partyId": worker, "openedByPartyId": fixtures.SupervisorID,
 		"reason": "no second confirmer within a day's travel",
 	}, &rec); err != nil {
@@ -177,7 +187,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	}
 
 	// No reason, no override — the refusal this whole path is built around.
-	code, body, _ := w.Parties.Status(w.ctx, http.MethodPost,
+	code, body, _ := w.Parties.As(w.login(t, fixtures.SupervisorID)).Status(w.ctx, http.MethodPost,
 		"/v1/recoveries/"+rec.ID+"/override",
 		map[string]any{"byPartyId": fixtures.SupervisorID})
 	if code != http.StatusBadRequest {
@@ -188,7 +198,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	}
 
 	// Nobody without the function overrides, reason or not.
-	code, body, _ = w.Parties.Status(w.ctx, http.MethodPost,
+	code, body, _ = w.Parties.As(w.login(t, fixtures.SupervisorID)).Status(w.ctx, http.MethodPost,
 		"/v1/recoveries/"+rec.ID+"/override",
 		map[string]any{"byPartyId": fixtures.SupervisorID, "reason": "confirmers unreachable"})
 	if code != http.StatusForbidden {
@@ -223,7 +233,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	// the worker. newWorker names the fixture supervisor as the worker's
 	// supervisor route, which is exactly the relationship being tested.
 	grantOverride(fixtures.SupervisorID)
-	code, body, _ = w.Parties.Status(w.ctx, http.MethodPost,
+	code, body, _ = w.Parties.As(w.login(t, fixtures.SupervisorID)).Status(w.ctx, http.MethodPost,
 		"/v1/recoveries/"+rec.ID+"/override",
 		map[string]any{"byPartyId": fixtures.SupervisorID, "reason": "confirmers unreachable"})
 	if code != http.StatusForbidden || !strings.Contains(string(body), "own_supervisor_cannot_override") {
@@ -231,7 +241,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	}
 
 	grantOverride(fixtures.CustodianID)
-	if err := w.Parties.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/override", map[string]any{
+	if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Post(w.ctx, "/v1/recoveries/"+rec.ID+"/override", map[string]any{
 		"byPartyId": fixtures.CustodianID, "reason": "confirmers unreachable; verified in person",
 	}, &rec); err != nil {
 		t.Fatalf("override: %v", err)
@@ -241,7 +251,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	}
 
 	// Completion binds the new subject, exactly as the 2-of-3 path does.
-	if err := w.Parties.Post(w.ctx, "/v1/recoveries/"+rec.ID+"/complete",
+	if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Post(w.ctx, "/v1/recoveries/"+rec.ID+"/complete",
 		map[string]any{"subjectRef": w.oidc.Subject(runID + "|overridden-worker")}, &rec); err != nil {
 		t.Fatalf("complete after override: %v", err)
 	}
@@ -263,7 +273,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	var overdue struct {
 		Recoveries []recoveryView `json:"recoveries"`
 	}
-	if err := w.Parties.Get(w.ctx, "/v1/recoveries?overdue=true", &overdue); err != nil {
+	if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/recoveries?overdue=true", &overdue); err != nil {
 		t.Fatalf("list overdue overrides: %v", err)
 	}
 	found := false

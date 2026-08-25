@@ -57,7 +57,7 @@ func (w *world) unattributedRow(t *testing.T, householdID string) string {
 func (w *world) resolveUnclear(t *testing.T, rowID, partyID, by string) (int, resolution) {
 	t.Helper()
 	var out resolution
-	code, body, err := w.Evidence.Status(w.ctx, http.MethodPost,
+	code, body, err := w.Evidence.As(w.login(t, by)).Status(w.ctx, http.MethodPost,
 		"/v1/unclear/"+rowID+"/resolve",
 		map[string]any{"partyId": partyID, "resolvedByPartyId": by})
 	if err != nil {
@@ -226,7 +226,7 @@ func (w *world) openQueue(t *testing.T) []string {
 			ID string `json:"id"`
 		} `json:"unclear"`
 	}
-	if err := w.Evidence.Get(w.ctx, "/v1/unclear", &queue); err != nil {
+	if err := w.Evidence.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/unclear", &queue); err != nil {
 		t.Fatalf("list the unclear queue: %v", err)
 	}
 	ids := make([]string, 0, len(queue.Unclear))
@@ -249,7 +249,7 @@ func (w *world) withdrawEnrolmentConsent(t *testing.T, partyID string) {
 	var consent struct {
 		ID string `json:"id"`
 	}
-	if err := w.Parties.Post(w.ctx, path, nil, &consent); err != nil {
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, partyID)).Post(w.ctx, path, nil, &consent); err != nil {
 		t.Fatalf("record consent: %v", err)
 	}
 	if err := w.withdraw(t, consent.ID, partyID,

@@ -55,7 +55,7 @@ func (w *world) submitAs(t *testing.T, submitter string, csv []byte) (int, []byt
 		"&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch"+
 		"&systemRef=dhis2-riverside",
 		fixtures.ProjectID, fixtures.DefinitionID, url.QueryEscape(submitter))
-	code, body, err := w.Evidence.StatusRaw(w.ctx, http.MethodPost, path, "text/csv", csv)
+	code, body, err := w.Evidence.As(w.login(t, submitter)).StatusRaw(w.ctx, http.MethodPost, path, "text/csv", csv)
 	if err != nil {
 		t.Fatalf("submit as %s: %v", submitter, err)
 	}
@@ -86,7 +86,7 @@ func TestAnOverdueAuthorizationStillPermitsAndIsListedForReview(t *testing.T) {
 		Permitted bool `json:"permitted"`
 		Overdue   bool `json:"overdue"`
 	}
-	if err := w.Parties.Get(w.ctx, fmt.Sprintf(
+	if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, fmt.Sprintf(
 		"/v1/authorizations/permits?partyId=%s&function=submit-work-evidence&contextId=%s",
 		url.QueryEscape(submitter), url.QueryEscape(fixtures.ProjectID)), &perm); err != nil {
 		t.Fatalf("permits: %v", err)

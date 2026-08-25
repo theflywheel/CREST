@@ -46,7 +46,7 @@ func main() {
 				case topicPaymentRelease:
 					// Idempotent on the claim at the far end. The relay is
 					// at-least-once, and a redelivered release must not pay twice.
-					return payments.Do(ctx, "POST", "/v1/instructions", json.RawMessage(payload), nil)
+					return payments.Do(ctx, "POST", "/internal/instructions", json.RawMessage(payload), nil)
 				default:
 					return fmt.Errorf("no delivery route for topic %q", topic)
 				}

@@ -39,3 +39,24 @@ func Authorize(w http.ResponseWriter, r *http.Request, log *slog.Logger,
 	httpx.Fail(w, log, "establish the caller", err)
 	return "", false
 }
+
+// Authenticated is the lighter gate, for surfaces that any signed-in principal
+// may read but an anonymous stranger may not — a custodian queue that shows
+// existence rather than content, an operations list. It establishes THAT there
+// is a caller, not WHO they are acting as; an endpoint that acts in a party's
+// name wants Authorize instead, and using this one there is the #102 mistake
+// with a seatbelt on.
+func Authenticated(w http.ResponseWriter, r *http.Request, log *slog.Logger, enforced bool) bool {
+	if !enforced {
+		return true
+	}
+	caller := From(r.Context())
+	if caller.Authenticated() {
+		return true
+	}
+	log.Info("refused an anonymous read of an authenticated surface", "path", r.URL.Path)
+	w.Header().Set("WWW-Authenticate", "Bearer")
+	httpx.WriteError(w, http.StatusUnauthorized, "no_caller",
+		"this surface answers signed-in callers; present a bearer token")
+	return false
+}

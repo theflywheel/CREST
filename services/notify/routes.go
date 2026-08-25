@@ -11,6 +11,7 @@ import (
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
@@ -31,7 +32,10 @@ func routes(mux *http.ServeMux, d service.Deps) {
 		sms:      client.New(config.Str("SMS_URL", "http://mock-sms:8080")),
 		msgs:     msgs,
 	}
-	mux.HandleFunc("POST /v1/notifications", h.send)
+	// Sending is what the other services do when a moment demands a message —
+	// internal only (#102, service-identity ruling). A public send door would
+	// let anyone message workers in CREST's voice.
+	mux.HandleFunc("POST /internal/notifications", h.send)
 	mux.HandleFunc("GET /v1/notifications", h.list)
 }
 
@@ -127,7 +131,7 @@ func (h *handlers) send(w http.ResponseWriter, r *http.Request) {
 // path, not a failure.
 func (h *handlers) routeFor(ctx context.Context, partyID string) (*schema.PartyContactRoutesItem, error) {
 	var p schema.Party
-	if err := h.registry.Get(ctx, "/v1/parties/"+url.PathEscape(partyID), &p); err != nil {
+	if err := h.registry.Get(ctx, "/internal/parties/"+url.PathEscape(partyID), &p); err != nil {
 		if client.Code(err) == http.StatusNotFound {
 			return nil, nil
 		}
@@ -186,6 +190,16 @@ func insert(ctx context.Context, tx store.Querier, n notification) error {
 }
 
 func (h *handlers) list(w http.ResponseWriter, r *http.Request) {
+	// What was said to whom: the worker's own messages to the worker or their
+	// actor; the whole log to a signed-in operator (#102).
+	if partyID := r.URL.Query().Get("partyId"); partyID != "" {
+		if _, ok := identity.Authorize(w, r, h.d.Log, partyID, "",
+			h.d.Authenticating, h.d.Permits); !ok {
+			return
+		}
+	} else if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	rows, err := h.d.DB.Q().Query(r.Context(), `
 		SELECT id, party_id, coalesce(claim_id, ''), kind, channel, destination, body,
 		       state, failure, created_at

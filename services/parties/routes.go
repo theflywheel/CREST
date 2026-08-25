@@ -4,10 +4,12 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
@@ -24,11 +26,31 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	}
 	h := &handlers{d: d, model: model}
 
+	// The caller-facing surface (#102). Party-scoped reads and every write in
+	// a party's name go through identity.Authorize: the worker themselves, or
+	// somebody holding act-for-party where the action is scoped. Endpoints the
+	// other services call have /internal/ twins below — unauthenticated by the
+	// service-identity ruling (§16, decided 2026-08-25): service traffic lives
+	// on internal routes and fencing them to the service network is the
+	// deployment's job, stated in pkg/identity/remote.go.
+	//
+	// POST /v1/parties is deliberately open: it is the bootstrap and
+	// self-registration door (the first party cannot be created by an
+	// authenticated party), and the checked door for field enrolment is
+	// /v1/enrolments, which names its enroller. Revisit when org-admin
+	// identity lands (J1); #102 tracks the judgement.
 	mux.HandleFunc("POST /v1/parties", h.createParty)
 	mux.HandleFunc("GET /v1/parties/{id}", h.getParty)
 	mux.HandleFunc("GET /v1/parties/{id}/assurance", h.getAssurance)
 	mux.HandleFunc("POST /v1/parties/{id}/roster-ids", h.addRosterID)
 	mux.HandleFunc("POST /v1/parties/{id}/identity-bindings", h.addIdentityBinding)
+	// Service twins: notify reads contact routes, evidence resolves identities
+	// and consent state, verification derives assurance mid-verdict.
+	mux.HandleFunc("GET /internal/parties/{id}", h.getPartyRaw)
+	mux.HandleFunc("GET /internal/parties/{id}/assurance", h.getAssurance)
+	mux.HandleFunc("GET /internal/parties/{id}/enrolment-consent", h.enrolmentConsentState)
+	mux.HandleFunc("GET /internal/resolve", h.resolve)
+	mux.HandleFunc("GET /internal/authorizations/permits", h.permits)
 
 	// Enrolment consent (§9, #24). The artefact route is separate from the
 	// record route because one is a stream of somebody's voice and the other
@@ -114,6 +136,17 @@ func (h *handlers) createParty(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) getParty(w http.ResponseWriter, r *http.Request) {
+	// A Party document is contact routes and identity bindings — PII. The
+	// public read answers the person, or somebody permitted to act for them;
+	// services read the /internal twin (#102).
+	if _, ok := identity.Authorize(w, r, h.d.Log, r.PathValue("id"), "",
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
+	h.getPartyRaw(w, r)
+}
+
+func (h *handlers) getPartyRaw(w http.ResponseWriter, r *http.Request) {
 	p, err := getParty(r.Context(), h.d.DB.Q(), r.PathValue("id"))
 	if err != nil {
 		httpx.NotFoundOr(w, h.d.Log, "party", err, store.ErrNotFound)
@@ -127,6 +160,15 @@ func (h *handlers) getParty(w http.ResponseWriter, r *http.Request) {
 // upgraded when a worker binds an anchor later (§4.1, and the same mechanism as
 // retroactive credentialing).
 func (h *handlers) getAssurance(w http.ResponseWriter, r *http.Request) {
+	// Public on /v1 for the person and their actors; verification asks the
+	// /internal twin mid-verdict (#102). The level itself is derived, so this
+	// endpoint is a window, not a store.
+	if strings.HasPrefix(r.URL.Path, "/v1/") {
+		if _, ok := identity.Authorize(w, r, h.d.Log, r.PathValue("id"), "",
+			h.d.Authenticating, h.d.Permits); !ok {
+			return
+		}
+	}
 	p, err := getParty(r.Context(), h.d.DB.Q(), r.PathValue("id"))
 	if err != nil {
 		httpx.NotFoundOr(w, h.d.Log, "party", err, store.ErrNotFound)
@@ -146,6 +188,13 @@ func (h *handlers) addRosterID(w http.ResponseWriter, r *http.Request) {
 		ContextID string `json:"contextId"`
 	}
 	if !httpx.ReadJSON(w, r, &body) {
+		return
+	}
+	// A roster id is a joining identifier: it decides whose work a future CSV
+	// row becomes (#102). Registering one is acting in the worker's name, in
+	// the roster's own context.
+	if _, ok := identity.Authorize(w, r, h.d.Log, r.PathValue("id"), body.ContextID,
+		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
 	if body.RosterID == "" || body.ContextID == "" {
@@ -170,6 +219,15 @@ func (h *handlers) addRosterID(w http.ResponseWriter, r *http.Request) {
 //	404  nothing matched — the caller sends it to the unclear queue
 //	409  more than one candidate — a hold is recorded, and no merge happens
 func (h *handlers) resolve(w http.ResponseWriter, r *http.Request) {
+	// Resolution maps a joining identifier to a person — the custodian's
+	// "find a worker" and the evidence pipeline's attribution step. On /v1 it
+	// answers signed-in callers only: anonymous identifier probing is how a
+	// phone number becomes a party id (#102). Evidence uses the /internal
+	// twin.
+	if strings.HasPrefix(r.URL.Path, "/v1/") &&
+		!identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	kind := r.URL.Query().Get("kind")
 	value := r.URL.Query().Get("value")
 	contextID := r.URL.Query().Get("contextId")
@@ -228,6 +286,12 @@ func (h *handlers) resolve(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) listHolds(w http.ResponseWriter, r *http.Request) {
+	// A custodian queue. It shows existence rather than content — key values
+	// are deliberately not serialised — so any signed-in caller may read it;
+	// deciding one is the authorized act (#102).
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	holds, err := openHolds(r.Context(), h.d.DB.Q())
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list holds", err)
@@ -354,6 +418,13 @@ func (h *handlers) listAuthorizations(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) permits(w http.ResponseWriter, r *http.Request) {
+	// A boolean about somebody's permissions is still a fact about them —
+	// probing it unauthenticated is a membership oracle (#68). Signed-in
+	// callers on /v1; services ask the /internal twin (#102).
+	if strings.HasPrefix(r.URL.Path, "/v1/") &&
+		!identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	q := r.URL.Query()
 	at := h.d.Clock.Now()
 	if s := q.Get("at"); s != "" {
