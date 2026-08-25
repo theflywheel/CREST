@@ -1,32 +1,50 @@
-# apps/ — the TypeScript frontends
+# apps/ — the journey apps
 
-Structure only for now. The screens are specified by the Actor Journeys HTML in
-[`../reference/`](../reference/), and mapped to scope in Blueprint §15.
+The Actor Journeys reference (`../docs/reference/`) encodes distinct frontend
+products through its device frames; these are those products, built against
+the live services. `apps/index.html` is the landing page of the door that
+serves them; `make apps-up` brings everything up story-seeded on :59110.
 
-| App | What it is | Arrives with |
+| App | What it is | Reference journeys |
 |---|---|---|
-| `worker` | Worker PWA: wallet, the confirmation window, earnings **including why a payment is held** | #28 |
-| `enrolment` | Field enrolment: assisted registration, voice consent capture, printed card | #24 |
-| `console` | One app, three role-based faces — organisation, project, oversight | #31 and the console journeys |
+| `worker` | The worker's app: the wallet-not-a-dashboard — record, money **including why any of it is held**, credentials, who checked me, consents | J7 (W-1) |
+| `enrolment` | Field app: assisted registration, voice consent read aloud, duplicate holds, confirm-what-you-saw, close the roster. Offline-aware | J6 (W-2), J8 (W-4) |
+| `console` | One console, role-based views — project status/payments/trace, defining the work, payment set-up, organisation, instance, custodian queues, support, funder | J1–J5, J10, J11 |
+| `verify` | Account-free checking: yes plus facts, refusals shown as refusals, bounded batches, the external-institution panel | J9 (V-1/V-2), P-10 |
+| `shared` | The design system (DIGIT palette tokens lifted verbatim from the reference), the API client, the real first-login path, fixture ids | — |
+| `web` | **The earlier single-page PoC, shared externally — do not touch.** Six faces in one page; superseded by the apps above but kept exactly as shared | — |
+
+## Build discipline
+
+- **No build step.** Plain ES modules served by nginx, same as the PoC proved
+  out. The earlier plan here said TypeScript with generated types; that is
+  deliberately not what shipped — a build pipeline is a cost the demo does not
+  pay yet, and the schema-generated-types rule below applies the day one exists.
+- **Real endpoints only.** Nothing on any screen is fixture data held in the
+  browser. Where the reference draws a screen no L1 endpoint serves, the
+  screen exists and says so (`.open-note`, the reference's own "Illustrative,
+  not a real API" chips) — never invented live-looking data.
+- **Credential custody is Inji's job.** The worker app's wallet tab is a view;
+  long-term custody is the deployed Inji wallet, and the un-wired
+  Certify/OpenID4VCI import path is labeled as the gap.
 
 ## Why one console, not three
 
-The three consoles in the journeys share most of their surface: lists of workers,
-claims, definitions, and metrics. Building three apps means fixing every bug three
-times and letting the three drift apart until they disagree about what a number
-means — which is exactly what the metric contracts (#31) exist to prevent.
+The consoles in the journeys share most of their surface. Role-based views
+over one codebase, with the roles coming from the parties service — three
+apps would fix every bug three times and drift until they disagree about what
+a number means (the metric contracts, #31, exist to prevent exactly that).
 
-Role-based faces over one codebase, with the roles coming from `registry`.
+## Proven how
 
-## Types come from schemas/
-
-TypeScript types are **generated** from `../schemas/`, the same JSON Schema the Go
-services generate structs from. Never hand-write a type that mirrors a primitive:
-the moment there are two definitions, they start disagreeing, and the disagreement
-surfaces as a worker seeing the wrong thing.
+`tests/e2e-apps/` — a Playwright walk of every route of every app against a
+story-seeded stack: no JS exceptions, no API error banners, and the story's
+data visible where the reference expects it. `make e2e-apps` locally;
+`BASE_URL=https://… make e2e-apps` against a deployed door.
 
 ## Channel parity is a requirement, not a nice-to-have
 
 Most workers in the first use case will not use a smartphone app. Every state
-change with a deadline must reach a worker over SMS/USSD too (#29) — so the app is
-one channel among several, and any flow that only works in the PWA is unfinished.
+change with a deadline must reach a worker over SMS/USSD too (#29) — the
+worker app states the USSD channel on its home screen, and any flow that only
+works in the app is unfinished.
