@@ -11,6 +11,7 @@ Everything the implementation builds against. Each is a self-contained HTML page
 | [COMPONENTS.md](COMPONENTS.md) | What we run vs what we build, and the repository shape. | — |
 | [TESTING.md](TESTING.md) | The four test layers, the harness contract, and why in-toto waits. | — |
 | [test-manifest.md](test-manifest.md) | Every feature and how it is proven. Maintained by hand. | — |
+| [DEMO.md](DEMO.md) | The demo layer — `apps/web` and the story seeder: what they demonstrate and refuse to fake. | — |
 
 ## Blueprint sections
 
