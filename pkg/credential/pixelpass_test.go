@@ -34,27 +34,71 @@ func TestWeReadTheFormatMosipsLibraryEmits(t *testing.T) {
 	}
 }
 
-// A card their library produced from JSON is CBOR inside, and this decoder does
-// not unwrap CBOR — it returns the CBOR bytes rather than the JSON.
-//
-// Stated as a test rather than left to be discovered. CREST only ever PRINTS
-// cards today, so the gap costs nothing yet; it would matter the moment CREST
-// has to read a card produced by Inji's wallet, and a silent "successful"
-// decode returning bytes nobody expected is the worse failure. Tracked in #92.
-func TestACardFromTheirLibraryHoldingJSONComesBackAsCBORNotJSON(t *testing.T) {
+// A card their library produced from JSON is CBOR inside, and decoding it
+// returns the JSON (#92, fixed). This was the negative test asserting the gap;
+// it is now the positive one, against the same vector from their library.
+func TestACardFromTheirLibraryHoldingJSONDecodesToTheJSON(t *testing.T) {
 	const theirJSONCard = "NCF:PB7EJ4DJ-XIV50BY15H0"
 
 	got, err := credential.DecodePixelPass(theirJSONCard)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if json.Valid(got) {
-		t.Fatalf("this decoder now understands CBOR-wrapped cards; #92 is fixed "+
-			"and this test should become the positive one: %q", got)
+	var doc map[string]any
+	if err := json.Unmarshal(got, &doc); err != nil {
+		t.Fatalf("the decoded card is not JSON: %v (got %q)", err, got)
 	}
-	// 0xa2 is a two-entry CBOR map — {"a":1,"b":"x"} as their library wrote it.
-	if len(got) == 0 || got[0] != 0xa2 {
-		t.Errorf("expected CBOR bytes, got %q", got)
+	// {"a":1,"b":"x"} is what their library was handed before it CBOR-wrapped it.
+	if doc["a"] != float64(1) || doc["b"] != "x" {
+		t.Errorf("decoded %v, want a=1 b=x", doc)
+	}
+}
+
+// The subset boundary, stated: CBOR that JSON cannot hold is refused with an
+// error naming CBOR — never returned as a "successful" decode of bytes nobody
+// expected, which was #92's original failure shape.
+func TestCBOROutsideTheJSONSubsetIsRefusedByName(t *testing.T) {
+	// A map holding a byte string (major 2) — a structure JSON cannot express.
+	// Top-level, because detection keys off the document head: a bare byte
+	// string's head is also printable ASCII, and a card is a document, not a
+	// fragment.
+	card, err := credential.EncodePixelPass([]byte{0xa1, 0x61, 'k', 0x42, 0x01, 0x02})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := credential.DecodePixelPass(card); err == nil ||
+		!strings.Contains(err.Error(), "CBOR") {
+		t.Fatalf("a byte-string payload was not refused with an error naming CBOR: %v", err)
+	}
+}
+
+// Nested structures, integers that must stay integers, floats, booleans and
+// null — hand-written CBOR, decoded and compared as JSON.
+func TestTheCBORSubsetCoversWhatJSONCanHold(t *testing.T) {
+	// {"n": 9007199254740993, "arr": [1, -2, 2.5, true, null], "s": "worker"}
+	// 9007199254740993 = 2^53+1, the first integer a float64 round-trip loses.
+	cbor := []byte{
+		0xa3, // map(3)
+		0x61, 'n', 0x1b, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+		0x63, 'a', 'r', 'r', 0x85,
+		0x01,
+		0x21,
+		0xfb, 0x40, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0xf5,
+		0xf6,
+		0x61, 's', 0x66, 'w', 'o', 'r', 'k', 'e', 'r',
+	}
+	card, err := credential.EncodePixelPass(cbor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := credential.DecodePixelPass(card)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	want := `{"arr":[1,-2,2.5,true,null],"n":9007199254740993,"s":"worker"}`
+	if string(got) != want {
+		t.Errorf("decoded %s, want %s", got, want)
 	}
 }
 
