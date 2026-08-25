@@ -1,0 +1,7 @@
+{
+  "name": "crest-e2e-apps",
+  "private": true,
+  "description": "Playwright walk of the journey apps (apps/worker, enrolment, console, verify) against a story-seeded stack.",
+  "scripts": { "test": "playwright test" },
+  "devDependencies": { "@playwright/test": "^1.49.0" }
+}
