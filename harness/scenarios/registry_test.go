@@ -4,6 +4,8 @@ package scenarios
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -771,7 +773,14 @@ func TestAWorkerWhoBindsAnAnchorLaterIsUpgradedWithoutLosingAnything(t *testing.
 // direction nobody checks.
 func TestAnIdentifierAlreadyHeldByAnotherWorkerIsRefusedRatherThanMerged(t *testing.T) {
 	w := setup(t)
-	hash := fmt.Sprintf("%064x", []byte("shared-identifier-" + runID)[:8])
+	// Hashed whole, not sliced. This read
+	// `fmt.Sprintf("%064x", []byte("shared-identifier-"+runID)[:8])`, which
+	// takes the first eight bytes of the *prefix* — always "shared-i" — so
+	// runID never reached the value and every run produced the same hash. The
+	// second run against a stack left up then failed at the seeding step, on a
+	// 409 that was the service working correctly.
+	sum := sha256.Sum256([]byte("shared-identifier-" + runID))
+	hash := hex.EncodeToString(sum[:])
 
 	first := newWorkerWithBinding(t, w, "First Holder "+runID, hash)
 	second := newWorkerWithBinding(t, w, "Second Claimant "+runID, "")

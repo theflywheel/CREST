@@ -563,6 +563,18 @@ type Party struct {
 	// (§4.1). The assurance level is derived from these, never stored.
 	IdentityBindings []PartyIdentityBindingsItem `json:"identityBindings,omitempty"`
 	Kind             PartyKind                   `json:"kind"`
+
+	// When the merge was recorded.
+	MergedAt *time.Time `json:"mergedAt,omitempty"`
+
+	// Set when a registry custodian merged this Party into another, with
+	// the worker's confirmation (§4). The Party is not deleted and its
+	// identifier keeps resolving: every claim, credential and payment
+	// instruction that names it lives in other services, and removing it
+	// would put a hole in a worker's history exactly where the system
+	// corrected its own mistake about who they were. Reads follow the
+	// pointer.
+	MergedInto *string `json:"mergedInto,omitempty"`
 }
 
 type PartyContactRoutesItem struct {
