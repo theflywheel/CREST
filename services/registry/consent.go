@@ -9,6 +9,7 @@ import (
 
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/store"
 )
 
@@ -387,8 +388,36 @@ func (h *handlers) withdrawConsent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Whose consent this is has to be established before it can be withdrawn
+	// (#89). This is the endpoint the issue names first, and for the reason
+	// that makes it worst: withdrawing enrolment consent stops new evidence
+	// being recorded about a worker (§9), so one unauthenticated call made
+	// somebody's work stop counting — and the endpoint whose entire purpose is
+	// acting on a worker's behalf had nothing establishing on whose behalf.
+	//
+	// The read is outside the transaction and the withdrawal re-reads inside
+	// it. Reading here only to find out who to check against is not a race
+	// worth a lock: a consent's party never changes, and the transaction below
+	// is still the one that decides whether there is anything to withdraw.
+	existing, err := getConsent(r.Context(), h.d.DB.Q(), r.PathValue("id"))
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "consent", err, store.ErrNotFound)
+		return
+	}
+	contextID := ""
+	if existing.ContextID != nil {
+		contextID = *existing.ContextID
+	}
+	// The assisted case reaches here intact: a supervisor withdrawing for a
+	// worker who cannot operate a phone sends X-CREST-On-Behalf-Of and holds
+	// act-for-party in the project, and the withdrawal is theirs to make.
+	if _, ok := identity.Authorize(w, r, h.d.Log, existing.PartyID, contextID,
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
+
 	var c Consent
-	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		var err error
 		c, err = withdrawConsent(r.Context(), tx, r.PathValue("id"), body.Reason, h.d.Clock.Now())
 		return err

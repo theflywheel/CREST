@@ -120,12 +120,20 @@ terms:
     publishedAt: 2026-01-05T10:00:00Z
 
 authorizations:
-  # The supervisor may submit evidence, scoped to this project only.
+  # The supervisor may submit evidence, and may act for a worker who cannot act
+  # for themselves — both scoped to this project only.
+  #
+  # act-for-party is what makes the assisted paths expressible under caller
+  # identity (#89, §4.1). It is the authorization behind the supervisor-assisted
+  # T=7 exit, and behind a withdrawal made on behalf of a worker with no phone.
+  # Scoped, always: an instance-wide grant to act for anybody is a grant to be
+  # anybody, and the point of writing assistance down is that it has a boundary
+  # and a name on it.
   - id: crest:authorization:01JCREST00000000000000GRNT
     partyId: did:crest:party:01JCREST00000000000000SPVR
     terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
     scope: { kind: context, contextId: crest:context:01JCREST00000000000000PRJC }
-    functions: [submit-work-evidence]
+    functions: [submit-work-evidence, act-for-party]
     period: { start: 2026-01-06T00:00:00Z, end: 2026-12-31T23:59:59Z }
     authorityPartyId: did:crest:party:01JCREST000000000000000RGN
     approvedByPartyId: did:crest:party:01JCREST000000000000000RGN

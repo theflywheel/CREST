@@ -12,13 +12,16 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
+	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/dedi"
 	"github.com/theflywheel/crest/pkg/httpx"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/store"
 )
 
@@ -44,6 +47,23 @@ type Deps struct {
 	// under. Kept beside the publisher so no service has to read the
 	// environment a second time and get a different answer.
 	DeDiNamespace string
+
+	// Permits answers the registry's authorization question — "may this party
+	// perform this function here" — from wherever this service can reach it.
+	// Handed down rather than built per service so that no service invents a
+	// second authorization model beside the one §4 describes.
+	//
+	// Never nil: with no identity provider configured it refuses everything,
+	// which is the safe reading of "we cannot check".
+	Permits identity.PermitsFunc
+
+	// Authenticating is whether this deployment has an identity provider. It
+	// is what handlers pass to identity.Actor: true means an endpoint acting
+	// in somebody's name refuses an unauthenticated request rather than
+	// believing the party id it was handed.
+	//
+	// Always true in production — Main refuses to start otherwise.
+	Authenticating bool
 
 	// Blobs is the object store, present only for a service that asked for
 	// one. What lives in it is consent artefacts — the voice recording that
@@ -97,6 +117,15 @@ type Options struct {
 	// service that started without its bootstrap answers requests it cannot
 	// honour, and the gap surfaces much later as something missing.
 	OnStart func(ctx context.Context, d Deps) error
+
+	// Binder resolves a verified subject to a Party. Only the registry sets
+	// it — it owns the table — and everybody else gets a client that asks the
+	// registry.
+	Binder func(d Deps) identity.Binder
+
+	// Permits overrides how this service checks an authorization. Same
+	// reasoning as Binder: the registry answers it locally, the others ask.
+	Permits func(d Deps) identity.PermitsFunc
 
 	Routes Routes
 }
@@ -189,6 +218,27 @@ func Main(name string, opts Options) {
 		}
 	}
 
+	idCfg, haveIdentity, err := identity.LoadConfig()
+	if err != nil {
+		log.Error("identity provider configuration is unusable", "error", err)
+		os.Exit(1)
+	}
+	if why := startupRefusal(cfg.Env, haveIdentity); why != "" {
+		log.Error("refusing to start", "why", why,
+			"set", "CREST_OIDC_ISSUER, CREST_OIDC_JWKS_URL, CREST_SUBJECT_SALT")
+		os.Exit(1)
+	}
+
+	d.Authenticating = haveIdentity
+	d.Permits = refuseEverything
+	if haveIdentity {
+		if opts.Permits != nil {
+			d.Permits = opts.Permits(d)
+		} else {
+			d.Permits = remotePermits(config.Str("REGISTRY_URL", ""))
+		}
+	}
+
 	mux := http.NewServeMux()
 	if opts.Routes != nil {
 		opts.Routes(mux, d)
@@ -197,7 +247,23 @@ func Main(name string, opts Options) {
 		registerClockControl(mux, driveable, log)
 	}
 
-	if err := httpx.New(name, cfg.Addr, mux, clk, log, ready).Run(); err != nil {
+	var mw []httpx.Middleware
+	if haveIdentity {
+		binder := identity.RemoteBinder(config.Str("REGISTRY_URL", ""))
+		if opts.Binder != nil {
+			binder = opts.Binder(d)
+		}
+		mw = append(mw, identity.Middleware(identity.NewVerifier(idCfg), binder, clk, log))
+		log.Info("callers are authenticated", "issuer", idCfg.Issuer, "jwks", idCfg.JWKSURL)
+	} else {
+		// Loud on purpose. This is the state the whole package exists to end,
+		// and a service that entered it silently would look identical in a log
+		// to one that did not.
+		log.Warn("no identity provider is configured: callers are not authenticated",
+			"consequence", "an endpoint that acts in somebody's name will refuse rather than guess")
+	}
+
+	if err := httpx.New(name, cfg.Addr, mux, clk, log, ready, mw...).Run(); err != nil {
 		log.Error("server stopped", "error", err)
 		os.Exit(1)
 	}
@@ -278,4 +344,52 @@ func newLogger(level, service string) *slog.Logger {
 	}
 	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: l})).
 		With("service", service)
+}
+
+// refuseEverything is the authorization check a service gets when it has no
+// identity provider to check against.
+//
+// It says no. The alternative — saying yes because there is nothing to ask —
+// is how an unconfigured deployment ends up more permissive than a configured
+// one, which is exactly backwards.
+func refuseEverything(context.Context, string, string, string) (bool, error) {
+	return false, nil
+}
+
+// remotePermits asks the registry the authorization question over HTTP.
+func remotePermits(registryBase string) identity.PermitsFunc {
+	c := client.New(registryBase)
+	return func(ctx context.Context, partyID, function, contextID string) (bool, error) {
+		q := url.Values{"partyId": {partyID}, "function": {function}}
+		if contextID != "" {
+			q.Set("contextId", contextID)
+		}
+		// `permitted`, which is what the registry actually answers. A field
+		// name that does not match decodes to false and the check then fails
+		// closed — safe, and invisible until somebody legitimate is refused.
+		var out struct {
+			Permitted bool `json:"permitted"`
+		}
+		if err := c.Get(ctx, "/v1/authorizations/permits?"+q.Encode(), &out); err != nil {
+			return false, err
+		}
+		return out.Permitted, nil
+	}
+}
+
+// startupRefusal names why this service must not start, or returns "".
+//
+// Separated from Main so the rule can be tested without a process that exits.
+// The rule is the part worth testing: a production deployment with no identity
+// provider is one where any client that can reach a port can withdraw a
+// worker's enrolment consent (#89), and the symptom is a worker whose work
+// quietly stopped counting with nothing anywhere saying who did it.
+//
+// Local and staging may run without one. They say so loudly, and their
+// endpoints that act in somebody's name refuse rather than guess.
+func startupRefusal(env string, haveIdentity bool) string {
+	if env == "production" && !haveIdentity {
+		return "no identity provider is configured, so every caller would be whoever they say they are"
+	}
+	return ""
 }
