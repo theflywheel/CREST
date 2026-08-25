@@ -207,6 +207,85 @@ paths:
                   count: { type: integer }
         "500": { $ref: "#/components/responses/Internal" }
 
+  /v1/unclear/{id}/resolve:
+    post:
+      operationId: resolveUnclear
+      summary: Say whose work an unattributed row was
+      description: >
+        Attaches a named worker to a row nobody could attribute, creating the
+        unit and the claim the row would have produced at ingestion, and opening
+        the worker's confirmation window (#25).
+
+
+        Three things are deliberate. The seven-day window runs from the
+        resolution, not from when the batch arrived: a worker cannot object to a
+        record they were never shown, and starting the clock at ingest would
+        auto-confirm late-resolved work before they had seen it once.
+        Re-attribution has no confirmation step of its own, because the window
+        it opens *is* that step — unlike a registry merge, which alters who
+        somebody is and cannot be undone by disputing a record. And only a row
+        whose `kind` is `unattributed` can be resolved: every other kind failed
+        the evidence contract, and attaching a person to one would launder a
+        failed record into the ledger wearing a worker's name.
+
+
+        The resolver needs the `resolve-unclear-evidence` function in the
+        batch's context. That is deliberately not `submit-work-evidence`:
+        whoever sends the file must not also decide whose work its unmatched
+        rows were.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [partyId, resolvedByPartyId]
+              properties:
+                partyId:
+                  type: string
+                  description: The worker the row is being attributed to.
+                resolvedByPartyId:
+                  type: string
+                  description: >
+                    Who decided. A re-attribution with no named resolver is the
+                    same shape of unaccountable as a held payment with no owner.
+      responses:
+        "200":
+          description: >
+            The row is closed and the work is the worker's. `claimId` is absent
+            when the same work was already claimed by the same worker, in which
+            case the row is still closed and `note` says why.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [unclearRowId, partyId, resolvedBy, resolvedAt, unitId]
+                properties:
+                  unclearRowId: { type: string }
+                  partyId: { type: string }
+                  resolvedBy: { type: string }
+                  resolvedAt: { type: string, format: date-time }
+                  unitId: { type: string }
+                  claimId: { type: string }
+                  confirmationWindowOpensAt: { type: string, format: date-time }
+                  note: { type: string }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "403":
+          description: The resolver holds no grant to resolve unclear evidence here.
+        "404":
+          description: No open row with that id; it may already have been resolved.
+        "409":
+          description: >
+            The row is not re-attributable — it failed the evidence contract, it
+            has no parsed record, or the worker named has withdrawn enrolment
+            consent (§9).
+        "500": { $ref: "#/components/responses/Internal" }
+
   /v1/sources:
     post:
       operationId: registerSource
