@@ -1,0 +1,10 @@
+server {
+    listen ${PORT};
+    listen [::]:${PORT};
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Quartz links pages without extensions (/DEMO for DEMO.html); the raw
+    # HTML design docs keep theirs. Serve both.
+    location / { try_files $uri $uri.html $uri/index.html =404; }
+}
