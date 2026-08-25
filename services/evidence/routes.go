@@ -162,8 +162,11 @@ func (h *handlers) getClaim(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) listClaims(w http.ResponseWriter, r *http.Request) {
-	claims, err := listClaims(r.Context(), h.d.DB.Q(),
-		r.URL.Query().Get("partyId"), r.URL.Query().Get("state"))
+	ids, ok := sameParty(w, r, h.d)
+	if !ok {
+		return
+	}
+	claims, err := listClaims(r.Context(), h.d.DB.Q(), ids, r.URL.Query().Get("state"))
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list claims", err)
 		return

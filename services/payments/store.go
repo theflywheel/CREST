@@ -87,11 +87,19 @@ func getInstructionByClaim(ctx context.Context, q store.Querier, claimID string)
 	return in, json.Unmarshal(doc, &in)
 }
 
-func listInstructions(ctx context.Context, q store.Querier, partyID, state string) ([]Instruction, error) {
+// listInstructions returns a worker's payment instructions, across any merge
+// (#100). See listClaims in the evidence service for why this takes a list:
+// instructions raised before a merge still name the absorbed party, and a
+// worker whose duplicate was closed must not find their payments split across
+// two records neither of which is complete.
+func listInstructions(ctx context.Context, q store.Querier, partyIDs []string, state string) ([]Instruction, error) {
 	rows, err := q.Query(ctx, `
 		SELECT doc FROM instructions
-		WHERE ($1 = '' OR party_id = $1) AND ($2 = '' OR state = $2)
-		ORDER BY created_at, id`, partyID, state)
+		-- COALESCE for the same reason as listClaims: a NULL array is not an
+		-- empty one, and cardinality(NULL) is NULL.
+		WHERE (COALESCE(cardinality($1::text[]), 0) = 0 OR party_id = ANY($1))
+		  AND ($2 = '' OR state = $2)
+		ORDER BY created_at, id`, partyIDs, state)
 	if err != nil {
 		return nil, err
 	}
