@@ -154,7 +154,7 @@ func (e *exiter) transitionClaim(ctx context.Context, claimID string, to schema.
 	if route != routeDispute {
 		body["route"] = route
 	}
-	if err := e.evidence.Post(ctx, "/v1/claims/"+claimID+"/transition", body, nil); err != nil {
+	if err := e.evidence.Post(ctx, "/internal/claims/"+claimID+"/transition", body, nil); err != nil {
 		return fmt.Errorf("evidence would not move claim %s to %s: %w", claimID, to, err)
 	}
 	return nil
@@ -165,7 +165,7 @@ func (e *exiter) transitionClaim(ctx context.Context, claimID string, to schema.
 // currently says rather than what it said when the window opened.
 func (e *exiter) buildCredential(ctx context.Context, w Window, route string, now time.Time) (*issuedCredential, error) {
 	var unit schema.Unit
-	if err := e.evidence.Get(ctx, "/v1/units/"+w.UnitID, &unit); err != nil {
+	if err := e.evidence.Get(ctx, "/internal/units/"+w.UnitID, &unit); err != nil {
 		return nil, fmt.Errorf("could not read unit %s: %w", w.UnitID, err)
 	}
 
@@ -408,7 +408,7 @@ func deliverNotification(ctx context.Context, d service.Deps, notify *client.Cli
 		State   string `json:"state"`
 		Channel string `json:"channel"`
 	}
-	if err := notify.Do(ctx, "POST", "/v1/notifications", payload, &out); err != nil {
+	if err := notify.Do(ctx, "POST", "/internal/notifications", payload, &out); err != nil {
 		return err
 	}
 

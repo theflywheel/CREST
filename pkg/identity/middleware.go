@@ -50,8 +50,23 @@ func (f BinderFunc) PartyForSubject(ctx context.Context, subject string) (string
 //     no assertion.
 //   - A token that verifies: the Caller is put on the context, with the Party
 //     it is bound to already resolved.
-func Middleware(v *Verifier, binder Binder, clk clock.Clock, log *slog.Logger) func(http.Handler) http.Handler {
+
+// Forget drops one subject from the binding cache. The parties service calls
+// it when a binding lands: the request that binds a subject has itself just
+// primed the cache with "nobody" — the middleware looked the subject up on the
+// way in — and a freshly enrolled worker held to a cached "you do not exist"
+// until the TTL passes is the first-login failure the cache must not create.
+type Forget func(subject string)
+
+// Middleware verifies bearer tokens and resolves callers. The returned Forget
+// invalidates one subject's cache entry; services that never bind ignore it.
+func Middleware(v *Verifier, binder Binder, clk clock.Clock, log *slog.Logger) (func(http.Handler) http.Handler, Forget) {
 	cache := &bindingCache{ttl: time.Minute, clk: clk, entries: map[string]bindingEntry{}}
+	forget := func(subject string) {
+		cache.mu.Lock()
+		delete(cache.entries, subject)
+		cache.mu.Unlock()
+	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +112,7 @@ func Middleware(v *Verifier, binder Binder, clk clock.Clock, log *slog.Logger) f
 
 			next.ServeHTTP(w, r.WithContext(NewContext(r.Context(), caller)))
 		})
-	}
+	}, forget
 }
 
 // internal is the paths the middleware does not touch: health, readiness, and

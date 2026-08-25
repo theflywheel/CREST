@@ -14,6 +14,7 @@ import (
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/pii"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/service"
@@ -46,10 +47,17 @@ func routes(mux *http.ServeMux, d service.Deps) {
 
 	mux.HandleFunc("POST /v1/batches", hs.submitBatch)
 	mux.HandleFunc("GET /v1/batches/{id}", hs.getBatch)
+	// Record reads by id stay open (#102): the ids are unguessable ULIDs and
+	// carrying one is how a printed artefact or a support escalation names a
+	// record — capability semantics, the same judgement as a credential id.
+	// The LIST is the enumerable surface, and that one is authorized.
 	mux.HandleFunc("GET /v1/units/{id}", hs.getUnit)
 	mux.HandleFunc("GET /v1/claims", hs.listClaims)
 	mux.HandleFunc("GET /v1/claims/{id}", hs.getClaim)
-	mux.HandleFunc("POST /v1/claims/{id}/transition", hs.transition)
+	// The claim state machine is confirmation's to drive, and nobody else's:
+	// internal only (#102, service-identity ruling).
+	mux.HandleFunc("POST /internal/claims/{id}/transition", hs.transition)
+	mux.HandleFunc("GET /internal/units/{id}", hs.getUnit)
 	mux.HandleFunc("GET /v1/unclear", hs.listUnclear)
 	// Working the queue, not just listing it (#25). See unclear.go for the
 	// three decisions built into re-attribution.
@@ -96,6 +104,14 @@ func (h *handlers) submitBatch(w http.ResponseWriter, r *http.Request) {
 				"%s is required: a batch with unknown provenance cannot be assessed for strength", name)
 			return
 		}
+	}
+
+	// The submitter is the caller (#102): submittedBy is what permits() is
+	// checked against and what every claim records as its provenance, and
+	// until now it was a query parameter anybody could type.
+	if _, ok := identity.Authorize(w, r, h.d.Log, params.SubmittedBy, params.ContextID,
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
 	}
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, 64<<20))
@@ -162,8 +178,23 @@ func (h *handlers) getClaim(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) listClaims(w http.ResponseWriter, r *http.Request) {
+	// A party-filtered list is that worker's history; an unfiltered list is
+	// everybody's. The first answers the worker or their actor, the second a
+	// signed-in operator (#102). The merge expansion runs BEFORE the identity
+	// check and the check is against the survivor: a worker whose duplicate
+	// was closed authenticates as who they are now, and their stale bookmark
+	// naming the absorbed id must still be their own history, not an
+	// impersonation refusal (#100).
 	ids, ok := sameParty(w, r, h.d)
 	if !ok {
+		return
+	}
+	if r.URL.Query().Get("partyId") != "" {
+		if _, ok := identity.Authorize(w, r, h.d.Log, ids[0], "",
+			h.d.Authenticating, h.d.Permits); !ok {
+			return
+		}
+	} else if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
 		return
 	}
 	claims, err := listClaims(r.Context(), h.d.DB.Q(), ids, r.URL.Query().Get("state"))
@@ -218,6 +249,10 @@ func (h *handlers) transition(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) listUnclear(w http.ResponseWriter, r *http.Request) {
+	// A queue of unattributed work — names and rows. Signed-in callers (#102).
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	rows, err := openUnclear(r.Context(), h.d.DB.Q())
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list unclear rows", err)

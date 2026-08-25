@@ -127,7 +127,7 @@ func TestAPaymentReleaseSurvivesTheConfirmationServiceBeingKilled(t *testing.T) 
 			ClaimID string `json:"claimId"`
 		} `json:"instructions"`
 	}
-	if err := w.Payments.Get(w.ctx, "/v1/instructions", &all); err != nil {
+	if err := w.Payments.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/instructions", &all); err != nil {
 		t.Fatalf("list instructions: %v", err)
 	}
 	n := 0
