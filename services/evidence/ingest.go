@@ -104,12 +104,12 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 	for _, rej := range rejections {
 		result.Unclear = append(result.Unclear, UnclearRow{
 			ID: id.New(in.clock, "unclear"), BatchID: batch.ID,
-			RowRef: rej.Ref, Reason: rej.Reason, CreatedAt: now,
+			RowRef: rej.Ref, Kind: unclearRejected, Reason: rej.Reason, CreatedAt: now,
 		})
 	}
 
 	for _, row := range rows {
-		reason, unit, claim := in.consider(ctx, row, def, p, now)
+		kind, reason, unit, claim := in.consider(ctx, row, def, p, now)
 		if reason != "" {
 			raw, err := json.Marshal(redact(row.Record))
 			if err != nil {
@@ -117,7 +117,7 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 			}
 			result.Unclear = append(result.Unclear, UnclearRow{
 				ID: id.New(in.clock, "unclear"), BatchID: batch.ID,
-				RowRef: row.Ref, Reason: reason, Record: raw, CreatedAt: now,
+				RowRef: row.Ref, Kind: kind, Reason: reason, Record: raw, CreatedAt: now,
 			})
 			continue
 		}
@@ -280,22 +280,25 @@ type windowRequest struct {
 // consider decides one row's fate, returning a reason when it cannot become a
 // claim. It writes nothing.
 func (in *ingestor) consider(ctx context.Context, row adapters.Row, def schema.Definition,
-	p ingestParams, now time.Time) (reason string, unit schema.Unit, claim schema.Claim) {
+	p ingestParams, now time.Time) (kind, reason string, unit schema.Unit, claim schema.Claim) {
 	if err := schema.Validate(schema.IDEvidenceRecord, row.Record); err != nil {
-		return "the record does not satisfy the canonical evidence contract: " + err.Error(), unit, claim
+		return unclearContract,
+			"the record does not satisfy the canonical evidence contract: " + err.Error(), unit, claim
 	}
 	if row.Record.Activity != def.Activity.Code {
-		return fmt.Sprintf("activity %q is not what %s@%d defines (%q)",
+		return unclearContract, fmt.Sprintf("activity %q is not what %s@%d defines (%q)",
 			row.Record.Activity, def.ID, def.Version, def.Activity.Code), unit, claim
 	}
 	if row.Record.Outcome.Unit != def.OutcomeUnit {
-		return fmt.Sprintf("outcome is counted in %q but the definition counts %q",
+		return unclearContract, fmt.Sprintf("outcome is counted in %q but the definition counts %q",
 			row.Record.Outcome.Unit, def.OutcomeUnit), unit, claim
 	}
 
 	match, err := in.resolveWorker(ctx, row.Record.WorkerJoiningIdentifier, p.ContextID)
 	if err != nil {
-		return err.Error(), unit, claim
+		// The record is sound and only the person is missing, so this is the
+		// one kind a custodian can later re-attribute (0005).
+		return unclearUnattributed, err.Error(), unit, claim
 	}
 
 	// §9 defines enrolment consent as the right to fetch and hold evidence
@@ -313,8 +316,9 @@ func (in *ingestor) consider(ctx context.Context, row adapters.Row, def schema.D
 	// collected next; taking away the record of work somebody did because they
 	// later withdrew would make withdrawal cost them their history.
 	if match.EnrolmentConsent == "WITHDRAWN" {
-		return "this worker has withdrawn enrolment consent, so no new evidence about " +
-			"them is recorded (§9). Work already recorded is unaffected", unit, claim
+		return unclearWithdrawn,
+			"this worker has withdrawn enrolment consent, so no new evidence about " +
+				"them is recorded (§9). Work already recorded is unaffected", unit, claim
 	}
 
 	unit = schema.Unit{
@@ -339,7 +343,7 @@ func (in *ingestor) consider(ctx context.Context, row adapters.Row, def schema.D
 		},
 		CreatedAt: now,
 	}
-	return "", unit, claim
+	return "", "", unit, claim
 }
 
 // resolveWorker asks the registry. The raw identifier goes over the wire and is
@@ -385,16 +389,7 @@ type match struct {
 }
 
 func (in *ingestor) permits(ctx context.Context, p ingestParams) (bool, error) {
-	var out struct {
-		Permitted bool `json:"permitted"`
-	}
-	err := in.registry.Get(ctx, fmt.Sprintf(
-		"/v1/authorizations/permits?partyId=%s&function=submit-work-evidence&contextId=%s",
-		urlSafe(p.SubmittedBy), urlSafe(p.ContextID)), &out)
-	if err != nil {
-		return false, fmt.Errorf("registry could not check the authorization: %w", err)
-	}
-	return out.Permitted, nil
+	return in.permitsFunction(ctx, p.SubmittedBy, "submit-work-evidence", p.ContextID)
 }
 
 func (in *ingestor) definition(ctx context.Context, defID string) (schema.Definition, error) {

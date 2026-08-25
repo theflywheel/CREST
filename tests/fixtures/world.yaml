@@ -48,6 +48,19 @@ parties:
         value: supervisor@riverside.invalid
     createdAt: 2026-01-06T09:00:00Z
 
+  # The registry custodian. §4 gives them the merge decision and #25 gives them
+  # the unclear queue, and both exist for the same reason: the two places where
+  # the system knows it does not know who somebody is, and must not guess. A
+  # separate party from the supervisor on purpose — whoever submits a batch
+  # must not also be the one who decides whose work an unmatched row was.
+  - id: did:crest:party:01JCREST00000000000000CSTD
+    kind: person
+    displayName: Registry Custodian
+    contactRoutes:
+      - kind: email
+        value: custodian@riverside.invalid
+    createdAt: 2026-01-06T09:00:00Z
+
   # Three workers at three identity-assurance levels. The level itself is not
   # stored — it is derived from these bindings, the same way tier is derived
   # from provenance (§4.1, §6).
@@ -113,6 +126,21 @@ authorizations:
     terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
     scope: { kind: context, contextId: crest:context:01JCREST00000000000000PRJC }
     functions: [submit-work-evidence]
+    period: { start: 2026-01-06T00:00:00Z, end: 2026-12-31T23:59:59Z }
+    authorityPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedByPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedAt: 2026-01-06T09:30:00Z
+    state: ACTIVE
+
+  # Working the unclear queue is its own function, held by the custodian and by
+  # nobody who submits evidence. Conflating it with submit-work-evidence would
+  # let whoever sends the file also decide whose work the unmatched rows were,
+  # which is the attribution equivalent of marking your own homework.
+  - id: crest:authorization:01JCREST00000000000000GRNQ
+    partyId: did:crest:party:01JCREST00000000000000CSTD
+    terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
+    scope: { kind: context, contextId: crest:context:01JCREST00000000000000PRJC }
+    functions: [resolve-unclear-evidence]
     period: { start: 2026-01-06T00:00:00Z, end: 2026-12-31T23:59:59Z }
     authorityPartyId: did:crest:party:01JCREST000000000000000RGN
     approvedByPartyId: did:crest:party:01JCREST000000000000000RGN
