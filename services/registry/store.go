@@ -239,11 +239,11 @@ func insertAuthorization(ctx context.Context, tx store.Querier, a schema.Authori
 	}
 	_, err = tx.Exec(ctx,
 		`INSERT INTO authorizations
-		   (id, party_id, scope_kind, context_id, functions, period_start, period_end, state, doc)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		 ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, doc = EXCLUDED.doc`,
+		   (id, party_id, scope_kind, context_id, functions, period_start, period_end, state, doc, review_by)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		 ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, doc = EXCLUDED.doc, review_by = EXCLUDED.review_by`,
 		a.ID, a.PartyID, string(a.Scope.Kind), contextID, a.Functions,
-		a.Period.Start, end, string(a.State), doc)
+		a.Period.Start, end, string(a.State), doc, a.ReviewBy)
 	return err
 }
 
@@ -253,10 +253,17 @@ func insertAuthorization(ctx context.Context, tx store.Querier, a schema.Authori
 // All three conditions are checked in one place because checking two of them is
 // the same as checking none: an expired authorization and a revoked one both
 // look active if you only read the state column.
-func permits(ctx context.Context, q store.Querier, partyID, function, contextID string, at time.Time) (bool, error) {
-	var n int
+// The second answer, overdue, reports whether every authorization that grants
+// this is past its review-by date (§16). It never changes the first answer:
+// "flag overdue, keep working" is the ruling, because a lapsed calendar entry
+// must not withhold a worker's payment. One current authorization among
+// several overdue ones reads as not overdue — the permission is current.
+func permits(ctx context.Context, q store.Querier, partyID, function, contextID string, at time.Time) (bool, bool, error) {
+	var n, current int
 	err := q.QueryRow(ctx, `
-		SELECT count(*) FROM authorizations
+		SELECT count(*),
+		       count(*) FILTER (WHERE review_by IS NULL OR review_by >= $4)
+		FROM authorizations
 		WHERE party_id = $1
 		  AND state = 'ACTIVE'
 		  AND $2 = ANY (functions)
@@ -266,8 +273,62 @@ func permits(ctx context.Context, q store.Querier, partyID, function, contextID 
 		  -- context-scoped one covers only its own, and is always a strict
 		  -- subset of an instance one (§2).
 		  AND (scope_kind = 'instance' OR context_id = $3)`,
-		partyID, function, contextID, at).Scan(&n)
-	return n > 0, err
+		partyID, function, contextID, at).Scan(&n, &current)
+	return n > 0, n > 0 && current == 0, err
+}
+
+// overdueAuthorizations lists the ACTIVE authorizations whose review-by date
+// has passed. This is the whole consequence of being overdue: a row here, for
+// an administrator to act on. Nothing downstream reads this list to refuse
+// anything.
+func overdueAuthorizations(ctx context.Context, q store.Querier, at time.Time) ([]schema.Authorization, error) {
+	rows, err := q.Query(ctx, `
+		SELECT doc FROM authorizations
+		WHERE state = 'ACTIVE' AND review_by IS NOT NULL AND review_by < $1
+		ORDER BY review_by, id`, at)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.Collect(rows, func(r store.Row) (schema.Authorization, error) {
+		var doc []byte
+		if err := r.Scan(&doc); err != nil {
+			return schema.Authorization{}, err
+		}
+		var a schema.Authorization
+		return a, json.Unmarshal(doc, &a)
+	})
+}
+
+// revokeAuthorization is how a grant is narrowed after go-live (§16, J3):
+// revoke, and create a narrower one if anything remains. The ruling is that
+// narrowing binds at submission — evidence already submitted under the old
+// grant still confirms and still pays, because the check ran when the work
+// entered and the worker cannot un-perform it. Only permits() reads state, and
+// permits() runs at submission; nothing on the confirmation or payment path
+// asks again, and that is now a decision rather than an accident.
+func revokeAuthorization(ctx context.Context, tx store.Querier, id string, at time.Time) (schema.Authorization, error) {
+	var doc []byte
+	err := tx.QueryRow(ctx, `SELECT doc FROM authorizations WHERE id = $1`, id).Scan(&doc)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return schema.Authorization{}, store.ErrNotFound
+		}
+		return schema.Authorization{}, err
+	}
+	var a schema.Authorization
+	if err := json.Unmarshal(doc, &a); err != nil {
+		return schema.Authorization{}, err
+	}
+	if a.State == schema.AuthorizationStateREVOKED {
+		return a, nil
+	}
+	a.State = schema.AuthorizationStateREVOKED
+	a.RevokedAt = &at
+	if err := insertAuthorization(ctx, tx, a); err != nil {
+		return schema.Authorization{}, err
+	}
+	return a, nil
 }
 
 func insertContext(ctx context.Context, tx store.Querier, c schema.Context) error {
@@ -544,7 +605,11 @@ func authenticating(class schema.PartyIdentityBindingsItemProviderClass) bool {
 	switch class {
 	case schema.PartyIdentityBindingsItemProviderClassEsignet,
 		schema.PartyIdentityBindingsItemProviderClassMosipIda,
-		schema.PartyIdentityBindingsItemProviderClassGenericOidc:
+		schema.PartyIdentityBindingsItemProviderClassGenericOidc,
+		// A recovery binding is exactly a new subject the worker will
+		// authenticate as (#106) — that is what recovery is for — so it joins
+		// the uniqueness rule: one subject, one person.
+		schema.PartyIdentityBindingsItemProviderClassRecovery:
 		return true
 	default:
 		return false

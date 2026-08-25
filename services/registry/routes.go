@@ -47,6 +47,8 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/authorizations", h.createAuthorization)
 	mux.HandleFunc("GET /v1/authorizations/permits", h.permits)
 	mux.HandleFunc("GET /v1/authorizations", h.listAuthorizations)
+	mux.HandleFunc("GET /v1/authorizations/overdue", h.overdueAuthorizations)
+	mux.HandleFunc("POST /v1/authorizations/{id}/revoke", h.revokeAuthorization)
 	mux.HandleFunc("POST /v1/contexts", h.createContext)
 
 	// Onboarding (#20). Organisations apply for themselves; workers are often
@@ -63,6 +65,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	// ids are one person after a merge (#100). See identity.go.
 	registerIdentityRoutes(mux, d)
 	registerMergeRoutes(mux, d)
+	registerRecoveryRoutes(mux, d)
 
 	// Where a public fact landed on the registry substrate (§3).
 	mux.HandleFunc("GET /v1/publications/{kind}/{id}", h.publication)
@@ -361,12 +364,15 @@ func (h *handlers) permits(w http.ResponseWriter, r *http.Request) {
 		}
 		at = parsed
 	}
-	ok, err := permits(r.Context(), h.d.DB.Q(), q.Get("partyId"), q.Get("function"), q.Get("contextId"), at)
+	ok, overdue, err := permits(r.Context(), h.d.DB.Q(), q.Get("partyId"), q.Get("function"), q.Get("contextId"), at)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "check authorization", err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"permitted": ok, "at": at})
+	// overdue never changes permitted (§16): it says the authorization behind
+	// this yes is past its review-by date, for a caller that wants to surface
+	// staleness. A caller that ignores it loses nothing a worker needed.
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"permitted": ok, "overdue": overdue, "at": at})
 }
 
 func (h *handlers) createContext(w http.ResponseWriter, r *http.Request) {
@@ -388,6 +394,47 @@ func (h *handlers) createContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, c)
+}
+
+// overdueAuthorizations is the review queue §16 asked for: every ACTIVE
+// authorization past its review-by date. Listing it is the entire consequence
+// of overdueness — the ruling is "flag for review, keep working", so nothing
+// reads this list to refuse anything. Like /v1/holds, this is a custodian
+// surface; the authorization pass over the whole API is #102.
+func (h *handlers) overdueAuthorizations(w http.ResponseWriter, r *http.Request) {
+	list, err := overdueAuthorizations(r.Context(), h.d.DB.Q(), h.d.Clock.Now())
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "list overdue authorizations", err)
+		return
+	}
+	if list == nil {
+		list = []schema.Authorization{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"authorizations": list, "count": len(list)})
+}
+
+// revokeAuthorization narrows a grant after go-live (§16, J3). The ruling it
+// implements: narrowing binds at submission. Revocation stops NEW work — the
+// next permits() check answers no — and touches nothing in flight, because
+// evidence already submitted was checked when it entered and the worker cannot
+// un-perform the work. To narrow rather than remove, revoke and create the
+// narrower authorization; there is deliberately no edit, because an edited
+// grant has no record of what it used to allow.
+func (h *handlers) revokeAuthorization(w http.ResponseWriter, r *http.Request) {
+	var out schema.Authorization
+	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+		a, err := revokeAuthorization(r.Context(), tx, r.PathValue("id"), h.d.Clock.Now())
+		if err != nil {
+			return err
+		}
+		out = a
+		return enqueueFact(r.Context(), tx, "authorization", a.ID, 1)
+	})
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "authorization", err, store.ErrNotFound)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
 }
 
 func writeValidation(w http.ResponseWriter, err error) {

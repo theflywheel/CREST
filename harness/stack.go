@@ -197,6 +197,24 @@ func (svc *Service) PostRaw(ctx context.Context, path, contentType string, body 
 	return svc.do(ctx, http.MethodPost, path, contentType, body, out)
 }
 
+// StatusRaw is Status for a non-JSON body — a CSV batch whose refusal is the
+// designed answer.
+func (svc *Service) StatusRaw(ctx context.Context, method, path, contentType string, body []byte) (int, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, method, svc.Base+path, bytes.NewReader(body))
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Content-Type", contentType)
+	svc.apply(req)
+	resp, err := svc.http.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	out, err := io.ReadAll(resp.Body)
+	return resp.StatusCode, out, err
+}
+
 // Status performs a request and returns the status code instead of an error,
 // for the endpoints where a 404 or a 409 is the designed answer rather than a
 // failure — resolve returning a hold, for instance.

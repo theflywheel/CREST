@@ -27,10 +27,17 @@ type Authorization struct {
 	ID               string                      `json:"id"`
 	PartyID          string                      `json:"partyId"`
 	Period           Period                      `json:"period"`
-	RevokedAt        *time.Time                  `json:"revokedAt,omitempty"`
-	Scope            AuthorizationScope          `json:"scope"`
-	State            AuthorizationState          `json:"state"`
-	Terms            VersionedRef                `json:"terms"`
+
+	// When somebody should look at this again (§16). Passing it changes
+	// nothing by itself: the authorization keeps working and becomes
+	// visibly overdue, because an administrative lapse must never silently
+	// stop a worker being paid — every consequence of staleness is a
+	// flag a person reads, not a gate a worker hits.
+	ReviewBy  *time.Time         `json:"reviewBy,omitempty"`
+	RevokedAt *time.Time         `json:"revokedAt,omitempty"`
+	Scope     AuthorizationScope `json:"scope"`
+	State     AuthorizationState `json:"state"`
+	Terms     VersionedRef       `json:"terms"`
 }
 
 type AuthorizationEvidenceItem struct {
@@ -630,6 +637,7 @@ const (
 	PartyIdentityBindingsItemProviderClassMobileOtp    PartyIdentityBindingsItemProviderClass = "mobile-otp"
 	PartyIdentityBindingsItemProviderClassDocumentSeen PartyIdentityBindingsItemProviderClass = "document-seen"
 	PartyIdentityBindingsItemProviderClassAsserted     PartyIdentityBindingsItemProviderClass = "asserted"
+	PartyIdentityBindingsItemProviderClassRecovery     PartyIdentityBindingsItemProviderClass = "recovery"
 )
 
 type PartyKind string

@@ -289,6 +289,26 @@ func contestsAgainst(ctx context.Context, q store.Querier, targetKind, targetID 
 // credential it issued. Until now the service could only be asked about one
 // claim at a time, so there was no way to ask it about a person at all — which
 // made the merge gap invisible here rather than absent.
+// credentialsFor lists the signed credentials issued to a set of party ids —
+// in practice, one person across a merge (#104). Revoked credentials are
+// included: a withdrawn credential is part of what happened, and the verifier
+// checking it against the status list is the mechanism for finding that out;
+// filtering it here would make this listing quietly disagree with the list.
+func credentialsFor(ctx context.Context, q store.Querier, partyIDs []string) ([]json.RawMessage, error) {
+	rows, err := q.Query(ctx, `
+		SELECT doc FROM credentials
+		 WHERE subject_ref = ANY($1)
+		 ORDER BY issued_at, id`, partyIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.Collect(rows, func(r store.Row) (json.RawMessage, error) {
+		var doc []byte
+		return doc, r.Scan(&doc)
+	})
+}
+
 func windowsFor(ctx context.Context, q store.Querier, partyIDs []string) ([]Window, error) {
 	rows, err := q.Query(ctx, `
 		SELECT `+windowColumns+` FROM windows
