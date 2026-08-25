@@ -1,0 +1,440 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CREST Journey Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#F2F4F3; --surface:#FFFFFF; --surface2:#EAEEEC; --ink:#182226; --muted:#5A6B70;
+  --line:#D8DFDD; --accent:#177253; --accent-soft:#DCEDE6; --hold:#A66A1E; --hold-soft:#F3E7D3;
+  --risk:#AC4A32; --risk-soft:#F4E0DA; --check:#2C5E8A; --check-soft:#DEE9F2;
+  --code-bg:#101B1F; --code-ink:#D7E4E0; --code-dim:#7E948F; --code-key:#8FC7AE; --code-str:#C9B87E;
+  --pill-miss:#8A9793;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E1517; --surface:#151F22; --surface2:#1B272B; --ink:#E4ECE9; --muted:#8FA4A0;
+    --line:#263539; --accent:#43A57F; --accent-soft:#173D30; --hold:#D9A45B; --hold-soft:#3A2C15;
+    --risk:#D6795F; --risk-soft:#3E211A; --check:#75A9D6; --check-soft:#1B3348;
+    --code-bg:#0A1113; --code-ink:#CBDAD6; --code-dim:#6E837F; --code-key:#7FBFA3; --code-str:#C2B074;
+    --pill-miss:#5C6B67;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E1517; --surface:#151F22; --surface2:#1B272B; --ink:#E4ECE9; --muted:#8FA4A0;
+  --line:#263539; --accent:#43A57F; --accent-soft:#173D30; --hold:#D9A45B; --hold-soft:#3A2C15;
+  --risk:#D6795F; --risk-soft:#3E211A; --check:#75A9D6; --check-soft:#1B3348;
+  --code-bg:#0A1113; --code-ink:#CBDAD6; --code-dim:#6E837F; --code-key:#7FBFA3; --code-str:#C2B074;
+  --pill-miss:#5C6B67;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.55 "IBM Plex Sans",system-ui,sans-serif;}
+h1,h2,h3{font-family:"Bricolage Grotesque","IBM Plex Sans",sans-serif;text-wrap:balance;margin:0}
+button{font:inherit;cursor:pointer}
+code,pre{font-family:"IBM Plex Mono",ui-monospace,monospace}
+a{color:var(--check)}
+.top{display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:0;z-index:5}
+.top h1{font-size:19px;font-weight:800;letter-spacing:-.01em}
+.top .sub{color:var(--muted);font-size:13px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12.5px;background:var(--surface2)}
+.chip b{font-variant-numeric:tabular-nums}
+.clockbtn{margin-left:auto;display:flex;gap:8px;align-items:center}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:6px 12px;font-size:13.5px;font-weight:600}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn:focus-visible,.jrow:focus-visible{outline:2px solid var(--check);outline-offset:2px}
+.wrap{display:grid;grid-template-columns:290px minmax(0,1fr);min-height:calc(100vh - 61px)}
+@media(max-width:900px){.wrap{grid-template-columns:1fr}.rail{border-right:none;border-bottom:1px solid var(--line)}}
+.rail{border-right:1px solid var(--line);padding:16px 12px;background:var(--surface)}
+.rail .cap{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:14px 8px 6px}
+.jrow{display:flex;align-items:center;gap:9px;width:100%;text-align:left;border:none;background:none;color:var(--ink);padding:7px 8px;border-radius:8px;font-size:13.5px}
+.jrow:hover{background:var(--surface2)}
+.jrow.active{background:var(--accent-soft);font-weight:600}
+.jrow .jn{color:var(--muted);font-size:11.5px;width:22px;font-variant-numeric:tabular-nums}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+.dot.play{background:var(--accent)}
+.dot.part{background:var(--hold)}
+.dot.thin{background:var(--pill-miss)}
+.main{padding:26px 30px 60px;max-width:980px}
+.main h2{font-size:26px;font-weight:800;letter-spacing:-.015em;margin-bottom:4px}
+.lede{color:var(--muted);max-width:64ch;margin:0 0 20px}
+.stage{display:flex;flex-direction:column;gap:14px}
+.step{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:14px 16px}
+.step.locked{opacity:.5}
+.step .head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.actor{font-size:11px;letter-spacing:.07em;text-transform:uppercase;font-weight:600;border-radius:5px;padding:2px 7px}
+.actor.cust{background:var(--check-soft);color:var(--check)}
+.actor.sup{background:var(--hold-soft);color:var(--hold)}
+.actor.worker{background:var(--accent-soft);color:var(--accent)}
+.actor.ver{background:var(--surface2);color:var(--muted)}
+.step .head h3{font-size:15.5px;font-weight:700;margin-right:auto}
+.step p{margin:8px 0 0;color:var(--muted);max-width:70ch;font-size:13.8px}
+.exits{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.call{margin-top:12px;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+.call .req{display:flex;gap:10px;align-items:center;background:var(--surface2);padding:7px 12px;font-size:12.5px;flex-wrap:wrap}
+.call .req .m{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:12px;color:var(--accent)}
+.call .req .p{font-family:"IBM Plex Mono",monospace;font-size:12px;word-break:break-all}
+.call .req .copy{margin-left:auto;border:none;background:none;color:var(--muted);font-size:11.5px;padding:2px 4px;border-radius:4px}
+.call .req .copy:hover{color:var(--ink)}
+.call pre{margin:0;background:var(--code-bg);color:var(--code-ink);padding:12px 14px;font-size:12px;line-height:1.55;overflow-x:auto}
+.call pre .k{color:var(--code-key)}.call pre .s{color:var(--code-str)}.call pre .c{color:var(--code-dim)}
+.state{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px}
+.st{border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-size:12.5px;background:var(--surface);color:var(--muted)}
+.st.on{border-color:var(--accent);color:var(--ink)}
+.st.on b{color:var(--accent)}
+.st.hold b{color:var(--hold)}
+.st b{font-weight:600}
+.verdict{margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface2)}
+.verdict .vt{font-weight:700;font-size:14px}
+.link{display:flex;gap:8px;font-size:12.8px;margin-top:6px;align-items:baseline}
+.link .lk{flex:none;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;border-radius:4px;padding:1px 6px}
+.lk.ok{background:var(--accent-soft);color:var(--accent)}
+.lk.tr{background:var(--hold-soft);color:var(--hold)}
+.note{border-left:3px solid var(--hold);padding:8px 12px;background:var(--surface);border-radius:0 8px 8px 0;font-size:13.2px;color:var(--muted);margin-top:14px;max-width:72ch}
+.sheet{display:flex;flex-direction:column;gap:8px}
+.li{display:flex;gap:10px;align-items:baseline;border:1px solid var(--line);border-radius:9px;padding:9px 13px;background:var(--surface);font-size:13.6px}
+.li .tag{flex:none;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;font-weight:600;border-radius:4px;padding:2px 7px}
+.tag.built{background:var(--accent-soft);color:var(--accent)}
+.tag.part{background:var(--hold-soft);color:var(--hold)}
+.tag.miss{background:var(--surface2);color:var(--pill-miss)}
+.li .why{color:var(--muted)}
+.li a{white-space:nowrap}
+.reset{border:none;background:none;color:var(--muted);font-size:12.5px;text-decoration:underline;margin-top:20px}
+.legend{display:flex;gap:16px;font-size:12.5px;color:var(--muted);margin:4px 8px 0;flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+@media (prefers-reduced-motion: no-preference){
+  .call{animation:rise .25s ease-out}
+  @keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+}
+</style>
+
+<div class="top">
+  <h1>CREST Journey Bench</h1>
+  <span class="sub">the twelve journeys · simulated engine, real API shapes</span>
+  <span class="clockbtn">
+    <span class="chip">deployment clock <b id="clock">T+0d</b></span>
+    <button class="btn" id="adv">Advance 7 days</button>
+  </span>
+</div>
+
+<div class="wrap">
+<nav class="rail">
+  <div class="cap">Playable</div>
+  <button class="jrow active" data-view="loop"><span class="jn">▶</span><span class="dot play"></span>The core loop, end to end</button>
+  <button class="jrow" data-view="recovery"><span class="jn">▶</span><span class="dot play"></span>Losing a phone, and coming back</button>
+  <button class="jrow" data-view="checks"><span class="jn">▶</span><span class="dot play"></span>An employer checks a cohort</button>
+  <div class="cap">Readiness by journey (§15)</div>
+  <div id="jlist"></div>
+  <div class="legend">
+    <span><span class="dot play"></span>demoable now</span>
+    <span><span class="dot part"></span>core built</span>
+    <span><span class="dot thin"></span>thin</span>
+  </div>
+</nav>
+<main class="main" id="main"></main>
+</div>
+
+<script>
+"use strict";
+/* ————— tiny simulated deployment ————— */
+let seq = 0, days = 0;
+const ulid = p => "crest:"+p+":01JD" + (1000+ ++seq).toString(36).toUpperCase().padStart(22,"0");
+const did  = () => "did:crest:party:01JD" + (1000+ ++seq).toString(36).toUpperCase().padStart(22,"0");
+const now  = () => { const d = new Date(Date.UTC(2026,2,1,8,0,0)); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().replace(".000",""); };
+const closesAt = () => { const d = new Date(Date.UTC(2026,2,1,8,0,0)); d.setUTCDate(d.getUTCDate()+7); return d.toISOString().replace(".000",""); };
+
+const S = { worker:null, consent:null, claim:null, window:null, exit:null, credential:null, instruction:null, verdict:null,
+            recovery:null, rconf:0, rdone:false, batchOK:false };
+
+function reset(){ for(const k in S) S[k]=(k==="rconf")?0:(k==="rdone"||k==="batchOK")?false:null; days=0; el("clock").textContent="T+0d"; render(); }
+
+const el = id => document.getElementById(id);
+const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;");
+function pretty(o){ return esc(JSON.stringify(o,null,2))
+  .replace(/"([^"]+)":/g,'<span class="k">"$1"</span>:')
+  .replace(/: "([^"]*)"/g,': <span class="s">"$1"</span>'); }
+
+function callCard(method, path, body, resp, note){
+  // ports as the local harness maps them (make harness-up)
+  const port = path.startsWith("payments:")?59006 : path.startsWith("verify:")?59005 : path.startsWith("confirm:")?59004 : path.includes("/v1/batches")?59003 : 59001;
+  const curl = "curl -s -X "+method+" 'http://localhost:"+port+path.replace(/^[a-z]+:/,"")+"'"
+    + (body? " -H 'content-type: application/json' -d '"+JSON.stringify(body)+"'" : "");
+  return `<div class="call">
+    <div class="req"><span class="m">${method}</span><span class="p">${esc(path.replace(/^[a-z]+:/,""))}</span>
+      <button class="copy" onclick="navigator.clipboard&&navigator.clipboard.writeText(${JSON.stringify(curl).replace(/"/g,"&quot;")})">copy curl</button></div>
+    <pre>${body?`<span class="c">// request</span>\n${pretty(body)}\n\n`:""}<span class="c">// response${note?" — "+esc(note):""}</span>\n${pretty(resp)}</pre></div>`;
+}
+
+/* ————— the steps of the core loop ————— */
+function stRow(){
+  const on = (v,label,extra) => `<span class="st ${v?"on":""} ${extra||""}">${label}${v?` <b>${v}</b>`:""}</span>`;
+  return `<div class="state">
+    ${on(S.worker&&"Amara Deme","worker")}
+    ${on(S.consent&&"GRANTED","enrolment consent")}
+    ${on(S.claim&&"1 claim","evidence")}
+    ${on(S.window&&(S.exit?("exit: "+S.exit):"closes T+7"),"window")}
+    ${on(S.credential&&"issued","credential")}
+    ${on(S.instruction&&"RELEASED · 450 KES","payment")}
+  </div>`;
+}
+
+const steps = [
+ { id:"reg", actor:["cust","Custodian"], title:"Register a worker with no phone of her own",
+   ready:()=>true, done:()=>!!S.worker,
+   text:"Amara is enrolled at a field visit. Her only contact route is her supervisor — the schema has a kind for exactly that, so nobody invents a phone number for her. No national ID is stored: identity binds late, and assurance is derived, never stored.",
+   run(){ S.worker = did();
+     return callCard("POST","/v1/parties",
+      {kind:"person", displayName:"Amara Deme", contactRoutes:[{kind:"supervisor", value:"did:crest:party:01JCREST00000000000000SPVR"}]},
+      {id:S.worker, kind:"person", displayName:"Amara Deme", contactRoutes:[{kind:"supervisor", value:"did:crest:party:01JCREST00000000000000SPVR"}], createdAt:now()});}},
+ { id:"consent", actor:["cust","Custodian"], title:"Voice consent, recorded and kept",
+   ready:()=>!!S.worker, done:()=>!!S.consent,
+   text:"Enrolment consent is the right to fetch and hold evidence about her (§9). For a non-literate worker it is a voice recording — stored as an artefact in the object store, bound to the agent and the moment.",
+   run(){ S.consent = ulid("consent");
+     return callCard("POST","/v1/parties/{id}/consents",
+      {kind:"enrolment", method:"voice", artefact:"consent-2026-03-01-amara.ogg", recordedByPartyId:"did:crest:party:01JCREST00000000000000CSTD", contextId:"crest:context:01JCREST00000000000000PRJC"},
+      {id:S.consent, partyId:S.worker, kind:"enrolment", state:"GRANTED", artefactRef:"blob:consents/"+S.consent, createdAt:now()});}},
+ { id:"submit", actor:["sup","Supervisor"], title:"The month's work arrives as a CSV",
+   ready:()=>!!S.consent, done:()=>!!S.claim,
+   text:"The programme's own system exports a batch. The adapter maps the source's column names onto the deployment's canonical ones (#56) — 'Household ID' arrives as household_id, so the tier rule that requires it actually matches. Provenance is configuration, never a column in the file.",
+   run(){ S.claim = ulid("claim");
+     return callCard("POST","/v1/batches?contextId=…&definitionId=…&submittedBy=…&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch&systemRef=dhis2-riverside",
+      null,
+      {batch:{id:ulid("batch"), rowsTotal:1, rowsAccepted:1, rowsUnclear:0}, claimIds:[S.claim], unclear:[]},
+      "text/csv body: activity,outcome_value,…,household_id");}},
+ { id:"window", actor:["worker","System → Worker"], title:"A window opens, and she is told",
+   ready:()=>!!S.claim, done:()=>!!S.window,
+   text:"Before the record counts, Amara hears about it — through her supervisor route, in the deployment's own words (#59: the wording is configuration; the sentence 'you will be paid either way' is checked at startup, because a message implying payment depends on replying is duress).",
+   run(){ S.window = true;
+     return callCard("GET","/v1/windows/"+S.claim, null,
+      {claimId:S.claim, partyId:S.worker, openedAt:now(), closesAt:closesAt(), exitRoute:null, paymentReleasedAt:null});}},
+ { id:"exit", actor:["worker","Worker"], title:"Four ways out — every one releases the payment",
+   ready:()=>S.window&&!S.exit, done:()=>!!S.exit, branch:true,
+   text:"Confirm, dispute, auto-confirm at T+7, or supervisor-assisted: all four exits issue the credential and release the money. A dispute contests the record, never the payment — silence is not consent against the worker, and objecting never costs her the wage.",
+   exits:[
+    ["self","She confirms it herself", ()=> exitVia("self", {route:"self"}, "Bearer token: she logged in through eSignet; the pairwise subject is salted per deployment")],
+    ["dispute","She disputes one detail", ()=> exitVia("dispute", {raisedByPartyId:"S.worker", reason:"the count is 9, not 12"}, "the claim is contested AND the payment still releases (W4)")],
+    ["auto","Nobody replies — advance 7 days", ()=> { days+=7; el("clock").textContent="T+"+days+"d"; return exitVia("auto", null, "the sweep runs on the driveable clock; auto-confirm stays disputable afterwards"); }],
+    ["assisted","Her supervisor assists", ()=> exitVia("assisted", {assistedByPartyId:"…SPVR"}, "the caller's act-for-party authorization is checked; the route is derived from the caller, and a contradicting body is refused")]]},
+ { id:"pay", actor:["worker","Worker"], title:"The money moved, or says why not",
+   ready:()=>!!S.exit, done:()=>!!S.instruction,
+   text:"One instruction per claim, enforced by a unique index — the outbox delivers at-least-once and a redelivery pays once, proven by SIGKILLing the service mid-flight in the e2e suite. A held payment cannot exist without a reason and an owner: the database refuses the row.",
+   run(){ S.instruction = true;
+     return callCard("GET","payments:/v1/instructions?partyId="+S.worker, null,
+      {instructions:[{id:ulid("instruction"), claimId:S.claim, partyId:S.worker, amountMinor:45000, currency:"KES", releasedBy:S.exit, state:"RELEASED", releasedAt:now()}], count:1});}},
+ { id:"verify", actor:["ver","A stranger"], title:"Provable to a stranger, who is told what it doesn't prove",
+   ready:()=>!!S.credential, done:()=>!!S.verdict,
+   text:"The verdict computes the tier now — it is never stored, so re-assessing a compromised source downgrades every affected credential instantly, with nothing reissued. Every trust-chain link says whether the verifier can check it themselves or what they are trusting instead. The check lands in Amara's own trail.",
+   run(){ S.verdict = true;
+     const v = {valid:true, signatureValid:true, revoked:false, tier:2,
+       tierReason:["definition bednet-distribution@2 ceiling: 3","capped to tier 2: evidence from an institution outside this deployment…(§16)"],
+       trustChain:[
+        {claim:"signed by did:web:riverside.example", checkable:true, how:"the DID document carries the key; the proof is on the credential"},
+        {claim:"not withdrawn on the status list", checkable:true, how:"https://…/v1/status-list"},
+        {claim:"measured under crest:definition:…@2, pinned with digest sha256:…", checkable:true, how:"https://…/dedi/lookup/crest/work-definitions/WD-4471?proof=inclusion"}],
+       notEstablished:["that the subject was authorised to do this work — a worker's authorization is deliberately not published (#68)"],
+       contested: S.exit==="dispute" ? [{state:"OPEN", raisedAt:now(), against:"claim"}] : []};
+     return callCard("POST","verify:/v1/verify",
+      {credential:{id:S.credential,"…":"the full signed VC"}, requestedByPartyId:"did:crest:party:…NGO2", purpose:"pre-employment check"}, v)
+      + verdictCard(v);}},
+];
+
+function exitVia(route, body, note){
+  S.exit = route; S.credential = ulid("credential");
+  const path = route==="auto" ? "confirm:/v1/sweep" : route==="dispute" ? "confirm:/v1/claims/"+S.claim+"/dispute" : "confirm:/v1/claims/"+S.claim+"/confirm";
+  const resp = route==="dispute"
+    ? {contest:{id:ulid("contest"), state:"OPEN", against:"claim"}, exit:{route:"dispute", credential:{id:S.credential}, paymentReleased:true}}
+    : {window:{claimId:S.claim, exitRoute:route, paymentReleasedAt:now()}, credential:{id:S.credential, status:"issued", format:"eddsa-jcs-2022"}};
+  if (body && body.raisedByPartyId) body.raisedByPartyId = S.worker;
+  return callCard("POST", path, body, resp, note);
+}
+
+function verdictCard(v){
+  return `<div class="verdict"><div class="vt">valid · tier ${v.tier} · computed at query time</div>
+   ${v.trustChain.map(l=>`<div class="link"><span class="lk ${l.checkable?"ok":"tr"}">${l.checkable?"checkable":"trusting"}</span><span>${esc(l.claim)} — <span style="color:var(--muted)">${esc(l.how||l.trusting||"")}</span></span></div>`).join("")}
+   <div class="link"><span class="lk tr">not established</span><span style="color:var(--muted)">${esc(v.notEstablished[0])}</span></div>
+   ${v.contested.length?`<div class="link"><span class="lk tr">contested</span><span style="color:var(--muted)">a dispute stands against the claim — the credential stays valid; the standing is shown, never the reason</span></div>`:""}</div>`;
+}
+
+/* ————— recovery playground ————— */
+const recSteps = [
+ { title:"Her handset is gone", actor:["sup","Supervisor"], ready:()=>true, done:()=>!!S.recovery,
+   text:"Identity binds to a device-held subject, so a lost phone would strand the person the record exists for. A recovery opens with a reason — a recovery opened by nobody for no reason is not a record anybody can audit.",
+   run(){ S.recovery = ulid("recovery");
+     return callCard("POST","/v1/recoveries",{partyId:"…AMARA", openedByPartyId:"…SPVR", reason:"handset lost in the river crossing"},
+      {id:S.recovery, state:"OPEN", confirmations:[], createdAt:now()});}},
+ { title:"One voice — from her cooperative", actor:["worker","Confirmer A"], ready:()=>!!S.recovery, done:()=>S.rconf>=1,
+   text:"Any enrolled person the declared authority stands behind may confirm the narrow question: this is the same person. Never whether she should have access — that is an authorization question with its own owners.",
+   run(){ S.rconf=1;
+     return callCard("POST","/v1/recoveries/"+S.recovery+"/confirmations",{confirmerPartyId:"…CONF-A", authorityPartyId:"…COOP"},
+      {id:S.recovery, state:"OPEN", confirmations:[{confirmerPartyId:"…CONF-A", authorityPartyId:"…COOP"}]});}},
+ { title:"A second voice from the same org doesn't count", actor:["worker","Confirmer A2"], ready:()=>S.rconf>=1&&S.rconf<2, done:()=>S.rconf>=2, isNegative:true,
+   text:"One organisation, one voice — a UNIQUE constraint, not a handler. Three confirmers all appointed by one org is that organisation's decision wearing three names.",
+   run(){ S.rconf=1.5;
+     return callCard("POST","/v1/recoveries/"+S.recovery+"/confirmations",{confirmerPartyId:"…CONF-A2", authorityPartyId:"…COOP"},
+      {error:"authority_already_counted", detail:"a second voice must come from a different authority"},"409 Conflict");}},
+ { title:"The second authority speaks — recovered", actor:["worker","Confirmer B"], ready:()=>S.rconf>=1, done:()=>S.rconf>=2,
+   text:"Two voices from distinct authorities decide it. Completion appends a recovery-class binding — never an edit; the old bindings are what a later dispute is answered from. She derives IA-1 until she re-anchors, and then the stronger binding simply wins.",
+   run(){ S.rconf=2;
+     return callCard("POST","/v1/recoveries/"+S.recovery+"/complete",{subjectRef:"a1b2…(new pairwise subject)"},
+      {id:S.recovery, state:"COMPLETED", completedAt:now()},"her assurance now derives IA-1; re-anchoring with eSignet restores IA-3 automatically");}},
+ { title:"The shortcut that can never be quiet", actor:["cust","Operator"], ready:()=>S.rconf>=2, done:()=>S.rdone, isNegative:true,
+   text:"Where two confirmers are unreachable, an operator may override — but never the worker's own supervisor (G1 #10: the person who caused a lockout is frequently the supervisor), and never without a reason and an owner, refused by the handler and by a CHECK constraint. Every override carries a review date and surfaces when overdue.",
+   run(){ S.rdone=true;
+     return callCard("POST","/v1/recoveries/{id}/override",{byPartyId:"…SPVR", reason:"confirmers unreachable"},
+      {error:"own_supervisor_cannot_override", detail:"a path the supervisor can invoke is a path they can invoke against the worker (G1, #10)"},"403 — and with no reason at all: 400 override_needs_a_reason_and_an_owner");}},
+];
+
+/* ————— batch check playground ————— */
+const chkSteps = [
+ { title:"A batch with no purpose is a bulk export", actor:["ver","Employer"], ready:()=>true, done:()=>S.batchOK===1||S.batchOK===true, isNegative:true,
+   text:"Every batch declares who is asking and why, in words a worker can read — the purpose lands in each worker's own check trail. The cap is deployment configuration that can be moved but not removed.",
+   run(){ S.batchOK=1;
+     return callCard("POST","verify:/v1/verify/batch",{credentials:["…120 credentials"], requestedByPartyId:"…NGO2"},
+      {error:"purpose_required", detail:"a batch check must say what it is for, in 10-200 characters a worker can read in their check trail"},"400 — and over the cap: 413 batch_over_cap naming the number");}},
+ { title:"Bounded and purposeful, it answers per credential", actor:["ver","Employer"], ready:()=>S.batchOK===1, done:()=>S.batchOK===true,
+   text:"Per-credential verdicts only — deliberately no aggregate answers, which is what dissolves the small-population re-identification problem rather than defending it. One trail entry per worker, including for credentials that fail.",
+   run(){ S.batchOK=true;
+     return callCard("POST","verify:/v1/verify/batch",{credentials:["…2 credentials"], requestedByPartyId:"…NGO2", purpose:"Q1 payroll audit, Riverside district"},
+      {verdicts:[{valid:true,tier:2},{valid:true,tier:3}], count:2})
+     + callCard("GET","verify:/v1/presentations?subjectRef=…AMARA", null,
+      {presentations:[{purpose:"Q1 payroll audit, Riverside district", requestedByPartyId:"…NGO2", scope:"scoped", outcome:"valid", createdAt:now()}]},
+      "what Amara sees when she asks who checked her (W8)");}},
+];
+
+/* ————— readiness data (§15 vs the backend, 25 Aug 2026) ————— */
+const J = [
+["J1","Onboarding an organisation",[
+  ["built","org self-registration → terms acceptance → decision, with author≠approver in a CHECK constraint"],
+  ["built","versioned terms catalogue"],
+  ["miss","project→org invitation object with scoped grant accept/decline",""],
+  ["miss","key issuance with one-time reveal / withdrawal-not-reinstatement",""],
+  ["miss","external business-register lookup",""]]],
+["J2","Setting up the instance",[
+  ["built","instance object published to the log with its publisher key (#70) — live on Railway"],
+  ["built","notification moments + attempt record; wording, keywords and date format as L2 templates with the paid-either-way check (#59)"],
+  ["miss","instance-level consent floor no project may loosen",""],
+  ["part","per-worker language — needs a Party locale, a schema decision (#59)","https://github.com/theflywheel/CREST/issues/59"]]],
+["J3","Setting up a project",[
+  ["built","context, role and grant objects; terms-as-ceiling; grant revoke + review-by dates (narrowing binds at submission, §16)"],
+  ["miss","the five compositability switches as first-class project state",""],
+  ["miss","spreadsheet template generation pinned to a definition version",""],
+  ["part","activation gates — present in fixtures, not enforced beneath product",""]]],
+["J4","Defining the work",[
+  ["built","definition registry, ratify → activate, published as signed records with inclusion proofs a verifier fetches"],
+  ["built","tier-ceiling enforcement via source assessments — re-assessment downgrades instantly, nothing reissued"],
+  ["miss","dry-run execution against live records that writes nothing",""],
+  ["miss","adapter registration per definition version (mapping config exists per source, #56)",""]]],
+["J5","Payment, and putting it right",[
+  ["built","instruction per validated event, idempotent under crash+redelivery (proven by SIGKILL in e2e)"],
+  ["built","every held payment refused by the database without a reason and an owner (W10)"],
+  ["miss","Rate as a versioned effective-dated object","https://github.com/theflywheel/CREST/issues/26"],
+  ["miss","reconciliation-file ingestion; retry/exception queue; advisory mode","https://github.com/theflywheel/CREST/issues/26"]]],
+["J6","Registering a worker in the field",[
+  ["built","registration with supervisor-only contact routes; voice consent artefacts in the object store"],
+  ["built","duplicate detection: hold-never-merge, custodian resolution, worker-confirmed merges, merges_without_confirmation=0 as a query"],
+  ["miss","offline-first registration queue reconciling on sync",""],
+  ["miss","scan-or-manual ID capture against the anchor",""]]],
+["J7","A worker, end to end",[
+  ["built","T=7 with all four exits releasing payment; auto-confirm stays disputable; assisted path derives the route from the caller"],
+  ["built","2-of-3 recovery with distinct-authority voices + operator override that cannot be quiet (#106)"],
+  ["built","retroactive upgrade: a later identity binding raises the tier of evidence already captured — derived, never stored"],
+  ["miss","selective-disclosure share objects with per-field consent",""],
+  ["miss","aggregate earnings view (the per-service lists exist; the view does not)",""],
+  ["miss","14-day issuer response defaulting in the worker's favour",""]]],
+["J8","From attestation to credential",[
+  ["built","batch → per-worker claims, never merged records; unclear queue holds what cannot be attributed"],
+  ["built","issuance on acceptance with the org's signature — no human signs"],
+  ["miss","scoped expiring request links for external institutions (their evidence tier-caps at 2, §16)",""]]],
+["J9","Checking a credential",[
+  ["built","verify + batch verify with declared purpose and a movable-not-removable cap (#107); per-worker check trail (W8)"],
+  ["built","refusals as explicit values; a valid verdict states what it does not establish (#68)"],
+  ["built","status-list check; the offline card carries the whole signed VC — and CBOR cards from Inji's wallet now decode (#92)"],
+  ["miss","verifier passes with accreditation-level field ceilings",""],
+  ["miss","per-verification worker consent",""]]],
+["J10","When something stalls",[
+  ["built","recovery, escalatable holds, unreached-worker and unreleased-payment lists"],
+  ["miss","five-key worker lookup with confidence ranking",""],
+  ["miss","payment trace exposing rail state read-only; escalation object with SLA",""]]],
+["J11","Seeing where it stands",[
+  ["built","duplicate-merge protocol with its monitored invariant; overdue-review queues (authorizations, overrides)"],
+  ["miss","the metric contracts as infrastructure objects — funnel, tier-mix, payment-delay taxonomy, payable coverage","https://github.com/theflywheel/CREST/issues/31"]]],
+["J12","Systems CREST does not own",[
+  ["built","the CSV class adapter with per-deployment field mapping (#56); the rail contract with idempotent instructions"],
+  ["built","account-free verification — trust carried entirely by the signature (eddsa-jcs-2022, offline)"],
+  ["miss","a second adapter class via configuration only — the test of §8's promise","https://github.com/theflywheel/CREST/issues/30"],
+  ["part","identity assertion consumption — eSignet works; production relying-party registration awaits a pilot geography (#53)","https://github.com/theflywheel/CREST/issues/53"]]],
+];
+const jClass = items => items.every(i=>i[0]==="built") ? "play" : items.some(i=>i[0]==="built") ? "part" : "thin";
+
+/* ————— rendering ————— */
+let view = "loop";
+function stepHTML(s, i, branchState){
+  const locked = !s.ready() && !s.done();
+  const done = s.done();
+  let body = "";
+  if (s.branch && s.ready()){
+    body = `<div class="exits">`+ s.exits.map(([k,label])=>`<button class="btn ${k==="self"?"primary":""}" data-exit="${k}">${label}</button>`).join("") + `</div>`;
+  } else if (!done && s.ready()){
+    body = `<div class="exits"><button class="btn primary" data-run="${i}">${s.isNegative?"Try it":"Run"}</button></div>`;
+  }
+  return `<div class="step ${locked?"locked":""}" id="step-${i}">
+    <div class="head"><span class="actor ${s.actor[0]}">${s.actor[1]}</span><h3>${s.title}</h3>${done?`<span class="chip">done</span>`:""}</div>
+    <p>${s.text}</p>${body}<div class="out" id="out-${i}">${s._out||""}</div></div>`;
+}
+function playground(title, lede, list, extra){
+  return `<h2>${title}</h2><p class="lede">${lede}</p>${extra||""}
+    <div class="stage">${list.map((s,i)=>stepHTML(s,i)).join("")}</div>
+    <button class="reset" id="resetBtn">reset the world</button>`;
+}
+function render(){
+  const m = el("main");
+  if (view==="loop"){
+    m.innerHTML = playground("The core loop, end to end",
+     "Real CSV in, verifiable credential out, payment released — the G2 slice, exactly as the deployed services answer it. Every card is the real endpoint and the real response shape; the engine underneath is simulated so this page needs no backend.",
+     steps, stRow());
+    bind(steps);
+  } else if (view==="recovery"){
+    m.innerHTML = playground("Losing a phone, and coming back",
+     "Identity binds to a device; the device is gone. What must not follow is the history going with it. Built in #106, ruled in §16 — including the refusal that matters most.",
+     recSteps);
+    bind(recSteps);
+  } else if (view==="checks"){
+    m.innerHTML = playground("An employer checks a cohort",
+     "The bounded door for a need that would otherwise arrive through a loop (#107). Both refusals are the demo — the success case is only the third most interesting thing here.",
+     chkSteps);
+    bind(chkSteps);
+  } else {
+    const j = J[view];
+    m.innerHTML = `<h2>${j[0]} · ${j[1]}</h2>
+      <p class="lede">§15's L1 scope for this journey, against the backend as of 25 Aug 2026. “Built” means e2e- or unit-proven in CI, not merely present.</p>
+      <div class="sheet">${j[2].map(([t,txt,href])=>`<div class="li"><span class="tag ${t}">${t==="miss"?"missing":t==="part"?"partial":"built"}</span><span>${txt}${href?` — <a href="${href}">issue</a>`:""}</span></div>`).join("")}</div>
+      <div class="note">Cross-cutting for every journey's frontend: <a href="https://github.com/theflywheel/CREST/issues/102">#102</a> — authentication reaches every endpoint, authorization checks four. A console built today must not assume the backend refuses what it should.</div>`;
+  }
+  document.querySelectorAll(".jrow").forEach(b=>b.classList.toggle("active", String(b.dataset.view)===String(view)));
+}
+function bind(list){
+  el("main").querySelectorAll("[data-run]").forEach(b=>b.addEventListener("click",()=>{
+    const i=+b.dataset.run; list[i]._out=list[i].run(); render();
+    const t=el("step-"+i); t&&t.scrollIntoView({block:"nearest"});
+  }));
+  el("main").querySelectorAll("[data-exit]").forEach(b=>b.addEventListener("click",()=>{
+    const s=steps.find(x=>x.branch); const ex=s.exits.find(e=>e[0]===b.dataset.exit);
+    s._out=ex[2](); render();
+  }));
+  const r=el("resetBtn"); r&&r.addEventListener("click",()=>{ [ ...steps, ...recSteps, ...chkSteps].forEach(s=>delete s._out); reset(); });
+}
+el("adv").addEventListener("click",()=>{ days+=7; el("clock").textContent="T+"+days+"d"; });
+
+const jl = el("jlist");
+J.forEach((j,idx)=>{
+  const b=document.createElement("button");
+  b.className="jrow"; b.dataset.view=idx;
+  b.innerHTML=`<span class="jn">${j[0]}</span><span class="dot ${jClass(j[2])}"></span>${j[1]}`;
+  b.addEventListener("click",()=>{view=idx;render();});
+  jl.appendChild(b);
+});
+document.querySelectorAll(".rail > .jrow").forEach(b=>b.addEventListener("click",()=>{view=b.dataset.view;render();}));
+render();
+</script></html>
