@@ -1,0 +1,11 @@
+# The Actor Journeys web app on Railway: one public door for the whole demo.
+#
+# nginx serves apps/web and reverse-proxies /api/<service>/ onto Railway's
+# private network — which is the §16 service-identity fence made real: the Go
+# services carry no public domains, and /internal/* is refused HERE, so the
+# service-only routes never reach the internet at all.
+FROM nginx:1.27-alpine
+COPY apps/web /usr/share/nginx/html
+COPY infra/railway/nginx.conf.template /etc/nginx/templates/default.conf.template
+# Railway injects PORT; the template's ${PORT} is substituted by the stock
+# nginx entrypoint.

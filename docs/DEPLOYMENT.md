@@ -86,7 +86,9 @@ PR → CI green → merge to main → CI on main → Deploy workflow → Railway
 
 The deploy ends by polling `/readyz` until the new version answers, and fails if it does not within ten minutes. A deploy step that returns without the service answering has told you nothing.
 
-Only `crest-registry` (running the parties service) is in the deploy matrix. The other six services are health-check stubs today; adding them costs money to prove something one of them already proves. They join the matrix as they gain behaviour.
+**The demo fleet (2026-08-25).** All seven services, the three mocks, a one-shot seeder (`crest-seed`, holds after seeding) and one public door now run on Railway. Only `crest-web` has a public domain — https://crest-web-production.up.railway.app — an nginx that serves `apps/web` and proxies `/api/<service>/` over private networking, refusing `/internal/*` at the door (the §16 service-identity fence). The demo fleet runs `CREST_ENV=railway` with a driveable clock **inside the fence** (start 2026-03-01), the mock OIDC issuer, and fresh salts; it is a demo of the journeys, not the hardened deployment, and the two must not be conflated: the hardened path is still the matrix below.
+
+Only `crest-registry` (running the parties service) is in the hardened deploy matrix. The other six services are health-check stubs today; adding them costs money to prove something one of them already proves. They join the matrix as they gain behaviour.
 
 ## Secrets
 
