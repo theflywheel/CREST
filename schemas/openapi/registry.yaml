@@ -201,6 +201,108 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "500": { $ref: "#/components/responses/Internal" }
 
+  /v1/holds/{id}/resolve:
+    post:
+      operationId: resolveHold
+      summary: Close a duplicate hold — one person, or two
+      description: >
+        Records which of the two situations a hold is, and acts on it (§4, W7).
+
+
+        `distinct` means two different people who share an identifier, which is
+        ordinary in a household. The identifier is taken off every candidate but
+        the one it belongs to; nothing else about anybody changes, and no worker
+        confirmation is asked for — asking one worker to ratify a fact about
+        another is disclosure, not consent.
+
+
+        `merge` means one person recorded twice. §4 gives this decision to the
+        registry custodian *and* to the worker's confirmation, and this endpoint
+        has no shape that expresses a merge without one: `confirmedByPartyId`
+        and `confirmationMethod` are required, and the same requirement is a
+        CHECK constraint on the row. That is what makes
+        `merges_without_confirmation` a query rather than an assertion — and
+        worth saying plainly, it read zero before this endpoint existed only
+        because merging was impossible.
+
+
+        The absorbed party is not deleted. Its identifier keeps resolving,
+        through `mergedInto`, because every claim, credential and payment
+        instruction naming it lives in another service — and removing it would
+        put a hole in a worker's history exactly where the system corrected its
+        own mistake about who they were.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, partyId, resolvedByPartyId]
+              properties:
+                decision: { type: string, enum: [merge, distinct] }
+                partyId:
+                  type: string
+                  description: >
+                    Who the identifier belongs to: the survivor for a merge, the
+                    rightful holder for a distinct. Must be one of the hold's
+                    own candidates.
+                resolvedByPartyId: { type: string, description: The custodian taking the decision. }
+                confirmedByPartyId:
+                  type: string
+                  description: The worker confirming the merge. Required for `merge`, refused for `distinct`.
+                confirmationMethod:
+                  type: string
+                  description: How the confirmation was taken — voice, in person, SMS reply.
+      responses:
+        "200":
+          description: The hold is closed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [holdId, decision, partyId, resolvedBy, resolvedAt, merged]
+                properties:
+                  holdId: { type: string }
+                  decision: { type: string }
+                  partyId: { type: string }
+                  resolvedBy: { type: string }
+                  resolvedAt: { type: string, format: date-time }
+                  merged: { type: array, items: { type: string } }
+                  confirmedBy: { type: string }
+                  confirmationMethod: { type: string }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The party named is not one of this hold's candidates, or has itself been merged away.
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/holds/metrics:
+    get:
+      operationId: mergeMetrics
+      summary: How many merges were recorded without the worker's confirmation
+      description: >
+        §4's monitored invariant, as a number rather than a claim. It should be
+        zero, and it should be zero because every merge carries a confirmation —
+        not because merging is impossible, which is the reason it read zero
+        before `/v1/holds/{id}/resolve` existed.
+      responses:
+        "200":
+          description: The count, and why it is what it is.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mergesWithoutConfirmation]
+                properties:
+                  mergesWithoutConfirmation: { type: integer }
+                  because: { type: string }
+        "500": { $ref: "#/components/responses/Internal" }
+
   /v1/parties/{id}/enrolment-consent:
     get:
       operationId: enrolmentConsentState
@@ -666,10 +768,17 @@ components:
       description: >
         A recorded decision not to merge. Written whenever resolve finds more than
         one candidate; the row is what someone later acts on (W7).
+
+
+        The colliding value itself is deliberately absent — §16 asks that
+        duplicate holds show existence rather than content, and the reason is
+        concrete: for a contact-route hold the value is a phone number, and a
+        queue anybody can list would otherwise hand out the phone number of
+        every worker two records disagree about. `keyKind` says which kind of
+        identifier collided, which is what a custodian needs to decide it.
       properties:
         id: { type: string }
-        keyKind: { type: string }
-        keyValue: { type: string }
+        keyKind: { type: string, enum: [national-id-hash, contact-route, roster-id] }
         candidates: { type: array, items: { type: string } }
         reason: { type: string }
         createdAt: { type: string, format: date-time }

@@ -57,6 +57,14 @@
         "additionalProperties": false
       }
     },
+    "mergedInto": {
+      "$ref": "urn:crest:schema:primitives:common:1#/$defs/did",
+      "description": "Set when a registry custodian merged this Party into another, with the worker's confirmation (§4). The Party is not deleted and its identifier keeps resolving: every claim, credential and payment instruction that names it lives in other services, and removing it would put a hole in a worker's history exactly where the system corrected its own mistake about who they were. Reads follow the pointer."
+    },
+    "mergedAt": {
+      "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp",
+      "description": "When the merge was recorded."
+    },
     "createdAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" }
   },
   "required": ["id", "kind", "displayName", "contactRoutes", "createdAt"],
