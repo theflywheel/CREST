@@ -60,16 +60,17 @@ function loginView(){
       <span class="avatar">${p.initial}</span>
       <span><div class="who">${esc(p.who)}</div><div class="what">${esc(p.what)}</div></span>
     </button>`).join("")}
+    <p class="note">What this PoC deliberately does not draw: instance setup, organisation onboarding, the 28-screen definition-authoring journey, rate &amp; payment-mechanism setup, and funding oversight. Each exists in the design (<em>docs/reference</em>) and none is faked here — a screen appears only when the services behind it are real.</p>
     <p class="note">The stack: <code>make e2e-up</code>. This page is served by the <code>web</code> compose service on :59100, and the services admit it via <code>CREST_CORS_ORIGINS</code>.</p>
   </div>`;
 }
 
 /* ————— shared shell ————— */
 const NAVS = {
-  worker: [["record","My record"],["money","My money"],["wallet","My credentials"],["checks","Who checked me"],["consent","What I agreed to"]],
+  worker: [["record","My record"],["work","What counts as done"],["money","My money"],["wallet","My credentials"],["checks","Who checked me"],["messages","Messages to me"],["consent","What I agreed to"]],
   supervisor: [["batch","A spreadsheet arrived"],["unreached","Who holds it next"],["unclear","Evidence that did not match"]],
   custodian: [["find","Find a worker"],["dupes","Duplicates — the queue"],["unclear","Whose work was this row"],["recover","Recoveries"],["review","Overdue for review"]],
-  project: [["funnel","Where it stands"],["payments","Payments, and where the delay is"],["sources","Where evidence comes from"]],
+  project: [["funnel","Where it stands"],["payments","Payments, and where the delay is"],["trace","Trace a payment"],["definition","The work, defined"],["sources","Where evidence comes from"]],
   verifier: [["check","Scan or enter the credential"],["person","Resolve a person"],["batchcheck","Batch BAT — checking many"]],
   agent: [["register","Register a worker"],["consent","Read this to them"],["recoverstart","Who can confirm it is you?"]],
 };
@@ -83,7 +84,7 @@ function shell(content){
     </div>
     <div class="wrap">
       <nav class="rail"><div class="cap">Journeys</div><div class="nav">${nav}</div></nav>
-      <main class="main">${S.err?`<div class="err">${esc(S.err)}</div>`:""}${content}</main>
+      <main class="main">${S.err?`<div class="err">${esc(S.err)}</div>`:""}${S.flash?`<div class="card" style="border-color:var(--ok,#2e7d32)"><h3>What just happened</h3>${S.flash}</div>`:""}${content}</main>
     </div>`;
 }
 
@@ -126,7 +127,7 @@ async function workerMoney(){
       ${list.map(i=>`<tr><td class="money">${money(i.amountMinor,i.currency)}</td>
         <td><span class="pill ${i.state==="RELEASED"?"ok":"hold"}">${esc(i.state)}</span></td>
         <td>${esc(i.releasedBy||"")}</td><td>${when(i.releasedAt)}</td>
-        <td>${i.heldReason?esc(i.heldReason)+" — <b>"+esc(i.heldOwner||"")+"</b>":"—"}</td></tr>`).join("")}
+        <td>${i.held?esc(i.held.explanation||i.held.code)+" — <b>"+short(i.held.ownerPartyId||"")+"</b>":"—"}</td></tr>`).join("")}
     </table></div>`:`<div class="empty">No payments yet.</div>`}`;
 }
 
@@ -175,6 +176,37 @@ async function workerConsent(){
         <td><span class="pill ${c.state==="GRANTED"?"ok":"risk"}">${esc(c.state)}</span></td>
         <td>${c.state==="GRANTED"?`<button class="btn small danger" data-withdraw="${esc(c.id)}">Withdraw</button>`:""}</td></tr>`).join("")}
     </table></div>`:`<div class="empty">No consents recorded.</div>`}`;
+}
+
+async function workerWork(){
+  // The definition's worker face (§7): what counts, in the worker's own
+  // language, with the evidence spelled out — never the platform's schema.
+  const f = await api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}/faces/worker`);
+  const lr = await api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}/linked-records?type=payment-setup`).catch(()=>({linkedRecords:[]}));
+  const rate = ((lr.linkedRecords||[])[0]||{}).payload;
+  const wkr = f.worker||{};
+  return `<h2>What counts as done</h2>
+    <p class="lede">${esc(wkr.summary||"")}</p>
+    <div class="card"><h3>${esc((f.activity||{}).label||f.activity||"")} <span class="pill info">v${f.version} · ${esc(f.state)}</span></h3>
+      <div class="kv"><b>counted in</b>${esc(f.outcomeUnit||"")}</div>
+      ${rate?`<div class="kv"><b>one unit pays</b>${money(rate.ratePerOutcomeUnit.amountMinor, rate.ratePerOutcomeUnit.currency)} — set separately from the definition, versioned, never overwritten</div>`:`<div class="kv"><b>pays</b>no rate is attached — this work is recognised, and recognition is a use of its own</div>`}
+      <div class="kv"><b>definition</b><code>${short(f.definitionId)}</code></div></div>
+    <div class="card"><h3>What stands as evidence</h3>
+      ${(wkr.evidenceInPlainLanguage||[]).map(l=>`<div class="link"><span class="lk ok">counts</span><span>${esc(l)}</span></div>`).join("")||`<div class="empty">The definition carries no worker-language evidence list.</div>`}
+      <p class="note">Nothing on this page asks you to enter work into CREST — that path does not exist, and will not be built. Evidence arrives from the programme's systems; your part is the say you get before it counts.</p></div>`;
+}
+
+async function workerMessages(){
+  const me = S.me.partyId;
+  const out = await api.get("notify", `/v1/notifications?partyId=${encodeURIComponent(me)}`);
+  const list = out.notifications||[];
+  return `<h2>Messages to me</h2>
+    <p class="lede">Every message the system sent you, kept — so "you were told" is checkable, in both directions.</p>
+    ${list.length?list.map(n=>`<div class="card">
+      <div class="row"><h3>${esc(n.kind||"message")}</h3><span class="pill ${n.state==="SENT"?"ok":"hold"}">${esc(n.state)}</span></div>
+      <p style="max-width:60ch">${esc(n.body||"")}</p>
+      <div class="kv"><b>via</b>${esc(n.channel||"")} to ${esc(n.destination||"")} · ${when(n.createdAt)}</div></div>`).join("")
+    :`<div class="empty">No messages yet. When a record of your work opens its seven-day window, the message that tells you lands here too.</div>`}`;
 }
 
 /* ————— supervisor face ————— */
@@ -305,11 +337,66 @@ async function projectPayments(){
       <span class="chip">held <b>${held.length}</b></span>
       ${rec?`<span class="chip">reconciliation gaps <b>${(rec.gaps||[]).length}</b></span>`:""}
     </div>
-    <div class="tablewrap"><table><tr><th>Worker</th><th>Amount</th><th>State</th><th>Route</th><th>Held: reason — owner</th></tr>
+    ${held.length?`<div class="card"><h3>The delay, by reason — each with an owner</h3>
+      ${Object.entries(held.reduce((m,i)=>{const k=(i.held&&i.held.code)||i.heldReason||"held";(m[k]=m[k]||[]).push(i);return m;},{}))
+        .map(([code,items])=>`<div class="kv"><b>${esc(code)} (${items.length})</b>${esc((items[0].held&&items[0].held.explanation)||"")} — <code>${short((items[0].held&&items[0].held.ownerPartyId)||"")}</code></div>`).join("")}
+    </div>`:""}
+    ${list.length?`<div class="tablewrap"><table><tr><th>Worker</th><th>Amount</th><th>State</th><th>Route</th><th>Held: reason — owner</th><th></th></tr>
     ${list.slice(0,50).map(i=>`<tr><td><code>${short(i.partyId)}</code></td><td class="money">${money(i.amountMinor,i.currency)}</td>
       <td><span class="pill ${i.state==="RELEASED"?"ok":"hold"}">${esc(i.state)}</span></td><td>${esc(i.releasedBy||"")}</td>
-      <td>${i.heldReason?esc(i.heldReason)+" — "+esc(i.heldOwner||""):"—"}</td></tr>`).join("")}
-    </table></div>`;
+      <td>${i.held?esc(i.held.explanation||i.held.code)+" — <code>"+short(i.held.ownerPartyId||"")+"</code>":"—"}</td>
+      <td><button class="btn small" data-trace="${esc(i.claimId)}">Trace</button></td></tr>`).join("")}
+    </table></div>`
+    :`<div class="empty">No payment has been instructed yet. Instructions appear the moment a confirmation window exits — all four exits release one, a dispute included.</div>`}`;
+}
+
+async function projectTrace(claimId){
+  // The support-agent trace (spec W-3): one claim, walked end to end —
+  // credential signed, amount worked out, instruction raised — each step a
+  // fact from a different service, so a gap names the service that owes it.
+  let body = "";
+  if (claimId) {
+    const [win, instr, claim] = await Promise.all([
+      api.get("confirmation", `/v1/windows/${encodeURIComponent(claimId)}`).catch(()=>null),
+      api.get("payments", `/v1/instructions/by-claim/${encodeURIComponent(claimId)}`).catch(()=>null),
+      api.get("evidence", `/v1/claims/${encodeURIComponent(claimId)}`).catch(()=>null),
+    ]);
+    const i = instr && (instr.instruction||instr);
+    const step = (done, label, detail) => `<div class="link"><span class="lk ${done?"ok":"tr"}">${done?"done":"missing"}</span><span>${esc(label)}${detail?`<span style="color:var(--muted)"> — ${esc(detail)}</span>`:""}</span></div>`;
+    body = `<div class="card"><h3>Claim <code>${short(claimId)}</code></h3>
+      ${step(!!claim, "Work recorded and attributed", claim?`unit ${short(claim.claim?claim.claim.unitId:claim.unitId)}`:"the evidence service has no such claim")}
+      ${step(!!(win&&win.exitRoute), "The worker had their say", win?(win.exitRoute?`exit: ${win.exitRoute}`:`window still open — closes ${when(win.closesAt)}`):"no window found")}
+      ${step(!!(win&&win.credentialId), "Credential signed", win&&win.credentialId?short(win.credentialId):"issued when the window exits")}
+      ${step(!!i, "Payment instruction raised", i?`${money(i.amountMinor,i.currency)} · ${i.state}`:"none — if the window exited, this gap is the payments service's to explain")}
+      ${i&&i.held?`<div class="kv"><b>held</b>${esc(i.held.explanation||i.held.code)} — owner <code>${short(i.held.ownerPartyId||"")}</code></div>`:""}
+      <p class="note">A trace that ends early is an answer, not a failure: it names the step that owes the next fact. Support can escalate; it can never retry a payment or change a record.</p></div>`;
+  }
+  return `<h2>Trace a payment</h2>
+    <p class="lede">From "the money did not arrive" to the step that owes an answer, without guessing.</p>
+    <div class="card"><form class="row" id="traceform">
+      <input name="claim" placeholder="crest:claim:…" size="36" value="${esc(claimId||"")}" required>
+      <button class="btn primary small">Trace</button></form></div>
+    ${body}`;
+}
+
+async function projectDefinition(){
+  const d = await api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}`);
+  const v = await api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}/faces/verifier`).catch(()=>null);
+  const lr = await api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}/linked-records`).catch(()=>({linkedRecords:[]}));
+  return `<h2>The work, defined</h2>
+    <p class="lede">A definition is versioned and immutable once active; author and ratifier are two people by construction. What it pays lives in a separate record, referenced by id — the rate can change without touching what the work <em>is</em>.</p>
+    <div class="card"><div class="row"><h3>${esc((d.activity||{}).label||d.activity||"")}</h3>
+      <span class="pill ${d.state==="ACTIVE"?"ok":"info"}">v${d.version} · ${esc(d.state)}</span></div>
+      <div class="kv"><b>id</b><code>${esc(d.id)}</code></div>
+      <div class="kv"><b>unit</b>${esc(d.outcomeUnit||"")}</div>
+      <div class="kv"><b>skill</b><code>${esc(d.skillCode||"")}</code></div>
+      ${d.ratifiedByPartyId?`<div class="kv"><b>ratified by</b><code>${short(d.ratifiedByPartyId)}</code> — not its author</div>`:""}</div>
+    ${v&&(v.tierMap||[]).length?`<div class="card"><h3>How evidence becomes a tier</h3>
+      ${(v.tierMap||[]).map(r=>`<div class="link"><span class="lk ok">tier ${r.tier}</span><span>source in ${esc((r.sourceClassIn||[]).join("/"))}, captured by ${esc((r.captureMethodIn||[]).join("/"))}, identity ≥ ${esc(r.minIdentityAssurance||"any")}${(r.requiresFields||[]).length?`, needs ${esc(r.requiresFields.join(", "))}`:""}</span></div>`).join("")}
+      <p class="note">The map is public to verifiers on purpose — a verifier who cannot see it can only be told a tier, never check one.</p></div>`:""}
+    ${(lr.linkedRecords||[]).length?`<div class="card"><h3>Linked records</h3>
+      ${(lr.linkedRecords||[]).map(x=>`<div class="kv"><b>${esc(x.type)}</b>v${x.version} · ${esc(x.state)}${x.type==="payment-setup"&&x.payload?` — ${money(x.payload.ratePerOutcomeUnit.amountMinor,x.payload.ratePerOutcomeUnit.currency)} per unit, effective ${when(x.payload.effectiveFrom)}`:""}</div>`).join("")}</div>`:""}
+    <p class="note">The authoring journey — sector, counting basis, proof rules, template generation, source mapping (28 screens in the design) — is not built in this PoC; this is the registry read of a definition that went through draft → ratify → activate for real.</p>`;
 }
 
 async function projectSources(){
@@ -328,6 +415,7 @@ function verifierCheck(){
   return Promise.resolve(`<h2>Scan or enter the credential</h2>
     <p class="lede">A bare check needs no account and no consent beyond the showing itself. The verdict tells you what you can check without CREST, what you are trusting, and what a green result does <em>not</em> establish.</p>
     <div class="card"><form class="stack" id="verifyform" style="max-width:none">
+      <div class="row"><input name="sampleparty" placeholder="…or borrow one: worker party id" size="34"><button type="button" class="btn small" id="loadsample">Load their newest credential</button></div>
       <label>The credential (JSON, as scanned)<textarea name="cred" rows="8" placeholder='{"@context": …}' required></textarea></label>
       <div class="row"><input name="who" placeholder="who is asking (party id, optional)" size="30"><input name="why" placeholder="why (optional — recorded for the worker)" size="30"></div>
       <button class="btn primary">Check it</button>
@@ -402,10 +490,10 @@ function agentRecovery(){
 
 /* ————— router ————— */
 const VIEWS = {
-  worker: { record: workerRecord, money: workerMoney, wallet: workerWallet, checks: workerChecks, consent: workerConsent },
+  worker: { record: workerRecord, work: workerWork, money: workerMoney, wallet: workerWallet, checks: workerChecks, messages: workerMessages, consent: workerConsent },
   supervisor: { batch: supervisorBatch, unreached: supervisorUnreached, unclear: ()=>sharedUnclear("supervisor") },
   custodian: { find: custodianFind, dupes: custodianDupes, unclear: ()=>sharedUnclear("custodian"), recover: custodianRecoveries, review: custodianReview },
-  project: { funnel: projectFunnel, payments: projectPayments, sources: projectSources },
+  project: { funnel: projectFunnel, payments: projectPayments, trace: ()=>projectTrace(S.traceClaim), definition: projectDefinition, sources: projectSources },
   verifier: { check: verifierCheck, person: verifierPerson, batchcheck: verifierBatch },
   agent: { register: agentRegister, consent: agentConsent, recoverstart: agentRecovery },
 };
@@ -432,14 +520,21 @@ function on(sel, ev, fn){ app.querySelectorAll(sel).forEach(el=>el.addEventListe
 function bindShell(){
   const lo = document.getElementById("logout");
   lo && lo.addEventListener("click", ()=>{ setSession(null); S.face="login"; S.me=null; S.err=null; render(); });
-  on("[data-nav]","click",e=>{ S.view=e.currentTarget.dataset.nav; S.err=null; render(); });
+  on("[data-nav]","click",e=>{ S.view=e.currentTarget.dataset.nav; S.err=null; S.flash=null; render(); });
+  on("[data-trace]","click",e=>{ S.traceClaim=e.currentTarget.dataset.trace; S.view="trace"; S.err=null; render(); });
+  const tf=document.getElementById("traceform");
+  tf && tf.addEventListener("submit",ev=>{ ev.preventDefault(); S.traceClaim=tf.claim.value.trim(); render(); });
 
   on("[data-confirm]","click",async e=>{ clearErr();
-    try{ await api.post("confirmation", `/v1/claims/${encodeURIComponent(e.currentTarget.dataset.confirm)}/confirm`, {route:"self"}); render(); }catch(err){ fail(err); }});
+    try{ await api.post("confirmation", `/v1/claims/${encodeURIComponent(e.currentTarget.dataset.confirm)}/confirm`, {route:"self"});
+      S.flash = `<p>You confirmed the record. The payment is released now; the signed credential lands under <b>My credentials</b>. Nobody acts next — this one is settled.</p>`;
+      render(); }catch(err){ fail(err); }});
   on("[data-dispute]","click",async e=>{ clearErr();
     const reason = prompt("Tell us what does not match. You will be paid either way.");
     if (reason===null) return;
-    try{ await api.post("confirmation", `/v1/claims/${encodeURIComponent(e.currentTarget.dataset.dispute)}/dispute`, {raisedByPartyId:S.me.partyId, reason}); render(); }catch(err){ fail(err); }});
+    try{ await api.post("confirmation", `/v1/claims/${encodeURIComponent(e.currentTarget.dataset.dispute)}/dispute`, {raisedByPartyId:S.me.partyId, reason});
+      S.flash = `<p>Your dispute is on the record and <b>your payment is released anyway</b> — a dispute contests the record, never the money. The issuer answers next; the contest stays visible to any verifier until it does.</p>`;
+      render(); }catch(err){ fail(err); }});
   on("[data-withdraw]","click",async e=>{ clearErr();
     try{ await api.post("parties", `/v1/consents/${encodeURIComponent(e.currentTarget.dataset.withdraw)}/withdraw`, {reason:"withdrawn by the worker"}); render(); }catch(err){ fail(err); }});
   on("[data-showdoc]","click",e=>{ const el=document.getElementById("doc-"+e.currentTarget.dataset.showdoc); if(el) el.hidden=!el.hidden; });
@@ -449,7 +544,9 @@ function bindShell(){
       const win = await api.get("confirmation", `/v1/windows/${encodeURIComponent(claim)}`);
       actingFor(win.partyId);
       await api.post("confirmation", `/v1/claims/${encodeURIComponent(claim)}/confirm`, {route:"assisted", assistedByPartyId:S.me.partyId});
-      actingFor(null); render();
+      actingFor(null);
+      S.flash = `<p>Confirmed on the worker's behalf, recorded as <b>assisted, with your name on it</b> — the same exit, the same payment, never a quieter one.</p>`;
+      render();
     }catch(err){ actingFor(null); fail(err); }});
 
   const bf=document.getElementById("batchform");
@@ -492,6 +589,18 @@ function bindShell(){
     const f=ev.currentTarget;
     try{ await api.post("parties",`/v1/recoveries/${encodeURIComponent(f.dataset.reccomplete)}/complete`,{subjectRef:f.subject.value}); render(); }catch(err){ fail(err); }});
 
+  const ls=document.getElementById("loadsample");
+  ls && ls.addEventListener("click", async ()=>{ clearErr();
+    const f=document.getElementById("verifyform");
+    const pid=f.sampleparty.value.trim() || FIX.workerA;
+    try{
+      // The same open chain-read a verifier gets; borrowing the newest
+      // credential is exactly what scanning the worker's printed card gives.
+      const out=await api.get("verification",`/v1/parties/${encodeURIComponent(pid)}/credentials`);
+      const c=(out.credentials||[])[0];
+      if(!c){ fail(new Error("that person's chain holds no credentials yet")); return; }
+      f.cred.value=JSON.stringify(c,null,2);
+    }catch(err){ fail(err); }});
   const vf=document.getElementById("verifyform");
   vf && vf.addEventListener("submit",async ev=>{ ev.preventDefault(); clearErr();
     try{ const cred=JSON.parse(vf.cred.value);
