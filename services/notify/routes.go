@@ -27,7 +27,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	}
 	h := &handlers{
 		d:        d,
-		registry: client.New(config.Str("REGISTRY_URL", "http://registry:8080")),
+		registry: client.New(config.Str("PARTIES_URL", "http://parties:8080")),
 		sms:      client.New(config.Str("SMS_URL", "http://mock-sms:8080")),
 		msgs:     msgs,
 	}

@@ -22,7 +22,7 @@ type Client struct {
 	http *http.Client
 }
 
-// New builds a client for a base URL such as http://registry:8080.
+// New builds a client for a base URL such as http://parties:8080.
 //
 // The timeout is on the client rather than per-call because a call with no
 // timeout is a goroutine that never returns, and one of those inside a payment

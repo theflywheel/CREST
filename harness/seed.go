@@ -29,7 +29,7 @@ func (s *Stack) Seed(ctx context.Context) (*fixtures.World, error) {
 	}
 
 	for _, p := range w.Parties {
-		if err := s.Registry.Post(ctx, "/v1/parties", p, nil); err != nil {
+		if err := s.Parties.Post(ctx, "/v1/parties", p, nil); err != nil {
 			return nil, fmt.Errorf("party %s: %w", p.DisplayName, err)
 		}
 	}
@@ -41,25 +41,25 @@ func (s *Stack) Seed(ctx context.Context) (*fixtures.World, error) {
 		// already up, and refusing it is right — the code is immutable — so
 		// the seeder skips rather than treating "it is already correct" as a
 		// failure.
-		if err := s.Registry.Get(ctx, "/v1/skills/"+url.PathEscape(sk.Code), nil); err == nil {
+		if err := s.Parties.Get(ctx, "/v1/skills/"+url.PathEscape(sk.Code), nil); err == nil {
 			continue
 		}
-		if err := s.Registry.Post(ctx, "/v1/skills", sk, nil); err != nil {
+		if err := s.Parties.Post(ctx, "/v1/skills", sk, nil); err != nil {
 			return nil, fmt.Errorf("skill %s: %w", sk.Code, err)
 		}
 	}
 	for _, t := range w.Terms {
-		if err := s.Registry.Post(ctx, "/v1/terms", t, nil); err != nil {
+		if err := s.Parties.Post(ctx, "/v1/terms", t, nil); err != nil {
 			return nil, fmt.Errorf("terms %s: %w", t.Name, err)
 		}
 	}
 	for _, c := range w.Contexts {
-		if err := s.Registry.Post(ctx, "/v1/contexts", c, nil); err != nil {
+		if err := s.Parties.Post(ctx, "/v1/contexts", c, nil); err != nil {
 			return nil, fmt.Errorf("context %s: %w", c.Name, err)
 		}
 	}
 	for _, a := range w.Authorizations {
-		if err := s.Registry.Post(ctx, "/v1/authorizations", a, nil); err != nil {
+		if err := s.Parties.Post(ctx, "/v1/authorizations", a, nil); err != nil {
 			return nil, fmt.Errorf("authorization %s: %w", a.ID, err)
 		}
 	}

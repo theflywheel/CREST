@@ -18,7 +18,7 @@ Or in a browser, in this order, because each link is checkable against the next:
 | Its signed checkpoint | https://crest-dedi-production.up.railway.app/dedi/log/checkpoint |
 | A work definition, with proof | [WD-4471](https://crest-dedi-production.up.railway.app/dedi/lookup/crest/work-definitions/WD-4471?proof=inclusion) |
 | Version 1 of it, still resolving | [WD-4471 v1](https://crest-dedi-production.up.railway.app/dedi/lookup/crest/work-definitions/WD-4471?version_id=2&proof=inclusion) |
-| The registry service | https://crest-registry-production.up.railway.app/healthz |
+| The parties service (né registry, #50; the Railway service keeps the name `crest-registry` until it is renamed in the dashboard) | https://crest-registry-production.up.railway.app/healthz |
 | eSignet discovery | https://crest-esignet-production.up.railway.app/v1/esignet/oidc/.well-known/openid-configuration |
 | Certify's credential offer | https://crest-certify-production.up.railway.app/v1/certify/.well-known/openid-credential-issuer |
 | The issuer's own DID | https://crest-certify-production.up.railway.app/v1/certify/.well-known/did.json |
@@ -39,7 +39,7 @@ The cost of that choice is worth stating: CREST services sit alongside a Beckn t
 | Service | What it is |
 |---|---|
 | `crest-dedi` | CREST's own DeDi node — its own log, its own origin, its own database |
-| `crest-registry` | The registry service, built from `infra/compose/Dockerfile.service` |
+| `crest-registry` | The parties service (`SERVICE=parties`; renamed from registry, #50 — the schema renames itself on first boot via `FormerName`), built from `infra/compose/Dockerfile.service` |
 | `crest-esignet` | eSignet 1.8.0, rebuilt with our own entrypoint (P0 finding C7). Databases `mosip_esignet`, `mosip_mockidentitysystem` |
 | `crest-mock-identity` | MOSIP's mock identity system, which is what the spike authenticates against |
 | `crest-esignet-ui` | eSignet's login UI **and eSignet's public hostname** — the API service alone does not serve the URLs eSignet's own discovery document advertises (P0 finding C12) |
@@ -86,7 +86,7 @@ PR → CI green → merge to main → CI on main → Deploy workflow → Railway
 
 The deploy ends by polling `/readyz` until the new version answers, and fails if it does not within ten minutes. A deploy step that returns without the service answering has told you nothing.
 
-Only `crest-registry` is in the deploy matrix. The other six services are health-check stubs today; adding them costs money to prove something one of them already proves. They join the matrix as they gain behaviour.
+Only `crest-registry` (running the parties service) is in the deploy matrix. The other six services are health-check stubs today; adding them costs money to prove something one of them already proves. They join the matrix as they gain behaviour.
 
 ## Secrets
 

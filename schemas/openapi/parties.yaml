@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: CREST registry
+  title: CREST parties (né registry, #50)
   version: "1"
   description: |
     Who a party is, what they agreed to, what they are authorised to do, and — the
@@ -12,7 +12,7 @@ info:
     of a primitive is the thing `schemas/README.md` exists to prevent: two
     hand-maintained definitions agree right up until they don't.
 servers:
-  - url: http://registry:8080
+  - url: http://parties:8080
     description: In-cluster address used by the other services.
 
 paths:

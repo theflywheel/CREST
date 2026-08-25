@@ -21,7 +21,7 @@ import (
 
 // Stack is a running deployment.
 type Stack struct {
-	Registry     *Service
+	Parties      *Service
 	Definitions  *Service
 	Evidence     *Service
 	Confirmation *Service
@@ -67,7 +67,7 @@ func New() *Stack {
 		return &Service{Name: name, Base: env(name, def), http: c}
 	}
 	return &Stack{
-		Registry:     svc("REGISTRY_URL", "http://localhost:59001"),
+		Parties:      svc("PARTIES_URL", "http://localhost:59001"),
 		Definitions:  svc("DEFINITIONS_URL", "http://localhost:59002"),
 		Evidence:     svc("EVIDENCE_URL", "http://localhost:59003"),
 		Confirmation: svc("CONFIRMATION_URL", "http://localhost:59004"),
@@ -82,7 +82,7 @@ func New() *Stack {
 
 // Services is every CREST service, for the operations that apply to all of them.
 func (s *Stack) Services() []*Service {
-	return []*Service{s.Registry, s.Definitions, s.Evidence, s.Confirmation,
+	return []*Service{s.Parties, s.Definitions, s.Evidence, s.Confirmation,
 		s.Verification, s.Payments, s.Notify}
 }
 

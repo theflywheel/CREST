@@ -43,7 +43,7 @@ func env(k, def string) string {
 
 func main() {
 	s := &stack{
-		registry:     env("REGISTRY_URL", "http://localhost:59001"),
+		registry:     env("PARTIES_URL", "http://localhost:59001"),
 		evidence:     env("EVIDENCE_URL", "http://localhost:59003"),
 		confirmation: env("CONFIRMATION_URL", "http://localhost:59004"),
 		payments:     env("PAYMENTS_URL", "http://localhost:59006"),

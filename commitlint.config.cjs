@@ -16,7 +16,8 @@ module.exports = {
         // scope is a mild signal that something crossed more boundaries than it
         // should have.
         'services',
-        'registry', 'definitions', 'evidence', 'confirmation',
+        'registry',
+        'parties', 'definitions', 'evidence', 'confirmation',
         'verification', 'payments', 'notify',
         // Shared code and contracts
         'pkg', 'schemas', 'adapters', 'apps', 'cmd',
