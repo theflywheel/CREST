@@ -12,6 +12,9 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/tool ./${TOOLDIR}/${TOOL}
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/tool /mock
+# The fixture world, for tools that seed (tools/seed with CREST_WORLD set).
+# A few KB; inert for the mocks.
+COPY --from=build /src/tests/fixtures/world.yaml /fixtures/world.yaml
 EXPOSE 8080
 USER nonroot:nonroot
 ENTRYPOINT ["/mock"]

@@ -187,6 +187,11 @@ func toAny[T any](items []T) []any {
 // worldPath finds tests/fixtures/world.yaml by walking up to the module root,
 // so the loader works from any package's test directory.
 func worldPath() (string, error) {
+	// CREST_WORLD points straight at the file for environments with no repo
+	// checkout — the one-shot seeding container on a deployed demo.
+	if p := os.Getenv("CREST_WORLD"); p != "" {
+		return p, nil
+	}
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", err
