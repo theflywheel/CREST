@@ -103,7 +103,7 @@ x-service: &crest-service
     CREST_OIDC_JWKS_MIN_REFRESH: "${CREST_OIDC_JWKS_MIN_REFRESH:-5s}"
     # The dev web app's origin (apps/web, served on 59100). CORS is off unless
     # a deployment names its origins - never a wildcard (#102).
-    CREST_CORS_ORIGINS: "${CREST_CORS_ORIGINS:-http://localhost:59100}"
+    CREST_CORS_ORIGINS: "${CREST_CORS_ORIGINS:-http://localhost:59100,http://localhost:59110}"
 
     # The seven-day window, and a clock the harness can move through it. Both
     # are refused in production — see pkg/service.chooseClock for why a
@@ -424,6 +424,15 @@ services:
     volumes:
       - ../../apps/web:/usr/share/nginx/html:ro
     ports: ["${WEB_PORT:-59100}:80"]
+
+  # The journey apps (apps/console, worker, enrolment, verify over apps/shared):
+  # the reference design rebuilt as separate products, one door. Static files,
+  # no build step; the landing page is apps/index.html.
+  apps:
+    image: nginx:1.27-alpine
+    volumes:
+      - ../../apps:/usr/share/nginx/html:ro
+    ports: ["${APPS_PORT:-59110}:80"]
 
   # ── CREST services: ours ─────────────────────────────────────────────────
 

@@ -1,0 +1,14 @@
+# The journey apps on Railway: a second product door, separate from crest-web
+# (the PoC, shared externally and left untouched). nginx serves the four apps
+# and their shared design system, and proxies /api/<service>/ over private
+# networking — the same §16 service-identity fence as crest-web: /internal/*
+# is refused HERE and the Go services carry no public domains.
+FROM nginx:1.27-alpine
+COPY apps/index.html   /usr/share/nginx/html/index.html
+COPY apps/shared       /usr/share/nginx/html/shared
+COPY apps/worker       /usr/share/nginx/html/worker
+COPY apps/enrolment    /usr/share/nginx/html/enrolment
+COPY apps/console      /usr/share/nginx/html/console
+COPY apps/verify       /usr/share/nginx/html/verify
+COPY infra/railway/nginx.apps.conf.template /etc/nginx/templates/default.conf.template
+# Railway injects PORT; the stock nginx entrypoint substitutes ${PORT}.

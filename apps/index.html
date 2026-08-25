@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CREST — the journey apps</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/shared/crest.css">
+<style>
+  .wrap{max-width:760px;margin:0 auto;padding:44px 22px;display:flex;flex-direction:column;gap:18px}
+  .apps{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+  .app-card{display:block;text-decoration:none;color:var(--text-1)}
+  .app-card .card{display:flex;flex-direction:column;gap:8px;height:100%}
+  .app-card h3{font:500 16.5px/1.3 Roboto;letter-spacing:-.2px}
+  .app-card:hover .card{border-color:var(--p1)}
+</style>
+</head>
+<body>
+<div class="wrap screen">
+  <div>
+    <div class="eyebrow" style="margin-bottom:10px">CREST · Actor Journeys</div>
+    <h1 style="font-size:31px">Four products, one record</h1>
+    <p class="muted" style="font-size:13.5px;max-width:56ch">The Actor Journeys reference, built as the separate applications it
+    outlines — all reading and writing the same live CREST services. Nothing on
+    any screen is fixture data held in the browser.</p>
+  </div>
+  <div class="apps">
+    <a class="app-card" href="/worker/"><div class="card">
+      <span class="chip brand" style="align-self:flex-start">Worker · W-1</span>
+      <h3>The worker's app</h3>
+      <p class="muted">The wallet, not a dashboard — my record, my money and why any of it is held, who checked me, what I agreed to.</p>
+    </div></a>
+    <a class="app-card" href="/enrolment/"><div class="card">
+      <span class="chip warn" style="align-self:flex-start">Field · W-2 / W-4</span>
+      <h3>The field app</h3>
+      <p class="muted">Registering a worker who cannot self-register; voice consent read aloud; confirm what you saw; close the roster.</p>
+    </div></a>
+    <a class="app-card" href="/console/"><div class="card">
+      <span class="chip info" style="align-self:flex-start">Console · G / P / F</span>
+      <h3>The console</h3>
+      <p class="muted">One console, role-based views — instance, organisation, project, defining the work, payment set-up, the custodian's queues.</p>
+    </div></a>
+    <a class="app-card" href="/verify/"><div class="card">
+      <span class="chip ok" style="align-self:flex-start">Verifier · V-1 / V-2</span>
+      <h3>Verification</h3>
+      <p class="muted">Account-free checking: yes, plus facts, nothing identifying. Refusals shown as refusals. Bounded batches.</p>
+    </div></a>
+  </div>
+  <div class="sidecar"><svg class="ico" viewBox="0 0 15 15"><circle cx="7.5" cy="7.5" r="6.7"/><line x1="7.5" y1="6.8" x2="7.5" y2="11"/><line x1="7.5" y1="4.2" x2="7.5" y2="4.3"/></svg>
+    <span class="txt">The earlier single-page proof of concept lives separately and is unchanged.
+    Credential custody belongs to the Inji wallet; these apps are the CREST product surfaces Inji does not cover.</span></div>
+</div>
+</body>
+</html>
