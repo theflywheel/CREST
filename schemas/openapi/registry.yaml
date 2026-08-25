@@ -201,6 +201,53 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "500": { $ref: "#/components/responses/Internal" }
 
+  /v1/parties/{id}/enrolment-consent:
+    get:
+      operationId: enrolmentConsentState
+      summary: May we record new evidence about this worker on this programme?
+      description: >
+        The derived enrolment-consent state for a party somebody has named,
+        rather than one a `/v1/resolve` found.
+
+
+        `/v1/resolve` already derives this, but only as a side effect of
+        matching an identifier. Working the unclear queue is the case where the
+        worker is named outright — the whole point is that no identifier matched
+        — so there is nothing to resolve, and without this a caller would have
+        to list every consent the worker holds and re-derive §9's rule itself. A
+        second implementation of "is this worker withdrawn" is a second thing to
+        get wrong, and the one that gets it wrong records evidence about
+        somebody who asked us to stop.
+
+
+        Derived on read, never stored: a cached "consented" is a withdrawal that
+        has not taken effect yet.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: contextId
+          in: query
+          required: true
+          description: Consent is per programme (§9), so there is no single answer without one.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The state, for this worker on this programme.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [partyId, contextId, enrolmentConsent]
+                properties:
+                  partyId: { type: string }
+                  contextId: { type: string }
+                  enrolmentConsent: { type: string, enum: [NONE, GRANTED, WITHDRAWN] }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
   /v1/parties/{id}/consents:
     post:
       operationId: recordConsent

@@ -36,14 +36,28 @@ type Batch struct {
 }
 
 // UnclearRow is a row that describes work nobody could attribute.
+//
+// Kind is what makes the row workable. Reason is written for a person; Kind is
+// written for the code that decides whether this row can ever become a claim,
+// and only unclearUnattributed can (0005).
 type UnclearRow struct {
 	ID        string          `json:"id"`
 	BatchID   string          `json:"batchId"`
 	RowRef    string          `json:"rowRef"`
+	Kind      string          `json:"kind"`
 	Reason    string          `json:"reason"`
 	Record    json.RawMessage `json:"record,omitempty"`
 	CreatedAt time.Time       `json:"createdAt"`
 }
+
+// The kinds of unclear row. Only the first can be re-attributed to a worker;
+// 0005's comment says why for each of the others.
+const (
+	unclearUnattributed = "unattributed"
+	unclearContract     = "contract"
+	unclearRejected     = "rejected"
+	unclearWithdrawn    = "consent-withdrawn"
+)
 
 func insertBatch(ctx context.Context, tx store.Querier, b Batch) error {
 	_, err := tx.Exec(ctx, `
@@ -98,9 +112,9 @@ func insertClaim(ctx context.Context, tx store.Querier, c schema.Claim) (bool, e
 
 func insertUnclear(ctx context.Context, tx store.Querier, u UnclearRow) error {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO unclear_rows (id, batch_id, row_ref, reason, record, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6)`,
-		u.ID, u.BatchID, u.RowRef, u.Reason, u.Record, u.CreatedAt)
+		INSERT INTO unclear_rows (id, batch_id, row_ref, kind, reason, record, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		u.ID, u.BatchID, u.RowRef, u.Kind, u.Reason, u.Record, u.CreatedAt)
 	return err
 }
 
@@ -145,7 +159,7 @@ func listClaims(ctx context.Context, q store.Querier, partyID, state string) ([]
 
 func openUnclear(ctx context.Context, q store.Querier) ([]UnclearRow, error) {
 	rows, err := q.Query(ctx, `
-		SELECT id, batch_id, row_ref, reason, record, created_at
+		SELECT id, batch_id, row_ref, kind, reason, record, created_at
 		FROM unclear_rows WHERE resolved_at IS NULL ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
@@ -153,7 +167,7 @@ func openUnclear(ctx context.Context, q store.Querier) ([]UnclearRow, error) {
 	defer rows.Close()
 	return store.Collect(rows, func(r store.Row) (UnclearRow, error) {
 		var u UnclearRow
-		return u, r.Scan(&u.ID, &u.BatchID, &u.RowRef, &u.Reason, &u.Record, &u.CreatedAt)
+		return u, r.Scan(&u.ID, &u.BatchID, &u.RowRef, &u.Kind, &u.Reason, &u.Record, &u.CreatedAt)
 	})
 }
 
@@ -166,4 +180,33 @@ func getBatch(ctx context.Context, q store.Querier, batchID string) (Batch, erro
 		Scan(&b.ID, &b.ContextID, &b.DefinitionID, &b.DefinitionVersion, &b.SubmittedBy,
 			&b.AdapterRef, &b.RowsTotal, &b.RowsAccepted, &b.RowsUnclear, &b.CreatedAt)
 	return b, err
+}
+
+// getOpenUnclear reads one unresolved row, locking it for the transaction that
+// is about to resolve it.
+//
+// FOR UPDATE rather than a plain read: two people working the same queue is the
+// normal case, not the exotic one, and without the lock both can pass the
+// "still open" check and both create a claim. The claim table's uniqueness on
+// (unit_id, party_id) would catch two resolutions to the same worker, but not
+// two resolutions to different workers — which is the same work paid twice.
+func getOpenUnclear(ctx context.Context, tx store.Querier, rowID string) (UnclearRow, error) {
+	var u UnclearRow
+	err := tx.QueryRow(ctx, `
+		SELECT id, batch_id, row_ref, kind, reason, record, created_at
+		FROM unclear_rows WHERE id = $1 AND resolved_at IS NULL FOR UPDATE`, rowID).
+		Scan(&u.ID, &u.BatchID, &u.RowRef, &u.Kind, &u.Reason, &u.Record, &u.CreatedAt)
+	return u, err
+}
+
+// markUnclearResolved closes the row, naming who resolved it, to whom, and
+// which claim now carries the work.
+func markUnclearResolved(ctx context.Context, tx store.Querier,
+	rowID, partyID, resolvedBy, claimID string, at time.Time) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE unclear_rows
+		   SET resolved_at = $2, resolved_to = $3, resolved_by = $4, resolution_claim_id = $5
+		 WHERE id = $1 AND resolved_at IS NULL`,
+		rowID, at, partyID, resolvedBy, claimID)
+	return err
 }

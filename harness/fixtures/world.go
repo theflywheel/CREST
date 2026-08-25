@@ -26,6 +26,11 @@ const (
 	SpecifierID  = "did:crest:party:01JCREST00000000000000SPEC"
 	SupervisorID = "did:crest:party:01JCREST00000000000000SPVR"
 
+	// The registry custodian holds the two decisions the system refuses to make
+	// for itself: which candidate a held match is (§4), and whose work an
+	// unattributed row was (#25).
+	CustodianID = "did:crest:party:01JCREST00000000000000CSTD"
+
 	// Three workers at three assurance levels: anchored, contact-verified,
 	// asserted. WorkerC is the one that matters most — the weakest worker must
 	// still be paid and still get a credential.
@@ -148,7 +153,7 @@ func (w *World) checkNamedIDs() error {
 		present[l.ID] = true
 	}
 	for _, id := range []string{
-		OrgID, SpecifierID, SupervisorID, WorkerAID, WorkerBID, WorkerCID,
+		OrgID, SpecifierID, SupervisorID, CustodianID, WorkerAID, WorkerBID, WorkerCID,
 		ProjectID, DefinitionID, TermsID, PaymentSetupID,
 	} {
 		if !present[id] {

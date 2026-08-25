@@ -113,7 +113,9 @@ type ingestResult struct {
 	} `json:"batch"`
 	ClaimIDs []string `json:"claimIds"`
 	Unclear  []struct {
+		ID     string `json:"id"`
 		RowRef string `json:"rowRef"`
+		Kind   string `json:"kind"`
 		Reason string `json:"reason"`
 	} `json:"unclear"`
 }
