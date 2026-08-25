@@ -300,6 +300,8 @@ Proven by `make test-e2e`: docker compose up, seed through the real endpoints, d
 | Metric contracts | [#31](../../issues/31) | Same numbers from all three consoles for one fixture world | E2E | planned |
 
 ---
+| The Actor Journeys web app reaches the real stack | [#28](../../issues/28) | The browser flow proven end to end against the live stack: page served, CORS preflight answered for the named origin only, token minted, pairwise subject derived, first-login self-proof binding lands (201), authorized party reads answer (200), and the same read anonymous is refused (401). The faces call only endpoints the e2e suite covers | Spike | spike |
+| Dev login is the real first-login path | [#102](../../issues/102) | `loginAs` in apps/web/api.js binds by token possession through `POST /v1/parties/{id}/identity-bindings` — the same path the harness and a production login callback use; the mock issuer's `/dev/pairwise` exists only where the dev salt does, and a real deployment has no such endpoint anywhere | Spike | spike |
 
 ## Known gaps
 

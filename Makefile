@@ -11,7 +11,7 @@ GO ?= go
 
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
-        harness-logs verify-deploy clean todo poc poc-batch poc-dhis2 dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
+        harness-logs verify-deploy web-up clean todo poc poc-batch poc-dhis2 dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
         spike-dedi-deployed spike-esignet verify-deployed verify-registry hooks generate generate-check \
         e2e-up e2e-run
 
@@ -110,6 +110,11 @@ poc-batch: ## Regenerate the PoC batches from their generators
 
 e2e-up: ## Bring up just what the spine needs, and leave it running
 	$(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail mock-oidc $(SERVICES)
+
+web-up: e2e-up ## Bring up the stack with the web app, seeded and ready to click
+	@$(COMPOSE) up -d --wait web
+	@$(GO) run ./tools/seed
+	@echo "open http://localhost:59100"
 
 e2e-run: ## Run the spine against an already-running stack (fast iteration)
 	$(GO) test -tags=e2e -count=1 -timeout=10m ./harness/...

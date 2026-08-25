@@ -29,3 +29,5 @@ tools/spikes/printedcard/node_modules/
 
 # Stray build artefacts from `go build ./tools/...`
 /poc
+/seed
+/oidc
