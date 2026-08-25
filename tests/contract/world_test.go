@@ -18,8 +18,17 @@ func TestFixtureWorldLoadsAndValidates(t *testing.T) {
 		t.Fatalf("load fixture world: %v", err)
 	}
 
-	if len(w.Parties) != 6 {
-		t.Errorf("want 6 parties (org, specifier, supervisor, three workers), got %d", len(w.Parties))
+	if len(w.Parties) != 7 {
+		t.Errorf("want 7 parties (org, specifier, supervisor, custodian, three workers), got %d",
+			len(w.Parties))
+	}
+
+	// The custodian holds the two decisions the system refuses to make for
+	// itself — which candidate a held match is (§4), and whose work an
+	// unattributed row was (#25) — and holds neither of the grants that submit
+	// evidence. Whoever sends the file must not also decide whose work it was.
+	if _, ok := w.Party(fixtures.CustodianID); !ok {
+		t.Error("the registry custodian is missing from the world")
 	}
 
 	// Three workers at three assurance levels is not decoration: the point of
