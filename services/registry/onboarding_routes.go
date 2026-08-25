@@ -6,6 +6,7 @@ import (
 
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -155,6 +156,19 @@ func (h *handlers) decideRegistration(w http.ResponseWriter, r *http.Request) {
 			"decidedBy is required; an approval nobody granted is one nobody can be asked about")
 		return
 	}
+	// decidedBy is now checked rather than recorded (#89).
+	//
+	// The self-approval constraint below — decide() refuses when decidedBy is
+	// the applicant — was always a check on a value the caller chose, which
+	// made it a rule an applicant could satisfy by naming somebody else. It is
+	// a real constraint only once the name has been proved, and that is what
+	// this line adds.
+	decidedBy, ok := identity.Authorize(w, r, h.d.Log, body.DecidedBy, "",
+		h.d.Authenticating, h.d.Permits)
+	if !ok {
+		return
+	}
+	body.DecidedBy = decidedBy
 	if !body.Approve && body.Reason == "" {
 		// The same rule as a held payment: a refusal with no reason attached
 		// leaves the applicant with a closed door and no explanation.

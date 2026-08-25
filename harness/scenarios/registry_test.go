@@ -77,7 +77,10 @@ func TestAnOrganisationCannotApproveItself(t *testing.T) {
 	w := setup(t)
 	orgID := w.apply(t, "Self-Approving Trust "+runID)
 
-	code, body, err := w.Registry.Status(w.ctx, http.MethodPost,
+	// Authenticated as the organisation, and naming itself. The rule still
+	// holds, and now it holds against somebody who proved who they were rather
+	// than against whatever they typed.
+	code, body, err := w.Registry.As(w.login(t, orgID)).Status(w.ctx, http.MethodPost,
 		"/v1/organisations/"+orgID+"/decision",
 		map[string]any{"approve": true, "decidedBy": orgID})
 	if err != nil {
@@ -95,7 +98,7 @@ func TestAnOrganisationCannotBeApprovedBeforeAcceptingTerms(t *testing.T) {
 	w := setup(t)
 	orgID := w.apply(t, "Hasty Trust "+runID)
 
-	code, body, err := w.Registry.Status(w.ctx, http.MethodPost,
+	code, body, err := w.Registry.As(w.login(t, fixtures.SpecifierID)).Status(w.ctx, http.MethodPost,
 		"/v1/organisations/"+orgID+"/decision",
 		map[string]any{"approve": true, "decidedBy": fixtures.SpecifierID})
 	if err != nil {
@@ -131,7 +134,8 @@ func TestAnApprovedOrganisationReachesTheRegistry(t *testing.T) {
 	}
 
 	if reg.State == "TERMS_ACCEPTED" {
-		if err := w.Registry.Post(w.ctx, "/v1/organisations/"+orgID+"/decision",
+		if err := w.Registry.As(w.login(t, fixtures.SpecifierID)).Post(w.ctx,
+			"/v1/organisations/"+orgID+"/decision",
 			map[string]any{"approve": true, "decidedBy": fixtures.SpecifierID}, &reg); err != nil {
 			t.Fatalf("approve: %v", err)
 		}
@@ -297,7 +301,7 @@ func TestTheTrustChainSaysWhichLinksAVerifierCanCheck(t *testing.T) {
 		_, err := w.window(res.ClaimIDs[0])
 		return err
 	})
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+res.ClaimIDs[0]+"/confirm",
+	if err := w.confirmClaim(t, res.ClaimIDs[0],
 		map[string]any{"route": "self"}, &exit); err != nil {
 		t.Fatalf("confirm: %v", err)
 	}
@@ -463,7 +467,7 @@ func TestACredentialCarriesItsOwnPinToTheDefinition(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"credential"`
 	}
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+res.ClaimIDs[0]+"/confirm",
+	if err := w.confirmClaim(t, res.ClaimIDs[0],
 		map[string]any{"route": "self"}, &exit); err != nil {
 		t.Fatalf("confirm: %v", err)
 	}
@@ -618,7 +622,7 @@ func TestACredentialNamesTheChainAVerifierWalks(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"credential"`
 	}
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/confirm",
+	if err := w.confirmClaim(t, claimID,
 		map[string]any{"route": "self"}, &exit); err != nil {
 		t.Fatalf("confirm: %v", err)
 	}
@@ -954,7 +958,7 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 		RevokedAt   string `json:"revokedAt"`
 		ArtefactRef string `json:"artefactRef"`
 	}
-	if err := w.Registry.Post(w.ctx, "/v1/consents/"+consent.ID+"/withdraw",
+	if err := w.withdraw(t, consent.ID, party,
 		map[string]any{"reason": "asked to be removed from the programme"}, &withdrawn); err != nil {
 		t.Fatalf("withdraw: %v", err)
 	}

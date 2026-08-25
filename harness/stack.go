@@ -40,6 +40,23 @@ type Service struct {
 	Name string
 	Base string
 	http *http.Client
+
+	// headers is what every request from this view carries. A view rather than
+	// a mutable field on a shared Service: scenarios run against one stack, and
+	// one of them setting "I am now this worker" on a value the others share is
+	// the kind of coupling that reads as a product defect for an afternoon
+	// before anybody suspects the harness.
+	headers http.Header
+}
+
+// As returns a view of this service that authenticates as a caller (#89).
+//
+// The zero Caller is an unauthenticated view, which is a thing to test rather
+// than an accident: an endpoint that acts in somebody's name must refuse it.
+func (svc *Service) As(c Caller) *Service {
+	view := *svc
+	view.headers = c.header()
+	return &view
 }
 
 // New builds a Stack from the environment, defaulting to the ports in
@@ -199,6 +216,7 @@ func (svc *Service) Status(ctx context.Context, method, path string, in any) (in
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	svc.apply(req)
 	resp, err := svc.http.Do(req)
 	if err != nil {
 		return 0, nil, err
@@ -220,6 +238,7 @@ func (svc *Service) do(ctx context.Context, method, path, contentType string, bo
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	svc.apply(req)
 	resp, err := svc.http.Do(req)
 	if err != nil {
 		return err
@@ -238,6 +257,15 @@ func (svc *Service) do(ctx context.Context, method, path, contentType string, bo
 		return nil
 	}
 	return json.Unmarshal(raw, out)
+}
+
+// apply copies this view's caller headers onto a request.
+func (svc *Service) apply(req *http.Request) {
+	for k, vs := range svc.headers {
+		for _, v := range vs {
+			req.Header.Add(k, v)
+		}
+	}
 }
 
 func env(key, def string) string {

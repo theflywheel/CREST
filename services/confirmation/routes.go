@@ -10,6 +10,7 @@ import (
 	"github.com/theflywheel/crest/pkg/credential"
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
@@ -153,6 +154,14 @@ func (h *handlers) getWindow(w http.ResponseWriter, r *http.Request) {
 }
 
 // confirm is the worker saying yes, or a supervisor saying it for them.
+//
+// Both are legitimate and only one of them used to be distinguishable. Before
+// #89, `route` was a string in the body: a request could say "self" while being
+// anybody at all, and the record would then read as the worker's own
+// confirmation of work they had never been asked about. The route is now
+// derived from who the caller proved to be, and a body that contradicts it is
+// refused rather than believed — because the whole value of recording an
+// assisted confirmation as assisted is that somebody's name is on it.
 func (h *handlers) confirm(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Route string `json:"route"`
@@ -169,7 +178,45 @@ func (h *handlers) confirm(w http.ResponseWriter, r *http.Request) {
 			"confirming is either self or assisted; auto is what the sweep does and dispute is its own endpoint")
 		return
 	}
+
+	win, ok := h.windowFor(w, r)
+	if !ok {
+		return
+	}
+	// Confirming is acting as the worker whose claim it is. Assisted reaches
+	// here through X-CREST-On-Behalf-Of plus the act-for-party authorization,
+	// which is what makes a supervisor confirming for a worker with no phone
+	// an ordinary recorded action rather than a hole.
+	if _, ok := identity.Authorize(w, r, h.d.Log, win.PartyID, win.ContextID,
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
+	if caller := identity.From(r.Context()); caller.Authenticated() {
+		actual := routeSelf
+		if caller.Assisting() {
+			actual = routeAssisted
+		}
+		if body.Route != "" && body.Route != actual {
+			httpx.WriteError(w, http.StatusBadRequest, "route_contradicts_caller",
+				"this request says %q and the caller proved %q; the exit route is what happened, not what was asked for",
+				body.Route, actual)
+			return
+		}
+		route = actual
+	}
 	h.finish(w, r, route)
+}
+
+// windowFor loads the confirmation window a request is about, answering 404
+// itself. Loaded before the action so the party to check against comes from
+// the record rather than from the request.
+func (h *handlers) windowFor(w http.ResponseWriter, r *http.Request) (Window, bool) {
+	win, err := getWindow(r.Context(), h.d.DB.Q(), r.PathValue("claimId"), false)
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "window", err, store.ErrNotFound)
+		return Window{}, false
+	}
+	return win, true
 }
 
 // dispute contests the record. It does not contest the money: the release below
@@ -187,6 +234,24 @@ func (h *handlers) dispute(w http.ResponseWriter, r *http.Request) {
 			"a dispute needs a reason, or nobody can act on it")
 		return
 	}
+
+	win, ok := h.windowFor(w, r)
+	if !ok {
+		return
+	}
+	// A dispute is checked differently from a confirmation, and the difference
+	// is not an oversight. Confirming is acting *as* the worker; raising a
+	// dispute is acting *as yourself* about somebody's record, and a
+	// supervisor or a programme officer contesting a claim is a legitimate
+	// thing that has nothing to do with acting on the worker's behalf. So what
+	// is proved here is that the raiser is who the dispute says raised it —
+	// which is the whole of what a dispute needs to be answerable later.
+	raisedBy, ok := identity.Authorize(w, r, h.d.Log, body.RaisedByPartyID, win.ContextID,
+		h.d.Authenticating, h.d.Permits)
+	if !ok {
+		return
+	}
+	body.RaisedByPartyID = raisedBy
 
 	claimID := r.PathValue("claimId")
 	contest := schema.Contest{

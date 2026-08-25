@@ -74,6 +74,34 @@ x-service: &crest-service
     SMS_URL: http://mock-sms:8080
     RAIL_URL: http://mock-rail:8080
 
+    # Who authenticates a caller (#89, §4.1). The local stack points at
+    # mock-oidc, which mints real ES256 tokens against a real JWKS — the
+    # services verify them with the same code they run in production, because
+    # a development bypass is a production hole with the switch turned off.
+    #
+    # A deployment points these at eSignet instead. The JWKS URL is given
+    # rather than discovered: #64 is open against eSignet serving URLs its own
+    # discovery document advertises, and a service that will not start because
+    # discovery is wrong is worse than one that was told the answer. eSignet's
+    # is http://esignet:8088/v1/esignet/oauth/.well-known/jwks.json.
+    CREST_OIDC_ISSUER: "${CREST_OIDC_ISSUER:-http://mock-oidc:8080}"
+    CREST_OIDC_JWKS_URL: "${CREST_OIDC_JWKS_URL:-http://mock-oidc:8080/.well-known/jwks.json}"
+    CREST_OIDC_AUDIENCE: "${CREST_OIDC_AUDIENCE:-crest}"
+    # This deployment's own salt over the provider's pairwise subject. #52 and
+    # #63 are open against eSignet's: it partitions by relying party rather
+    # than by client, and derives without a per-deployment salt, so two
+    # deployments reading the same eSignet could correlate their workers by
+    # subject. Salting here means they cannot, whatever eSignet does. Local
+    # value is not pretending to be a secret; a real deployment sets its own
+    # and never rotates it without re-binding every party.
+    CREST_SUBJECT_SALT: "${CREST_SUBJECT_SALT:-local-development-subject-salt-not-for-any-real-deployment}"
+    # Short because mock-oidc mints a fresh signing key every time it starts,
+    # so a restart must not leave the services rejecting valid tokens for a
+    # quarter of an hour. A deployment against a real provider leaves these at
+    # their defaults.
+    CREST_OIDC_JWKS_CACHE: "${CREST_OIDC_JWKS_CACHE:-30s}"
+    CREST_OIDC_JWKS_MIN_REFRESH: "${CREST_OIDC_JWKS_MIN_REFRESH:-5s}"
+
     # The seven-day window, and a clock the harness can move through it. Both
     # are refused in production — see pkg/service.chooseClock for why a
     # driveable clock in a live deployment is a way to close a worker's window
@@ -365,6 +393,22 @@ services:
     ports: ["${MOCK_RAIL_PORT:-59102}:8080"]
     environment:
       ADDR: ":8080"
+
+  # The local identity provider (#89). Stands in for eSignet, which is in the
+  # `substrate` profile: a plain `make test-e2e` must be able to prove that an
+  # unproven caller is refused without booting Redis, a mock identity system
+  # and eSignet's three open findings alongside it. tools/mocks/oidc says why
+  # this is a real issuer rather than a bypass.
+  mock-oidc:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.tool
+      args:
+        TOOL: oidc
+    ports: ["${MOCK_OIDC_PORT:-59103}:8080"]
+    environment:
+      ADDR: ":8080"
+      OIDC_ISSUER: "${CREST_OIDC_ISSUER:-http://mock-oidc:8080}"
 
   # ── CREST services: ours ─────────────────────────────────────────────────
 
