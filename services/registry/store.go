@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -31,10 +32,20 @@ type Match struct {
 
 // Hold is an ambiguous match. It is a row rather than an error because someone
 // has to resolve it, and because a queue nobody can list is a queue nobody works.
+// Hold is a duplicate the registry refused to resolve on its own.
+//
+// KeyValue is deliberately not serialised. Blueprint §16 asks that duplicate
+// holds show existence rather than content, and the reason is concrete: the
+// value is a phone number for a contact-route hold, and a queue that anybody
+// can list would otherwise hand out the phone numbers of every worker two
+// records disagree about. A custodian deciding a hold needs to know that two
+// parties collide on a contact route — not what the route is. `keyKind` says
+// which kind of identifier collided, and the hold's own id distinguishes one
+// hold from another, so nothing about working the queue needs the value.
 type Hold struct {
 	ID         string    `json:"id"`
 	KeyKind    string    `json:"keyKind"`
-	KeyValue   string    `json:"keyValue"`
+	KeyValue   string    `json:"-"`
 	Candidates []string  `json:"candidates"`
 	Reason     string    `json:"reason"`
 	CreatedAt  time.Time `json:"createdAt"`
@@ -157,6 +168,15 @@ func resolve(ctx context.Context, q store.Querier, kind, value, contextID string
 			return v, r.Scan(&v)
 		})
 		rows.Close()
+		if err != nil {
+			return Match{}, nil, err
+		}
+		// Candidates are mapped through any merge before they are counted.
+		// Two parties that turned out to be one person stop producing a hold
+		// the moment the merge is recorded — without this the queue would
+		// re-raise the same duplicate on the next batch, and a custodian would
+		// be asked to decide something they already decided.
+		ids, err = followMerges(ctx, q, ids)
 		if err != nil {
 			return Match{}, nil, err
 		}
@@ -364,4 +384,138 @@ func authorizationsFor(ctx context.Context, q store.Querier,
 		var a schema.Authorization
 		return a, json.Unmarshal(doc, &a)
 	})
+}
+
+// followMerges replaces every party id with the survivor it was merged into,
+// and drops the duplicates that collapse produces.
+//
+// Chains are followed, because a second merge onto an already-absorbed party is
+// a thing a custodian can legitimately do over time. The bound is there because
+// a cycle in this data would otherwise hang a resolve, and a resolve that hangs
+// stops evidence ingestion for everybody: the resolution endpoint refuses to
+// merge into an already-merged party, so a chain this long means the table has
+// been written by something other than that endpoint, and the honest response
+// is an error rather than a guess.
+const maxMergeDepth = 16
+
+func followMerges(ctx context.Context, q store.Querier, ids []string) ([]string, error) {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(ids))
+	for _, raw := range ids {
+		id := raw
+		for depth := 0; ; depth++ {
+			if depth > maxMergeDepth {
+				return nil, fmt.Errorf("merge chain from %s is longer than %d: "+
+					"the parties table holds a cycle", raw, maxMergeDepth)
+			}
+			var into *string
+			err := q.QueryRow(ctx, `SELECT merged_into FROM parties WHERE id = $1`, id).Scan(&into)
+			if errors.Is(err, store.ErrNotFound) {
+				break // a key pointing at a party that no longer exists is not a candidate
+			}
+			if err != nil {
+				return nil, err
+			}
+			if into == nil {
+				break
+			}
+			id = *into
+		}
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+// mergeParty records that one party was absorbed into another.
+//
+// The keys are deliberately left where they are. Moving them would make the
+// absorbed party unresolvable and lose the fact that a source system knew this
+// person under that identifier — and reads follow the merge pointer anyway, so
+// there is nothing to gain by rewriting history to get the same answer.
+func mergeParty(ctx context.Context, tx store.Querier, absorbed, survivor string, at time.Time) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE parties
+		   SET merged_into = $2,
+		       merged_at = $3,
+		       doc = jsonb_set(jsonb_set(doc, '{mergedInto}', to_jsonb($2::text)),
+		                       '{mergedAt}', to_jsonb($3::timestamptz))
+		 WHERE id = $1 AND merged_into IS NULL`, absorbed, survivor, at)
+	if err != nil {
+		return err
+	}
+	if tag == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+// mergedInto reports the survivor a party was absorbed into, if any.
+func mergedInto(ctx context.Context, q store.Querier, partyID string) (*string, error) {
+	var into *string
+	err := q.QueryRow(ctx, `SELECT merged_into FROM parties WHERE id = $1`, partyID).Scan(&into)
+	return into, err
+}
+
+// openHold reads one unresolved hold, locked for the transaction resolving it.
+// Same reason the unclear queue locks its row: two custodians working the same
+// queue is normal, and without the lock both can pass the "still open" check.
+func openHold(ctx context.Context, tx store.Querier, holdID string) (Hold, error) {
+	var h Hold
+	err := tx.QueryRow(ctx, `
+		SELECT id, key_kind, key_value, candidates, reason, created_at
+		FROM match_holds WHERE id = $1 AND resolved_at IS NULL FOR UPDATE`, holdID).
+		Scan(&h.ID, &h.KeyKind, &h.KeyValue, &h.Candidates, &h.Reason, &h.CreatedAt)
+	return h, err
+}
+
+// markHoldResolved closes a hold, recording the decision, who took it, and —
+// for a merge — who confirmed it and how. The confirmation columns are what
+// turn "merges_without_confirmation = 0" into a query.
+func markHoldResolved(ctx context.Context, tx store.Querier, holdID, decision,
+	resolvedTo, resolvedBy, confirmedBy, method string, at time.Time) error {
+	var confirmer, confirmMethod *string
+	if confirmedBy != "" {
+		confirmer, confirmMethod = &confirmedBy, &method
+	}
+	var to *string
+	if resolvedTo != "" {
+		to = &resolvedTo
+	}
+	_, err := tx.Exec(ctx, `
+		UPDATE match_holds
+		   SET resolved_at = $2, resolved_to = $3, resolved_by = $4,
+		       decision = $5, confirmed_by = $6, confirmation_method = $7
+		 WHERE id = $1 AND resolved_at IS NULL`,
+		holdID, at, to, resolvedBy, decision, confirmer, confirmMethod)
+	return err
+}
+
+// mergesWithoutConfirmation is the monitored invariant, as a query.
+//
+// It exists as code rather than as a note in a runbook because the number is
+// meant to be checked by a test, and a metric nobody can compute is an
+// aspiration (§4, W7).
+func mergesWithoutConfirmation(ctx context.Context, q store.Querier) (int, error) {
+	var n int
+	err := q.QueryRow(ctx, `
+		SELECT count(*) FROM match_holds
+		 WHERE decision = 'merge' AND (confirmed_by IS NULL OR confirmation_method IS NULL)`).Scan(&n)
+	return n, err
+}
+
+// removeKey takes one matching key off one party.
+//
+// Used when a hold is resolved `distinct`: the identifier belongs to one of the
+// candidates, so it comes off the others. Nothing else about them changes —
+// they are a different person, not a wrong record, and stripping the rest of
+// their keys because they once shared a phone number would be the system
+// punishing somebody for a household arrangement.
+func removeKey(ctx context.Context, tx store.Querier, partyID, kind, value string) error {
+	_, err := tx.Exec(ctx,
+		`DELETE FROM party_keys WHERE party_id = $1 AND key_kind = $2 AND key_value = $3`,
+		partyID, kind, value)
+	return err
 }
