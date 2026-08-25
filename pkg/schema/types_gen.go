@@ -121,8 +121,13 @@ type Claim struct {
 	CreatedAt    time.Time          `json:"createdAt"`
 	ID           string             `json:"id"`
 
-	// Which key matched the worker and at what confidence — provenance
-	// the strength function and the unclear queue both read (§4.1).
+	// How this claim came to be attached to this worker, and how confident
+	// that is — provenance the strength function and the unclear queue
+	// both read (§4.1). `manual` is a person working the unclear queue
+	// naming the worker, not a key match: it carries confidence 1 because
+	// somebody asserted it, and a reader that treats it as equivalent to a
+	// national-id-hash match is reading an assertion as if it were a
+	// match.
 	Matched *ClaimMatched `json:"matched,omitempty"`
 	PartyID string        `json:"partyId"`
 
@@ -154,8 +159,12 @@ const (
 	ClaimConfirmationRouteAssisted ClaimConfirmationRoute = "assisted"
 )
 
-// Which key matched the worker and at what confidence — provenance the
-// strength function and the unclear queue both read (§4.1).
+// How this claim came to be attached to this worker, and how confident
+// that is — provenance the strength function and the unclear queue both
+// read (§4.1). `manual` is a person working the unclear queue naming the
+// worker, not a key match: it carries confidence 1 because somebody
+// asserted it, and a reader that treats it as equivalent to a
+// national-id-hash match is reading an assertion as if it were a match.
 type ClaimMatched struct {
 	Confidence float64         `json:"confidence"`
 	Key        ClaimMatchedKey `json:"key"`
@@ -167,6 +176,7 @@ const (
 	ClaimMatchedKeyNationalIDHash ClaimMatchedKey = "national-id-hash"
 	ClaimMatchedKeyContactRoute   ClaimMatchedKey = "contact-route"
 	ClaimMatchedKeyRosterID       ClaimMatchedKey = "roster-id"
+	ClaimMatchedKeyManual         ClaimMatchedKey = "manual"
 )
 
 // ACCEPTED is reachable by confirm, auto-confirm or supervisor-assisted,

@@ -63,6 +63,13 @@ type Consent struct {
 	State          ConsentState `json:"state"`
 }
 
+// validCaptureMethods mirrors 0005's CHECK constraint. Two copies of one list
+// is a thing to keep honest, and the alternative — letting the database be the
+// only check — turns a typo into a 500.
+var validCaptureMethods = map[string]bool{
+	"screen": true, "sms": true, "ussd": true, "voice": true, "assisted": true,
+}
+
 // ErrNoArtefact is returned when a consent has no stored artefact to serve.
 var ErrNoArtefact = errors.New("this consent has no artefact")
 
@@ -203,6 +210,16 @@ func (h *handlers) recordConsent(w http.ResponseWriter, r *http.Request) {
 	if c.Purpose == "" || c.CaptureMethod == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_request",
 			"a consent needs a purpose and a captureMethod; consent to something unstated is not consent")
+		return
+	}
+	// The allowed set lived only in 0005's CHECK constraint, so an unrecognised
+	// method reached the database and came back as a bare 500 naming a
+	// constraint. The caller could not tell a typo from an outage, which is the
+	// same failure the context check fixed on the evidence side.
+	if !validCaptureMethods[c.CaptureMethod] {
+		httpx.WriteError(w, http.StatusBadRequest, "unknown_capture_method",
+			"captureMethod %q is not one this deployment records; it must be one of "+
+				"screen, sms, ussd, voice or assisted", c.CaptureMethod)
 		return
 	}
 	if ctxID := q.Get("contextId"); ctxID != "" {
@@ -408,4 +425,42 @@ func (h *handlers) withdrawConsent(w http.ResponseWriter, r *http.Request) {
 		c.ArtefactKey, c.ArtefactDigest, c.ArtefactType = nil, nil, nil
 	}
 	httpx.WriteJSON(w, http.StatusOK, c)
+}
+
+// enrolmentConsentState answers "may we record new evidence about this worker on
+// this programme?" for a party somebody has named, rather than one a resolve
+// found.
+//
+// /v1/resolve already derives this, but only as a side effect of matching an
+// identifier. Working the unclear queue is the case where the worker is named
+// outright — the whole point is that no identifier matched — so there is
+// nothing to resolve, and without this the caller would have to list every
+// consent the worker holds and re-derive the rule itself. A second
+// implementation of "is this worker withdrawn" is a second thing to get wrong,
+// and the one that gets it wrong records evidence about somebody who asked us
+// to stop (§9).
+//
+// 404 when the party does not exist, so a caller cannot re-attribute work to an
+// identifier it invented.
+func (h *handlers) enrolmentConsentState(w http.ResponseWriter, r *http.Request) {
+	partyID := r.PathValue("id")
+	contextID := r.URL.Query().Get("contextId")
+	if contextID == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "missing_parameter",
+			"contextId is required: consent is per programme, so there is no single answer "+
+				"about a worker without naming one (§9)")
+		return
+	}
+	if _, err := getParty(r.Context(), h.d.DB.Q(), partyID); err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "party", err, store.ErrNotFound)
+		return
+	}
+	state, err := enrolmentConsentOf(r.Context(), h.d.DB.Q(), partyID, contextID)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "derive consent state", err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"partyId": partyID, "contextId": contextID, "enrolmentConsent": state,
+	})
 }

@@ -51,6 +51,9 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/claims/{id}", hs.getClaim)
 	mux.HandleFunc("POST /v1/claims/{id}/transition", hs.transition)
 	mux.HandleFunc("GET /v1/unclear", hs.listUnclear)
+	// Working the queue, not just listing it (#25). See unclear.go for the
+	// three decisions built into re-attribution.
+	mux.HandleFunc("POST /v1/unclear/{id}/resolve", hs.resolveUnclear)
 
 	// Source heartbeat monitoring (#22). A source going quiet is the one
 	// failure a worker cannot see and cannot report.

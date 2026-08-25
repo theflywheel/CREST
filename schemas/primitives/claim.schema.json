@@ -16,9 +16,9 @@
     },
     "matched": {
       "type": "object",
-      "description": "Which key matched the worker and at what confidence — provenance the strength function and the unclear queue both read (§4.1).",
+      "description": "How this claim came to be attached to this worker, and how confident that is — provenance the strength function and the unclear queue both read (§4.1). `manual` is a person working the unclear queue naming the worker, not a key match: it carries confidence 1 because somebody asserted it, and a reader that treats it as equivalent to a national-id-hash match is reading an assertion as if it were a match.",
       "properties": {
-        "key": { "type": "string", "enum": ["national-id-hash", "contact-route", "roster-id"] },
+        "key": { "type": "string", "enum": ["national-id-hash", "contact-route", "roster-id", "manual"] },
         "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
       },
       "required": ["key", "confidence"],

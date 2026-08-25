@@ -35,6 +35,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	// is metadata, and they should never be served by the same handler.
 	mux.HandleFunc("POST /v1/parties/{id}/consents", h.recordConsent)
 	mux.HandleFunc("GET /v1/parties/{id}/consents", h.listPartyConsents)
+	mux.HandleFunc("GET /v1/parties/{id}/enrolment-consent", h.enrolmentConsentState)
 	mux.HandleFunc("GET /v1/consents/{id}/artefact", h.consentArtefact)
 	mux.HandleFunc("POST /v1/consents/{id}/withdraw", h.withdrawConsent)
 	mux.HandleFunc("GET /v1/resolve", h.resolve)
