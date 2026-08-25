@@ -6,15 +6,21 @@
 // replaces startLogin with an eSignet redirect — the shape of everything after
 // the token is identical, which is the point of #89.
 
+// Host-relative: the services ride the same host the page was served from,
+// on the compose stack's published ports — so the app works identically on
+// localhost and over a tailnet/LAN address, as long as CREST_CORS_ORIGINS
+// names that origin too.
+const host = location.hostname || "localhost";
+const at = port => `http://${host}:${port}`;
 const defaults = {
-  parties:      "http://localhost:59001",
-  definitions:  "http://localhost:59002",
-  evidence:     "http://localhost:59003",
-  confirmation: "http://localhost:59004",
-  verification: "http://localhost:59005",
-  payments:     "http://localhost:59006",
-  notify:       "http://localhost:59007",
-  oidc:         "http://localhost:59103",
+  parties:      at(59001),
+  definitions:  at(59002),
+  evidence:     at(59003),
+  confirmation: at(59004),
+  verification: at(59005),
+  payments:     at(59006),
+  notify:       at(59007),
+  oidc:         at(59103),
 };
 export const services = Object.assign({}, defaults, window.CREST_SERVICES || {});
 
