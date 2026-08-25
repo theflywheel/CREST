@@ -237,6 +237,17 @@ func (h *handlers) assistedEnrolment(w http.ResponseWriter, r *http.Request) {
 			"enrolledBy is required; an assisted enrolment with no enroller is an unattributed one")
 		return
 	}
+	// The enroller is the caller (#102): this is the checked door into the
+	// registry for somebody who cannot register themselves, and the name on
+	// the assistance has to be a name that was proven.
+	ctxID := ""
+	if body.ContextID != nil {
+		ctxID = *body.ContextID
+	}
+	if _, ok := identity.Authorize(w, r, h.d.Log, body.EnrolledBy, ctxID,
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
 	switch body.Method {
 	case "supervisor-attested", "roster-import", "field-visit":
 	default:
@@ -306,6 +317,12 @@ func (h *handlers) assistedEnrolment(w http.ResponseWriter, r *http.Request) {
 // supervisor who attested to a worker's existence is answerable for that — and
 // provenance nobody can read is provenance nobody can be held to.
 func (h *handlers) getEnrolment(w http.ResponseWriter, r *http.Request) {
+	// Who enrolled this worker is the worker's record (#102). contextId scopes
+	// the actor check, as on bindings.
+	if _, ok := identity.Authorize(w, r, h.d.Log, r.PathValue("id"),
+		r.URL.Query().Get("contextId"), h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
 	e, err := getEnrolment(r.Context(), h.d.DB.Q(), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
 		// Distinguished from "no such party": most workers are not assisted

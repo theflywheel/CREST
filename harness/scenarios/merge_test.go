@@ -58,8 +58,11 @@ type instructionList struct {
 // is exactly what the registry refuses to do.
 func (w *world) rosterWork(t *testing.T, party, rosterID, household string) string {
 	t.Helper()
-	if err := w.Parties.Post(w.ctx, "/v1/parties/"+url.PathEscape(party)+"/roster-ids",
-		map[string]any{"rosterId": rosterID, "contextId": fixtures.ProjectID}, nil); err != nil {
+	// As the supervisor, whose act-for-party grant covers the project (#102):
+	// a roster id decides whose work a future row becomes.
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).
+		Post(w.ctx, "/v1/parties/"+url.PathEscape(party)+"/roster-ids",
+			map[string]any{"rosterId": rosterID, "contextId": fixtures.ProjectID}, nil); err != nil {
 		t.Fatalf("register roster id %s: %v", rosterID, err)
 	}
 	csv := []byte("activity,outcome_value,outcome_unit,worker_id_kind,worker_id," +
@@ -77,7 +80,7 @@ func (w *world) rosterWork(t *testing.T, party, rosterID, household string) stri
 func (w *world) claimsOf(t *testing.T, party string) claimList {
 	t.Helper()
 	var out claimList
-	if err := w.Evidence.Get(w.ctx, "/v1/claims?partyId="+url.QueryEscape(party), &out); err != nil {
+	if err := w.Evidence.As(w.login(t, party)).Get(w.ctx, "/v1/claims?partyId="+url.QueryEscape(party), &out); err != nil {
 		t.Fatalf("list claims for %s: %v", party, err)
 	}
 	return out
@@ -86,7 +89,7 @@ func (w *world) claimsOf(t *testing.T, party string) claimList {
 func (w *world) windowsOf(t *testing.T, party string) windowList {
 	t.Helper()
 	var out windowList
-	if err := w.Confirmation.Get(w.ctx, "/v1/windows?partyId="+url.QueryEscape(party), &out); err != nil {
+	if err := w.Confirmation.As(w.login(t, party)).Get(w.ctx, "/v1/windows?partyId="+url.QueryEscape(party), &out); err != nil {
 		t.Fatalf("list windows for %s: %v", party, err)
 	}
 	return out
@@ -95,7 +98,7 @@ func (w *world) windowsOf(t *testing.T, party string) windowList {
 func (w *world) instructionsOf(t *testing.T, party string) instructionList {
 	t.Helper()
 	var out instructionList
-	if err := w.Payments.Get(w.ctx, "/v1/instructions?partyId="+url.QueryEscape(party), &out); err != nil {
+	if err := w.Payments.As(w.login(t, party)).Get(w.ctx, "/v1/instructions?partyId="+url.QueryEscape(party), &out); err != nil {
 		t.Fatalf("list instructions for %s: %v", party, err)
 	}
 	return out

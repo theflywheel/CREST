@@ -44,7 +44,7 @@ func main() {
 				case topicClaimCreated:
 					return confirmation.Do(ctx, "POST", "/v1/windows", json.RawMessage(payload), nil)
 				case topicSourceQuiet:
-					return notify.Do(ctx, "POST", "/v1/notifications", json.RawMessage(payload), nil)
+					return notify.Do(ctx, "POST", "/internal/notifications", json.RawMessage(payload), nil)
 				default:
 					return fmt.Errorf("no delivery route for topic %q", topic)
 				}

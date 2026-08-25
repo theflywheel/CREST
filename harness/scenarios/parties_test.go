@@ -191,7 +191,7 @@ func TestAWorkerWithNoPhoneCanStillBeEnrolled(t *testing.T) {
 			},
 		},
 	}
-	if err := w.Parties.Post(w.ctx, "/v1/enrolments", body, &out); err != nil {
+	if err := w.Parties.As(w.login(t, fixtures.SupervisorID)).Post(w.ctx, "/v1/enrolments", body, &out); err != nil {
 		t.Fatalf("assisted enrolment: %v", err)
 	}
 	if out.Party.ID == "" {
@@ -207,7 +207,7 @@ func TestAWorkerWithNoPhoneCanStillBeEnrolled(t *testing.T) {
 		Level   string   `json:"identityAssurance"`
 		Because []string `json:"because"`
 	}
-	if err := w.Parties.Get(w.ctx, "/v1/parties/"+out.Party.ID+"/assurance", &assurance); err != nil {
+	if err := w.Parties.Get(w.ctx, "/internal/parties/"+out.Party.ID+"/assurance", &assurance); err != nil {
 		t.Fatalf("read assurance: %v", err)
 	}
 	if assurance.Level != out.IdentityAssurance {
@@ -219,7 +219,7 @@ func TestAWorkerWithNoPhoneCanStillBeEnrolled(t *testing.T) {
 		EnrolledBy string `json:"enrolledBy"`
 		Method     string `json:"method"`
 	}
-	if err := w.Parties.Get(w.ctx, "/v1/parties/"+out.Party.ID+"/enrolment", &enrolment); err != nil {
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, out.Party.ID)).Get(w.ctx, "/v1/parties/"+out.Party.ID+"/enrolment?contextId="+url.QueryEscape(fixtures.ProjectID), &enrolment); err != nil {
 		t.Fatalf("read enrolment provenance: %v", err)
 	}
 	if enrolment.EnrolledBy != supervisor {
@@ -696,7 +696,7 @@ func TestAWorkerWhoBindsAnAnchorLaterIsUpgradedWithoutLosingAnything(t *testing.
 	var enrolled struct {
 		Party schema.Party `json:"party"`
 	}
-	if err := w.Parties.Post(w.ctx, "/v1/enrolments", map[string]any{
+	if err := w.Parties.As(w.login(t, fixtures.SupervisorID)).Post(w.ctx, "/v1/enrolments", map[string]any{
 		"enrolledBy": supervisor,
 		"method":     "field-visit",
 		"party": schema.Party{
@@ -727,7 +727,8 @@ func TestAWorkerWhoBindsAnAnchorLaterIsUpgradedWithoutLosingAnything(t *testing.
 		"providerClass": "esignet",
 		"subjectRef":    "psut-" + runID,
 	}
-	if err := w.Parties.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", binding, &appended); err != nil {
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).Post(w.ctx,
+		"/v1/parties/"+party+"/identity-bindings?contextId="+url.QueryEscape(fixtures.ProjectID), binding, &appended); err != nil {
 		t.Fatalf("append identity binding: %v", err)
 	}
 	if appended.IdentityAssurance != string(schema.IdentityAssuranceIA3) {
@@ -745,7 +746,8 @@ func TestAWorkerWhoBindsAnAnchorLaterIsUpgradedWithoutLosingAnything(t *testing.
 
 	// Re-sending the same binding is a retry, not a second identity. History
 	// that grows on every retry is history nobody can read.
-	if err := w.Parties.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", binding, &appended); err != nil {
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).Post(w.ctx,
+		"/v1/parties/"+party+"/identity-bindings?contextId="+url.QueryEscape(fixtures.ProjectID), binding, &appended); err != nil {
 		t.Fatalf("re-append: %v", err)
 	}
 	if len(appended.Bindings) != 1 {
@@ -755,11 +757,12 @@ func TestAWorkerWhoBindsAnAnchorLaterIsUpgradedWithoutLosingAnything(t *testing.
 	// A genuine re-binding — same provider, different subject — appends rather
 	// than replacing. The old one is a true statement about who we thought this
 	// was, and it is what makes a later dispute about an attribution answerable.
-	if err := w.Parties.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", map[string]any{
-		"provider":      "esignet",
-		"providerClass": "esignet",
-		"subjectRef":    "psut-rebound-" + runID,
-	}, &appended); err != nil {
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).Post(w.ctx,
+		"/v1/parties/"+party+"/identity-bindings?contextId="+url.QueryEscape(fixtures.ProjectID), map[string]any{
+			"provider":      "esignet",
+			"providerClass": "esignet",
+			"subjectRef":    "psut-rebound-" + runID,
+		}, &appended); err != nil {
 		t.Fatalf("re-bind: %v", err)
 	}
 	if len(appended.Bindings) != 2 {
@@ -789,8 +792,8 @@ func TestAnIdentifierAlreadyHeldByAnotherWorkerIsRefusedRatherThanMerged(t *test
 	first := newWorkerWithBinding(t, w, "First Holder "+runID, hash)
 	second := newWorkerWithBinding(t, w, "Second Claimant "+runID, "")
 
-	code, body, err := w.Parties.Status(w.ctx, http.MethodPost,
-		"/v1/parties/"+second+"/identity-bindings", map[string]any{
+	code, body, err := w.Parties.As(w.assist(t, fixtures.SupervisorID, second)).Status(w.ctx, http.MethodPost,
+		"/v1/parties/"+second+"/identity-bindings?contextId="+url.QueryEscape(fixtures.ProjectID), map[string]any{
 			"provider":      "esignet",
 			"providerClass": "esignet",
 			"subjectRef":    "psut-second-" + runID,
@@ -820,7 +823,7 @@ func assuranceOfParty(t *testing.T, w *world, party string) string {
 	var a struct {
 		Level string `json:"identityAssurance"`
 	}
-	if err := w.Parties.Get(w.ctx, "/v1/parties/"+party+"/assurance", &a); err != nil {
+	if err := w.Parties.Get(w.ctx, "/internal/parties/"+party+"/assurance", &a); err != nil {
 		t.Fatalf("read assurance: %v", err)
 	}
 	return a.Level
@@ -841,14 +844,15 @@ func newWorkerWithBinding(t *testing.T, w *world, name, nationalIDHash string) s
 	}
 	if nationalIDHash != "" {
 		var out map[string]any
-		if err := w.Parties.Post(w.ctx, "/v1/parties/"+created.ID+"/identity-bindings", map[string]any{
-			"provider":      "esignet",
-			"providerClass": "esignet",
-			"subjectRef":    "psut-" + created.ID,
-			"nationalIdHash": map[string]any{
-				"alg": "sha256", "value": nationalIDHash, "saltRef": "test-1",
-			},
-		}, &out); err != nil {
+		if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, created.ID)).
+			Post(w.ctx, "/v1/parties/"+created.ID+"/identity-bindings?contextId="+url.QueryEscape(fixtures.ProjectID), map[string]any{
+				"provider":      "esignet",
+				"providerClass": "esignet",
+				"subjectRef":    "psut-" + created.ID,
+				"nationalIdHash": map[string]any{
+					"alg": "sha256", "value": nationalIDHash, "saltRef": "test-1",
+				},
+			}, &out); err != nil {
 			t.Fatalf("seed binding: %v", err)
 		}
 	}
@@ -869,7 +873,7 @@ func TestAddingABindingDoesNotUnregisterTheWorkersRosterID(t *testing.T) {
 	rosterID := "roster-" + runID
 	contextID := w.w.Contexts[0].ID
 
-	if err := w.Parties.Post(w.ctx, "/v1/parties/"+party+"/roster-ids", map[string]any{
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).Post(w.ctx, "/v1/parties/"+party+"/roster-ids", map[string]any{
 		"rosterId": rosterID, "contextId": contextID,
 	}, nil); err != nil {
 		t.Fatalf("register roster id: %v", err)
@@ -883,7 +887,7 @@ func TestAddingABindingDoesNotUnregisterTheWorkersRosterID(t *testing.T) {
 		}
 		q := fmt.Sprintf("/v1/resolve?kind=roster-id&value=%s&contextId=%s",
 			url.QueryEscape(rosterID), url.QueryEscape(contextID))
-		if err := w.Parties.Get(w.ctx, q, &m); err != nil {
+		if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, q, &m); err != nil {
 			t.Fatalf("resolve %s: %v", when, err)
 		}
 		if m.PartyID != party {
@@ -893,9 +897,10 @@ func TestAddingABindingDoesNotUnregisterTheWorkersRosterID(t *testing.T) {
 	resolves("before the binding")
 
 	var out map[string]any
-	if err := w.Parties.Post(w.ctx, "/v1/parties/"+party+"/identity-bindings", map[string]any{
-		"provider": "esignet", "providerClass": "esignet", "subjectRef": "psut-roster-" + runID,
-	}, &out); err != nil {
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).Post(w.ctx,
+		"/v1/parties/"+party+"/identity-bindings?contextId="+url.QueryEscape(fixtures.ProjectID), map[string]any{
+			"provider": "esignet", "providerClass": "esignet", "subjectRef": "psut-roster-" + runID,
+		}, &out); err != nil {
 		t.Fatalf("append binding: %v", err)
 	}
 	resolves("after the binding")
@@ -927,7 +932,7 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 		ArtefactDigest string `json:"artefactDigest"`
 		CapturedBy     string `json:"capturedBy"`
 	}
-	if err := w.Parties.PostRaw(w.ctx, path, "audio/ogg", recording, &consent); err != nil {
+	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).PostRaw(w.ctx, path, "audio/ogg", recording, &consent); err != nil {
 		t.Fatalf("record a voice consent: %v", err)
 	}
 	if consent.State != "GRANTED" || consent.ArtefactRef == "" || consent.ArtefactDigest == "" {
@@ -940,7 +945,7 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 
 	// The worker is entitled to hear it back. A consent you cannot review is
 	// one you cannot meaningfully withdraw.
-	code, played, err := w.Parties.Status(w.ctx, http.MethodGet,
+	code, played, err := w.Parties.As(w.login(t, party)).Status(w.ctx, http.MethodGet,
 		"/v1/consents/"+consent.ID+"/artefact", nil)
 	if err != nil || code != http.StatusOK {
 		t.Fatalf("play back the recording: %d %v", code, err)
@@ -969,7 +974,7 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 		t.Errorf("the consent still points at an artefact after withdrawal")
 	}
 
-	code, _, err = w.Parties.Status(w.ctx, http.MethodGet,
+	code, _, err = w.Parties.As(w.login(t, party)).Status(w.ctx, http.MethodGet,
 		"/v1/consents/"+consent.ID+"/artefact", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -988,7 +993,7 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 		} `json:"consents"`
 		EnrolmentConsent map[string]string `json:"enrolmentConsent"`
 	}
-	if err := w.Parties.Get(w.ctx, "/v1/parties/"+party+"/consents", &listed); err != nil {
+	if err := w.Parties.As(w.login(t, party)).Get(w.ctx, "/v1/parties/"+party+"/consents", &listed); err != nil {
 		t.Fatal(err)
 	}
 	if len(listed.Consents) != 1 || listed.Consents[0].ID != consent.ID {
@@ -1006,7 +1011,7 @@ func TestAVoiceConsentWithNoRecordingIsRefused(t *testing.T) {
 	w := setup(t)
 	party := newWorkerWithBinding(t, w, "No Recording "+runID, "")
 
-	code, body, err := w.Parties.Status(w.ctx, http.MethodPost,
+	code, body, err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).Status(w.ctx, http.MethodPost,
 		fmt.Sprintf("/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 			party, url.QueryEscape("hold evidence"), url.QueryEscape(fixtures.SupervisorID),
 			url.QueryEscape(w.w.Contexts[0].ID)), nil)
@@ -1069,7 +1074,7 @@ func TestConsentGivenToOneProgrammeDoesNotCoverAnother(t *testing.T) {
 		var c struct {
 			ID string `json:"id"`
 		}
-		if err := w.Parties.PostRaw(w.ctx, fmt.Sprintf(
+		if err := w.Parties.As(w.login(t, party)).PostRaw(w.ctx, fmt.Sprintf(
 			"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 			party, url.QueryEscape("hold evidence of my work"),
 			url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(contextID)),
@@ -1083,7 +1088,7 @@ func TestConsentGivenToOneProgrammeDoesNotCoverAnother(t *testing.T) {
 		var m struct {
 			EnrolmentConsent string `json:"enrolmentConsent"`
 		}
-		if err := w.Parties.Get(w.ctx, fmt.Sprintf("/v1/resolve?kind=contact-route&value=%s&contextId=%s",
+		if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, fmt.Sprintf("/v1/resolve?kind=contact-route&value=%s&contextId=%s",
 			url.QueryEscape(phone), url.QueryEscape(contextID)), &m); err != nil {
 			t.Fatalf("resolve in %s: %v", contextID, err)
 		}

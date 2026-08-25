@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/theflywheel/crest/pkg/httpx"
@@ -193,6 +194,13 @@ func clearArtefactKey(ctx context.Context, tx store.Querier, consentID string) e
 func (h *handlers) recordConsent(w http.ResponseWriter, r *http.Request) {
 	partyID := r.PathValue("id")
 	q := r.URL.Query()
+	// Recording a consent is acting in the worker's name (#102): the worker
+	// themselves, or the agent capturing it, who must be permitted to act for
+	// them in the consent's context.
+	if _, ok := identity.Authorize(w, r, h.d.Log, partyID, q.Get("contextId"),
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
 
 	c := Consent{
 		ID:            id.New(h.d.Clock, "consent"),
@@ -307,6 +315,11 @@ func (h *handlers) recordConsent(w http.ResponseWriter, r *http.Request) {
 
 func (h *handlers) listPartyConsents(w http.ResponseWriter, r *http.Request) {
 	partyID := r.PathValue("id")
+	// The worker's own consent history (#102).
+	if _, ok := identity.Authorize(w, r, h.d.Log, partyID, "",
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
 	consents, err := listConsents(r.Context(), h.d.DB.Q(), partyID)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list consents", err)
@@ -344,6 +357,12 @@ func (h *handlers) consentArtefact(w http.ResponseWriter, r *http.Request) {
 	c, err := getConsent(r.Context(), h.d.DB.Q(), r.PathValue("id"))
 	if err != nil {
 		httpx.NotFoundOr(w, h.d.Log, "consent", err, store.ErrNotFound)
+		return
+	}
+	// The artefact is somebody's voice. The party comes from the record, not
+	// the request (#102).
+	if _, ok := identity.Authorize(w, r, h.d.Log, c.PartyID, "",
+		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
 	if c.ArtefactKey == nil {
@@ -474,6 +493,14 @@ func (h *handlers) withdrawConsent(w http.ResponseWriter, r *http.Request) {
 func (h *handlers) enrolmentConsentState(w http.ResponseWriter, r *http.Request) {
 	partyID := r.PathValue("id")
 	contextID := r.URL.Query().Get("contextId")
+	// Public on /v1 for the worker and their actors; evidence asks the
+	// /internal twin per matched row (#102).
+	if strings.HasPrefix(r.URL.Path, "/v1/") {
+		if _, ok := identity.Authorize(w, r, h.d.Log, partyID, contextID,
+			h.d.Authenticating, h.d.Permits); !ok {
+			return
+		}
+	}
 	if contextID == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "missing_parameter",
 			"contextId is required: consent is per programme, so there is no single answer "+

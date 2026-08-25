@@ -96,7 +96,7 @@ func TestASourceThatGoesQuietIsNoticedAndItsOwnerIsTold(t *testing.T) {
 		"&systemRef=%s",
 		fixtures.ProjectID, fixtures.DefinitionID, fixtures.SupervisorID, "dhis2-riverside-"+runID)
 	var ingested ingestResult
-	if err := w.Evidence.PostRaw(w.ctx, path, "text/csv",
+	if err := w.Evidence.As(w.login(t, fixtures.SupervisorID)).PostRaw(w.ctx, path, "text/csv",
 		batch(row(phone, 3, "HH-HB-"+runID)), &ingested); err != nil {
 		t.Fatalf("submit batch: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestAFeedThatResumesIsHealthyAgain(t *testing.T) {
 		"&systemRef=%s",
 		fixtures.ProjectID, fixtures.DefinitionID, fixtures.SupervisorID, "dhis2-riverside-"+runID)
 	var ingested ingestResult
-	if err := w.Evidence.PostRaw(w.ctx, path, "text/csv",
+	if err := w.Evidence.As(w.login(t, fixtures.SupervisorID)).PostRaw(w.ctx, path, "text/csv",
 		batch(row(phone, 2, "HH-RESUME-"+runID)), &ingested); err != nil {
 		t.Fatalf("submit batch: %v", err)
 	}

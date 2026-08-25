@@ -10,6 +10,7 @@ import (
 	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -69,6 +70,13 @@ func (h *handlers) resolveUnclear(w http.ResponseWriter, r *http.Request) {
 					"unaccountable as a held payment with no owner", name)
 			return
 		}
+	}
+	// The resolver is the caller (#102): the permits check below asks whether
+	// resolvedBy MAY do this, and this asks whether resolvedBy IS the person
+	// asking — the two halves #89 separated.
+	if _, ok := identity.Authorize(w, r, h.d.Log, body.ResolvedBy, "",
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
 	}
 
 	rowID := r.PathValue("id")
@@ -274,7 +282,7 @@ func (in *ingestor) enrolmentConsent(ctx context.Context, partyID, contextID str
 	var out struct {
 		EnrolmentConsent string `json:"enrolmentConsent"`
 	}
-	err := in.registry.Get(ctx, fmt.Sprintf("/v1/parties/%s/enrolment-consent?contextId=%s",
+	err := in.registry.Get(ctx, fmt.Sprintf("/internal/parties/%s/enrolment-consent?contextId=%s",
 		urlSafe(partyID), urlSafe(contextID)), &out)
 	if client.Code(err) == http.StatusNotFound {
 		return "", errNoSuchParty
@@ -294,7 +302,7 @@ func (in *ingestor) permitsFunction(ctx context.Context, partyID, function, cont
 		Permitted bool `json:"permitted"`
 	}
 	err := in.registry.Get(ctx, fmt.Sprintf(
-		"/v1/authorizations/permits?partyId=%s&function=%s&contextId=%s",
+		"/internal/authorizations/permits?partyId=%s&function=%s&contextId=%s",
 		urlSafe(partyID), urlSafe(function), urlSafe(contextID)), &out)
 	if err != nil {
 		return false, fmt.Errorf("registry could not check the authorization: %w", err)

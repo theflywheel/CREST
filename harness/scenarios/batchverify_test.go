@@ -125,7 +125,7 @@ func TestABatchCheckNeedsAPurposeAndStaysUnderTheCap(t *testing.T) {
 			RequestedBy string `json:"requestedByPartyId"`
 		} `json:"presentations"`
 	}
-	if err := w.Verification.Get(w.ctx,
+	if err := w.Verification.As(w.login(t, fixtures.WorkerAID)).Get(w.ctx,
 		"/v1/presentations?subjectRef="+url.QueryEscape(fixtures.WorkerAID), &trail); err != nil {
 		t.Fatalf("read the check trail: %v", err)
 	}

@@ -73,6 +73,10 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/contests", h.contests)
 	mux.HandleFunc("POST /v1/sweep", h.sweep)
 	mux.HandleFunc("GET /v1/credentials", h.listCredentials)
+	// Service twins (#102): verification resolves a party's chain and reads
+	// contest standing mid-verdict.
+	mux.HandleFunc("GET /internal/credentials", h.listCredentialsRaw)
+	mux.HandleFunc("GET /internal/contests", h.contests)
 	mux.HandleFunc("GET /v1/credentials/{id}", h.getCredential)
 	// The printed card (#24, §5): the holding mechanism for a worker with no
 	// phone. HTML by default because it is meant to reach a printer;
@@ -222,8 +226,15 @@ func (h *handlers) listWindows(w http.ResponseWriter, r *http.Request) {
 			"partyId is required: this endpoint answers what happened to one worker's claims")
 		return
 	}
+	// One worker's history: the worker, or somebody acting for them (#102).
+	// Expanded before checking so a stale bookmark naming an absorbed id is
+	// still the survivor's own history (#100).
 	ids, ok := sameParty(w, r, h.d)
 	if !ok {
+		return
+	}
+	if _, ok := identity.Authorize(w, r, h.d.Log, ids[0], "",
+		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
 	windows, err := windowsFor(r.Context(), h.d.DB.Q(), ids)
@@ -246,6 +257,27 @@ func (h *handlers) listWindows(w http.ResponseWriter, r *http.Request) {
 // a property of the credentials, recorded as such in §16; this endpoint adds
 // nothing to it.
 func (h *handlers) listCredentials(w http.ResponseWriter, r *http.Request) {
+	// The worker's own wallet view (#102). Verification's party-resolution
+	// reads the /internal twin — a verifier's window into the chain is
+	// deliberately through verification, where each look writes a
+	// presentation entry, never through this list silently.
+	if r.URL.Query().Get("partyId") == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "missing_parameter",
+			"partyId is required: this endpoint answers what was issued to one worker")
+		return
+	}
+	ids, ok := sameParty(w, r, h.d)
+	if !ok {
+		return
+	}
+	if _, ok := identity.Authorize(w, r, h.d.Log, ids[0], "",
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
+	h.listCredentialsRaw(w, r)
+}
+
+func (h *handlers) listCredentialsRaw(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("partyId") == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "missing_parameter",
 			"partyId is required: this endpoint answers what was issued to one worker")
@@ -453,6 +485,11 @@ func (h *handlers) assist(w http.ResponseWriter, r *http.Request) {
 // was never told, waiting for a person. Both exist so that a promise is a query
 // rather than a hope.
 func (h *handlers) unreached(w http.ResponseWriter, r *http.Request) {
+	// An operations list over other people's payments and windows: signed-in
+	// callers (#102).
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	rows, err := unreachedWindows(r.Context(), h.d.DB.Q(), h.d.Clock.Now())
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list unreached", err)
@@ -488,6 +525,11 @@ func (h *handlers) getCredential(w http.ResponseWriter, r *http.Request) {
 // revoke flips one bit. Withdrawal is the single central fact about credentials
 // (§9), and this is the whole of it.
 func (h *handlers) revoke(w http.ResponseWriter, r *http.Request) {
+	// Withdrawal is the issuer's act (§9). Until issuer roles are modelled,
+	// the gate is a signed-in caller — recorded, not anonymous (#102).
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	now := h.d.Clock.Now()
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		idx, err := revokeCredential(r.Context(), tx, r.PathValue("id"), now)
@@ -541,6 +583,11 @@ func (h *handlers) issuerInfo(w http.ResponseWriter, r *http.Request) {
 // unreleased should always answer zero. It exists so W4 can be checked rather
 // than believed.
 func (h *handlers) unreleased(w http.ResponseWriter, r *http.Request) {
+	// An operations list over other people's payments and windows: signed-in
+	// callers (#102).
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	rows, err := unreleased(r.Context(), h.d.DB.Q())
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list unreleased", err)
