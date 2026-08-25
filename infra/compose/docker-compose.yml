@@ -412,6 +412,18 @@ services:
     environment:
       ADDR: ":8080"
       OIDC_ISSUER: "${CREST_OIDC_ISSUER:-http://mock-oidc:8080}"
+      # Dev-only: lets the browser app derive its salted subject for
+      # self-proof binding (GET /dev/pairwise). Same value as the services'.
+      CREST_SUBJECT_SALT: "${CREST_SUBJECT_SALT:-local-development-subject-salt-not-for-any-real-deployment}"
+
+  # The Actor Journeys web app (apps/web): static files, no build step. The
+  # services admit its origin via CREST_CORS_ORIGINS; login is the mock OIDC
+  # issuer in dev.
+  web:
+    image: nginx:1.27-alpine
+    volumes:
+      - ../../apps/web:/usr/share/nginx/html:ro
+    ports: ["${WEB_PORT:-59100}:80"]
 
   # ── CREST services: ours ─────────────────────────────────────────────────
 

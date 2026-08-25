@@ -34,6 +34,8 @@ import (
 	"time"
 
 	jose "github.com/go-jose/go-jose/v4"
+
+	"github.com/theflywheel/crest/pkg/identity"
 )
 
 type provider struct {
@@ -68,9 +70,27 @@ func main() {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	// Dev-only: the browser app binds by self-proof, which needs THIS
+	// deployment's salted subject for a provider sub — and the browser must
+	// not know the salt. The mock issuer shares the stack's salt in dev, so it
+	// can answer. A real deployment has no such endpoint anywhere: the binding
+	// happens server-side in the login callback.
+	salt := []byte(env("CREST_SUBJECT_SALT", ""))
+	mux.HandleFunc("GET /dev/pairwise", func(w http.ResponseWriter, r *http.Request) {
+		if len(salt) == 0 {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no CREST_SUBJECT_SALT configured"})
+			return
+		}
+		sub := r.URL.Query().Get("sub")
+		if sub == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "sub is required"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"subject": identity.Pairwise(salt, p.issuer, sub)})
+	})
 
 	log.Printf("mock oidc listening on %s as %s (kid %s)", addr, issuer, kid)
-	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Addr: addr, Handler: devCORS(mux), ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(srv.ListenAndServe())
 }
 
@@ -193,4 +213,22 @@ func env(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// devCORS reflects any origin. This is a MOCK identity provider that exists
+// only in dev stacks; a real issuer sets its own policy.
+func devCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if o := r.Header.Get("Origin"); o != "" {
+			w.Header().Set("Access-Control-Allow-Origin", o)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
