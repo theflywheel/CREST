@@ -122,7 +122,7 @@ apps-up: e2e-up ## Bring up the stack with the journey apps, story-seeded
 	@echo "open http://localhost:59110"
 
 e2e-apps: ## Walk every journey-app route with Playwright (needs apps-up; BASE_URL overrides)
-	@cd tests/e2e-apps && npm i --no-audit --no-fund >/dev/null && npx playwright test
+	@cd tests/e2e-apps && npm ci --no-audit --no-fund >/dev/null && npx playwright test
 
 e2e-run: ## Run the spine against an already-running stack (fast iteration)
 	$(GO) test -tags=e2e -count=1 -timeout=10m ./harness/...
