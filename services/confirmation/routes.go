@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -72,6 +74,19 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/claims/{claimId}/dispute", h.dispute)
 	mux.HandleFunc("GET /v1/contests", h.contests)
 	mux.HandleFunc("POST /v1/sweep", h.sweep)
+	// ...and the same sweep on a timer, because on a running deployment nobody
+	// posts to that endpoint and a window that goes past T=7 would otherwise
+	// stay open, unpaid, forever.
+	every, err := config.Duration("SWEEP_EVERY", time.Minute)
+	if err != nil {
+		// Unreadable rather than absent: fall back to the default and say so,
+		// because a typo here would otherwise silently stop auto-confirmation.
+		d.Log.Error("SWEEP_EVERY unusable; using the default", "error", err, "every", every)
+	}
+	if every > 0 && d.DB != nil {
+		d.Log.Info("auto-confirm sweep scheduled", "every", every)
+		go h.sweepLoop(d.Ctx, every)
+	}
 	mux.HandleFunc("GET /v1/credentials", h.listCredentials)
 	// Service twins (#102): verification resolves a party's chain and reads
 	// contest standing mid-verdict.
@@ -413,15 +428,28 @@ func (h *handlers) contests(w http.ResponseWriter, r *http.Request) {
 // harness can advance seven days and then ask for the consequences, rather than
 // waiting for a ticker it cannot see.
 func (h *handlers) sweep(w http.ResponseWriter, r *http.Request) {
-	now := h.d.Clock.Now()
-	due, err := dueWindows(r.Context(), h.d.DB.Q(), now, 500)
+	now, swept, waiting, err := h.sweepOnce(r.Context())
 	if err != nil {
-		httpx.Fail(w, h.d.Log, "find due windows", err)
+		httpx.Fail(w, h.d.Log, "sweep", err)
 		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"at": now, "due": len(swept) + len(waiting), "autoConfirmed": swept,
+		"heldForSomeoneToLookAt": waiting,
+	})
+}
+
+// sweepOnce is one pass: auto-confirm everything due, and name everything due
+// that it deliberately did not touch.
+func (h *handlers) sweepOnce(ctx context.Context) (time.Time, []string, []string, error) {
+	now := h.d.Clock.Now()
+	due, err := dueWindows(ctx, h.d.DB.Q(), now, 500)
+	if err != nil {
+		return now, nil, nil, fmt.Errorf("find due windows: %w", err)
 	}
 	swept := make([]string, 0, len(due))
 	for _, win := range due {
-		if _, err := h.ex.exit(r.Context(), win.ClaimID, routeAuto); err != nil {
+		if _, err := h.ex.exit(ctx, win.ClaimID, routeAuto); err != nil {
 			// One claim failing must not stop the rest: the others are also
 			// owed a payment, and a sweep that aborts halfway leaves the
 			// remainder silently unpaid.
@@ -431,12 +459,11 @@ func (h *handlers) sweep(w http.ResponseWriter, r *http.Request) {
 		swept = append(swept, win.ClaimID)
 	}
 	// Windows whose worker was never reached are due and deliberately not
-	// swept. They are reported here so a sweep can never look like it did
-	// nothing when in fact it declined to act on someone's behalf.
-	unreached, err := unreachedWindows(r.Context(), h.d.DB.Q(), now)
+	// swept. They are reported so a sweep can never look like it did nothing
+	// when in fact it declined to act on someone's behalf.
+	unreached, err := unreachedWindows(ctx, h.d.DB.Q(), now)
 	if err != nil {
-		httpx.Fail(w, h.d.Log, "find unreached windows", err)
-		return
+		return now, swept, nil, fmt.Errorf("find unreached windows: %w", err)
 	}
 	waiting := make([]string, 0, len(unreached))
 	for _, win := range unreached {
@@ -446,10 +473,36 @@ func (h *handlers) sweep(w http.ResponseWriter, r *http.Request) {
 		h.d.Log.Warn("windows past T=7 whose worker was never reached; not auto-confirming",
 			"count", len(waiting))
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"at": now, "due": len(due), "autoConfirmed": swept,
-		"heldForSomeoneToLookAt": waiting,
-	})
+	return now, swept, waiting, nil
+}
+
+// sweepLoop is the sweep nobody has to remember to call.
+//
+// The endpoint alone was enough for the harness, which advances seven days and
+// then asks for the consequences. It is not enough for a deployment: with only
+// the endpoint, a window that reaches T=7 on a running stack stays open
+// forever and the payment it owes is never released. "Every T=7 exit releases
+// payment" is not a property of the exit routes alone — auto-confirm is one of
+// the four exits, and it is the only one no person triggers.
+func (h *handlers) sweepLoop(ctx context.Context, every time.Duration) {
+	t := time.NewTicker(every) //nolint:forbidigo // a ticker is elapsed time, not a reading of the clock
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			_, swept, waiting, err := h.sweepOnce(ctx)
+			if err != nil && ctx.Err() == nil {
+				h.d.Log.Error("scheduled sweep failed", "error", err)
+				continue
+			}
+			if len(swept) > 0 || len(waiting) > 0 {
+				h.d.Log.Info("scheduled sweep",
+					"autoConfirmed", len(swept), "heldForSomeoneToLookAt", len(waiting))
+			}
+		}
+	}
 }
 
 // assist is the supervisor-assisted route: a person confirming on behalf of a

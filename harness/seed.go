@@ -19,7 +19,17 @@ import (
 // self-ratified definition, an authorization with no approver — and every test
 // built on it would then agree with a bug.
 func (s *Stack) Seed(ctx context.Context) (*fixtures.World, error) {
-	w, err := fixtures.Load()
+	return s.SeedAt(ctx, time.Time{})
+}
+
+// SeedAt is Seed with the fixture world slid onto a different epoch.
+//
+// A zero epoch keeps the file's own dates, which is what the scenarios want: a
+// test asserting on a date should not depend on the day it runs. A demo
+// deployment passes a real one, so the programme's dates sit around today
+// rather than around whenever the fixture file was last edited.
+func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, error) {
+	w, err := fixtures.LoadAt(epoch)
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +84,31 @@ func (s *Stack) Seed(ctx context.Context) (*fixtures.World, error) {
 	// failure. What is *not* idempotent is creating the version twice — the
 	// service refuses that, and it is right to, because a definition version is
 	// immutable from the moment it exists.
+	// Which issuer this deployment actually signs with.
+	//
+	// The fixture names one (`authorisedIssuers`), and verification refuses a
+	// credential from an issuer the definition does not list — correctly, it is
+	// the check doing its job. But the name in the file is only right for a
+	// stack running the default ISSUER_ID. On the Railway demo, which signs as
+	// did:crest:issuer:railway-demo, every credential the story issued failed
+	// verification with "not an authorised issuer", and had done so for as long
+	// as that deployment existed: the seeder published a definition that did
+	// not authorise the only issuer in the deployment.
+	//
+	// So the deployment's issuer is asked for rather than assumed, and added to
+	// whatever the fixture declared. Added, not replaced — the fixture's own
+	// entry is what a local stack verifies against, and dropping it would move
+	// the breakage rather than fix it.
+	var issuer struct {
+		Issuer string `json:"issuer"`
+	}
+	if err := s.Confirmation.Get(ctx, "/v1/issuer", &issuer); err != nil {
+		return nil, fmt.Errorf("ask the confirmation service which issuer it signs with: %w", err)
+	}
+	if issuer.Issuer == "" {
+		return nil, fmt.Errorf("the confirmation service named no issuer; a definition cannot authorise one")
+	}
+
 	for _, d := range w.Definitions {
 		var existing schema.Definition
 		if err := s.Definitions.Get(ctx, "/v1/definitions/"+d.ID, &existing); err == nil &&
@@ -82,6 +117,8 @@ func (s *Stack) Seed(ctx context.Context) (*fixtures.World, error) {
 		}
 		ratifier := d.RatifiedByPartyID
 		draft := d
+		draft.Faces.Verifier.AuthorisedIssuers = withIssuer(
+			d.Faces.Verifier.AuthorisedIssuers, issuer.Issuer)
 		draft.State = schema.DefinitionStateDRAFT
 		draft.RatifiedByPartyID = nil
 		draft.ActivatedAt = nil
@@ -111,6 +148,20 @@ func (s *Stack) Seed(ctx context.Context) (*fixtures.World, error) {
 		}
 	}
 	return w, nil
+}
+
+// withIssuer returns the list with id in it, appending only if it is missing.
+// A definition version is immutable once it exists, so this has to be right
+// the first time rather than patched afterwards.
+func withIssuer(list []string, id string) []string {
+	for _, existing := range list {
+		if existing == id {
+			return list
+		}
+	}
+	out := make([]string, len(list), len(list)+1)
+	copy(out, list)
+	return append(out, id)
 }
 
 // PhoneOf returns a party's phone number, which is what a CSV joins on.

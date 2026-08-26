@@ -124,6 +124,15 @@ apps-up: e2e-up ## Bring up the stack with the journey apps, story-seeded
 e2e-apps: ## Walk every journey-app route with Playwright (needs apps-up; BASE_URL overrides)
 	@cd tests/e2e-apps && npm i --no-audit --no-fund >/dev/null && npx playwright test
 
+test-e2e-sweep: ## Prove the auto-confirm sweep runs on its own, with nobody asking
+	@# Its own stack, because the sweeper has to be on and the rest of the
+	@# suite needs it off: every other T=7 scenario advances the clock and then
+	@# posts /v1/sweep, and a background sweeper would take the window first.
+	@$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true
+	SWEEP_EVERY=2s $(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail mock-oidc $(SERVICES)
+	SWEEP_EVERY=2s $(GO) test -tags=e2e -count=1 -timeout=5m -run TestScheduledSweepPaysWithNobodyAsking ./harness/scenarios/
+	@$(COMPOSE) down -v --remove-orphans
+
 e2e-run: ## Run the spine against an already-running stack (fast iteration)
 	$(GO) test -tags=e2e -count=1 -timeout=10m ./harness/...
 

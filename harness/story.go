@@ -25,9 +25,13 @@ var ErrStoryAlreadySeeded = errors.New("story already seeded")
 // story is better left for `make e2e-up` (a fresh stack) than patched blind.
 const storySourceRef = "riverside-dhis2"
 
-// storyClockAdvance is how far past the epoch the story ends: one day to the
+// StoryClockAdvance is how far past the epoch the story ends: one day to the
 // first batch, then seven days and change for the T=7 sweep.
-const storyClockAdvance = 8*24*time.Hour + 2*time.Hour
+//
+// Exported because a demo deployment needs it to work backwards: to leave the
+// story finishing at roughly the present moment, it seeds an epoch this far in
+// the past and walks forward.
+const StoryClockAdvance = 8*24*time.Hour + 2*time.Hour
 
 // SeedStory populates a freshly Seed()ed stack with one coherent week of the
 // programme, so every screen of the demo web app has something true to show:
@@ -61,7 +65,7 @@ func (s *Stack) SeedStory(ctx context.Context, w *fixtures.World) error {
 			// the story's timeline: the overdue review date is no longer past
 			// and the open windows are no longer mid-week. Put the clock back
 			// where the story left it before declining to run again.
-			if err := s.SetClock(ctx, w.Instance.Epoch.Add(storyClockAdvance)); err != nil {
+			if err := s.SetClock(ctx, w.Instance.Epoch.Add(StoryClockAdvance)); err != nil {
 				return err
 			}
 			return ErrStoryAlreadySeeded
@@ -500,7 +504,12 @@ func (st *story) openRecovery() error {
 func (st *story) overdueAuthorization() error {
 	epoch := st.w.Instance.Epoch
 	end := epoch.Add(300 * 24 * time.Hour)
-	reviewBy := time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC)
+	// Four days after the epoch, expressed as an offset rather than as an
+	// absolute date. Written absolute, it read "overdue by four days" only
+	// while the world sat at the date the fixture file was written; on a
+	// stack seeded today it would read overdue by however many months have
+	// passed since, which is a different screen.
+	reviewBy := epoch.Add(4 * 24 * time.Hour)
 	if err := st.Parties.Post(st.ctx, "/v1/authorizations", schema.Authorization{
 		PartyID: fixtures.SpecifierID,
 		Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},

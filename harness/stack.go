@@ -130,6 +130,22 @@ func (s *Stack) SetClock(ctx context.Context, at time.Time) error {
 	return nil
 }
 
+// LiveClock puts every service back on real time.
+//
+// The counterpart to walking a stack forward: the story seeder shifts the
+// clock a week into the past and steps through a programme week, and this is
+// how it hands the stack back running on the same clock as everyone else. A
+// demo stack left frozen at the seeder's last step is one where no window ever
+// reaches T=7 again.
+func (s *Stack) LiveClock(ctx context.Context) error {
+	for _, svc := range s.Services() {
+		if err := svc.Post(ctx, "/internal/clock", map[string]any{"live": true}, nil); err != nil {
+			return fmt.Errorf("%s: %w", svc.Name, err)
+		}
+	}
+	return nil
+}
+
 // Advance moves every service's clock forward by d.
 func (s *Stack) Advance(ctx context.Context, d time.Duration) error {
 	for _, svc := range s.Services() {
