@@ -2,9 +2,10 @@
 -- with it. These are the same shapes the confirmation service created in its
 -- 0001_init.sql, which now sit unused on any stack that predates this.
 
--- What CREST keeps about a credential: enough to find it, revoke it and tie a
--- presented one back to the claim. Not the credential — the wallet holds the
--- only complete copy, and there is deliberately no register (§3).
+-- What CREST keeps about a credential: the full signed document beside what
+-- finds, revokes and ties a presented one back to its claim. A deployment-
+-- local credential store is accepted, with its consequences stated in §9
+-- (settled on #91) — this is that store.
 CREATE TABLE credentials (
     id            text PRIMARY KEY,
     claim_id      text NOT NULL UNIQUE,

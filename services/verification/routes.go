@@ -62,6 +62,8 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	// application at window exit, owned here.
 	mux.HandleFunc("POST /internal/credentials/issue", h.issue)
 	mux.HandleFunc("GET /internal/credentials", h.listCredentialsRaw)
+	mux.HandleFunc("GET /internal/credentials/by-claim/{claimId}", h.credentialForClaim)
+	mux.HandleFunc("POST /internal/credentials/{id}/revoke", h.revokeInternal)
 	mux.HandleFunc("GET /v1/credentials", h.listCredentials)
 	mux.HandleFunc("GET /v1/credentials/{id}", h.getCredentialByID)
 	// The printed card (#24, §5): the holding mechanism for a worker with no
