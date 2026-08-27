@@ -3,11 +3,11 @@ package harness
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
-	"slices"
 	"time"
 
 	"github.com/theflywheel/crest/harness/fixtures"
@@ -132,25 +132,28 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 			if err := asSeeder.Get(ctx, "/v1/authorizations/"+url.PathEscape(a.ID), &standing); err != nil {
 				return nil, fmt.Errorf("authorization %s: read the standing grant: %w", a.ID, err)
 			}
-			// Shape, not the permits predicate: permits() answers yes for an
-			// instance-scoped grant in any context, so it cannot see scope
-			// drift. What may differ between seeds is only what the rebase
-			// moves — period, approvedAt, reviewBy. Everything that says who
-			// may do what, where, must be the fixture's, exactly.
-			same := standing.PartyID == a.PartyID &&
-				standing.AuthorityPartyID == a.AuthorityPartyID &&
-				standing.ApprovedByPartyID == a.ApprovedByPartyID &&
-				standing.Scope.Kind == a.Scope.Kind &&
-				(standing.Scope.ContextID == nil) == (a.Scope.ContextID == nil) &&
-				standing.State == a.State &&
-				standing.RevokedAt == nil &&
-				slices.Equal(standing.Functions, a.Functions)
-			if same && standing.Scope.ContextID != nil {
-				same = *standing.Scope.ContextID == *a.Scope.ContextID
+			// The whole document, not a field list: a grant document is
+			// immutable, so the only differences a reseed may tolerate are
+			// the ones the rebase itself moves — period, approvedAt,
+			// reviewBy. Normalize those three to the fixture's values and
+			// every remaining byte (terms, evidence, functions, scope,
+			// state, revocation) must match exactly, or the seeder is
+			// quietly adopting a grant nobody chose.
+			normalized := standing
+			normalized.Period = a.Period
+			normalized.ApprovedAt = a.ApprovedAt
+			normalized.ReviewBy = a.ReviewBy
+			want, err := json.Marshal(a)
+			if err != nil {
+				return nil, fmt.Errorf("authorization %s: marshal fixture: %w", a.ID, err)
 			}
-			if !same {
+			got, err := json.Marshal(normalized)
+			if err != nil {
+				return nil, fmt.Errorf("authorization %s: marshal standing grant: %w", a.ID, err)
+			}
+			if !bytes.Equal(want, got) {
 				return nil, fmt.Errorf(
-					"authorization %s: the standing grant's shape is not the fixture's (party, scope, functions or state drifted); revoke and re-grant, not reseed over it",
+					"authorization %s: the standing grant is not the fixture's document (something beyond the rebased time fields drifted); revoke and re-grant, not reseed over it",
 					a.ID)
 			}
 			log.Printf("seed: authorization %s already granted by an earlier seed with the fixture's exact shape; left as is", a.ID)
