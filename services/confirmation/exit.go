@@ -62,56 +62,44 @@ type releaseRequest struct {
 func (e *exiter) exit(ctx context.Context, claimID, route string) (exitResult, error) {
 	now := e.clock.Now()
 
-	w, err := getWindow(ctx, e.db.Q(), claimID, false)
-	if err != nil {
-		return exitResult{}, err
-	}
-	if !w.Open() {
-		// Already exited. Idempotent rather than an error: the sweep and a
-		// worker's confirmation can race, and the worker should win without
-		// anyone seeing a failure.
-		//
-		// A dispute is the exception, and W3 is why. Silence is not consent
-		// against the worker: the seven days are a window for objecting, not a
-		// deadline for noticing, so a claim that auto-confirmed must still be
-		// disputable afterwards. The payment is already out and stays out —
-		// what changes is what the record says.
-		if route == routeDispute {
-			if err := e.transitionClaim(ctx, claimID, schema.ClaimStateDISPUTED, route); err != nil {
-				return exitResult{}, err
-			}
-		}
-		var cred *issuedCredential
-		if w.CredentialID != nil {
-			c, err := getCredential(ctx, e.db.Q(), *w.CredentialID)
-			if err == nil {
-				cred = &c
-			}
-		}
-		return exitResult{Window: w, Credential: cred}, nil
-	}
-
-	// The claim's state is owned by evidence, so it moves there first. If this
-	// fails, nothing here has changed and the caller can retry.
-	target := schema.ClaimStateACCEPTED
-	if route == routeDispute {
-		target = schema.ClaimStateDISPUTED
-	}
-	if err := e.transitionClaim(ctx, claimID, target, route); err != nil {
-		return exitResult{}, err
-	}
-
+	// The whole exit happens under a FOR UPDATE lock on the window row. The
+	// scheduled sweep and a worker's confirmation can arrive at T=7 within the
+	// same second; without the lock both see an open window, both issue a
+	// credential, and one exit record silently overwrites the other — in the
+	// worst interleaving an auto-confirm overwrites a dispute. With it, the
+	// loser blocks until the winner commits, then sees a closed window and
+	// takes the idempotent branch below. The lock is held across the calls to
+	// evidence and definitions; that is the price of one claim never exiting
+	// twice, and only exits contend for it.
 	var issued *issuedCredential
-	if route != routeDispute {
-		issued, err = e.buildCredential(ctx, w, route, now)
+	alreadyExited := false
+	err := e.db.InTx(ctx, func(tx store.Querier) error {
+		w, err := getWindow(ctx, tx, claimID, true)
 		if err != nil {
-			return exitResult{}, err
+			return err
 		}
-	}
+		if !w.Open() {
+			alreadyExited = true
+			return nil
+		}
 
-	err = e.db.InTx(ctx, func(tx store.Querier) error {
+		// The claim's state is owned by evidence, so it moves there first. If
+		// this fails, the transaction rolls back and nothing here has changed;
+		// the caller can retry.
+		target := schema.ClaimStateACCEPTED
+		if route == routeDispute {
+			target = schema.ClaimStateDISPUTED
+		}
+		if err := e.transitionClaim(ctx, claimID, target, route); err != nil {
+			return err
+		}
+
 		var credID *string
-		if issued != nil {
+		if route != routeDispute {
+			issued, err = e.buildCredential(ctx, w, route, now)
+			if err != nil {
+				return err
+			}
 			idx, err := nextStatusIndex(ctx, tx)
 			if err != nil {
 				return err
@@ -142,11 +130,36 @@ func (e *exiter) exit(ctx context.Context, claimID, route string) (exitResult, e
 		return exitResult{}, err
 	}
 
-	w, err = getWindow(ctx, e.db.Q(), claimID, false)
+	if alreadyExited {
+		// Already exited. Idempotent rather than an error: the sweep and a
+		// worker's confirmation can race, and the worker should win without
+		// anyone seeing a failure.
+		//
+		// A dispute is the exception, and W3 is why. Silence is not consent
+		// against the worker: the seven days are a window for objecting, not a
+		// deadline for noticing, so a claim that auto-confirmed must still be
+		// disputable afterwards. The payment is already out and stays out —
+		// what changes is what the record says.
+		if route == routeDispute {
+			if err := e.transitionClaim(ctx, claimID, schema.ClaimStateDISPUTED, route); err != nil {
+				return exitResult{}, err
+			}
+		}
+	}
+
+	w, err := getWindow(ctx, e.db.Q(), claimID, false)
 	if err != nil {
 		return exitResult{}, err
 	}
-	return exitResult{Window: w, Credential: issued}, nil
+	var cred *issuedCredential
+	if issued != nil {
+		cred = issued
+	} else if w.CredentialID != nil {
+		if c, err := getCredential(ctx, e.db.Q(), *w.CredentialID); err == nil {
+			cred = &c
+		}
+	}
+	return exitResult{Window: w, Credential: cred}, nil
 }
 
 func (e *exiter) transitionClaim(ctx context.Context, claimID string, to schema.ClaimState, route string) error {
@@ -262,7 +275,9 @@ func (e *exiter) firstAuthorization(ctx context.Context, partyID, scope, context
 			ID string `json:"id"`
 		} `json:"authorizations"`
 	}
-	if err := e.registry.Get(ctx, "/v1/authorizations?"+q.Encode(), &out); err != nil {
+	// The service twin, not the caller-facing route: this is service traffic on
+	// the issuance path, and /v1/authorizations answers signed-in callers only.
+	if err := e.registry.Get(ctx, "/internal/authorizations?"+q.Encode(), &out); err != nil {
 		e.log.Warn("could not read the issuing organisation's authorizations",
 			"party", partyID, "scope", scope, "error", err)
 		return ""

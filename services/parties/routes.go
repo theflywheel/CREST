@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"cmp"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -51,6 +54,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /internal/parties/{id}/enrolment-consent", h.enrolmentConsentState)
 	mux.HandleFunc("GET /internal/resolve", h.resolve)
 	mux.HandleFunc("GET /internal/authorizations/permits", h.permits)
+	mux.HandleFunc("GET /internal/authorizations", h.listAuthorizationsRaw)
 
 	// Enrolment consent (§9, #24). The artefact route is separate from the
 	// record route because one is a stream of somebody's voice and the other
@@ -335,6 +339,56 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 	if !httpx.ReadJSON(w, r, &a) {
 		return
 	}
+	// A grant decides who may act for whom, and a valid token is not, by
+	// itself, authority to decide that: any signed-in worker could otherwise
+	// mint themselves act-for-party and pass every later permits() check
+	// (#124 review). The caller must prove they ARE — or act for — the
+	// authority the grant names, because authorityPartyId is "who says so"
+	// and this request is that party saying so.
+	ctxID := ""
+	if a.Scope.ContextID != nil {
+		ctxID = *a.Scope.ContextID
+	}
+	if _, ok := identity.Authorize(w, r, h.d.Log, a.AuthorityPartyID, ctxID,
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
+	// approvedByPartyId stays a recorded fact rather than a cross-checked
+	// claim: the fixture world already holds a grant approved by a custodian
+	// person under the organisation's authority, and requiring it to equal
+	// the acting party would make that history unloadable. The gate above is
+	// the one that matters — whoever the record names as approver, only the
+	// authority (or somebody proven to act for it) can put the record here.
+	// And the authority must be an organisation — the same line
+	// listAuthorizations draws. A person naming themselves as their own
+	// authority is the self-mint above wearing different field names.
+	authority, err := getParty(r.Context(), h.d.DB.Q(), a.AuthorityPartyID)
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "authority party", err, store.ErrNotFound)
+		return
+	}
+	if authority.Kind != schema.PartyKindOrganisation {
+		httpx.WriteError(w, http.StatusForbidden, "not_an_organisation",
+			"authorityPartyId must name an organisation; a person cannot be their own authority")
+		return
+	}
+	// And an APPROVED one. Party kind alone is not authority: POST /v1/parties
+	// is the open bootstrap door, so anyone can mint an organisation-shaped
+	// party and first-bind to it (#124 review). What makes an organisation an
+	// authority is the registry's decision — application, terms, and an
+	// approval with somebody's name on it — so the gate reads the registration
+	// rather than the shape.
+	reg, err := getRegistration(r.Context(), h.d.DB.Q(), a.AuthorityPartyID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		httpx.Fail(w, h.d.Log, "read authority registration", err)
+		return
+	}
+	if err != nil || reg.State != stateApproved {
+		httpx.WriteError(w, http.StatusForbidden, "organisation_not_approved",
+			"authorityPartyId must name an APPROVED organisation; a party of the right shape "+
+				"is not an authority until the registry's decision says so")
+		return
+	}
 	if a.ID == "" {
 		a.ID = id.New(h.d.Clock, "authorization")
 	}
@@ -349,6 +403,33 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+		// The insert is an upsert so a reseed can replay the same grant, but
+		// an id is a public fact, not a proof, and a grant is not editable: it
+		// is narrowed by revoke and re-grant, never rewritten in place. So a
+		// duplicate id is accepted only as an exact replay — same authority
+		// and the same document, byte for byte (#124 review). Anything less
+		// would let the upsert rewrite doc, state and review_by while the
+		// indexed permission columns keep the old row's values, a grant whose
+		// document says one thing while permits() enforces another.
+		existing, err := getAuthorizationLocked(r.Context(), tx, a.ID, true)
+		switch {
+		case err == nil:
+			if existing.AuthorityPartyID != a.AuthorityPartyID {
+				return errGrantIDTaken
+			}
+			prev, errPrev := json.Marshal(existing)
+			cur, errCur := json.Marshal(a)
+			if errPrev != nil || errCur != nil {
+				return cmp.Or(errPrev, errCur)
+			}
+			if !bytes.Equal(prev, cur) {
+				return errGrantNotEditable
+			}
+		case errors.Is(err, store.ErrNotFound):
+			// New id; nothing to protect.
+		default:
+			return err
+		}
 		if err := insertAuthorization(r.Context(), tx, a); err != nil {
 			return err
 		}
@@ -358,11 +439,30 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 		// design finding in publish.go.
 		return enqueueFact(r.Context(), tx, "authorization", a.ID, 1)
 	}); err != nil {
+		if errors.Is(err, errGrantIDTaken) {
+			httpx.WriteError(w, http.StatusConflict, "grant_id_taken",
+				"an authorization with this id already stands under a different authority")
+			return
+		}
+		if errors.Is(err, errGrantNotEditable) {
+			httpx.WriteError(w, http.StatusConflict, "grant_not_editable",
+				"an authorization is narrowed by revoke and re-grant, not edited in place; "+
+					"a duplicate id is accepted only as an exact replay")
+			return
+		}
 		httpx.Fail(w, h.d.Log, "create authorization", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, a)
 }
+
+// errGrantIDTaken is the create upsert refusing to let one authority's grant
+// be replaced through another authority's gate.
+var errGrantIDTaken = errors.New("authorization id belongs to a different authority")
+
+// errGrantNotEditable is a same-authority duplicate id that is not an exact
+// replay — an attempted in-place edit of a grant.
+var errGrantNotEditable = errors.New("authorization exists and differs; grants are not edited in place")
 
 // listAuthorizations answers "which authorization stands behind this?" for one
 // party at one scope (#16).
@@ -372,6 +472,29 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 // where is precisely what #68 established must not be readable, whether from
 // the log or from here.
 func (h *handlers) listAuthorizations(w http.ResponseWriter, r *http.Request) {
+	// A custodian/operations read: who holds what, where. Signed-in callers
+	// only (#102); the anonymous question this could answer is a roster probe.
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
+	h.listAuthorizationsBody(w, r)
+}
+
+// listAuthorizationsRaw is the service twin (§16). Confirmation calls it while
+// issuing, to name the organisation's authorization a verifier walks up to.
+//
+// It needs its own route rather than a token because that read happens on the
+// path that releases payment, and it is best-effort there: a refusal does not
+// fail the issuance, it silently drops qualificationRef and grantRef and the
+// credential goes out with a chain that stops at an org id. That is the worst
+// shape a failure can take — a credential that looks issued and cannot be
+// walked — and it is what closing the caller-facing route without opening this
+// one produced.
+func (h *handlers) listAuthorizationsRaw(w http.ResponseWriter, r *http.Request) {
+	h.listAuthorizationsBody(w, r)
+}
+
+func (h *handlers) listAuthorizationsBody(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	partyID, scopeKind := q.Get("partyId"), q.Get("scope")
 	if partyID == "" || scopeKind == "" {
@@ -473,6 +596,11 @@ func (h *handlers) createContext(w http.ResponseWriter, r *http.Request) {
 // reads this list to refuse anything. Like /v1/holds, this is a custodian
 // surface; the authorization pass over the whole API is #102.
 func (h *handlers) overdueAuthorizations(w http.ResponseWriter, r *http.Request) {
+	// The review queue is a custodian surface like /v1/holds: signed-in
+	// callers only (#102).
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	list, err := overdueAuthorizations(r.Context(), h.d.DB.Q(), h.d.Clock.Now())
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list overdue authorizations", err)
@@ -492,8 +620,26 @@ func (h *handlers) overdueAuthorizations(w http.ResponseWriter, r *http.Request)
 // narrower authorization; there is deliberately no edit, because an edited
 // grant has no record of what it used to allow.
 func (h *handlers) revokeAuthorization(w http.ResponseWriter, r *http.Request) {
+	// Revocation changes who may act from the next permits() answer onward,
+	// so it is gated like creation: the caller must prove they are — or act
+	// for — the authority whose grant this is. Any signed-in subject who
+	// learned a grant id could otherwise switch off another party's ability
+	// to submit (#124 review).
+	grant, err := getAuthorization(r.Context(), h.d.DB.Q(), r.PathValue("id"))
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "authorization", err, store.ErrNotFound)
+		return
+	}
+	ctxID := ""
+	if grant.Scope.ContextID != nil {
+		ctxID = *grant.Scope.ContextID
+	}
+	if _, ok := identity.Authorize(w, r, h.d.Log, grant.AuthorityPartyID, ctxID,
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
 	var out schema.Authorization
-	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		a, err := revokeAuthorization(r.Context(), tx, r.PathValue("id"), h.d.Clock.Now())
 		if err != nil {
 			return err

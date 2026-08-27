@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/theflywheel/crest/harness"
+	"github.com/theflywheel/crest/pkg/clock"
 )
 
 func main() {
@@ -20,9 +21,24 @@ func main() {
 	if err := s.WaitReady(ctx, 90*time.Second); err != nil {
 		log.Fatalf("the stack never came up: %v (is it running? make e2e-up)", err)
 	}
-	w, err := s.Seed(ctx)
+	// Where the world's dates sit. A demo deployment wants them around today
+	// and wants the clock still running afterwards; the test stacks want the
+	// file's own fixed dates and a clock only they move. SEED_LIVE_CLOCK
+	// chooses, and defaults to whatever SEED_STORY is: telling the story is
+	// the demo case.
+	live := os.Getenv("SEED_LIVE_CLOCK") == "true" ||
+		(os.Getenv("SEED_LIVE_CLOCK") == "" && os.Getenv("SEED_STORY") == "true")
+	var epoch time.Time
+	if live {
+		// Far enough back that the story's eight days land on today.
+		epoch = clock.System{}.Now().Add(-harness.StoryClockAdvance)
+	}
+	w, err := s.SeedAt(ctx, epoch)
 	if err != nil {
 		log.Fatalf("seed: %v", err)
+	}
+	if live {
+		fmt.Printf("seeding from %s so the story ends at about now\n", epoch.Format(time.RFC3339))
 	}
 	fmt.Printf("seeded %q: %d parties, %d authorizations, %d definitions\n",
 		w.Instance.Name, len(w.Parties), len(w.Authorizations), len(w.Definitions))
@@ -42,6 +58,17 @@ func main() {
 				"2 verifications, 1 duplicate hold, 1 open recovery, 1 overdue authorization")
 		}
 	}
+	if live {
+		// The clock goes back on real time, ticking. Left where the story
+		// stopped, nothing in the stack could ever become due again: no window
+		// would reach T=7, and the auto-confirm exit — the one no person
+		// triggers — would never fire for anyone.
+		if err := s.LiveClock(ctx); err != nil {
+			log.Fatalf("hand the clock back to real time: %v", err)
+		}
+		fmt.Println("clock is live: the stack now runs on real time and windows come due on their own")
+	}
+
 	fmt.Println("web app: http://localhost:59100")
 	if os.Getenv("SEED_HOLD") == "true" {
 		// One-shot service on a platform that restarts exited containers:

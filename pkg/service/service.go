@@ -32,6 +32,12 @@ type Deps struct {
 	Log    *slog.Logger
 	Clock  clock.Clock
 
+	// Ctx is the process lifetime, cancelled when the service is shutting
+	// down. It is here so a service can start its own background work from
+	// Routes — the confirmation sweep is the one that matters — and have that
+	// work stop with the process rather than outlive it.
+	Ctx context.Context
+
 	// DB is nil for a service that declares no migrations. A service with no
 	// database is a legitimate thing (notify is nearly one); a service that
 	// silently got a nil DB because its migrations failed is not, which is why
@@ -176,7 +182,7 @@ func Main(name string, opts Options) {
 	defer cancel()
 
 	clk, driveable := chooseClock(cfg, log)
-	d := Deps{Config: cfg, Log: log, Clock: clk}
+	d := Deps{Config: cfg, Log: log, Clock: clk, Ctx: ctx}
 
 	var ready httpx.ReadyFunc
 	if opts.Migrations != nil {
@@ -337,7 +343,7 @@ func Main(name string, opts Options) {
 // Refused in production, loudly. A running deployment whose clock an HTTP call
 // can move is a deployment where a confirmation window can be closed early on
 // someone, and that is a way to take a worker's chance to object away from them.
-func chooseClock(cfg config.Base, log *slog.Logger) (clock.Clock, *clock.Fake) {
+func chooseClock(cfg config.Base, log *slog.Logger) (clock.Clock, clock.Driveable) {
 	if !config.MustBool("CLOCK_DRIVEABLE", false) {
 		return clock.System{}, nil
 	}
@@ -355,26 +361,42 @@ func chooseClock(cfg config.Base, log *slog.Logger) (clock.Clock, *clock.Fake) {
 		}
 		start = t
 	}
-	fake := clock.NewFake(start)
-	log.Warn("clock is driveable", "now", start, "env", cfg.Env)
-	return fake, fake
+	// Offset rather than Fake: driveable, but it still ticks. A frozen clock
+	// makes a seeded demo stack look alive while nothing in it can ever become
+	// due again — no window reaches T=7, no payment is released by time
+	// passing. See clock.Offset for the whole argument.
+	c := clock.NewOffsetAt(clock.System{}, start)
+	log.Warn("clock is driveable", "now", start, "skew", c.Skew(), "env", cfg.Env)
+	return c, c
 }
 
 // registerClockControl exposes the clock under /internal/, which is the prefix
 // for everything that exists for the harness rather than for a caller.
-func registerClockControl(mux *http.ServeMux, fake *clock.Fake, log *slog.Logger) {
+func registerClockControl(mux *http.ServeMux, fake clock.Driveable, log *slog.Logger) {
 	mux.HandleFunc("GET /internal/clock", func(w http.ResponseWriter, _ *http.Request) {
-		httpx.WriteJSON(w, http.StatusOK, map[string]any{"now": fake.Now()})
+		out := map[string]any{"now": fake.Now()}
+		// A shifted clock says so, rather than leaving a caller to work out why
+		// the stack disagrees with their watch.
+		if o, ok := fake.(*clock.Offset); ok {
+			out["skew"] = o.Skew().String()
+			out["ticking"] = true
+		}
+		httpx.WriteJSON(w, http.StatusOK, out)
 	})
 	mux.HandleFunc("POST /internal/clock", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Now     *time.Time `json:"now,omitempty"`
 			Advance string     `json:"advance,omitempty"`
+			// Live puts the clock back on real time. The seeder uses it to
+			// hand a stack back after walking a week forward through it.
+			Live bool `json:"live,omitempty"`
 		}
 		if !httpx.ReadJSON(w, r, &body) {
 			return
 		}
 		switch {
+		case body.Live:
+			fake.Set(clock.System{}.Now())
 		case body.Now != nil:
 			fake.Set(*body.Now)
 		case body.Advance != "":
@@ -386,7 +408,8 @@ func registerClockControl(mux *http.ServeMux, fake *clock.Fake, log *slog.Logger
 			}
 			fake.Advance(d)
 		default:
-			httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "set now, or advance by a duration")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_body",
+				"set now, advance by a duration, or go live")
 			return
 		}
 		log.Info("clock moved", "now", fake.Now())

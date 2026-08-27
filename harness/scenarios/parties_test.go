@@ -232,7 +232,11 @@ func TestAWorkerWithNoPhoneCanStillBeEnrolled(t *testing.T) {
 // publication endpoint is the only place that could have leaked one.
 func TestAWorkerNeverReachesTheRegistrySubstrate(t *testing.T) {
 	w := setup(t)
-	workerID := w.w.Parties[0].ID
+	// A worker by name, not w.w.Parties[0] — the fixture's first party is the
+	// organisation, which IS published once the seeder walks it through
+	// approval. The old index only looked like a worker while the org was
+	// never approved.
+	workerID := fixtures.WorkerAID
 
 	for _, kind := range []string{"organisation", "authorization"} {
 		code, body, err := w.Parties.Status(w.ctx, http.MethodGet,

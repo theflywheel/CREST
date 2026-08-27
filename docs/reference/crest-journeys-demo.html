@@ -1,5 +1,5 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CREST Journey Bench</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CREST Journey Bench</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -143,7 +143,7 @@ let seq = 0, days = 0;
 const ulid = p => "crest:"+p+":01JD" + (1000+ ++seq).toString(36).toUpperCase().padStart(22,"0");
 const did  = () => "did:crest:party:01JD" + (1000+ ++seq).toString(36).toUpperCase().padStart(22,"0");
 const now  = () => { const d = new Date(Date.UTC(2026,2,1,8,0,0)); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().replace(".000",""); };
-const closesAt = () => { const d = new Date(Date.UTC(2026,2,1,8,0,0)); d.setUTCDate(d.getUTCDate()+7); return d.toISOString().replace(".000",""); };
+const closesAt = () => { const d = new Date(Date.UTC(2026,2,1,8,0,0)); d.setUTCDate(d.getUTCDate()+days+7); return d.toISOString().replace(".000",""); };
 
 const S = { worker:null, consent:null, claim:null, window:null, exit:null, credential:null, instruction:null, verdict:null,
             recovery:null, rconf:0, rdone:false, batchOK:false };
@@ -192,9 +192,10 @@ const steps = [
    ready:()=>!!S.worker, done:()=>!!S.consent,
    text:"Enrolment consent is the right to fetch and hold evidence about her (§9). For a non-literate worker it is a voice recording — stored as an artefact in the object store, bound to the agent and the moment.",
    run(){ S.consent = ulid("consent");
-     return callCard("POST","/v1/parties/{id}/consents",
-      {kind:"enrolment", method:"voice", artefact:"consent-2026-03-01-amara.ogg", recordedByPartyId:"did:crest:party:01JCREST00000000000000CSTD", contextId:"crest:context:01JCREST00000000000000PRJC"},
-      {id:S.consent, partyId:S.worker, kind:"enrolment", state:"GRANTED", artefactRef:"blob:consents/"+S.consent, createdAt:now()});}},
+     return callCard("POST","/v1/parties/{id}/consents?moment=enrolment&captureMethod=voice&purpose=fetch-and-hold-evidence&capturedBy=did:crest:party:01JCREST00000000000000CSTD&contextId=crest:context:01JCREST00000000000000PRJC",
+      null,
+      {id:S.consent, partyId:S.worker, moment:"enrolment", purpose:"fetch-and-hold-evidence", captureMethod:"voice", capturedBy:"did:crest:party:01JCREST00000000000000CSTD", contextId:"crest:context:01JCREST00000000000000PRJC", artefactRef:"blob:consent/"+S.consent, capturedAt:now(), state:"GRANTED"},
+      "audio/ogg body: the raw voice recording is the request body, not JSON");}},
  { id:"submit", actor:["sup","Supervisor"], title:"The month's work arrives as a CSV",
    ready:()=>!!S.consent, done:()=>!!S.claim,
    text:"The programme's own system exports a batch. The adapter maps the source's column names onto the deployment's canonical ones (#56) — 'Household ID' arrives as household_id, so the tier rule that requires it actually matches. Provenance is configuration, never a column in the file.",
@@ -370,7 +371,7 @@ const jClass = items => items.every(i=>i[0]==="built") ? "play" : items.some(i=>
 
 /* ————— rendering ————— */
 let view = "loop";
-function stepHTML(s, i, branchState){
+function stepHTML(s, i){
   const locked = !s.ready() && !s.done();
   const done = s.done();
   let body = "";
@@ -410,6 +411,7 @@ function render(){
     m.innerHTML = `<h2>${j[0]} · ${j[1]}</h2>
       <p class="lede">§15's L1 scope for this journey, against the backend as of 25 Aug 2026. “Built” means e2e- or unit-proven in CI, not merely present.</p>
       <div class="sheet">${j[2].map(([t,txt,href])=>`<div class="li"><span class="tag ${t}">${t==="miss"?"missing":t==="part"?"partial":"built"}</span><span>${txt}${href?` — <a href="${href}">issue</a>`:""}</span></div>`).join("")}</div>
+      <div class="note">This matrix is a hand-maintained snapshot (2026-08-25); <code>docs/test-manifest.md</code> is the authority on what is proven.</div>
       <div class="note">Cross-cutting for every journey's frontend: <a href="https://github.com/theflywheel/CREST/issues/102">#102</a> — authentication reaches every endpoint, authorization checks four. A console built today must not assume the backend refuses what it should.</div>`;
   }
   document.querySelectorAll(".jrow").forEach(b=>b.classList.toggle("active", String(b.dataset.view)===String(view)));

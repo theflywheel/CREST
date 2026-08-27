@@ -60,13 +60,15 @@ export const api = {
   del: (svc, path) => call(svc, "DELETE", path),
 };
 
-// Dev login: mint a token from the mock issuer for a stable per-browser
-// subject, then bind it to the chosen party through the real endpoint —
-// self-proof by token possession, the same first-login path the services
-// define (#102). The provider subject is deterministic per party so a page
-// reload is the same person.
+// Dev login: mint a token from the mock issuer for the story seeder's own
+// subject for this party, then bind it through the real endpoint. Self-bind is
+// accepted only for a never-bound party or the exact subject already bound
+// (#102) — a fresh "web|" subject would be a stranger's claim on a party the
+// story already bound — so the dev login IS the story's person: the same
+// "story|" subject, making the bind the idempotent same-subject re-bind, and a
+// first-login bootstrap on anything the story never bound.
 export async function loginAs(partyId, viaActorToken) {
-  const sub = "web|" + partyId;
+  const sub = "story|" + partyId.replace("did:crest:party:", "");
   const minted = await fetch(services.oidc + "/token", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sub, aud: "crest", expiresIn: "12h" }),

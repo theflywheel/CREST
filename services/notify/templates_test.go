@@ -13,6 +13,7 @@ import (
 // moving the wording into configuration changed nothing for a deployment that
 // configured nothing.
 func TestTheDefaultTemplatesRenderTheOriginalSentence(t *testing.T) {
+	t.Setenv("CREST_TEMPLATES_PATH", "") // the default set, whatever the ambient environment says
 	msgs, err := loadTemplates()
 	if err != nil {
 		t.Fatal(err)

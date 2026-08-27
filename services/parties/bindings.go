@@ -32,6 +32,10 @@ import (
 // already resolves to a different Party.
 var ErrBindingBelongsToAnother = errors.New("that identifier already belongs to another party")
 
+// errPartyJustBound is the loser of two first logins racing one unbound party:
+// admissible on the unlocked read, no longer admissible under the lock.
+var errPartyJustBound = errors.New("the party was bound while this request was in flight")
+
 // appendBinding adds a binding without disturbing the ones already there.
 //
 // It never edits and never deletes. A superseded binding stays exactly where it
@@ -40,7 +44,10 @@ var ErrBindingBelongsToAnother = errors.New("that identifier already belongs to 
 func appendBinding(ctx context.Context, tx store.Querier, partyID string,
 	b schema.PartyIdentityBindingsItem) (schema.Party, bool, error) {
 
-	p, err := getParty(ctx, tx, partyID)
+	// Locked: the append is a read-modify-write of the whole document, and
+	// two concurrent appends without the lock each read the same history and
+	// the second write silently drops the first's binding.
+	p, err := getPartyLocked(ctx, tx, partyID, true)
 	if err != nil {
 		return schema.Party{}, false, err
 	}
@@ -122,6 +129,23 @@ func ownerOfKey(ctx context.Context, q store.Querier, kind, value string) (strin
 	return "", nil
 }
 
+// selfBindAccepted decides whether holding the token whose subject is being
+// bound is, by itself, enough to append to this party. Yes only when the party
+// has never been bound (the first-login bootstrap) or is already bound to this
+// same subject (the idempotent re-bind on every login). A party bound to
+// somebody else is not claimable with a stranger's token, however valid.
+func selfBindAccepted(subject string, existing []schema.PartyIdentityBindingsItem) bool {
+	if len(existing) == 0 {
+		return true
+	}
+	for _, e := range existing {
+		if e.SubjectRef == subject {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *handlers) addIdentityBinding(w http.ResponseWriter, r *http.Request) {
 	var b schema.PartyIdentityBindingsItem
 	if !httpx.ReadJSON(w, r, &b) {
@@ -134,9 +158,33 @@ func (h *handlers) addIdentityBinding(w http.ResponseWriter, r *http.Request) {
 	// not by naming the party but by HOLDING the token whose subject is being
 	// bound, which is the one proof that needs no prior binding and so does
 	// not chicken-and-egg first login.
+	//
+	// Holding the token proves who the caller is; it proves nothing about the
+	// party in the URL. So self-proof is accepted in exactly two shapes: the
+	// party has no identity bindings at all (first-login bootstrap), or it
+	// already carries a binding for this same subject (the re-bind every login
+	// performs). Any other authenticated stranger falls through to the
+	// act-for-party check below — otherwise anyone with a token could append
+	// their own subject to any party id and then act as that party.
+	//
+	// The residual: an UNBOUND party id is a bootstrap capability — whoever
+	// learns the id of a never-bound party can claim it. Accepted for now
+	// because party ids are unguessable ULIDs and enrolment binds promptly;
+	// tracked as finding #123.
+	caller := identity.From(r.Context())
+	selfProof := false
 	if h.d.Authenticating {
-		caller := identity.From(r.Context())
-		selfProof := caller.Authenticated() && b.SubjectRef != "" && caller.Subject == b.SubjectRef
+		if caller.Authenticated() && b.SubjectRef != "" && caller.Subject == b.SubjectRef {
+			// One cheap read on the same store the append below uses. A missing
+			// party is not self-provable; it 404s in appendBinding either way.
+			// This answer is provisional: it is re-made inside the append
+			// transaction under a row lock, because two first logins racing an
+			// unbound party would otherwise both read "never bound" here and
+			// both bootstrap it.
+			if p, err := getParty(r.Context(), h.d.DB.Q(), r.PathValue("id")); err == nil {
+				selfProof = selfBindAccepted(caller.Subject, p.IdentityBindings)
+			}
+		}
 		if !selfProof {
 			// The agent's act-for-party grant is ordinarily context-scoped
 			// ("an instance-wide grant to act for anybody is a grant to be
@@ -166,6 +214,20 @@ func (h *handlers) addIdentityBinding(w http.ResponseWriter, r *http.Request) {
 		appended bool
 	)
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+		// The self-proof decision above was made on an unlocked read; a caller
+		// admitted by it must still be admissible now, under the lock. The
+		// loser of two racing first logins fails here: the winner's binding is
+		// on the row by the time this lock is granted, and a party bound to
+		// somebody else is not claimable with a stranger's token.
+		if h.d.Authenticating && selfProof {
+			p, err := getPartyLocked(r.Context(), tx, partyID, true)
+			if err != nil {
+				return err
+			}
+			if !selfBindAccepted(caller.Subject, p.IdentityBindings) {
+				return errPartyJustBound
+			}
+		}
 		var err error
 		party, appended, err = appendBinding(r.Context(), tx, partyID, b)
 		return err
@@ -179,6 +241,11 @@ func (h *handlers) addIdentityBinding(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		httpx.WriteError(w, http.StatusNotFound, "not_found", "no such party")
+		return
+	case errors.Is(err, errPartyJustBound):
+		httpx.WriteError(w, http.StatusForbidden, "party_already_bound",
+			"this party was bound to another identity while the request was in flight; "+
+				"a bound party is not claimable with a stranger's token")
 		return
 	case errors.Is(err, ErrBindingBelongsToAnother):
 		// 409, not 400. The request is well formed and the caller is not

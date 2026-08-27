@@ -11,6 +11,7 @@ docs/reference/
 # the working directory, not the git tree — 80MB of Go binaries per deploy,
 # rebuilt inside the image anyway.
 /registry
+/parties
 /definitions
 /evidence
 /confirmation

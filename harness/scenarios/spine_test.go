@@ -160,6 +160,7 @@ type winView struct {
 	ClaimID           string     `json:"claimId"`
 	UnitID            string     `json:"unitId"`
 	PartyID           string     `json:"partyId"`
+	OpenedAt          time.Time  `json:"openedAt"`
 	ClosesAt          time.Time  `json:"closesAt"`
 	NotifiedAt        *time.Time `json:"notifiedAt"`
 	ExitRoute         *string    `json:"exitRoute"`
@@ -278,7 +279,12 @@ func TestARecordBecomesACredentialAndAPayment(t *testing.T) {
 	if win.NotifiedAt == nil {
 		t.Error("a window opened without the worker being notified (W2)")
 	}
-	if got := win.ClosesAt.Sub(harness.Epoch()); got != window {
+	// Measured from when the window actually opened, not from the fixture
+	// epoch. The clock a stack runs on is driveable but it ticks, so the epoch
+	// is where the seeder put it a moment ago rather than the instant this
+	// window was created — and the invariant was never "seven days from the
+	// epoch" anyway. It is seven days from the record reaching the worker.
+	if got := win.ClosesAt.Sub(win.OpenedAt); got != window {
 		t.Errorf("the window is %s long, want %s (T=7, §14)", got, window)
 	}
 

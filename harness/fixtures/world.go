@@ -7,6 +7,7 @@
 package fixtures
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -64,8 +65,24 @@ type World struct {
 	LinkedRecords  []schema.LinkedRecord  `json:"linkedRecords"`
 }
 
-// Load reads tests/fixtures/world.yaml and validates every object in it.
-func Load() (*World, error) {
+// Load reads tests/fixtures/world.yaml and validates every object in it, at
+// the epoch the file itself declares.
+func Load() (*World, error) { return LoadAt(time.Time{}) }
+
+// LoadAt is Load with the whole world slid onto a different epoch.
+//
+// The world's dates are absolute, and every one of them is meaningful relative
+// to the others: terms signed before the authorization that cites them, a
+// qualification satisfied before the definition that requires it, an
+// authorization period that has not run out. A deployment seeded months after
+// the file was written wants that same shape at today's dates, not a programme
+// whose authorizations expire on a date already past.
+//
+// So rather than rewrite the file, every timestamp in it moves by the same
+// delta. Spacing is preserved exactly; only the anchor changes. A zero epoch
+// means "leave it where the file put it", which is what the test suites want:
+// a scenario asserting on a fixed date should not depend on the day it runs.
+func LoadAt(epoch time.Time) (*World, error) {
 	path, err := worldPath()
 	if err != nil {
 		return nil, err
@@ -73,6 +90,12 @@ func Load() (*World, error) {
 	raw, err := os.ReadFile(path) //nolint:gosec // a path we located ourselves, in-repo
 	if err != nil {
 		return nil, fmt.Errorf("read fixture world: %w", err)
+	}
+	if !epoch.IsZero() {
+		raw, err = rebase(raw, epoch)
+		if err != nil {
+			return nil, fmt.Errorf("rebase %s: %w", path, err)
+		}
 	}
 
 	// Through JSON rather than a YAML-native decode: the json tags on the
@@ -86,6 +109,61 @@ func Load() (*World, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &w, nil
+}
+
+// rebase slides every RFC3339 timestamp in the world by the delta that moves
+// its declared epoch to `to`.
+//
+// Text-level on purpose: the timestamps are spread across a dozen types and
+// several map-valued extension fields, and a walk of the parsed tree is the
+// only way to catch all of them without a per-type list that would go stale
+// the first time a field is added.
+func rebase(raw []byte, to time.Time) ([]byte, error) {
+	var tree any
+	if err := yaml.Unmarshal(raw, &tree); err != nil {
+		return nil, err
+	}
+	var anchor struct {
+		Instance Instance `json:"instance"`
+	}
+	if err := yaml.Unmarshal(raw, &anchor); err != nil {
+		return nil, err
+	}
+	if anchor.Instance.Epoch.IsZero() {
+		return nil, fmt.Errorf("no instance.epoch to rebase from")
+	}
+	delta := to.UTC().Sub(anchor.Instance.Epoch)
+	out, err := json.Marshal(shift(tree, delta))
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// shift walks a decoded document, moving every value that is an RFC3339
+// instant and leaving everything else exactly as it was. A string that merely
+// looks date-ish — an id, a version — does not parse as RFC3339 and is
+// therefore untouched.
+func shift(v any, d time.Duration) any {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, val := range t {
+			t[k] = shift(val, d)
+		}
+		return t
+	case []any:
+		for i, val := range t {
+			t[i] = shift(val, d)
+		}
+		return t
+	case string:
+		if ts, err := time.Parse(time.RFC3339, t); err == nil {
+			return ts.Add(d).UTC().Format(time.RFC3339)
+		}
+		return t
+	default:
+		return v
+	}
 }
 
 // MustLoad is Load for tests, which have nothing useful to do with the error.
