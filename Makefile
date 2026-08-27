@@ -12,7 +12,7 @@ GO ?= go
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
         harness-logs verify-deploy web-up apps-up e2e-apps clean todo poc poc-batch poc-dhis2 dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
-        spike-dedi-deployed spike-esignet verify-deployed verify-registry hooks generate generate-check \
+        spike-dedi-deployed spike-esignet deploy-demo verify-deployed verify-registry hooks generate generate-check \
         e2e-up e2e-run
 
 help: ## Show available targets
@@ -186,8 +186,33 @@ CREST_REGISTRY_URL ?= https://crest-registry-production.up.railway.app
 # URLs its own discovery document advertises. See p0-findings C12.
 CREST_ESIGNET_URL ?= https://crest-esignet-ui-production.up.railway.app
 CREST_MOCK_IDENTITY_URL ?= https://crest-mock-identity-production.up.railway.app
+CREST_WEB_URL ?= https://crest-web-production.up.railway.app
 
-verify-deployed: ## Check the deployed stack answers, and verify its log independently
+# The demo fleet, named the way Railway names it (crest-$name). Order matters
+# to deploy-demo: services before the doors that front them, mocks in between
+# because the services call them.
+FLEET_SERVICES := registry definitions evidence confirmation verification payments notify
+FLEET_MOCKS := mock-oidc mock-rail mock-sms
+FLEET_DOORS := web apps worker field console verifier docs
+
+verify-deployed: ## Check every deployed fleet member answers, and verify the log independently
+	@echo "── the seven services, through the crest-web proxy"
+	@for s in $(FLEET_SERVICES); do \
+		printf '%-14s' $$s; \
+		curl -fsS --max-time 10 $(CREST_WEB_URL)/api/crest-$$s/healthz && echo || exit 1; \
+	done
+	@echo "── the proxy allowlist and the §16 fence"
+	@code=$$(curl -s -o /dev/null -w '%{http_code}' $(CREST_WEB_URL)/api/crest-not-a-service/healthz); \
+		[ "$$code" = 404 ] || { echo "allowlist let an unknown name through ($$code)"; exit 1; }
+	@code=$$(curl -s -o /dev/null -w '%{http_code}' $(CREST_WEB_URL)/api/crest-registry/internal/clock); \
+		[ "$$code" = 404 ] || { echo "the fence is open: /internal/ answered $$code"; exit 1; }
+	@echo "unknown names 404, /internal/* refused at the door"
+	@echo "── the public doors"
+	@for d in $(FLEET_DOORS); do \
+		printf '%-14s' $$d; \
+		curl -fsS --max-time 10 -o /dev/null https://crest-$$d-production.up.railway.app/ \
+			&& echo ok || exit 1; \
+	done
 	@echo "── crest-registry"
 	@curl -fsS $(CREST_REGISTRY_URL)/healthz && echo
 	@echo "── crest-dedi"
@@ -202,6 +227,22 @@ verify-deployed: ## Check the deployed stack answers, and verify its log indepen
 		  iss=d['issuer']; want='$(CREST_ESIGNET_URL)'; \
 		  sys.exit(0) if iss==want else sys.exit('issuer is %s, expected %s' % (iss, want))"
 	@echo "issuer ok"
+
+# Sequential on purpose, for the same reason deploy.yml is: the services share
+# one database, and a failure part-way through a parallel fan-out leaves a mix
+# of versions nobody can name. This target is the audited manual fallback for
+# when deploy.yml cannot run; it is the same loop, typed once.
+deploy-demo: ## Deploy the whole demo fleet to Railway, in order, then verify it
+	@for s in $(FLEET_SERVICES) $(FLEET_MOCKS) $(FLEET_DOORS); do \
+		echo "── crest-$$s"; \
+		railway up --service crest-$$s --ci --detach || exit 1; \
+	done
+	@echo "── waiting for the fleet to answer (up to 10 minutes)"
+	@for i in $$(seq 1 60); do \
+		$(MAKE) verify-deployed >/dev/null 2>&1 && break; \
+		sleep 10; \
+	done
+	@$(MAKE) verify-deployed
 
 # One record, fetched from the deployed node and checked by our own verifier.
 # The point is not that DeDi answered — it is that a second implementation,

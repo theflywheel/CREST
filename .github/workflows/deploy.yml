@@ -42,10 +42,29 @@ jobs:
       max-parallel: 1
       fail-fast: false
       matrix:
-        service: [registry]
-        # The other six join this list as they gain behaviour worth deploying.
-        # Seven identical health-check stubs would cost money to prove a thing
-        # one of them already proves.
+        # The whole demo fleet, in the same order as `make deploy-demo` (the
+        # audited manual fallback — the two lists must not drift): services,
+        # then the mocks they call, then the doors that front them.
+        service:
+          [
+            registry,
+            definitions,
+            evidence,
+            confirmation,
+            verification,
+            payments,
+            notify,
+            mock-oidc,
+            mock-rail,
+            mock-sms,
+            web,
+            apps,
+            worker,
+            field,
+            console,
+            verifier,
+            docs,
+          ]
 
     steps:
       - uses: actions/checkout@v4
@@ -66,18 +85,27 @@ jobs:
             --ci --detach
 
       - name: Wait for the service to answer
-        env:
-          URL: https://crest-${{ matrix.service }}-production.up.railway.app
         run: |
           # A deploy that returns without the service answering has told us
-          # nothing. Poll readiness rather than sleeping and hoping.
+          # nothing. Poll readiness rather than sleeping and hoping. Only the
+          # doors have public domains; the services answer through the
+          # crest-web proxy, and two mocks are private-network only — for
+          # those the accepted build is all Railway lets us observe.
+          case "${{ matrix.service }}" in
+            registry|definitions|evidence|confirmation|verification|payments|notify|mock-oidc)
+              URL="https://crest-web-production.up.railway.app/api/crest-${{ matrix.service }}/healthz" ;;
+            web|apps|worker|field|console|verifier|docs)
+              URL="https://crest-${{ matrix.service }}-production.up.railway.app/" ;;
+            *)
+              echo "crest-${{ matrix.service }} is private with no proxied health path; build accepted is the observable"
+              exit 0 ;;
+          esac
           for i in $(seq 1 60); do
-            if curl -fsS --max-time 5 "$URL/readyz" >/dev/null; then
-              echo "$URL is ready"
-              curl -fsS "$URL/healthz"; echo
+            if curl -fsS --max-time 5 "$URL" >/dev/null; then
+              echo "$URL answers"
               exit 0
             fi
             sleep 10
           done
-          echo "::error::crest-${{ matrix.service }} did not become ready within 10 minutes"
+          echo "::error::crest-${{ matrix.service }} did not answer at $URL within 10 minutes"
           exit 1

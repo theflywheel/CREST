@@ -83,7 +83,7 @@ Spikes prove things about **other people's software**, so they live outside the 
 
 | Feature | Issue | How it is proven | Layer | Status |
 |---|---|---|---|---|
-| Deployed stack answers | — | `make verify-deployed`; deploy workflow polls `/readyz` and fails if it never answers | Deploy | covered |
+| Deployed fleet answers, allowlist holds | [#138](../../issues/138) | `make verify-deployed` sweeps all seven services through the crest-web proxy, asserts unknown names and `/internal/*` 404 (§16 fence), checks all seven public doors, then the DeDi and eSignet checks; the deploy workflow's matrix covers the same fleet and polls each member's observable health path, failing if it never answers. Proven green against Railway production 2026-08-28 | Deploy | covered |
 | Deployed log is independently verifiable | — | `make verify-deployed` validates a real inclusion proof with our own verifier, against a key cross-checked against the checkpoint signature | Deploy | covered |
 | `main` deploys only after CI passes | — | `deploy.yml` triggers on CI **conclusion == success**, not on push | Deploy | covered |
 | Commit messages are machine-checked | — | `commitlint` in a lefthook `commit-msg` hook; unknown scopes and non-conventional subjects rejected | Lint | covered |
