@@ -372,6 +372,23 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 			"authorityPartyId must name an organisation; a person cannot be their own authority")
 		return
 	}
+	// And an APPROVED one. Party kind alone is not authority: POST /v1/parties
+	// is the open bootstrap door, so anyone can mint an organisation-shaped
+	// party and first-bind to it (#124 review). What makes an organisation an
+	// authority is the registry's decision — application, terms, and an
+	// approval with somebody's name on it — so the gate reads the registration
+	// rather than the shape.
+	reg, err := getRegistration(r.Context(), h.d.DB.Q(), a.AuthorityPartyID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		httpx.Fail(w, h.d.Log, "read authority registration", err)
+		return
+	}
+	if err != nil || reg.State != stateApproved {
+		httpx.WriteError(w, http.StatusForbidden, "organisation_not_approved",
+			"authorityPartyId must name an APPROVED organisation; a party of the right shape "+
+				"is not an authority until the registry's decision says so")
+		return
+	}
 	if a.ID == "" {
 		a.ID = id.New(h.d.Clock, "authorization")
 	}

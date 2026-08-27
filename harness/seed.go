@@ -79,6 +79,19 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 	if err := oidc.WaitReady(ctx, 60*time.Second); err != nil {
 		return nil, fmt.Errorf("identity provider: %w", err)
 	}
+	// The organisation must be APPROVED before it can be an authority: the
+	// grant gate reads the registration, not the party's shape. The seeder
+	// walks the same application → terms → decision path a real organisation
+	// takes, resuming from wherever a previous seed left the registration.
+	//
+	// This happens BEFORE the seeder binds itself to the organisation, because
+	// applying re-writes the party from the fixture document, and the identity
+	// keys are rebuilt from that document — a binding made first would be
+	// silently wiped, and every later seeded grant would fail as
+	// subject_not_enrolled.
+	if err := s.approveOrganisation(ctx, oidc, w); err != nil {
+		return nil, err
+	}
 	token, err := oidc.Token(ctx, "seed|custodian")
 	if err != nil {
 		return nil, fmt.Errorf("mint seeding token: %w", err)
@@ -214,3 +227,72 @@ func LocalHasher() (*pii.Hasher, error) {
 // Epoch is the fixture world's starting instant, for tests that need to reason
 // about dates without loading the world.
 func Epoch() time.Time { return time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC) }
+
+// approveOrganisation walks the fixture organisation through the registry's
+// onboarding — application, terms, decision — because an authority is an
+// APPROVED organisation, not an organisation-shaped party. It resumes from
+// wherever an earlier seed left the registration, so reseeding stays
+// idempotent.
+func (s *Stack) approveOrganisation(ctx context.Context, oidc *OIDC, w *fixtures.World) error {
+	var reg struct {
+		State string `json:"state"`
+	}
+	if err := s.Parties.Get(ctx,
+		"/v1/organisations/"+fixtures.OrgID+"/registration", &reg); err != nil {
+		var org *schema.Party
+		for i := range w.Parties {
+			if w.Parties[i].ID == fixtures.OrgID {
+				org = &w.Parties[i]
+			}
+		}
+		if org == nil {
+			return fmt.Errorf("the fixture organisation %s is not among the fixture parties", fixtures.OrgID)
+		}
+		var out struct {
+			Registration struct {
+				State string `json:"state"`
+			} `json:"registration"`
+		}
+		if err := s.Parties.Post(ctx, "/v1/organisations", org, &out); err != nil {
+			return fmt.Errorf("register the fixture organisation: %w", err)
+		}
+		reg.State = out.Registration.State
+	}
+	if reg.State == "APPLIED" {
+		if len(w.Terms) == 0 {
+			return fmt.Errorf("no fixture terms to accept for the organisation")
+		}
+		t := w.Terms[0]
+		if err := s.Parties.Post(ctx, "/v1/organisations/"+fixtures.OrgID+"/terms-acceptance",
+			map[string]any{"termsId": t.ID, "termsVersion": t.Version, "acceptedBy": fixtures.OrgID},
+			&reg); err != nil {
+			return fmt.Errorf("accept terms for the fixture organisation: %w", err)
+		}
+	}
+	if reg.State == "TERMS_ACCEPTED" {
+		// The decision is the custodian's, and the decider's name is checked,
+		// not just recorded — so the seeder binds a subject to the custodian
+		// party the same bootstrap way it bound one to the organisation.
+		token, err := oidc.Token(ctx, "seed|approver")
+		if err != nil {
+			return fmt.Errorf("mint approving token: %w", err)
+		}
+		asApprover := s.Parties.As(Caller{Token: token})
+		if err := asApprover.Post(ctx, "/v1/parties/"+fixtures.CustodianID+"/identity-bindings",
+			map[string]any{
+				"provider":      "mock-oidc",
+				"providerClass": "generic-oidc",
+				"subjectRef":    oidc.Subject("seed|approver"),
+			}, nil); err != nil {
+			return fmt.Errorf("bind the approver to the custodian: %w", err)
+		}
+		if err := asApprover.Post(ctx, "/v1/organisations/"+fixtures.OrgID+"/decision",
+			map[string]any{"approve": true, "decidedBy": fixtures.CustodianID}, &reg); err != nil {
+			return fmt.Errorf("approve the fixture organisation: %w", err)
+		}
+	}
+	if reg.State != "APPROVED" {
+		return fmt.Errorf("the fixture organisation's registration is %s, not APPROVED", reg.State)
+	}
+	return nil
+}

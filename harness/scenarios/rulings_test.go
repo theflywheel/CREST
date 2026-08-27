@@ -222,10 +222,46 @@ func TestAValidTokenIsNotAuthorityToMintOrRevokeGrants(t *testing.T) {
 		t.Fatalf("a self-authorised grant was answered %d, not 403: %s", code, body)
 	}
 
+	// Bootstrapping an organisation-shaped party is not authority either: the
+	// open party door plus a first bind must not add up to a grant mint. Only
+	// the registry's APPROVED decision makes an organisation an authority.
+	var fakeOrg schema.Party
+	if err := w.Parties.Post(w.ctx, "/v1/parties", schema.Party{
+		Kind:        schema.PartyKindOrganisation,
+		DisplayName: "Bootstrapped Front " + runID,
+		ContactRoutes: []schema.PartyContactRoutesItem{{
+			Kind: schema.PartyContactRoutesItemKindEmail, Value: "front-" + runID + "@example.org",
+		}},
+	}, &fakeOrg); err != nil {
+		t.Fatalf("bootstrap the front organisation: %v", err)
+	}
+	code, body, err := w.Parties.As(w.login(t, fakeOrg.ID)).Status(w.ctx, http.MethodPost,
+		"/v1/authorizations", schema.Authorization{
+			PartyID: attacker,
+			Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
+			Scope: schema.AuthorizationScope{
+				Kind:      schema.AuthorizationScopeKindContext,
+				ContextID: ptr(fixtures.ProjectID),
+			},
+			Functions:         []string{"act-for-party"},
+			Period:            schema.Period{Start: epoch, End: &end},
+			AuthorityPartyID:  fakeOrg.ID,
+			ApprovedByPartyID: fakeOrg.ID,
+			ApprovedAt:        epoch,
+			State:             schema.AuthorizationStateACTIVE,
+		})
+	if err != nil {
+		t.Fatalf("front-organisation mint attempt: %v", err)
+	}
+	if code != http.StatusForbidden {
+		t.Fatalf("a grant under a bootstrapped, never-approved organisation was answered %d, not 403: %s",
+			code, body)
+	}
+
 	// And the revoke door: a grant the organisation stands behind cannot be
 	// switched off by a stranger who learned its id.
 	_, authID := w.grantSubmitter(t, "Grant Holder Under Attack "+runID, nil)
-	code, body, err := w.Parties.As(w.login(t, attacker)).Status(w.ctx, http.MethodPost,
+	code, body, err = w.Parties.As(w.login(t, attacker)).Status(w.ctx, http.MethodPost,
 		"/v1/authorizations/"+url.PathEscape(authID)+"/revoke", nil)
 	if err != nil {
 		t.Fatalf("revoke attempt: %v", err)

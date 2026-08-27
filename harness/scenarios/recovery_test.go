@@ -61,17 +61,35 @@ func (w *world) vouchedParty(t *testing.T, name, authority string) string {
 // is about authorities and a fixture with one org cannot exercise it.
 func (w *world) newOrganisation(t *testing.T, name string) string {
 	t.Helper()
-	var created schema.Party
-	if err := w.Parties.Post(w.ctx, "/v1/parties", schema.Party{
+	// The full onboarding, not a bare party: an organisation-shaped party is
+	// not an authority until the registry's decision says so, and the grant
+	// gate reads the registration. A helper that skipped the decision would
+	// hand scenarios an authority the real system refuses.
+	var out struct {
+		Party schema.Party `json:"party"`
+	}
+	if err := w.Parties.Post(w.ctx, "/v1/organisations", schema.Party{
 		Kind:        schema.PartyKindOrganisation,
 		DisplayName: name,
 		ContactRoutes: []schema.PartyContactRoutesItem{{
 			Kind: schema.PartyContactRoutesItemKindEmail, Value: "org-" + runID + "@example.org",
 		}},
-	}, &created); err != nil {
-		t.Fatalf("create organisation: %v", err)
+	}, &out); err != nil {
+		t.Fatalf("register organisation: %v", err)
 	}
-	return created.ID
+	orgID := out.Party.ID
+	terms := w.w.Terms[0]
+	if err := w.Parties.Post(w.ctx, "/v1/organisations/"+orgID+"/terms-acceptance",
+		map[string]any{"termsId": terms.ID, "termsVersion": terms.Version, "acceptedBy": orgID},
+		nil); err != nil {
+		t.Fatalf("accept terms: %v", err)
+	}
+	if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Post(w.ctx,
+		"/v1/organisations/"+orgID+"/decision",
+		map[string]any{"approve": true, "decidedBy": fixtures.CustodianID}, nil); err != nil {
+		t.Fatalf("approve organisation: %v", err)
+	}
+	return orgID
 }
 
 func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
