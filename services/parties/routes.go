@@ -74,6 +74,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/authorizations/permits", h.permits)
 	mux.HandleFunc("GET /v1/authorizations", h.listAuthorizations)
 	mux.HandleFunc("GET /v1/authorizations/overdue", h.overdueAuthorizations)
+	mux.HandleFunc("GET /v1/authorizations/{id}", h.readAuthorization)
 	mux.HandleFunc("POST /v1/authorizations/{id}/revoke", h.revokeAuthorization)
 	mux.HandleFunc("POST /v1/contexts", h.createContext)
 
@@ -471,6 +472,30 @@ var errGrantNotEditable = errors.New("authorization exists and differs; grants a
 // answered for a person, would be a roster query — and a roster of who works
 // where is precisely what #68 established must not be readable, whether from
 // the log or from here.
+// readAuthorization returns one grant, to its own authority and nobody else.
+// The seeder uses it to compare a standing grant against the fixture's shape
+// rather than trusting the permits predicate, which deliberately answers yes
+// for an instance-scoped grant in any context and so cannot detect scope
+// drift. Restricted to the authority because a grant read by id names a
+// subject and their functions — for a person, that is a record of who works
+// where (#68), and the authority is the one party that already knows it.
+func (h *handlers) readAuthorization(w http.ResponseWriter, r *http.Request) {
+	a, err := getAuthorization(r.Context(), h.d.DB.Q(), r.PathValue("id"))
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "authorization", err, store.ErrNotFound)
+		return
+	}
+	ctxID := ""
+	if a.Scope.ContextID != nil {
+		ctxID = *a.Scope.ContextID
+	}
+	if _, ok := identity.Authorize(w, r, h.d.Log, a.AuthorityPartyID, ctxID,
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, a)
+}
+
 func (h *handlers) listAuthorizations(w http.ResponseWriter, r *http.Request) {
 	// A custodian/operations read: who holds what, where. Signed-in callers
 	// only (#102); the anonymous question this could answer is a roster probe.

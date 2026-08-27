@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"slices"
 	"time"
 
 	"github.com/theflywheel/crest/harness/fixtures"
@@ -127,25 +128,32 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 			// functions moved on from what the earlier seed granted would
 			// otherwise pass silently, and every scenario built on the seed
 			// would then run against permissions nobody chose.
-			for _, fn := range a.Functions {
-				q := "/v1/authorizations/permits?partyId=" + url.QueryEscape(a.PartyID) +
-					"&function=" + url.QueryEscape(fn)
-				if a.Scope.ContextID != nil {
-					q += "&contextId=" + url.QueryEscape(*a.Scope.ContextID)
-				}
-				var perm struct {
-					Permitted bool `json:"permitted"`
-				}
-				if err := asSeeder.Get(ctx, q, &perm); err != nil {
-					return nil, fmt.Errorf("authorization %s: standing grant check: %w", a.ID, err)
-				}
-				if !perm.Permitted {
-					return nil, fmt.Errorf(
-						"authorization %s: the standing grant no longer permits %q for %s; revoke and re-grant, not reseed over it",
-						a.ID, fn, a.PartyID)
-				}
+			var standing schema.Authorization
+			if err := asSeeder.Get(ctx, "/v1/authorizations/"+url.PathEscape(a.ID), &standing); err != nil {
+				return nil, fmt.Errorf("authorization %s: read the standing grant: %w", a.ID, err)
 			}
-			log.Printf("seed: authorization %s already granted by an earlier seed and still permits its functions; left as is", a.ID)
+			// Shape, not the permits predicate: permits() answers yes for an
+			// instance-scoped grant in any context, so it cannot see scope
+			// drift. What may differ between seeds is only what the rebase
+			// moves — period, approvedAt, reviewBy. Everything that says who
+			// may do what, where, must be the fixture's, exactly.
+			same := standing.PartyID == a.PartyID &&
+				standing.AuthorityPartyID == a.AuthorityPartyID &&
+				standing.ApprovedByPartyID == a.ApprovedByPartyID &&
+				standing.Scope.Kind == a.Scope.Kind &&
+				(standing.Scope.ContextID == nil) == (a.Scope.ContextID == nil) &&
+				standing.State == a.State &&
+				standing.RevokedAt == nil &&
+				slices.Equal(standing.Functions, a.Functions)
+			if same && standing.Scope.ContextID != nil {
+				same = *standing.Scope.ContextID == *a.Scope.ContextID
+			}
+			if !same {
+				return nil, fmt.Errorf(
+					"authorization %s: the standing grant's shape is not the fixture's (party, scope, functions or state drifted); revoke and re-grant, not reseed over it",
+					a.ID)
+			}
+			log.Printf("seed: authorization %s already granted by an earlier seed with the fixture's exact shape; left as is", a.ID)
 		default:
 			return nil, fmt.Errorf("authorization %s: %d: %s", a.ID, code, body)
 		}
