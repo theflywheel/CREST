@@ -90,7 +90,7 @@ The deploy ends by polling `/readyz` until the new version answers, and fails if
 
 **The hosted design docs (2026-08-25).** A second public door, `crest-docs` — https://crest-docs-production.up.railway.app — serves the markdown design docs rendered by [Quartz](https://github.com/jackyzha0/quartz) (pinned v4.5.2), with the self-contained HTML design docs (the blueprint among them) copied in beside the rendered pages so relative links resolve. `docs/README.md` is the site's index. The whole build lives in `infra/railway/Dockerfile.docs` — Quartz is cloned at image build and nothing of it is vendored into this repo. To publish a docs change: `railway up --service crest-docs --detach` from the repo root. The site is public and unauthenticated; nothing lands in `docs/*.md` that cannot be read by a stranger.
 
-Only `crest-registry` (running the parties service) is in the hardened deploy matrix. The other six services are health-check stubs today; adding them costs money to prove something one of them already proves. They join the matrix as they gain behaviour.
+The deploy matrix covers the whole demo fleet (2026-08-28, #138): the seven services, the three mocks, and the seven doors, sequentially in that order — they share one database, and a failure part-way through a parallel fan-out leaves a mix of versions nobody can name. `make deploy-demo` is the audited manual fallback: the same loop in the same order, ending in `make verify-deployed`, which sweeps every service through the crest-web proxy, asserts the allowlist 404s unknown names and `/internal/*`, checks all seven doors, and still verifies the DeDi log independently and the eSignet issuer.
 
 ## Secrets
 
