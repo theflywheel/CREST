@@ -1,8 +1,11 @@
 package harness
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log"
+	"net/http"
 	"net/url"
 	"time"
 
@@ -106,8 +109,23 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 		return nil, fmt.Errorf("bind the seeder to the organisation: %w", err)
 	}
 	for _, a := range w.Authorizations {
-		if err := asSeeder.Post(ctx, "/v1/authorizations", a, nil); err != nil {
+		code, body, err := asSeeder.Status(ctx, http.MethodPost, "/v1/authorizations", a)
+		if err != nil {
 			return nil, fmt.Errorf("authorization %s: %w", a.ID, err)
+		}
+		switch {
+		case code >= 200 && code < 300:
+		case code == http.StatusConflict && bytes.Contains(body, []byte("grant_not_editable")):
+			// A rebased world re-seeded over a stack that keeps its database:
+			// the grant is already there, minted by an earlier seed whose
+			// epoch — and therefore whose period timestamps — differ from
+			// this run's, so it cannot be a byte-exact replay. The registry
+			// is right to refuse the rewrite (a grant is narrowed by revoke
+			// and re-grant, not edited), and the seeder is right to accept
+			// the standing grant as the thing it came to create.
+			log.Printf("seed: authorization %s already granted by an earlier seed; left as is", a.ID)
+		default:
+			return nil, fmt.Errorf("authorization %s: %d: %s", a.ID, code, body)
 		}
 	}
 
