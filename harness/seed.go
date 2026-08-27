@@ -122,8 +122,30 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 			// this run's, so it cannot be a byte-exact replay. The registry
 			// is right to refuse the rewrite (a grant is narrowed by revoke
 			// and re-grant, not edited), and the seeder is right to accept
-			// the standing grant as the thing it came to create.
-			log.Printf("seed: authorization %s already granted by an earlier seed; left as is", a.ID)
+			// the standing grant as the thing it came to create — but only
+			// after checking it still IS that thing. A fixture whose
+			// functions moved on from what the earlier seed granted would
+			// otherwise pass silently, and every scenario built on the seed
+			// would then run against permissions nobody chose.
+			for _, fn := range a.Functions {
+				q := "/v1/authorizations/permits?partyId=" + url.QueryEscape(a.PartyID) +
+					"&function=" + url.QueryEscape(fn)
+				if a.Scope.ContextID != nil {
+					q += "&contextId=" + url.QueryEscape(*a.Scope.ContextID)
+				}
+				var perm struct {
+					Permitted bool `json:"permitted"`
+				}
+				if err := asSeeder.Get(ctx, q, &perm); err != nil {
+					return nil, fmt.Errorf("authorization %s: standing grant check: %w", a.ID, err)
+				}
+				if !perm.Permitted {
+					return nil, fmt.Errorf(
+						"authorization %s: the standing grant no longer permits %q for %s; revoke and re-grant, not reseed over it",
+						a.ID, fn, a.PartyID)
+				}
+			}
+			log.Printf("seed: authorization %s already granted by an earlier seed and still permits its functions; left as is", a.ID)
 		default:
 			return nil, fmt.Errorf("authorization %s: %d: %s", a.ID, code, body)
 		}
