@@ -5,14 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"net/url"
-	"sort"
 	"time"
 
 	"github.com/theflywheel/crest/pkg/client"
-	"github.com/theflywheel/crest/pkg/credential"
-	"github.com/theflywheel/crest/pkg/id"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
@@ -36,19 +32,42 @@ import (
 // because the worker objected would be a punishment for objecting.
 
 type exiter struct {
-	db            *store.DB
-	evidence      *client.Client
-	definitions   *client.Client
-	registry      *client.Client
-	issuer        *credential.Issuer
-	statusListURL string
-	log           *slog.Logger
-	clock         interface{ Now() time.Time }
+	db           *store.DB
+	evidence     *client.Client
+	verification *client.Client
+	log          *slog.Logger
+	clock        interface{ Now() time.Time }
 }
 
 type exitResult struct {
 	Window     Window            `json:"window"`
 	Credential *issuedCredential `json:"credential,omitempty"`
+}
+
+// issueRequest is what this application says to the substrate at a confirming
+// exit: which claim's record is confirmed, whose, by which route, when.
+// Everything about what a credential *is* — shape, keys, status — lives on the
+// other side of the boundary (#137).
+type issueRequest struct {
+	ClaimID   string    `json:"claimId"`
+	UnitID    string    `json:"unitId"`
+	PartyID   string    `json:"partyId"`
+	ContextID string    `json:"contextId"`
+	Route     string    `json:"route"`
+	At        time.Time `json:"at"`
+}
+
+// issuedCredential mirrors verification's answer, so an exit can hand the
+// caller the credential it just asked for without owning its shape.
+type issuedCredential struct {
+	ID          string          `json:"id"`
+	ClaimID     string          `json:"claimId"`
+	SubjectRef  string          `json:"subjectRef"`
+	StatusIndex int             `json:"statusIndex"`
+	Digest      string          `json:"digest"`
+	Doc         json.RawMessage `json:"credential"`
+	IssuedAt    time.Time       `json:"issuedAt"`
+	RevokedAt   *time.Time      `json:"revokedAt,omitempty"`
 }
 
 type releaseRequest struct {
@@ -96,24 +115,21 @@ func (e *exiter) exit(ctx context.Context, claimID, route string) (exitResult, e
 
 		var credID *string
 		if route != routeDispute {
-			issued, err = e.buildCredential(ctx, w, route, now)
-			if err != nil {
-				return err
+			// Issuance is the substrate's act, not this application's (#137):
+			// verification holds the keys, the status list and the credential
+			// record, and this service asks for exactly one credential per
+			// confirmed claim. The call is idempotent by claim, so a crash
+			// between it succeeding and this transaction committing is
+			// recovered by the retry reading the same credential back.
+			var c issuedCredential
+			if err := e.verification.Post(ctx, "/internal/credentials/issue", issueRequest{
+				ClaimID: w.ClaimID, UnitID: w.UnitID, PartyID: w.PartyID,
+				ContextID: w.ContextID, Route: route, At: now,
+			}, &c); err != nil {
+				return fmt.Errorf("verification would not issue for claim %s: %w", w.ClaimID, err)
 			}
-			idx, err := nextStatusIndex(ctx, tx)
-			if err != nil {
-				return err
-			}
-			// The index is allocated inside the transaction and then written
-			// into the credential, so no two credentials can share a slot —
-			// revoking one would otherwise revoke the other.
-			if err := issued.setStatusIndex(idx, e.statusListURL, e.issuer, now); err != nil {
-				return err
-			}
-			if err := insertCredential(ctx, tx, *issued); err != nil {
-				return err
-			}
-			credID = &issued.ID
+			issued = &c
+			credID = &c.ID
 		}
 		if err := recordExit(ctx, tx, claimID, route, now, credID); err != nil {
 			return err
@@ -155,7 +171,8 @@ func (e *exiter) exit(ctx context.Context, claimID, route string) (exitResult, e
 	if issued != nil {
 		cred = issued
 	} else if w.CredentialID != nil {
-		if c, err := getCredential(ctx, e.db.Q(), *w.CredentialID); err == nil {
+		var c issuedCredential
+		if err := e.verification.Get(ctx, "/v1/credentials/"+url.PathEscape(*w.CredentialID), &c); err == nil {
 			cred = &c
 		}
 	}
@@ -170,232 +187,6 @@ func (e *exiter) transitionClaim(ctx context.Context, claimID string, to schema.
 	if err := e.evidence.Post(ctx, "/internal/claims/"+claimID+"/transition", body, nil); err != nil {
 		return fmt.Errorf("evidence would not move claim %s to %s: %w", claimID, to, err)
 	}
-	return nil
-}
-
-// buildCredential assembles and signs the credential. It reads the unit from
-// evidence rather than caching it, so what is signed is what the record
-// currently says rather than what it said when the window opened.
-func (e *exiter) buildCredential(ctx context.Context, w Window, route string, now time.Time) (*issuedCredential, error) {
-	var unit schema.Unit
-	if err := e.evidence.Get(ctx, "/internal/units/"+w.UnitID, &unit); err != nil {
-		return nil, fmt.Errorf("could not read unit %s: %w", w.UnitID, err)
-	}
-
-	// The subject is the Party's own pairwise, deployment-local DID (§4). Not a
-	// name, not a national identifier, not the provider's subject — nothing
-	// that correlates outside this deployment (W8, W9).
-	subjectRef := w.PartyID
-
-	return &issuedCredential{
-		ID:         id.New(e.clock, "credential"),
-		ClaimID:    w.ClaimID,
-		SubjectRef: subjectRef,
-		IssuedAt:   now,
-		unit:       unit,
-		route:      route,
-		defProof:   e.definitionProof(ctx, unit.Definition),
-		skillCode:  e.skillCodeOf(ctx, unit.Definition),
-		authority:  e.issuerAuthority(ctx, unit.ContextID),
-	}, nil
-}
-
-// skillCodeOf reads the skill the definition evidences, so the credential can
-// carry it directly (#16).
-//
-// Copied into the credential rather than left as a reference, because it is the
-// one field whose entire purpose is to be read by somebody who is not this
-// deployment — and a verifier who must resolve the definition first to learn
-// what skill this was cannot answer the question offline, which is the case
-// that matters.
-func (e *exiter) skillCodeOf(ctx context.Context, ref schema.VersionedRef) *string {
-	var def schema.Definition
-	if err := e.definitions.Get(ctx, fmt.Sprintf("/v1/definitions/%s?version=%d",
-		url.PathEscape(ref.ID), ref.Version), &def); err != nil {
-		e.log.Warn("could not read the definition's skill code",
-			"definition", ref.ID, "version", ref.Version, "error", err)
-		return nil
-	}
-	return def.SkillCode
-}
-
-// issuerAuthority resolves the chain a verifier walks up to somebody answerable
-// (#16, Blueprint §3 and §8).
-//
-// §8's sketch named qualificationRef and grantRef as two things. §2 had already
-// collapsed them into one Authorization at two scopes — instance-wide was the
-// old Qualification, context-bound the old ProjectGrant — so this resolves the
-// same primitive twice rather than two primitives once.
-//
-// Every reference is to an ORGANISATION's authorization. A person's is never
-// published (#68) because it would be a permanent public record of who works
-// where, so a chain ending at a supervisor would end at something a verifier
-// cannot resolve — which is worse than ending nowhere, because it looks like it
-// leads somewhere.
-//
-// Best-effort, like the definition pin and for the same reason: this is on the
-// path that releases payment.
-func (e *exiter) issuerAuthority(ctx context.Context,
-	contextID string) *schema.WorkEventCredentialCredentialSubjectIssuerAuthority {
-	var inst struct {
-		Instance struct {
-			OperatorPartyID string `json:"operatorPartyId"`
-		} `json:"instance"`
-	}
-	if err := e.registry.Get(ctx, "/v1/instance", &inst); err != nil ||
-		inst.Instance.OperatorPartyID == "" {
-		// Without an operator there is no authority to name. Nil rather than a
-		// half-filled object: a chain with no root is not a shorter chain, it
-		// is not a chain.
-		e.log.Warn("could not read this deployment's operator; issuing without an issuer authority", "error", err)
-		return nil
-	}
-	out := &schema.WorkEventCredentialCredentialSubjectIssuerAuthority{
-		OrgID: inst.Instance.OperatorPartyID,
-	}
-	if id := e.firstAuthorization(ctx, inst.Instance.OperatorPartyID, "instance", ""); id != "" {
-		out.QualificationRef = &id
-	}
-	if id := e.firstAuthorization(ctx, inst.Instance.OperatorPartyID, "context", contextID); id != "" {
-		out.GrantRef = &id
-	}
-	return out
-}
-
-// firstAuthorization returns the id of one active authorization at a scope, or
-// empty. Deterministic by id order, so two credentials issued a second apart
-// name the same one.
-func (e *exiter) firstAuthorization(ctx context.Context, partyID, scope, contextID string) string {
-	q := url.Values{"partyId": {partyID}, "scope": {scope}}
-	if contextID != "" {
-		q.Set("contextId", contextID)
-	}
-	var out struct {
-		Authorizations []struct {
-			ID string `json:"id"`
-		} `json:"authorizations"`
-	}
-	// The service twin, not the caller-facing route: this is service traffic on
-	// the issuance path, and /v1/authorizations answers signed-in callers only.
-	if err := e.registry.Get(ctx, "/internal/authorizations?"+q.Encode(), &out); err != nil {
-		e.log.Warn("could not read the issuing organisation's authorizations",
-			"party", partyID, "scope", scope, "error", err)
-		return ""
-	}
-	if len(out.Authorizations) == 0 {
-		return ""
-	}
-	return out.Authorizations[0].ID
-}
-
-// definitionProof resolves where a verifier can check the definition version
-// this credential was measured under (#16).
-//
-// Best-effort, and that is a deliberate choice rather than laziness. This runs
-// on the path that releases a worker's payment, and every T=7 exit releases
-// payment — so a definitions service that is slow or down must not be able to
-// stop a credential being issued. The consequence of failing here is a
-// credential a verifier has to trust the issuer about, which is exactly what
-// CREST was before #69; the consequence of failing hard would be a worker not
-// paid because a lookup timed out.
-//
-// A nil result is therefore ambiguous between "no transparency log" and "could
-// not reach definitions", and that ambiguity is the price. It is logged so the
-// second case is visible to an operator rather than silently indistinguishable.
-func (e *exiter) definitionProof(ctx context.Context,
-	ref schema.VersionedRef) *schema.WorkEventCredentialCredentialSubjectWorkEventDefinitionProof {
-	var pub struct {
-		Namespace       string `json:"namespace"`
-		Registry        string `json:"registry"`
-		Record          string `json:"record"`
-		RegistryVersion string `json:"registryVersion"`
-		Digest          string `json:"digest"`
-		Transparent     bool   `json:"transparent"`
-	}
-	err := e.definitions.Get(ctx, fmt.Sprintf("/v1/definitions/%s/publication?version=%d",
-		url.PathEscape(ref.ID), ref.Version), &pub)
-	switch {
-	case client.Code(err) == http.StatusNotFound:
-		// Not published. Normal on a deployment with no node, and normal
-		// briefly right after activation.
-		return nil
-	case err != nil:
-		e.log.Warn("could not read the definition's publication; issuing without a resolvable pin",
-			"definition", ref.ID, "version", ref.Version, "error", err)
-		return nil
-	case !pub.Transparent:
-		// Published to the Postgres fallback. There is a record, and no proof —
-		// so there is nothing to point a verifier at, and pointing them at it
-		// anyway would dress up "trust us" as "check this".
-		return nil
-	}
-	return &schema.WorkEventCredentialCredentialSubjectWorkEventDefinitionProof{
-		Namespace: pub.Namespace,
-		Registry:  pub.Registry,
-		Record:    pub.Record,
-		Version:   pub.RegistryVersion,
-		Digest:    pub.Digest,
-	}
-}
-
-// evidenceFieldsOf lists what the source record carried, by name.
-//
-// A verifier offline in a field office cannot ask CREST which fields the record
-// had, and a definition's tier map can require one. Without this the offline
-// answer is systematically weaker than the online answer — which is the wrong
-// way round, because offline is the case W6 exists for.
-//
-// Sorted, so two credentials over the same record produce the same bytes.
-func evidenceFieldsOf(unit schema.Unit) []string {
-	fields := make([]string, 0, len(unit.Enrichment)+1)
-	for name := range unit.Enrichment {
-		fields = append(fields, name)
-	}
-	if unit.Geography != nil {
-		fields = append(fields, "geography")
-	}
-	sort.Strings(fields)
-	return fields
-}
-
-// setStatusIndex finishes the credential once its status slot is known, then
-// signs it. Signing last is what makes the status entry part of what is signed.
-func (c *issuedCredential) setStatusIndex(idx int, listURL string, iss *credential.Issuer, now time.Time) error {
-	doc, err := credential.Document(credential.Subject{
-		CredentialID:    c.ID,
-		IssuerID:        iss.ID(),
-		SubjectRef:      c.SubjectRef,
-		ClaimID:         c.ClaimID,
-		Unit:            c.unit,
-		Activity:        c.unit.Definition.ID,
-		SkillCode:       c.skillCode,
-		IssuerAuthority: c.authority,
-		Confirmation:    schema.ClaimConfirmationRoute(c.route),
-		ConfirmedAt:     now,
-		EvidenceFields:  evidenceFieldsOf(c.unit),
-		DefinitionProof: c.defProof,
-		StatusListURL:   listURL,
-		StatusListIndex: idx,
-		ValidFrom:       now,
-	})
-	if err != nil {
-		return fmt.Errorf("the credential does not satisfy its own schema: %w", err)
-	}
-	signed, err := iss.Issue(doc, now)
-	if err != nil {
-		return err
-	}
-	digest, err := credential.Digest(signed)
-	if err != nil {
-		return err
-	}
-	raw, err := json.Marshal(signed)
-	if err != nil {
-		return err
-	}
-	c.StatusIndex = idx
-	c.Digest = digest
-	c.Doc = raw
 	return nil
 }
 

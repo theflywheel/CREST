@@ -466,7 +466,7 @@ func (st *story) verifications() error {
 	var out struct {
 		Credentials []map[string]any `json:"credentials"`
 	}
-	if err := st.Confirmation.As(anaya).Get(st.ctx,
+	if err := st.Verification.As(anaya).Get(st.ctx,
 		"/v1/credentials?partyId="+url.QueryEscape(fixtures.WorkerAID), &out); err != nil {
 		return fmt.Errorf("list credentials: %w", err)
 	}
