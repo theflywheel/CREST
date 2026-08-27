@@ -86,6 +86,7 @@ func (s *Stack) SeedStory(ctx context.Context, w *fixtures.World) error {
 		st.anayaResponds,        // 4: confirm, confirm-zero, dispute
 		st.assistedConfirm,      // 5: Chandra, through her supervisor
 		st.autoConfirmSweep,     // 6: Bina, by the clock
+		st.paymentsMaterialised, // 6b: every exit's instruction, readable
 		st.verifications,        // 7: "who checked me"
 		st.submitLiveBatch,      // 11: open windows for a live demo
 		st.duplicateHold,        // 8: Devika on Bina's number
@@ -120,12 +121,31 @@ func (st *story) login(partyID string) (Caller, error) {
 	if err != nil {
 		return Caller{}, fmt.Errorf("mint token for %s: %w", partyID, err)
 	}
-	if err := st.Parties.As(Caller{Token: token}).Post(st.ctx,
-		"/v1/parties/"+partyID+"/identity-bindings", map[string]any{
-			"provider":      "mock-oidc",
-			"providerClass": "generic-oidc",
-			"subjectRef":    st.oidc.Subject(providerSub),
-		}, nil); err != nil {
+	binding := map[string]any{
+		"provider":      "mock-oidc",
+		"providerClass": "generic-oidc",
+		"subjectRef":    st.oidc.Subject(providerSub),
+	}
+	err = st.Parties.As(Caller{Token: token}).Post(st.ctx,
+		"/v1/parties/"+partyID+"/identity-bindings", binding, nil)
+	if err != nil && partyID != fixtures.SupervisorID {
+		// A party already bound to somebody else's subject — the fixtures'
+		// eSignet bindings on the workers — is not self-claimable, by design:
+		// holding a valid token proves who the caller is, not that they are
+		// the party in the URL. The door for that case is enrolment-agent
+		// assistance, and the supervisor's act-for-party grant on the project
+		// is exactly that, so the story binds the way an enrolment would.
+		sup, supErr := st.login(fixtures.SupervisorID)
+		if supErr != nil {
+			return Caller{}, fmt.Errorf("bind %s: %w; and no supervisor to assist: %w", partyID, err, supErr)
+		}
+		sup.OnBehalfOf = partyID
+		if aErr := st.Parties.As(sup).Post(st.ctx,
+			"/v1/parties/"+partyID+"/identity-bindings?contextId="+fixtures.ProjectID,
+			binding, nil); aErr != nil {
+			return Caller{}, fmt.Errorf("bind %s: self %w; assisted %w", partyID, err, aErr)
+		}
+	} else if err != nil {
 		return Caller{}, fmt.Errorf("bind %s: %w", partyID, err)
 	}
 	return Caller{Token: token}, nil
@@ -403,6 +423,39 @@ func (st *story) autoConfirmSweep() error {
 	return nil
 }
 
+// 6b. Every T=7 exit releases payment, but the instruction materialises
+// through the outbox relay — asynchronously. The seeder's summary claims these
+// instructions exist (including the held one the payments screen is for), so
+// it must not return before the payments service can actually show them: the
+// next thing anyone does to a demo stack is open that screen, or re-run the
+// seeder, which resets the clock underneath anything still in flight.
+func (st *story) paymentsMaterialised() error {
+	for _, claimID := range []string{st.confirmed, st.zero, st.disputed, st.chandras, st.binas} {
+		id := claimID
+		if err := st.eventually("payment instruction for "+id, func() error {
+			return st.Payments.Get(st.ctx, "/v1/instructions/by-claim/"+id, nil)
+		}); err != nil {
+			return err
+		}
+	}
+	// The zero-outcome instruction is not merely present but HELD, with the
+	// reason and owner the demo shows. Asserted rather than assumed: a
+	// RELEASED zero would be the silent failure the hold exists to prevent.
+	var inst struct {
+		State string `json:"state"`
+		Held  *struct {
+			Code string `json:"code"`
+		} `json:"held"`
+	}
+	if err := st.Payments.Get(st.ctx, "/v1/instructions/by-claim/"+st.zero, &inst); err != nil {
+		return fmt.Errorf("read the zero-outcome instruction: %w", err)
+	}
+	if inst.State != "HELD" || inst.Held == nil || inst.Held.Code != "nothing_to_pay" {
+		return fmt.Errorf("the zero-outcome instruction is %s (%+v), want HELD nothing_to_pay", inst.State, inst.Held)
+	}
+	return nil
+}
+
 // 7. Two verifications of Anaya's credential, so her "who checked me" trail
 // has rows with different purposes on them.
 func (st *story) verifications() error {
@@ -510,7 +563,12 @@ func (st *story) overdueAuthorization() error {
 	// stack seeded today it would read overdue by however many months have
 	// passed since, which is a different screen.
 	reviewBy := epoch.Add(4 * 24 * time.Hour)
-	if err := st.Parties.Post(st.ctx, "/v1/authorizations", schema.Authorization{
+	// A custodian surface: the grant is created by the organisation, signed in.
+	org, err := st.login(fixtures.OrgID)
+	if err != nil {
+		return err
+	}
+	if err := st.Parties.As(org).Post(st.ctx, "/v1/authorizations", schema.Authorization{
 		PartyID: fixtures.SpecifierID,
 		Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
 		Scope: schema.AuthorizationScope{

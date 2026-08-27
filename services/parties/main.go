@@ -1,4 +1,4 @@
-// Command registry is a CREST service.
+// Command parties is a CREST service.
 //
 // Answers "who exists, under what terms, on which projects?" (Blueprint §13).
 // It also owns the one operation the rest of the system cannot get wrong

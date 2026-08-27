@@ -34,20 +34,21 @@ func (w *world) vouchedParty(t *testing.T, name, authority string) string {
 	party := w.newWorker(t, name)
 	epoch := w.w.Instance.Epoch
 	end := epoch.Add(300 * 24 * time.Hour)
-	if err := w.Parties.Post(w.ctx, "/v1/authorizations", schema.Authorization{
-		PartyID: party,
-		Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
-		Scope: schema.AuthorizationScope{
-			Kind:      schema.AuthorizationScopeKindContext,
-			ContextID: ptr(fixtures.ProjectID),
-		},
-		Functions:         []string{"submit-work-evidence"},
-		Period:            schema.Period{Start: epoch.Add(-30 * 24 * time.Hour), End: &end},
-		AuthorityPartyID:  authority,
-		ApprovedByPartyID: authority,
-		ApprovedAt:        epoch.Add(-30 * 24 * time.Hour),
-		State:             schema.AuthorizationStateACTIVE,
-	}, nil); err != nil {
+	if err := w.Parties.As(w.login(t, fixtures.OrgID)).Post(
+		w.ctx, "/v1/authorizations", schema.Authorization{
+			PartyID: party,
+			Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
+			Scope: schema.AuthorizationScope{
+				Kind:      schema.AuthorizationScopeKindContext,
+				ContextID: ptr(fixtures.ProjectID),
+			},
+			Functions:         []string{"submit-work-evidence"},
+			Period:            schema.Period{Start: epoch.Add(-30 * 24 * time.Hour), End: &end},
+			AuthorityPartyID:  authority,
+			ApprovedByPartyID: authority,
+			ApprovedAt:        epoch.Add(-30 * 24 * time.Hour),
+			State:             schema.AuthorizationStateACTIVE,
+		}, nil); err != nil {
 		t.Fatalf("vouch for %s: %v", name, err)
 	}
 	return party
@@ -212,17 +213,18 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	epoch := w.w.Instance.Epoch
 	end := epoch.Add(300 * 24 * time.Hour)
 	grantOverride := func(party string) {
-		if err := w.Parties.Post(w.ctx, "/v1/authorizations", schema.Authorization{
-			PartyID:           party,
-			Terms:             schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
-			Scope:             schema.AuthorizationScope{Kind: schema.AuthorizationScopeKindInstance},
-			Functions:         []string{"override-recovery"},
-			Period:            schema.Period{Start: epoch.Add(-30 * 24 * time.Hour), End: &end},
-			AuthorityPartyID:  fixtures.OrgID,
-			ApprovedByPartyID: fixtures.OrgID,
-			ApprovedAt:        epoch.Add(-30 * 24 * time.Hour),
-			State:             schema.AuthorizationStateACTIVE,
-		}, nil); err != nil {
+		if err := w.Parties.As(w.login(t, fixtures.OrgID)).Post(
+			w.ctx, "/v1/authorizations", schema.Authorization{
+				PartyID:           party,
+				Terms:             schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
+				Scope:             schema.AuthorizationScope{Kind: schema.AuthorizationScopeKindInstance},
+				Functions:         []string{"override-recovery"},
+				Period:            schema.Period{Start: epoch.Add(-30 * 24 * time.Hour), End: &end},
+				AuthorityPartyID:  fixtures.OrgID,
+				ApprovedByPartyID: fixtures.OrgID,
+				ApprovedAt:        epoch.Add(-30 * 24 * time.Hour),
+				State:             schema.AuthorizationStateACTIVE,
+			}, nil); err != nil {
 			t.Fatalf("grant override-recovery to %s: %v", party, err)
 		}
 	}

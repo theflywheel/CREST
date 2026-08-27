@@ -262,7 +262,9 @@ func (e *exiter) firstAuthorization(ctx context.Context, partyID, scope, context
 			ID string `json:"id"`
 		} `json:"authorizations"`
 	}
-	if err := e.registry.Get(ctx, "/v1/authorizations?"+q.Encode(), &out); err != nil {
+	// The service twin, not the caller-facing route: this is service traffic on
+	// the issuance path, and /v1/authorizations answers signed-in callers only.
+	if err := e.registry.Get(ctx, "/internal/authorizations?"+q.Encode(), &out); err != nil {
 		e.log.Warn("could not read the issuing organisation's authorizations",
 			"party", partyID, "scope", scope, "error", err)
 		return ""

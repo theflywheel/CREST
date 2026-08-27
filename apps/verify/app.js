@@ -51,7 +51,7 @@ const NAV = [
   ]],
   ["V-2 · An onboarded institution", [
     ["v2_1", "Checking as an institution"],
-    ["v2_2", "Verified, refusals shown"],
+    ["v2_2", "Verified, with the disclosure list"],
     ["v2_3", "Batch — checking many"],
     ["person", "Resolve a person"],
   ]],
@@ -254,8 +254,9 @@ function v2_1() {
 
 // The fields a work-event credential can carry, in the order the disclosure
 // list shows them. Included fields get the filled tick; anything the worker
-// withheld — or that was never captured — gets the hollow ring and an explicit
-// refused state, never a silent omission.
+// the credential does not carry gets the hollow ring, stated as absence — the
+// backend has no selective disclosure yet, so refusal is not yet a state a
+// credential can express.
 // Optional evidence fields appear in the credential as names in
 // we.evidenceFields (values may live in the underlying record, not the
 // credential); the core fields carry their values directly.
@@ -300,24 +301,24 @@ function v2_2() {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         ${verdictChip(v)}
         ${v.valid ? `<span class="chip tier${v.tier || 3}">Tier ${esc(v.tier ?? "—")}</span>` : ""}
-        ${refused.length ? `<span class="chip warn">${refused.length} field${refused.length === 1 ? "" : "s"} refused or absent</span>` : `<span class="chip ok">Everything disclosable was shown</span>`}
+        ${refused.length ? `<span class="chip warn">${refused.length} field${refused.length === 1 ? "" : "s"} not in this credential</span>` : `<span class="chip ok">Everything disclosable was shown</span>`}
       </div>
-      <div class="eyebrow">What was shown — and what was refused</div>
+      <div class="eyebrow">What was shown — and what is absent</div>
       <div class="dis">
         ${rows.map(r => r.present
           ? `<div class="li"><span class="tick">${tickSvg}</span><span><div class="t">${esc(r.label)}</div><div class="s">${esc(String(r.val))}</div></span></div>`
-          : `<div class="li off"><span class="tick"></span><span><div class="t">${esc(r.label)}</div><div class="s">Refused by the worker — shown as refused, never as a blank</div></span></div>`
+          : `<div class="li off"><span class="tick"></span><span><div class="t">${esc(r.label)}</div><div class="s">Not in this credential — absence, not refusal</div></span></div>`
         ).join("")}
       </div>
-      <div class="sidecar">${infoIco}<span class="txt">If withheld fields simply vanished, a verifier could not tell a worker who refused from a worker who has nothing. So refusals render as refusals — the fact of withholding is disclosed even though the field is not.</span></div>
-      <div class="open-note"><b>Two honest caveats.</b> First, whether showing refusals at all is acceptable is an open question in the design — a visible refusal is itself information about the worker. Second, the backend has no selective-disclosure yet: a hollow ring above means the field is absent from the credential, and this demo cannot distinguish "the worker refused" from "never captured". The refused-state rendering is the design's stance; the refusal <em>fact</em> awaits selective disclosure in the credential itself.</div>
+      <div class="sidecar">${infoIco}<span class="txt">The design's rule is refusals-shown-as-refusals: if withheld fields simply vanished, a verifier could not tell a worker who refused from a worker who has nothing. A hollow ring here is not that — it marks a field this credential does not carry, which is absence, not refusal.</span></div>
+      <div class="open-note"><b>Two honest caveats.</b> First, the backend has no selective disclosure yet, so today this screen can only show presence and absence — a true refusal state, rendered as an explicit refusal, arrives with selective disclosure in the credential itself. Second, whether showing refusals at all will be acceptable is an open question in the design — a visible refusal is itself information about the worker.</div>
       ${chainList(v)}`;
   } else if (v) {
     result = `<div class="open-note">The last check in this session was a bare (pass-only) check, not an institutional one — run one above to see the disclosure list rendered under this institution's name.</div>`;
   }
   return `<div class="eyebrow">V-2 · Screen 2 of 3</div>
-    <h2 class="scr-title">Verified, with refusals shown</h2>
-    <p class="body-2">The same verify call as V-1 — same endpoint, same signature, same verdict. What changes is the rendering: an institution sees the disclosure list, field by field, with every withheld field shown as an explicit refusal.</p>
+    <h2 class="scr-title">Verified, with the disclosure list</h2>
+    <p class="body-2">The same verify call as V-1 — same endpoint, same signature, same verdict. What changes is the rendering: an institution sees the disclosure list, field by field, with every field the credential does not carry stated as absent.</p>
     ${form}${result}`;
 }
 

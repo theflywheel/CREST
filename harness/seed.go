@@ -68,8 +68,21 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 			return nil, fmt.Errorf("context %s: %w", c.Name, err)
 		}
 	}
+	// Authorizations are a custodian surface — signed-in callers only — so the
+	// seeder authenticates for exactly this loop, with a token minted from the
+	// stack's own mock issuer. The rest of the seed goes through doors that
+	// are deliberately open (parties, terms, contexts).
+	oidc := NewOIDC()
+	if err := oidc.WaitReady(ctx, 60*time.Second); err != nil {
+		return nil, fmt.Errorf("identity provider: %w", err)
+	}
+	token, err := oidc.Token(ctx, "seed|custodian")
+	if err != nil {
+		return nil, fmt.Errorf("mint seeding token: %w", err)
+	}
+	asSeeder := s.Parties.As(Caller{Token: token})
 	for _, a := range w.Authorizations {
-		if err := s.Parties.Post(ctx, "/v1/authorizations", a, nil); err != nil {
+		if err := asSeeder.Post(ctx, "/v1/authorizations", a, nil); err != nil {
 			return nil, fmt.Errorf("authorization %s: %w", a.ID, err)
 		}
 	}

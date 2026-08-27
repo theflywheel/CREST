@@ -51,6 +51,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /internal/parties/{id}/enrolment-consent", h.enrolmentConsentState)
 	mux.HandleFunc("GET /internal/resolve", h.resolve)
 	mux.HandleFunc("GET /internal/authorizations/permits", h.permits)
+	mux.HandleFunc("GET /internal/authorizations", h.listAuthorizationsRaw)
 
 	// Enrolment consent (§9, #24). The artefact route is separate from the
 	// record route because one is a stream of somebody's voice and the other
@@ -331,6 +332,11 @@ func (h *handlers) createTerms(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
+	// A grant decides who may act for whom; minting one is a custodian act,
+	// not a public door. Signed-in callers only, same as /v1/holds (#102).
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	var a schema.Authorization
 	if !httpx.ReadJSON(w, r, &a) {
 		return
@@ -372,6 +378,29 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 // where is precisely what #68 established must not be readable, whether from
 // the log or from here.
 func (h *handlers) listAuthorizations(w http.ResponseWriter, r *http.Request) {
+	// A custodian/operations read: who holds what, where. Signed-in callers
+	// only (#102); the anonymous question this could answer is a roster probe.
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
+	h.listAuthorizationsBody(w, r)
+}
+
+// listAuthorizationsRaw is the service twin (§16). Confirmation calls it while
+// issuing, to name the organisation's authorization a verifier walks up to.
+//
+// It needs its own route rather than a token because that read happens on the
+// path that releases payment, and it is best-effort there: a refusal does not
+// fail the issuance, it silently drops qualificationRef and grantRef and the
+// credential goes out with a chain that stops at an org id. That is the worst
+// shape a failure can take — a credential that looks issued and cannot be
+// walked — and it is what closing the caller-facing route without opening this
+// one produced.
+func (h *handlers) listAuthorizationsRaw(w http.ResponseWriter, r *http.Request) {
+	h.listAuthorizationsBody(w, r)
+}
+
+func (h *handlers) listAuthorizationsBody(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	partyID, scopeKind := q.Get("partyId"), q.Get("scope")
 	if partyID == "" || scopeKind == "" {
@@ -473,6 +502,11 @@ func (h *handlers) createContext(w http.ResponseWriter, r *http.Request) {
 // reads this list to refuse anything. Like /v1/holds, this is a custodian
 // surface; the authorization pass over the whole API is #102.
 func (h *handlers) overdueAuthorizations(w http.ResponseWriter, r *http.Request) {
+	// The review queue is a custodian surface like /v1/holds: signed-in
+	// callers only (#102).
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	list, err := overdueAuthorizations(r.Context(), h.d.DB.Q(), h.d.Clock.Now())
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list overdue authorizations", err)
@@ -492,6 +526,11 @@ func (h *handlers) overdueAuthorizations(w http.ResponseWriter, r *http.Request)
 // narrower authorization; there is deliberately no edit, because an edited
 // grant has no record of what it used to allow.
 func (h *handlers) revokeAuthorization(w http.ResponseWriter, r *http.Request) {
+	// Revocation changes who may act from the next permits() answer onward —
+	// a custodian act. Signed-in callers only, same as resolving a hold (#102).
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	var out schema.Authorization
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		a, err := revokeAuthorization(r.Context(), tx, r.PathValue("id"), h.d.Clock.Now())

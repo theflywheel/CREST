@@ -152,11 +152,11 @@ func cborDecode(b []byte) (any, []byte, error) {
 		case 22:
 			return nil, rest, nil
 		case 25:
-			return float64(halfToFloat(uint16(n))), rest, nil
+			return finiteFloat(float64(halfToFloat(uint16(n))), rest)
 		case 26:
-			return float64(math.Float32frombits(uint32(n))), rest, nil
+			return finiteFloat(float64(math.Float32frombits(uint32(n))), rest)
 		case 27:
-			return math.Float64frombits(n), rest, nil
+			return finiteFloat(math.Float64frombits(n), rest)
 		}
 		return nil, nil, fmt.Errorf("%w: simple value %d", ErrCBOR, info)
 	case 2:
@@ -164,6 +164,17 @@ func cborDecode(b []byte) (any, []byte, error) {
 	default: // 6: tags
 		return nil, nil, fmt.Errorf("%w: tag %d", ErrCBOR, n)
 	}
+}
+
+// finiteFloat admits a decoded float only if JSON could carry it back out.
+// CBOR can spell NaN and the infinities; JSON cannot, so a card holding one
+// was not produced from a JSON credential and is refused here by name rather
+// than surfacing later as an opaque json.Marshal error.
+func finiteFloat(f float64, rest []byte) (any, []byte, error) {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return nil, nil, fmt.Errorf("%w: a non-finite float", ErrCBOR)
+	}
+	return f, rest, nil
 }
 
 // halfToFloat expands IEEE 754 binary16, which CBOR uses for small floats.
