@@ -366,8 +366,19 @@ func getTerms(ctx context.Context, q store.Querier, id string, version int) (sch
 }
 
 func getAuthorization(ctx context.Context, q store.Querier, id string) (schema.Authorization, error) {
+	return getAuthorizationLocked(ctx, q, id, false)
+}
+
+// getAuthorizationLocked with forUpdate holds the row against a concurrent
+// write — the create path reads an existing grant under lock before deciding
+// whether the caller may overwrite it.
+func getAuthorizationLocked(ctx context.Context, q store.Querier, id string, forUpdate bool) (schema.Authorization, error) {
+	sql := `SELECT doc FROM authorizations WHERE id = $1`
+	if forUpdate {
+		sql += " FOR UPDATE"
+	}
 	var doc []byte
-	err := q.QueryRow(ctx, `SELECT doc FROM authorizations WHERE id = $1`, id).Scan(&doc)
+	err := q.QueryRow(ctx, sql, id).Scan(&doc)
 	if err != nil {
 		return schema.Authorization{}, err
 	}

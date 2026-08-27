@@ -383,6 +383,22 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+		// The insert is an upsert so a reseed can replay the same grant, but
+		// an id is a public fact, not a proof: a caller who passed the gate
+		// for their own organisation must not overwrite another authority's
+		// grant by reusing its id (#124 review). Read the existing row under
+		// lock and require the same authority before replacing anything.
+		existing, err := getAuthorizationLocked(r.Context(), tx, a.ID, true)
+		switch {
+		case err == nil:
+			if existing.AuthorityPartyID != a.AuthorityPartyID {
+				return errGrantIDTaken
+			}
+		case errors.Is(err, store.ErrNotFound):
+			// New id; nothing to protect.
+		default:
+			return err
+		}
 		if err := insertAuthorization(r.Context(), tx, a); err != nil {
 			return err
 		}
@@ -392,11 +408,20 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 		// design finding in publish.go.
 		return enqueueFact(r.Context(), tx, "authorization", a.ID, 1)
 	}); err != nil {
+		if errors.Is(err, errGrantIDTaken) {
+			httpx.WriteError(w, http.StatusConflict, "grant_id_taken",
+				"an authorization with this id already stands under a different authority")
+			return
+		}
 		httpx.Fail(w, h.d.Log, "create authorization", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, a)
 }
+
+// errGrantIDTaken is the create upsert refusing to let one authority's grant
+// be replaced through another authority's gate.
+var errGrantIDTaken = errors.New("authorization id belongs to a different authority")
 
 // listAuthorizations answers "which authorization stands behind this?" for one
 // party at one scope (#16).

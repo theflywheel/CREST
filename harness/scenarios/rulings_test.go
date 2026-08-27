@@ -233,4 +233,46 @@ func TestAValidTokenIsNotAuthorityToMintOrRevokeGrants(t *testing.T) {
 	if code != http.StatusForbidden {
 		t.Fatalf("a stranger revoking the organisation's grant was answered %d, not 403: %s", code, body)
 	}
+
+	// And the overwrite door: a rival organisation passes the authority gate
+	// for itself, but reuses the first organisation's grant id. Grant ids are
+	// public facts; letting this through would replace the original grant's
+	// state and doc through another authority's gate.
+	victimParty, victimID := w.grantSubmitter(t, "Grant To Overwrite "+runID, nil)
+	rival := w.newOrganisation(t, "Rival Authority "+runID)
+	code, body, err = w.Parties.As(w.login(t, rival)).Status(w.ctx, http.MethodPost,
+		"/v1/authorizations", schema.Authorization{
+			ID:      victimID,
+			PartyID: rival,
+			Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
+			Scope: schema.AuthorizationScope{
+				Kind:      schema.AuthorizationScopeKindContext,
+				ContextID: ptr(fixtures.ProjectID),
+			},
+			Functions:         []string{"submit-evidence"},
+			Period:            schema.Period{Start: epoch, End: &end},
+			AuthorityPartyID:  rival,
+			ApprovedByPartyID: rival,
+			ApprovedAt:        epoch,
+			State:             schema.AuthorizationStateREVOKED,
+		})
+	if err != nil {
+		t.Fatalf("overwrite attempt: %v", err)
+	}
+	if code != http.StatusConflict {
+		t.Fatalf("reusing another authority's grant id was answered %d, not 409: %s", code, body)
+	}
+	// The original grant still permits what it permitted: the refusal
+	// protected the row, not just the response code.
+	var permitted struct {
+		Permitted bool `json:"permitted"`
+	}
+	if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, fmt.Sprintf(
+		"/v1/authorizations/permits?partyId=%s&function=submit-work-evidence&contextId=%s",
+		url.QueryEscape(victimParty), fixtures.ProjectID), &permitted); err != nil {
+		t.Fatalf("read permits after the attack: %v", err)
+	}
+	if !permitted.Permitted {
+		t.Fatal("the overwrite attempt was refused but the original grant no longer permits")
+	}
 }
