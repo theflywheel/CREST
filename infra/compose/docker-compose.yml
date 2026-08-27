@@ -113,6 +113,15 @@ x-service: &crest-service
     CLOCK_DRIVEABLE: "${CLOCK_DRIVEABLE:-true}"
     CLOCK_START: "${CLOCK_START:-2026-03-01T08:00:00Z}"
 
+    # The scheduled auto-confirm sweep, off by default *here only*. Every
+    # scenario that tests the T=7 exit advances the clock and then asks for the
+    # sweep, and a background sweeper would have already taken the window —
+    # turning a real assertion into a race. A deployment runs the default
+    # (every minute), because there nobody is going to post to /v1/sweep.
+    # `make test-e2e-sweep` brings this stack up with it on, to prove the loop
+    # is actually wired.
+    SWEEP_EVERY: "${SWEEP_EVERY:-0}"
+
     # Deployment secrets, with local values that are not pretending to be
     # secrets. A real deployment sets all three; key custody is G1 #7.
     NATIONAL_ID_SALT: "${NATIONAL_ID_SALT:-local-development-salt-not-for-any-real-deployment}"

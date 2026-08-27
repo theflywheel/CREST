@@ -42,7 +42,8 @@ func (w *world) grantSubmitter(t *testing.T, name string, reviewBy *time.Time) (
 		State:             schema.AuthorizationStateACTIVE,
 	}
 	var created schema.Authorization
-	if err := w.Parties.Post(w.ctx, "/v1/authorizations", auth, &created); err != nil {
+	if err := w.Parties.As(w.login(t, fixtures.OrgID)).Post(
+		w.ctx, "/v1/authorizations", auth, &created); err != nil {
 		t.Fatalf("create authorization: %v", err)
 	}
 	return party, created.ID
@@ -110,7 +111,8 @@ func TestAnOverdueAuthorizationStillPermitsAndIsListedForReview(t *testing.T) {
 	var list struct {
 		Authorizations []schema.Authorization `json:"authorizations"`
 	}
-	if err := w.Parties.Get(w.ctx, "/v1/authorizations/overdue", &list); err != nil {
+	if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Get(
+		w.ctx, "/v1/authorizations/overdue", &list); err != nil {
 		t.Fatalf("list overdue: %v", err)
 	}
 	found := false
@@ -152,7 +154,7 @@ func TestARevokedGrantStopsNewWorkButNotWorkInFlight(t *testing.T) {
 	})
 
 	// The narrowing.
-	if err := w.Parties.Post(w.ctx,
+	if err := w.Parties.As(w.login(t, fixtures.OrgID)).Post(w.ctx,
 		"/v1/authorizations/"+url.PathEscape(authID)+"/revoke", nil, nil); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
@@ -174,4 +176,181 @@ func TestARevokedGrantStopsNewWorkButNotWorkInFlight(t *testing.T) {
 		_, err := w.instruction(claimID)
 		return err
 	})
+}
+
+// #124 review: a valid token is not authority to mint or revoke grants. The
+// escalation it closes: a signed-in worker POSTs an ACTIVE authorization
+// granting themselves act-for-party — naming themselves as approver and
+// authority — and every later permits() check answers yes. Both doors, both
+// halves: minting is refused, and revoking somebody else's grant by id is
+// refused.
+func TestAValidTokenIsNotAuthorityToMintOrRevokeGrants(t *testing.T) {
+	w := setup(t)
+
+	attacker := w.newWorker(t, "Self-Appointed Authority "+runID)
+	epoch := w.w.Instance.Epoch
+	end := epoch.Add(300 * 24 * time.Hour)
+	mint := func(authority, approver string) (int, []byte) {
+		t.Helper()
+		code, body, err := w.Parties.As(w.login(t, attacker)).Status(w.ctx, http.MethodPost,
+			"/v1/authorizations", schema.Authorization{
+				PartyID: attacker,
+				Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
+				Scope: schema.AuthorizationScope{
+					Kind:      schema.AuthorizationScopeKindContext,
+					ContextID: ptr(fixtures.ProjectID),
+				},
+				Functions:         []string{"act-for-party"},
+				Period:            schema.Period{Start: epoch, End: &end},
+				AuthorityPartyID:  authority,
+				ApprovedByPartyID: approver,
+				ApprovedAt:        epoch,
+				State:             schema.AuthorizationStateACTIVE,
+			})
+		if err != nil {
+			t.Fatalf("mint attempt: %v", err)
+		}
+		return code, body
+	}
+
+	// Naming the organisation as authority without being it: impersonation.
+	if code, body := mint(fixtures.OrgID, fixtures.OrgID); code != http.StatusForbidden {
+		t.Fatalf("minting a grant in the organisation's name was answered %d, not 403: %s", code, body)
+	}
+	// Naming themselves as their own authority: a person is not an authority.
+	if code, body := mint(attacker, attacker); code != http.StatusForbidden {
+		t.Fatalf("a self-authorised grant was answered %d, not 403: %s", code, body)
+	}
+
+	// Bootstrapping an organisation-shaped party is not authority either: the
+	// open party door plus a first bind must not add up to a grant mint. Only
+	// the registry's APPROVED decision makes an organisation an authority.
+	var fakeOrg schema.Party
+	if err := w.Parties.Post(w.ctx, "/v1/parties", schema.Party{
+		Kind:        schema.PartyKindOrganisation,
+		DisplayName: "Bootstrapped Front " + runID,
+		ContactRoutes: []schema.PartyContactRoutesItem{{
+			Kind: schema.PartyContactRoutesItemKindEmail, Value: "front-" + runID + "@example.org",
+		}},
+	}, &fakeOrg); err != nil {
+		t.Fatalf("bootstrap the front organisation: %v", err)
+	}
+	code, body, err := w.Parties.As(w.login(t, fakeOrg.ID)).Status(w.ctx, http.MethodPost,
+		"/v1/authorizations", schema.Authorization{
+			PartyID: attacker,
+			Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
+			Scope: schema.AuthorizationScope{
+				Kind:      schema.AuthorizationScopeKindContext,
+				ContextID: ptr(fixtures.ProjectID),
+			},
+			Functions:         []string{"act-for-party"},
+			Period:            schema.Period{Start: epoch, End: &end},
+			AuthorityPartyID:  fakeOrg.ID,
+			ApprovedByPartyID: fakeOrg.ID,
+			ApprovedAt:        epoch,
+			State:             schema.AuthorizationStateACTIVE,
+		})
+	if err != nil {
+		t.Fatalf("front-organisation mint attempt: %v", err)
+	}
+	if code != http.StatusForbidden {
+		t.Fatalf("a grant under a bootstrapped, never-approved organisation was answered %d, not 403: %s",
+			code, body)
+	}
+
+	// And the revoke door: a grant the organisation stands behind cannot be
+	// switched off by a stranger who learned its id.
+	_, authID := w.grantSubmitter(t, "Grant Holder Under Attack "+runID, nil)
+	code, body, err = w.Parties.As(w.login(t, attacker)).Status(w.ctx, http.MethodPost,
+		"/v1/authorizations/"+url.PathEscape(authID)+"/revoke", nil)
+	if err != nil {
+		t.Fatalf("revoke attempt: %v", err)
+	}
+	if code != http.StatusForbidden {
+		t.Fatalf("a stranger revoking the organisation's grant was answered %d, not 403: %s", code, body)
+	}
+
+	// And the overwrite door: a rival organisation passes the authority gate
+	// for itself, but reuses the first organisation's grant id. Grant ids are
+	// public facts; letting this through would replace the original grant's
+	// state and doc through another authority's gate.
+	victimParty, victimID := w.grantSubmitter(t, "Grant To Overwrite "+runID, nil)
+	rival := w.newOrganisation(t, "Rival Authority "+runID)
+	code, body, err = w.Parties.As(w.login(t, rival)).Status(w.ctx, http.MethodPost,
+		"/v1/authorizations", schema.Authorization{
+			ID:      victimID,
+			PartyID: rival,
+			Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
+			Scope: schema.AuthorizationScope{
+				Kind:      schema.AuthorizationScopeKindContext,
+				ContextID: ptr(fixtures.ProjectID),
+			},
+			Functions:         []string{"submit-evidence"},
+			Period:            schema.Period{Start: epoch, End: &end},
+			AuthorityPartyID:  rival,
+			ApprovedByPartyID: rival,
+			ApprovedAt:        epoch,
+			State:             schema.AuthorizationStateREVOKED,
+		})
+	if err != nil {
+		t.Fatalf("overwrite attempt: %v", err)
+	}
+	if code != http.StatusConflict {
+		t.Fatalf("reusing another authority's grant id was answered %d, not 409: %s", code, body)
+	}
+	// The original grant still permits what it permitted: the refusal
+	// protected the row, not just the response code.
+	var permitted struct {
+		Permitted bool `json:"permitted"`
+	}
+	if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, fmt.Sprintf(
+		"/v1/authorizations/permits?partyId=%s&function=submit-work-evidence&contextId=%s",
+		url.QueryEscape(victimParty), fixtures.ProjectID), &permitted); err != nil {
+		t.Fatalf("read permits after the attack: %v", err)
+	}
+	if !permitted.Permitted {
+		t.Fatal("the overwrite attempt was refused but the original grant no longer permits")
+	}
+
+	// And the edit door: the SAME authority reusing the id with different
+	// content. A grant is narrowed by revoke and re-grant, never edited in
+	// place — an in-place rewrite would update the stored document while the
+	// indexed permission columns keep the old row, a grant that says one thing
+	// while permits() enforces another.
+	victimDoc := schema.Authorization{
+		ID:      victimID,
+		PartyID: victimParty,
+		Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
+		Scope: schema.AuthorizationScope{
+			Kind:      schema.AuthorizationScopeKindContext,
+			ContextID: ptr(fixtures.ProjectID),
+		},
+		Functions:         []string{"submit-work-evidence"},
+		Period:            schema.Period{Start: epoch.Add(-30 * 24 * time.Hour), End: &end},
+		AuthorityPartyID:  fixtures.OrgID,
+		ApprovedByPartyID: fixtures.OrgID,
+		ApprovedAt:        epoch.Add(-30 * 24 * time.Hour),
+		State:             schema.AuthorizationStateACTIVE,
+	}
+	edited := victimDoc
+	edited.Functions = []string{"submit-work-evidence", "act-for-party"}
+	code, body, err = w.Parties.As(w.login(t, fixtures.OrgID)).Status(w.ctx, http.MethodPost,
+		"/v1/authorizations", edited)
+	if err != nil {
+		t.Fatalf("edit attempt: %v", err)
+	}
+	if code != http.StatusConflict {
+		t.Fatalf("editing a grant in place through create was answered %d, not 409: %s", code, body)
+	}
+
+	// An exact replay of the same document is still accepted — that is what
+	// lets a reseed load fixture history twice without failing.
+	code, body, err = w.Parties.As(w.login(t, fixtures.OrgID)).Status(w.ctx, http.MethodPost,
+		"/v1/authorizations", victimDoc)
+	if err != nil {
+		t.Fatalf("replay attempt: %v", err)
+	}
+	if code != http.StatusCreated {
+		t.Fatalf("an exact replay of an existing grant was answered %d, not 201: %s", code, body)
+	}
 }

@@ -96,9 +96,10 @@ func loadTemplates() (templates, error) {
 		if err := dec.Decode(&configured); err != nil {
 			return templates{}, fmt.Errorf("parse templates: %w", err)
 		}
-		// A configured set replaces the defaults wholesale except where it is
-		// silent; a partial file keeping the English fallback for a message it
-		// does not name is better than a worker receiving nothing.
+		// A configured file is merged over the defaults key by key: each field
+		// or message it names replaces the default, and every one it is silent
+		// about keeps the built-in English. A partial file falling back per
+		// message is better than a worker receiving nothing.
 		if configured.ReplyYes != "" {
 			t.ReplyYes = configured.ReplyYes
 		}

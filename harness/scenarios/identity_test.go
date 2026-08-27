@@ -61,13 +61,38 @@ func (w *world) login(t *testing.T, partyID string) harness.Caller {
 	if err != nil {
 		t.Fatalf("mint a token for %s: %v", partyID, err)
 	}
-	if err := w.Parties.As(harness.Caller{Token: token}).
-		Post(w.ctx, "/v1/parties/"+partyID+"/identity-bindings", map[string]any{
-			"provider":      "mock-oidc",
-			"providerClass": "generic-oidc",
-			"subjectRef":    subject,
-		}, nil); err != nil {
+	binding := map[string]any{
+		"provider":      "mock-oidc",
+		"providerClass": "generic-oidc",
+		"subjectRef":    subject,
+	}
+	err = w.Parties.As(harness.Caller{Token: token}).
+		Post(w.ctx, "/v1/parties/"+partyID+"/identity-bindings", binding, nil)
+	if err == nil {
+		return harness.Caller{Token: token}
+	}
+
+	// Self-proof did not carry, and for the fixture workers it is not meant
+	// to. Anaya and Bina arrive already bound to an eSignet and an OTP
+	// subject, and holding a valid token proves who the caller is, not that
+	// they are the party in the URL — so claiming a party bound to somebody
+	// else is exactly the thing the endpoint refuses.
+	//
+	// The door for that case is the one a real enrolment uses: an agent with
+	// act-for-party binds on the worker's behalf. The supervisor holds that
+	// grant on the project in the fixture world, so the suite goes through it
+	// rather than around it. The supervisor is excluded because she is the
+	// assistance — recursing to fetch her would not terminate.
+	if partyID == fixtures.SupervisorID {
 		t.Fatalf("bind %s to a subject: %v", partyID, err)
+	}
+	sup := w.login(t, fixtures.SupervisorID)
+	sup.OnBehalfOf = partyID
+	if aErr := w.Parties.As(sup).Post(w.ctx,
+		"/v1/parties/"+partyID+"/identity-bindings?contextId="+fixtures.ProjectID,
+		binding, nil); aErr != nil {
+		t.Fatalf("bind %s to a subject: self-proof %v; assisted by the supervisor %v",
+			partyID, err, aErr)
 	}
 	return harness.Caller{Token: token}
 }
@@ -547,5 +572,32 @@ func TestAConfirmationCannotClaimToBeSomethingItIsNot(t *testing.T) {
 	// it, or the worker has lost their chance to confirm at all.
 	if again, err := w.window(claimID); err != nil || again.ExitRoute != nil {
 		t.Fatalf("the window exited despite the refusal: %+v, %v", again.ExitRoute, err)
+	}
+}
+
+func TestAnonymousCallersCannotMintOrListAuthorizations(t *testing.T) {
+	w := setup(t)
+
+	// A grant decides who may act for whom; minting one anonymously would let
+	// anyone authorise anyone (#102). The gate must answer before the body is
+	// even read, so an empty object is enough to prove the door is shut.
+	code, body, err := w.Parties.Status(w.ctx, http.MethodPost,
+		"/v1/authorizations", map[string]any{})
+	if err != nil {
+		t.Fatalf("post an authorization: %v", err)
+	}
+	if code != http.StatusUnauthorized {
+		t.Fatalf("an anonymous authorization mint was answered %d, not 401: %s", code, body)
+	}
+
+	// And the list read: who holds what, where — the roster probe #68
+	// established must not be readable — is signed-in only.
+	code, body, err = w.Parties.Status(w.ctx, http.MethodGet,
+		"/v1/authorizations?partyId=anyone", nil)
+	if err != nil {
+		t.Fatalf("list authorizations: %v", err)
+	}
+	if code != http.StatusUnauthorized {
+		t.Fatalf("an anonymous authorization list was answered %d, not 401: %s", code, body)
 	}
 }

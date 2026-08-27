@@ -24,6 +24,10 @@ server {
         proxy_read_timeout 30s;
     }
 
+    # An /api/ name the allowlist refused must 404, not fall through to the
+    # app fallback and answer 200 with index.html.
+    location ~ ^/api/ { return 404; }
+
     # Multi-app door: each app is a directory with its own index.html; hash
     # routing means no history fallback is needed. $uri/ (which crest-web's
     # single-app fallback lacks) is what lets /worker/ resolve to its index.

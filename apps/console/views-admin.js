@@ -178,14 +178,27 @@ export async function orgView() {
 /* ————— Instance view (J2 / G-1) ————— */
 export async function instanceView() {
   const issuer = await api.get("confirmation", "/v1/issuer").catch(() => null);
+  const instAnswer = await api.get("parties", "/v1/instance").catch(() => null);
+  const inst = (instAnswer || {}).instance || null;
+  const reg = (inst || {}).registry || {};
   const names = ["parties", "definitions", "evidence", "confirmation", "verification", "payments", "notify"];
   const health = await Promise.all(names.map(n =>
     api.get(n, "/healthz").then(h => ({ n, ok: true, h })).catch(e => ({ n, ok: false, e }))));
+  const instRows = inst ? kvRows([
+    ["instance", mono(inst.instanceId || "—")],
+    ["name", inst.name || "—"],
+    ["operator", inst.operatorPartyId ? mono(inst.operatorPartyId) : "not configured"],
+    ["issuer (per the instance)", inst.issuerId ? mono(inst.issuerId) : "not configured"],
+    ["registry", reg.url ? mono(reg.url) + (reg.namespace ? " · " + mono(reg.namespace) : "") : "Postgres fallback — no external registry"],
+    ["transparency log", reg.transparent ? "yes — an append-only log a reader can watch" : "no — answers rest on this deployment's word"],
+  ]) : kvRows([
+    ["instance", "the parties service did not answer /v1/instance — a deployment that has not been told who it is answers 503 here"],
+  ]);
   return `${title("Instance — the deployment itself")}
-    ${cardTitled("Instance facts", kvRows([
-      ["issuer", issuer ? mono(issuer.id || issuer.issuer || JSON.stringify(issuer).slice(0, 60)) : "the confirmation service did not answer /v1/issuer"],
+    ${cardTitled("Instance facts", instRows + kvRows([
+      ["issuer (per the confirmation service)", issuer ? mono(issuer.id || issuer.issuer || JSON.stringify(issuer).slice(0, 60)) : "the confirmation service did not answer /v1/issuer"],
       ["services", String(names.length) + " CREST services behind this console"],
-    ]) + `<p class="muted" style="margin-top:8px">There is no /v1/instance endpoint (checked against the OpenAPI surfaces); what an instance <em>is</em> — name, epoch, salts — lives in deployment configuration, which is exactly where the layering test puts it.</p>`)}
+    ]) + `<p class="muted" style="margin-top:8px">GET /v1/instance is the deployment's public self-description (#70) — every field is configuration or derived from it, read live rather than stored, which is exactly where the layering test puts it.</p>`)}
     ${cardTitled("The services behind all of it — live health sweep", `<div class="stats" style="flex-wrap:wrap">
       ${health.map(x => `<div class="stat" style="min-width:150px"><div class="n" style="font-size:18px">${x.ok ? chip("ok", "healthy") : chip("err", "unreachable")}</div><div class="l">${esc(x.n)}<br><span class="mono">/healthz</span></div></div>`).join("")}
     </div>`)}

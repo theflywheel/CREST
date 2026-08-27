@@ -96,3 +96,46 @@ func TestEachProviderClassAssertsOnlyWhatItChecked(t *testing.T) {
 		}
 	}
 }
+
+// Self-proof binds a subject to a party on the strength of the token alone, so
+// its acceptance rule is the whole difference between "log in again" and
+// "claim anybody" (#102). Holding a valid token proves who the caller is —
+// never that they have any right to the party named in the URL.
+func TestAStrangersOwnTokenCannotClaimAnAlreadyBoundParty(t *testing.T) {
+	bound := []schema.PartyIdentityBindingsItem{{
+		Provider:      "mock-oidc",
+		ProviderClass: schema.PartyIdentityBindingsItemProviderClassGenericOidc,
+		SubjectRef:    "psut-the-worker",
+		AssertedAt:    bindingClock,
+	}}
+	if selfBindAccepted("psut-a-stranger", bound) {
+		t.Fatal("a stranger's token self-proved onto somebody else's party; the handler " +
+			"must fall through to the act-for-party check (403), or anyone authenticated " +
+			"could append their own subject to any party and raise its assurance")
+	}
+}
+
+// The first-login bootstrap: a party enrolled by somebody else has no bindings
+// yet, and the only proof its person can offer is the token they hold. This is
+// the accepted residual — an unbound ULID acts as a claim capability — and it
+// is written down as such in bindings.go.
+func TestTheFirstBindingOnAnUnboundPartySelfProves(t *testing.T) {
+	if !selfBindAccepted("psut-the-worker", nil) {
+		t.Fatal("the first binding on an unbound party did not self-prove; first login " +
+			"would chicken-and-egg, because no act-for-party grant can exist yet")
+	}
+}
+
+// The web apps re-bind on every login. The same subject arriving again must
+// keep self-proving, or the second login of every worker breaks.
+func TestReBindingTheSameSubjectStaysSelfProved(t *testing.T) {
+	bound := []schema.PartyIdentityBindingsItem{{
+		Provider:      "mock-oidc",
+		ProviderClass: schema.PartyIdentityBindingsItemProviderClassGenericOidc,
+		SubjectRef:    "psut-the-worker",
+		AssertedAt:    bindingClock,
+	}}
+	if !selfBindAccepted("psut-the-worker", bound) {
+		t.Fatal("a re-login by the already-bound subject stopped self-proving")
+	}
+}
