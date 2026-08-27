@@ -197,9 +197,12 @@ FLEET_DOORS := web apps worker field console verifier docs
 
 verify-deployed: ## Check every deployed fleet member answers, and verify the log independently
 	@echo "── the seven services, through the crest-web proxy"
+	@# /readyz, not /healthz: readyz is the endpoint wired to the database
+	@# ping, and a process that is alive but cannot reach its store must fail
+	@# this sweep rather than pass it.
 	@for s in $(FLEET_SERVICES); do \
 		printf '%-14s' $$s; \
-		curl -fsS --max-time 10 $(CREST_WEB_URL)/api/crest-$$s/healthz && echo || exit 1; \
+		curl -fsS --max-time 10 $(CREST_WEB_URL)/api/crest-$$s/readyz && echo || exit 1; \
 	done
 	@echo "── the proxy allowlist and the §16 fence"
 	@code=$$(curl -s -o /dev/null -w '%{http_code}' $(CREST_WEB_URL)/api/crest-not-a-service/healthz); \

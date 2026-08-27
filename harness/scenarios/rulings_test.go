@@ -414,3 +414,72 @@ func TestIssuanceLivesInTheSubstrateNotThePaymentsApplication(t *testing.T) {
 		t.Fatalf("verification's issuer info is incomplete: %+v", issuer)
 	}
 }
+
+// The one atomicity gap the issuance extraction opened, closed (#137, dough's
+// review of #143): a confirming exit can crash after verification committed
+// the credential and before the window recorded the exit. If the worker then
+// disputes the still-open window, the dispute must not leave that orphan
+// standing — a credential for a disputed claim is a false statement CREST
+// signed. This simulates the crash's leftover by issuing directly, then
+// disputes, and expects a dispute exit with no credential and the orphan
+// revoked. Distinct from a dispute after auto-confirm, where the credential
+// was legitimately issued and deliberately stands (W3).
+func TestADisputeRevokesACrashOrphanedCredential(t *testing.T) {
+	w := setup(t)
+	phone := sharedNumber(209)
+	worker := newWorkerWithPhone(t, w, "Orphan Dispute", phone)
+	result := w.submit(t, batch(row(phone, 2, "HH-ORPHAN")))
+	claimID := result.ClaimIDs[0]
+	// The window opens through evidence's outbox, not synchronously with the
+	// submission.
+	var win winView
+	eventually(t, "the window opens", 15*time.Second, func() error {
+		v, err := w.window(claimID)
+		if err != nil {
+			return err
+		}
+		win = v
+		return nil
+	})
+
+	// The crash's leftover: issuance committed, exit never recorded.
+	var orphan struct {
+		ID string `json:"id"`
+	}
+	if err := w.Verification.Post(w.ctx, "/internal/credentials/issue", map[string]any{
+		"claimId": claimID, "unitId": win.UnitID, "partyId": worker,
+		"route": "self", "at": win.OpenedAt,
+	}, &orphan); err != nil {
+		t.Fatalf("plant the orphan: %v", err)
+	}
+
+	if err := w.disputeClaim(t, claimID, map[string]any{
+		"reason": "that visit never happened", "raisedByPartyId": worker,
+	}, nil); err != nil {
+		t.Fatalf("dispute: %v", err)
+	}
+
+	after, err := w.window(claimID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.ExitRoute == nil || *after.ExitRoute != "dispute" {
+		t.Fatalf("window exit is %v, want dispute", after.ExitRoute)
+	}
+	if after.CredentialID != nil {
+		t.Fatalf("a dispute exit recorded credential %s", *after.CredentialID)
+	}
+	if after.PaymentReleasedAt == nil {
+		t.Fatalf("the dispute exit released no payment (every exit releases payment)")
+	}
+	var got struct {
+		RevokedAt *time.Time `json:"revokedAt"`
+	}
+	if err := w.Verification.Get(w.ctx,
+		"/internal/credentials/by-claim/"+claimID, &got); err != nil {
+		t.Fatalf("read the orphan back: %v", err)
+	}
+	if got.RevokedAt == nil {
+		t.Fatalf("the orphaned credential still stands after the dispute")
+	}
+}
