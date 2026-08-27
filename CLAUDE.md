@@ -23,17 +23,17 @@ Verifiable work history for informal workers. The first use case is trusted paym
 
 ## The rules that don't bend
 
-**Trust strength is derived, never stored.** Credentials carry provenance facts (`sourceClass`, `captureMethod`, `adapterRef`); the tier is computed at query time. A stored tier freezes a judgement verifiers should be free to make differently, and it cannot be upgraded when identity assurance later improves.
+**Trust strength is derived, never stored.** *(infrastructure)* Credentials carry provenance facts (`sourceClass`, `captureMethod`, `adapterRef`); the tier is computed at query time. A stored tier freezes a judgement verifiers should be free to make differently, and it cannot be upgraded when identity assurance later improves.
 
-**A unit and a claim are separable.** A `Unit` exists independent of who performed it; a `Claim` links a `Party` to it. A disputed claim must never destroy the underlying record.
+**A unit and a claim are separable.** *(infrastructure)* A `Unit` exists independent of who performed it; a `Claim` links a `Party` to it. A disputed claim must never destroy the underlying record.
 
-**Every T=7 exit releases payment.** Confirm, dispute, auto-confirm, supervisor-assisted — all four. A dispute contests the record; it does not withhold the money.
+**Every confirmation-window exit releases payment.** *(payments application)* Confirm, dispute, auto-confirm, supervisor-assisted — all four. A dispute contests the record; it does not withhold the money. The window's length — seven days in the CHW programme, the "T=7" older text still says — is programme policy (L2), and the window itself lives in the payments application, not the substrate ([#127](https://github.com/theflywheel/CREST/issues/127)). The rule binds whoever runs that application; the infrastructure neither knows nor enforces a window.
 
-**Never persist a raw national ID or biometric.** A pairwise subject reference and a salted hash, nothing else. This applies to fixtures too.
+**Never persist a raw national ID or biometric.** *(infrastructure)* A pairwise subject reference and a salted hash, nothing else. This applies to fixtures too.
 
-**Probable matches hold; they never auto-merge.** `merges_without_confirmation = 0` is a monitored metric, not an aspiration.
+**Probable matches hold; they never auto-merge.** *(infrastructure)* `merges_without_confirmation = 0` is a monitored metric, not an aspiration.
 
-**Every held payment has a reason with an owner.** A worker must never see a missing payment with no explanation attached.
+**Every held payment has a reason with an owner.** *(payments application)* A worker must never see a missing payment with no explanation attached.
 
 When you touch evidence, confirmation, payments or verification, name which one your change could break.
 
