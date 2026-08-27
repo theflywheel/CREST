@@ -354,3 +354,33 @@ func TestAValidTokenIsNotAuthorityToMintOrRevokeGrants(t *testing.T) {
 		t.Fatalf("an exact replay of an existing grant was answered %d, not 201: %s", code, body)
 	}
 }
+
+// A grant read by id names a subject and their functions — for a person, a
+// record of who works where (#68). Only the grant's own authority may read
+// it; a valid token held by anyone else is not enough. The seeder leans on
+// this read to compare a standing grant's shape against the fixture instead
+// of trusting the permits predicate, which cannot see scope drift.
+func TestAGrantIsReadableByItsAuthorityAlone(t *testing.T) {
+	w := setup(t)
+	holder, authID := w.grantSubmitter(t, "Grant Read Holder "+runID, nil)
+
+	var standing schema.Authorization
+	if err := w.Parties.As(w.login(t, fixtures.OrgID)).
+		Get(w.ctx, "/v1/authorizations/"+url.PathEscape(authID), &standing); err != nil {
+		t.Fatalf("the authority cannot read its own grant: %v", err)
+	}
+	if standing.ID != authID || standing.PartyID != holder {
+		t.Fatalf("read grant %q for %q, want %q for %q",
+			standing.ID, standing.PartyID, authID, holder)
+	}
+
+	stranger := w.newWorker(t, "Grant Reader "+runID)
+	code, _, err := w.Parties.As(w.login(t, stranger)).Status(w.ctx,
+		http.MethodGet, "/v1/authorizations/"+url.PathEscape(authID), nil)
+	if err != nil {
+		t.Fatalf("stranger read: %v", err)
+	}
+	if code != http.StatusForbidden {
+		t.Fatalf("a stranger reading a grant answered %d, want 403", code)
+	}
+}
