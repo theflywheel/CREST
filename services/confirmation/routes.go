@@ -428,24 +428,27 @@ func (h *handlers) contests(w http.ResponseWriter, r *http.Request) {
 // harness can advance seven days and then ask for the consequences, rather than
 // waiting for a ticker it cannot see.
 func (h *handlers) sweep(w http.ResponseWriter, r *http.Request) {
-	now, swept, waiting, err := h.sweepOnce(r.Context())
+	now, due, swept, waiting, err := h.sweepOnce(r.Context())
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "sweep", err)
 		return
 	}
+	// due is what WAS owed, not what succeeded: a shortfall between due and
+	// autoConfirmed + heldForSomeoneToLookAt is how a failed exit — a payment
+	// attempted and left unreleased — stays visible in this response.
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"at": now, "due": len(swept) + len(waiting), "autoConfirmed": swept,
+		"at": now, "due": due, "autoConfirmed": swept,
 		"heldForSomeoneToLookAt": waiting,
 	})
 }
 
 // sweepOnce is one pass: auto-confirm everything due, and name everything due
 // that it deliberately did not touch.
-func (h *handlers) sweepOnce(ctx context.Context) (time.Time, []string, []string, error) {
+func (h *handlers) sweepOnce(ctx context.Context) (time.Time, int, []string, []string, error) {
 	now := h.d.Clock.Now()
 	due, err := dueWindows(ctx, h.d.DB.Q(), now, 500)
 	if err != nil {
-		return now, nil, nil, fmt.Errorf("find due windows: %w", err)
+		return now, 0, nil, nil, fmt.Errorf("find due windows: %w", err)
 	}
 	swept := make([]string, 0, len(due))
 	for _, win := range due {
@@ -463,7 +466,7 @@ func (h *handlers) sweepOnce(ctx context.Context) (time.Time, []string, []string
 	// when in fact it declined to act on someone's behalf.
 	unreached, err := unreachedWindows(ctx, h.d.DB.Q(), now)
 	if err != nil {
-		return now, swept, nil, fmt.Errorf("find unreached windows: %w", err)
+		return now, len(due), swept, nil, fmt.Errorf("find unreached windows: %w", err)
 	}
 	waiting := make([]string, 0, len(unreached))
 	for _, win := range unreached {
@@ -473,7 +476,10 @@ func (h *handlers) sweepOnce(ctx context.Context) (time.Time, []string, []string
 		h.d.Log.Warn("windows past T=7 whose worker was never reached; not auto-confirming",
 			"count", len(waiting))
 	}
-	return now, swept, waiting, nil
+	// The count of everything owed — including a claim whose exit failed and
+	// so appears in neither slice. The unreached windows are due too; they
+	// were just never in dueWindows' answer, which excludes them.
+	return now, len(due) + len(waiting), swept, waiting, nil
 }
 
 // sweepLoop is the sweep nobody has to remember to call.
@@ -492,13 +498,17 @@ func (h *handlers) sweepLoop(ctx context.Context, every time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			_, swept, waiting, err := h.sweepOnce(ctx)
+			_, due, swept, waiting, err := h.sweepOnce(ctx)
 			if err != nil && ctx.Err() == nil {
 				h.d.Log.Error("scheduled sweep failed", "error", err)
 				continue
 			}
-			if len(swept) > 0 || len(waiting) > 0 {
-				h.d.Log.Info("scheduled sweep",
+			if failed := due - len(swept) - len(waiting); failed > 0 {
+				h.d.Log.Error("scheduled sweep left due payments unreleased",
+					"due", due, "failed", failed)
+			}
+			if due > 0 {
+				h.d.Log.Info("scheduled sweep", "due", due,
 					"autoConfirmed", len(swept), "heldForSomeoneToLookAt", len(waiting))
 			}
 		}
