@@ -485,6 +485,18 @@ func (h *handlers) revoke(w http.ResponseWriter, r *http.Request) {
 	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
 		return
 	}
+	h.revokeAndAnswer(w, r)
+}
+
+// revokeInternal is the service twin (#102): the payments application revokes
+// a crash-orphaned credential at a dispute exit — a credential that exists for
+// a window no confirming exit ever committed. Service traffic, no caller
+// token, same operation.
+func (h *handlers) revokeInternal(w http.ResponseWriter, r *http.Request) {
+	h.revokeAndAnswer(w, r)
+}
+
+func (h *handlers) revokeAndAnswer(w http.ResponseWriter, r *http.Request) {
 	now := h.d.Clock.Now()
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		idx, err := revokeCredential(r.Context(), tx, r.PathValue("id"), now)
@@ -505,6 +517,17 @@ func (h *handlers) revoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// credentialForClaim answers whether a credential exists for one claim — the
+// service twin the dispute exit reads to find a crash's orphan.
+func (h *handlers) credentialForClaim(w http.ResponseWriter, r *http.Request) {
+	c, err := credentialByClaim(r.Context(), h.d.DB.Q(), r.PathValue("claimId"))
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "credential", err, store.ErrNotFound)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
 // statusList returns the whole bitstring, signed. Whole, because a verifier who

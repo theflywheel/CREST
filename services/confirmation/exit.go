@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"time"
 
@@ -111,6 +112,37 @@ func (e *exiter) exit(ctx context.Context, claimID, route string) (exitResult, e
 		}
 		if err := e.transitionClaim(ctx, claimID, target, route); err != nil {
 			return err
+		}
+
+		if route == routeDispute {
+			// A credential can exist for a still-open window in exactly one
+			// case: a confirming exit crashed after verification committed
+			// the credential and before this window recorded the exit. The
+			// claim is DISPUTED now, and a standing credential would be a
+			// false statement CREST signed — so the orphan is revoked before
+			// the dispute exit commits. This is distinct from a dispute after
+			// auto-confirm (the alreadyExited branch below), where the
+			// credential was legitimately issued and deliberately stands.
+			var orphan issuedCredential
+			switch err := e.verification.Get(ctx,
+				"/internal/credentials/by-claim/"+url.PathEscape(claimID), &orphan); {
+			case err == nil && orphan.RevokedAt == nil:
+				if err := e.verification.Post(ctx,
+					"/internal/credentials/"+url.PathEscape(orphan.ID)+"/revoke", nil, nil); err != nil {
+					return fmt.Errorf("could not revoke the crash-orphaned credential for claim %s: %w", claimID, err)
+				}
+				e.log.Warn("revoked a crash-orphaned credential at dispute",
+					"claim", claimID, "credential", orphan.ID)
+			case err == nil:
+				// Already revoked; nothing standing.
+			case client.Code(err) == http.StatusNotFound:
+				// The normal case: no credential was ever issued.
+			default:
+				// Refused rather than skipped: committing this dispute without
+				// knowing would leave a possibly-standing credential for a
+				// disputed claim, silently.
+				return fmt.Errorf("could not check for an orphaned credential for claim %s: %w", claimID, err)
+			}
 		}
 
 		var credID *string

@@ -266,6 +266,162 @@ paths:
         "500": { $ref: "#/components/responses/Internal" }
 
   # Every CREST service carries these two, added by pkg/httpx.Server.
+  # Issuance and the credential record live here since #137 (2026-08-27):
+  # the payments application requests issuance; this service signs, stores,
+  # revokes and publishes the issuer key and status list.
+  /v1/credentials:
+    get:
+      operationId: listCredentials
+      summary: Every credential issued to one worker
+      description: >
+        Follows any merge, like every other party-scoped read (#100, #104): asking
+        by the survivor's id or an absorbed one returns the same whole history.
+        The response is credentials and nothing else — no identifier list, no
+        marker that a merge happened. Revoked credentials are included; the
+        status list is how a verifier finds that out, and filtering them here
+        would make this listing quietly disagree with it.
+      parameters:
+        - name: partyId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The chain's credentials, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credentials:
+                    type: array
+                    items: { $ref: "urn:crest:schema:credentials:work-event-credential:1" }
+                  count: { type: integer }
+        "400":
+          description: partyId is required.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "503":
+          description: The registry could not say which ids are this party.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/credentials/{id}:
+    get:
+      operationId: getCredential
+      summary: Read an issued credential
+      description: The signed WorkEventCredential as issued. It carries provenance facts, never a stored tier (W1) - the tier is computed at verification time.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The credential.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:credentials:work-event-credential:1"
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/credentials/{id}/card:
+    get:
+      operationId: credentialCard
+      summary: The printed card for this credential
+      description: >
+        One of the three ways a worker holds a credential (§5), and the only one
+        available to a worker without a phone — which makes it the wallet for
+        exactly the people the inclusion path exists for, not a fallback for them.
+
+
+        Printed at issuance rather than at enrolment (settled on #24): at
+        enrolment no work has been done and there is no credential to print. The
+        card is produced through the same assisted-access channel enrolment uses.
+
+
+        The QR carries the WHOLE signed credential, not a link to one. That is
+        the property the offline path exists for — a bare scan verifies signature
+        and schema with no network, so the record is provable to a stranger who
+        has never heard of CREST and has no signal. A QR holding a URL would move
+        the proof back onto a server and the worker back into needing one.
+
+
+        It carries no trust tier. Strength is derived by whoever checks it, from
+        the provenance facts inside; printing a tier would freeze a judgement
+        onto paper that outlives the reasons for it.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - name: format
+          in: query
+          schema: { type: string, enum: [html, payload], default: html }
+          description: >
+            `html` is a self-contained printable page with the QR inlined as a
+            data URI — a card whose image is fetched from a server prints as a
+            broken icon in exactly the deployment that needs it most. `payload`
+            is the bare PixelPass string, for a print station with its own
+            stationery.
+      responses:
+        "200":
+          description: The card.
+          content:
+            text/html: { schema: { type: string } }
+            text/plain:
+              schema: { type: string }
+              example: "NCF..."
+        "404": { description: No such credential. }
+        "507":
+          description: >
+            This credential does not fit in a printable QR. A real possibility as
+            fields are added, and it must not be a mystery when it happens.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/credentials/{id}/revoke:
+    post:
+      operationId: revokeCredential
+      summary: Withdraw a credential
+      description: >
+        Flips one bit in the status list. Withdrawal is the single central fact
+        about a credential (§9) and this is the whole of it - there is no partial
+        withdrawal to reason about later.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "204": { description: Withdrawn. The status list now reads revoked at this credential's index. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/status-list:
+    get:
+      operationId: statusList
+      summary: The signed revocation bitstring
+      description: >
+        Returns the whole list, signed. Whole on purpose: a verifier who asks about
+        one credential tells the issuer which credential they are checking, and the
+        point of a bitstring is that it does not (§9).
+      responses:
+        "200":
+          description: A signed status list credential.
+          content: { application/json: { schema: { type: object } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/issuer:
+    get:
+      operationId: issuerInfo
+      summary: The issuer's verification key
+      description: >
+        A verifier needs this once and then never again, which is what makes
+        offline verification possible (W6).
+      responses:
+        "200":
+          description: Issuer identity, verification method and public key.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issuer: { type: string }
+                  verificationMethod: { type: string }
+                  publicKeyMultibase: { type: string }
+                  cryptosuite: { type: string }
+        "500": { $ref: "#/components/responses/Internal" }
+
   /healthz: { $ref: "#/components/pathItems/healthz" }
   /readyz: { $ref: "#/components/pathItems/readyz" }
 
