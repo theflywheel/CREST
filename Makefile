@@ -133,6 +133,15 @@ test-e2e-sweep: ## Prove the auto-confirm sweep runs on its own, with nobody ask
 	SWEEP_EVERY=2s $(GO) test -tags=e2e -count=1 -timeout=5m -run TestScheduledSweepPaysWithNobodyAsking ./harness/scenarios/
 	@$(COMPOSE) down -v --remove-orphans
 
+test-e2e-short-window: ## Prove the window length is configuration: seconds-long windows pay by real time alone
+	@# Its own stack, for the same reason as the sweep's: every other scenario
+	@# assumes the 168h default, and a seconds-long window would auto-confirm
+	@# claims out from under them.
+	@$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true
+	CONFIRMATION_WINDOW=6s SWEEP_EVERY=2s $(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail mock-oidc $(SERVICES)
+	CONFIRMATION_WINDOW=6s SWEEP_EVERY=2s $(GO) test -tags=e2e -count=1 -timeout=5m -run TestAShortWindowPaysByRealTimeAlone ./harness/scenarios/
+	@$(COMPOSE) down -v --remove-orphans
+
 e2e-run: ## Run the spine against an already-running stack (fast iteration)
 	$(GO) test -tags=e2e -count=1 -timeout=10m ./harness/...
 
