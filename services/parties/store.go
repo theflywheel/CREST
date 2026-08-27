@@ -132,8 +132,21 @@ func putRosterID(ctx context.Context, tx store.Querier, partyID, rosterID, conte
 }
 
 func getParty(ctx context.Context, q store.Querier, id string) (schema.Party, error) {
+	return getPartyLocked(ctx, q, id, false)
+}
+
+// getPartyLocked with forUpdate holds the party row against a concurrent
+// write. The binding append is a read-modify-write of the whole document, so
+// two unlocked appends lose one of the two bindings; and the first-login
+// self-bind decision must be re-made under the same lock, or two strangers
+// racing an unbound party both bootstrap it.
+func getPartyLocked(ctx context.Context, q store.Querier, id string, forUpdate bool) (schema.Party, error) {
+	sql := `SELECT doc FROM parties WHERE id = $1`
+	if forUpdate {
+		sql += " FOR UPDATE"
+	}
 	var doc []byte
-	err := q.QueryRow(ctx, `SELECT doc FROM parties WHERE id = $1`, id).Scan(&doc)
+	err := q.QueryRow(ctx, sql, id).Scan(&doc)
 	if err != nil {
 		return schema.Party{}, err
 	}
