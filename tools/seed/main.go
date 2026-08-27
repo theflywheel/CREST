@@ -70,16 +70,4 @@ func main() {
 	}
 
 	fmt.Println("web app: http://localhost:59100")
-	if os.Getenv("SEED_HOLD") == "true" {
-		// One-shot service on a platform that restarts exited containers:
-		// seed once, then hold, so the deployment is not re-seeded in a loop.
-		fmt.Println("holding (SEED_HOLD=true)")
-		// Not `select {}`: once every other goroutine goes idle the runtime
-		// declares "all goroutines are asleep - deadlock!" and kills the
-		// process, and the platform restarts it — the exact loop this hold
-		// exists to prevent. A sleeping timer is always a live goroutine.
-		for {
-			time.Sleep(time.Hour)
-		}
-	}
 }
