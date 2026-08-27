@@ -190,11 +190,11 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 	var issuer struct {
 		Issuer string `json:"issuer"`
 	}
-	if err := s.Confirmation.Get(ctx, "/v1/issuer", &issuer); err != nil {
-		return nil, fmt.Errorf("ask the confirmation service which issuer it signs with: %w", err)
+	if err := s.Verification.Get(ctx, "/v1/issuer", &issuer); err != nil {
+		return nil, fmt.Errorf("ask the verification service which issuer it signs with: %w", err)
 	}
 	if issuer.Issuer == "" {
-		return nil, fmt.Errorf("the confirmation service named no issuer; a definition cannot authorise one")
+		return nil, fmt.Errorf("the verification service named no issuer; a definition cannot authorise one")
 	}
 
 	for _, d := range w.Definitions {

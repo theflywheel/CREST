@@ -23,12 +23,32 @@ import (
 )
 
 func routes(mux *http.ServeMux, d service.Deps) {
+	// The issuer lives here, in the credential substrate, since #137. A fixed
+	// development seed keeps a local stack reproducible; it is not a secret
+	// and is not pretending to be: a deployment sets ISSUER_SEED, and key
+	// custody is G1 #7.
+	seed, err := credential.SeedFromBase64(config.Str("ISSUER_SEED",
+		"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="))
+	if err != nil {
+		d.Log.Error("issuer seed unusable", "error", err)
+		panic(err)
+	}
+	issuer, err := credential.NewIssuer(config.Str("ISSUER_ID", "did:crest:issuer:local"), seed)
+	if err != nil {
+		d.Log.Error("issuer unusable", "error", err)
+		panic(err)
+	}
+	d.Log.Info("issuer ready", "issuer", issuer.ID(), "key", issuer.PublicKeyMultibase())
+
 	h := &handlers{
-		d:            d,
-		definitions:  client.New(config.Str("DEFINITIONS_URL", "http://definitions:8080")),
-		registry:     client.New(config.Str("PARTIES_URL", "http://parties:8080")),
-		confirmation: client.New(config.Str("CONFIRMATION_URL", "http://confirmation:8080")),
-		dediURL:      config.Str("DEDI_URL", ""),
+		d:             d,
+		definitions:   client.New(config.Str("DEFINITIONS_URL", "http://definitions:8080")),
+		registry:      client.New(config.Str("PARTIES_URL", "http://parties:8080")),
+		confirmation:  client.New(config.Str("CONFIRMATION_URL", "http://confirmation:8080")),
+		evidence:      client.New(config.Str("EVIDENCE_URL", "http://evidence:8080")),
+		dediURL:       config.Str("DEDI_URL", ""),
+		issuer:        issuer,
+		statusListURL: config.Str("STATUS_LIST_URL", "http://verification:8080/v1/status-list"),
 	}
 	mux.HandleFunc("POST /v1/verify", h.verify)
 	mux.HandleFunc("POST /v1/verify/batch", h.verifyBatch)
@@ -38,6 +58,20 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/presentations", h.presentations)
 	// A verifier resolving a person rather than checking a document (#104).
 	mux.HandleFunc("GET /v1/parties/{id}/credentials", h.partyCredentials)
+	// Issuance and the credential record (#137): requested by the payments
+	// application at window exit, owned here.
+	mux.HandleFunc("POST /internal/credentials/issue", h.issue)
+	mux.HandleFunc("GET /internal/credentials", h.listCredentialsRaw)
+	mux.HandleFunc("GET /v1/credentials", h.listCredentials)
+	mux.HandleFunc("GET /v1/credentials/{id}", h.getCredentialByID)
+	// The printed card (#24, §5): the holding mechanism for a worker with no
+	// phone. HTML by default because it is meant to reach a printer;
+	// ?format=payload gives the bare QR string for a print station with its
+	// own stationery.
+	mux.HandleFunc("GET /v1/credentials/{id}/card", h.credentialCard)
+	mux.HandleFunc("POST /v1/credentials/{id}/revoke", h.revoke)
+	mux.HandleFunc("GET /v1/status-list", h.statusList)
+	mux.HandleFunc("GET /v1/issuer", h.issuerInfo)
 }
 
 type handlers struct {
@@ -51,6 +85,10 @@ type handlers struct {
 	definitions  *client.Client
 	registry     *client.Client
 	confirmation *client.Client
+	evidence     *client.Client
+
+	issuer        *credential.Issuer
+	statusListURL string
 }
 
 // Verdict is what a verifier is handed.
@@ -209,7 +247,7 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 	v.TrustChain = append(v.TrustChain,
 		checkable("signed by "+issuerID, issuerID+" resolves to a DID document carrying the key; the proof is on the credential itself"))
 
-	revoked, err := h.revoked(ctx, doc, issuerKey)
+	revoked, err := h.revoked(ctx, doc)
 	if err != nil {
 		v.Reasons = append(v.Reasons, "the status list could not be checked: "+err.Error())
 		return v, subjectRef, credID
@@ -417,15 +455,25 @@ func statusListURL(doc map[string]any) string {
 // check like any other (§9).
 func (h *handlers) partyCredentials(w http.ResponseWriter, r *http.Request) {
 	partyID := r.PathValue("id")
+	// The credential record is local since #137, but the merge expansion is
+	// still the registry's answer. Refused rather than emptied when it cannot
+	// be read: an empty list reads as "this person has no history", which is a
+	// different and false statement.
+	ids, err := h.d.SameParty(r.Context(), partyID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "registry_unavailable",
+			"the registry could not say which ids are this party, so this answer would be incomplete without saying so")
+		return
+	}
+	if len(ids) == 0 {
+		ids = []string{partyID}
+	}
 	var out struct {
 		Credentials []json.RawMessage `json:"credentials"`
 	}
-	if err := h.confirmation.Get(r.Context(),
-		"/internal/credentials?partyId="+url.QueryEscape(partyID), &out); err != nil {
-		// Refused rather than emptied: an empty list reads as "this person has
-		// no history", which is a different and false statement.
-		httpx.WriteError(w, http.StatusServiceUnavailable, "confirmation_unavailable",
-			"the credential record could not be read, so this answer would be incomplete without saying so")
+	out.Credentials, err = credentialsFor(r.Context(), h.d.DB.Q(), ids)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "list credentials", err)
 		return
 	}
 	requestedBy := r.URL.Query().Get("requestedByPartyId")
@@ -497,23 +545,16 @@ func (h *handlers) contests(ctx context.Context, credentialID, claimID string) [
 
 // issuerKey resolves the verification key.
 //
-// In this deployment that is a call to confirmation. A field verifier does it
-// differently — they hold the key already, which is what makes W6's offline
-// verification possible; pkg/credential.Verify takes the key as an argument
-// precisely so that path exists.
-func (h *handlers) issuerKey(ctx context.Context, doc map[string]any) (string, string, error) {
+// The issuer is local since #137. A field verifier does it differently — they
+// hold the key already, which is what makes W6's offline verification
+// possible; pkg/credential.Verify takes the key as an argument precisely so
+// that path exists.
+func (h *handlers) issuerKey(_ context.Context, doc map[string]any) (string, string, error) {
 	issuerID, _ := doc["issuer"].(string)
-	var info struct {
-		Issuer             string `json:"issuer"`
-		PublicKeyMultibase string `json:"publicKeyMultibase"`
-	}
-	if err := h.confirmation.Get(ctx, "/v1/issuer", &info); err != nil {
-		return "", issuerID, err
-	}
-	if issuerID != "" && info.Issuer != issuerID {
+	if issuerID != "" && h.issuer.ID() != issuerID {
 		return "", issuerID, fmt.Errorf("this deployment does not hold a key for %s", issuerID)
 	}
-	return info.PublicKeyMultibase, info.Issuer, nil
+	return h.issuer.PublicKeyMultibase(), h.issuer.ID(), nil
 }
 
 // revoked fetches the whole status list and reads one bit of it.
@@ -521,7 +562,7 @@ func (h *handlers) issuerKey(ctx context.Context, doc map[string]any) (string, s
 // The whole list, on purpose: asking about one credential tells the issuer
 // which credential is being checked, and the point of a bitstring is that it
 // does not (§9).
-func (h *handlers) revoked(ctx context.Context, doc map[string]any, issuerKey string) (bool, error) {
+func (h *handlers) revoked(ctx context.Context, doc map[string]any) (bool, error) {
 	status, ok := doc["credentialStatus"].(map[string]any)
 	if !ok {
 		return false, errors.New("the credential carries no status entry")
@@ -532,18 +573,12 @@ func (h *handlers) revoked(ctx context.Context, doc map[string]any, issuerKey st
 		return false, fmt.Errorf("status index %q is not a number", indexText)
 	}
 
-	var listDoc map[string]any
-	if err := h.confirmation.Get(ctx, "/v1/status-list", &listDoc); err != nil {
-		return false, err
-	}
-	// The list is signed, and it is checked. Otherwise whoever answers the URL
-	// decides who has been revoked.
-	if err := credential.Verify(listDoc, issuerKey); err != nil {
-		return false, fmt.Errorf("the status list is not signed by this issuer: %w", err)
-	}
-	subject, _ := listDoc["credentialSubject"].(map[string]any)
-	encoded, _ := subject["encodedList"].(string)
-	list, err := credential.DecodeStatusList(encoded)
+	// The list is local since #137 — this service is the issuer, and the row
+	// it reads is the row it signs for everyone else. A remote verifier still
+	// fetches the signed document from /v1/status-list and checks the
+	// signature, because for them, whoever answers the URL would otherwise
+	// decide who has been revoked.
+	list, err := loadStatusList(ctx, h.d.DB.Q())
 	if err != nil {
 		return false, err
 	}
