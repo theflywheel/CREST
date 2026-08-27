@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"cmp"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -384,15 +387,26 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		// The insert is an upsert so a reseed can replay the same grant, but
-		// an id is a public fact, not a proof: a caller who passed the gate
-		// for their own organisation must not overwrite another authority's
-		// grant by reusing its id (#124 review). Read the existing row under
-		// lock and require the same authority before replacing anything.
+		// an id is a public fact, not a proof, and a grant is not editable: it
+		// is narrowed by revoke and re-grant, never rewritten in place. So a
+		// duplicate id is accepted only as an exact replay — same authority
+		// and the same document, byte for byte (#124 review). Anything less
+		// would let the upsert rewrite doc, state and review_by while the
+		// indexed permission columns keep the old row's values, a grant whose
+		// document says one thing while permits() enforces another.
 		existing, err := getAuthorizationLocked(r.Context(), tx, a.ID, true)
 		switch {
 		case err == nil:
 			if existing.AuthorityPartyID != a.AuthorityPartyID {
 				return errGrantIDTaken
+			}
+			prev, errPrev := json.Marshal(existing)
+			cur, errCur := json.Marshal(a)
+			if errPrev != nil || errCur != nil {
+				return cmp.Or(errPrev, errCur)
+			}
+			if !bytes.Equal(prev, cur) {
+				return errGrantNotEditable
 			}
 		case errors.Is(err, store.ErrNotFound):
 			// New id; nothing to protect.
@@ -413,6 +427,12 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 				"an authorization with this id already stands under a different authority")
 			return
 		}
+		if errors.Is(err, errGrantNotEditable) {
+			httpx.WriteError(w, http.StatusConflict, "grant_not_editable",
+				"an authorization is narrowed by revoke and re-grant, not edited in place; "+
+					"a duplicate id is accepted only as an exact replay")
+			return
+		}
 		httpx.Fail(w, h.d.Log, "create authorization", err)
 		return
 	}
@@ -422,6 +442,10 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 // errGrantIDTaken is the create upsert refusing to let one authority's grant
 // be replaced through another authority's gate.
 var errGrantIDTaken = errors.New("authorization id belongs to a different authority")
+
+// errGrantNotEditable is a same-authority duplicate id that is not an exact
+// replay — an attempted in-place edit of a grant.
+var errGrantNotEditable = errors.New("authorization exists and differs; grants are not edited in place")
 
 // listAuthorizations answers "which authorization stands behind this?" for one
 // party at one scope (#16).

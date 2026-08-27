@@ -275,4 +275,46 @@ func TestAValidTokenIsNotAuthorityToMintOrRevokeGrants(t *testing.T) {
 	if !permitted.Permitted {
 		t.Fatal("the overwrite attempt was refused but the original grant no longer permits")
 	}
+
+	// And the edit door: the SAME authority reusing the id with different
+	// content. A grant is narrowed by revoke and re-grant, never edited in
+	// place — an in-place rewrite would update the stored document while the
+	// indexed permission columns keep the old row, a grant that says one thing
+	// while permits() enforces another.
+	victimDoc := schema.Authorization{
+		ID:      victimID,
+		PartyID: victimParty,
+		Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
+		Scope: schema.AuthorizationScope{
+			Kind:      schema.AuthorizationScopeKindContext,
+			ContextID: ptr(fixtures.ProjectID),
+		},
+		Functions:         []string{"submit-work-evidence"},
+		Period:            schema.Period{Start: epoch.Add(-30 * 24 * time.Hour), End: &end},
+		AuthorityPartyID:  fixtures.OrgID,
+		ApprovedByPartyID: fixtures.OrgID,
+		ApprovedAt:        epoch.Add(-30 * 24 * time.Hour),
+		State:             schema.AuthorizationStateACTIVE,
+	}
+	edited := victimDoc
+	edited.Functions = []string{"submit-work-evidence", "act-for-party"}
+	code, body, err = w.Parties.As(w.login(t, fixtures.OrgID)).Status(w.ctx, http.MethodPost,
+		"/v1/authorizations", edited)
+	if err != nil {
+		t.Fatalf("edit attempt: %v", err)
+	}
+	if code != http.StatusConflict {
+		t.Fatalf("editing a grant in place through create was answered %d, not 409: %s", code, body)
+	}
+
+	// An exact replay of the same document is still accepted — that is what
+	// lets a reseed load fixture history twice without failing.
+	code, body, err = w.Parties.As(w.login(t, fixtures.OrgID)).Status(w.ctx, http.MethodPost,
+		"/v1/authorizations", victimDoc)
+	if err != nil {
+		t.Fatalf("replay attempt: %v", err)
+	}
+	if code != http.StatusCreated {
+		t.Fatalf("an exact replay of an existing grant was answered %d, not 201: %s", code, body)
+	}
 }
