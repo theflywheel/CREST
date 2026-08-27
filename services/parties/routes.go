@@ -465,13 +465,6 @@ var errGrantIDTaken = errors.New("authorization id belongs to a different author
 // replay — an attempted in-place edit of a grant.
 var errGrantNotEditable = errors.New("authorization exists and differs; grants are not edited in place")
 
-// listAuthorizations answers "which authorization stands behind this?" for one
-// party at one scope (#16).
-//
-// Scoped queries only, and organisations only. An unscoped listing, or one that
-// answered for a person, would be a roster query — and a roster of who works
-// where is precisely what #68 established must not be readable, whether from
-// the log or from here.
 // readAuthorization returns one grant, to its own authority and nobody else.
 // The seeder uses it to compare a standing grant against the fixture's shape
 // rather than trusting the permits predicate, which deliberately answers yes
@@ -496,6 +489,13 @@ func (h *handlers) readAuthorization(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, a)
 }
 
+// listAuthorizations answers "which authorization stands behind this?" for one
+// party at one scope (#16).
+//
+// Scoped queries only, and organisations only. An unscoped listing, or one that
+// answered for a person, would be a roster query — and a roster of who works
+// where is precisely what #68 established must not be readable, whether from
+// the log or from here.
 func (h *handlers) listAuthorizations(w http.ResponseWriter, r *http.Request) {
 	// A custodian/operations read: who holds what, where. Signed-in callers
 	// only (#102); the anonymous question this could answer is a roster probe.
