@@ -128,7 +128,7 @@ x-service: &crest-service
     NATIONAL_ID_SALT_REF: "${NATIONAL_ID_SALT_REF:-local-1}"
     ISSUER_ID: "${ISSUER_ID:-did:crest:issuer:local}"
     ISSUER_SEED: "${ISSUER_SEED:-AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=}"
-    STATUS_LIST_URL: "${STATUS_LIST_URL:-http://confirmation:8080/v1/status-list}"
+    STATUS_LIST_URL: "${STATUS_LIST_URL:-http://verification:8080/v1/status-list}"
   depends_on:
     postgres:
       condition: service_healthy

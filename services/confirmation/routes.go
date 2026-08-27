@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,7 +9,6 @@ import (
 
 	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/config"
-	"github.com/theflywheel/crest/pkg/credential"
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
 	"github.com/theflywheel/crest/pkg/identity"
@@ -34,35 +32,18 @@ func routes(mux *http.ServeMux, d service.Deps) {
 		panic(err)
 	}
 
-	seed, err := credential.SeedFromBase64(config.Str("ISSUER_SEED",
-		// A fixed development seed, so a local stack is reproducible. It is not
-		// a secret and is not pretending to be: a deployment sets ISSUER_SEED,
-		// and key custody is G1 #7.
-		"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="))
-	if err != nil {
-		d.Log.Error("issuer seed unusable", "error", err)
-		panic(err)
-	}
-	issuer, err := credential.NewIssuer(config.Str("ISSUER_ID", "did:crest:issuer:local"), seed)
-	if err != nil {
-		d.Log.Error("issuer unusable", "error", err)
-		panic(err)
-	}
-	d.Log.Info("issuer ready", "issuer", issuer.ID(), "key", issuer.PublicKeyMultibase())
-
 	h := &handlers{
 		d:      d,
 		window: window,
-		issuer: issuer,
 		ex: &exiter{
-			db:            d.DB,
-			evidence:      client.New(config.Str("EVIDENCE_URL", "http://evidence:8080")),
-			definitions:   client.New(config.Str("DEFINITIONS_URL", "http://definitions:8080")),
-			registry:      client.New(config.Str("PARTIES_URL", "http://parties:8080")),
-			issuer:        issuer,
-			log:           d.Log,
-			statusListURL: config.Str("STATUS_LIST_URL", "http://confirmation:8080/v1/status-list"),
-			clock:         d.Clock,
+			db:       d.DB,
+			evidence: client.New(config.Str("EVIDENCE_URL", "http://evidence:8080")),
+			// Issuance is requested from the credential substrate, never
+			// performed here (#137): this service holds no keys, no status
+			// list and no credential record.
+			verification: client.New(config.Str("VERIFICATION_URL", "http://verification:8080")),
+			log:          d.Log,
+			clock:        d.Clock,
 		},
 	}
 
@@ -87,20 +68,10 @@ func routes(mux *http.ServeMux, d service.Deps) {
 		d.Log.Info("auto-confirm sweep scheduled", "every", every)
 		go h.sweepLoop(d.Ctx, every)
 	}
-	mux.HandleFunc("GET /v1/credentials", h.listCredentials)
-	// Service twins (#102): verification resolves a party's chain and reads
-	// contest standing mid-verdict.
-	mux.HandleFunc("GET /internal/credentials", h.listCredentialsRaw)
+	// Service twin (#102): verification reads contest standing mid-verdict.
+	// Credentials, the status list and the issuer key are verification's own
+	// since #137 — this service answers questions about windows and disputes.
 	mux.HandleFunc("GET /internal/contests", h.contests)
-	mux.HandleFunc("GET /v1/credentials/{id}", h.getCredential)
-	// The printed card (#24, §5): the holding mechanism for a worker with no
-	// phone. HTML by default because it is meant to reach a printer;
-	// ?format=payload gives the bare QR string for a print station with its own
-	// stationery.
-	mux.HandleFunc("GET /v1/credentials/{id}/card", h.credentialCard)
-	mux.HandleFunc("POST /v1/credentials/{id}/revoke", h.revoke)
-	mux.HandleFunc("GET /v1/status-list", h.statusList)
-	mux.HandleFunc("GET /v1/issuer", h.issuerInfo)
 	mux.HandleFunc("GET /v1/unreleased", h.unreleased)
 	mux.HandleFunc("GET /v1/unreached", h.unreached)
 	mux.HandleFunc("POST /v1/claims/{claimId}/assist", h.assist)
@@ -109,7 +80,6 @@ func routes(mux *http.ServeMux, d service.Deps) {
 type handlers struct {
 	d      service.Deps
 	window time.Duration
-	issuer *credential.Issuer
 	ex     *exiter
 }
 
@@ -261,56 +231,6 @@ func (h *handlers) listWindows(w http.ResponseWriter, r *http.Request) {
 		windows = []Window{}
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"windows": windows, "count": len(windows)})
-}
-
-// listCredentials answers "every credential issued to this person", following
-// any merge the same way every other party-scoped read does (#100, #104). The
-// response is credentials and nothing else — deliberately not the identifier
-// list, not which id each credential was issued under beyond what the
-// credential itself says, and no marker that a merge happened. Whether the
-// requester learns about the merge from the subjects inside the credentials is
-// a property of the credentials, recorded as such in §16; this endpoint adds
-// nothing to it.
-func (h *handlers) listCredentials(w http.ResponseWriter, r *http.Request) {
-	// The worker's own wallet view (#102). Verification's party-resolution
-	// reads the /internal twin — a verifier's window into the chain is
-	// deliberately through verification, where each look writes a
-	// presentation entry, never through this list silently.
-	if r.URL.Query().Get("partyId") == "" {
-		httpx.WriteError(w, http.StatusBadRequest, "missing_parameter",
-			"partyId is required: this endpoint answers what was issued to one worker")
-		return
-	}
-	ids, ok := sameParty(w, r, h.d)
-	if !ok {
-		return
-	}
-	if _, ok := identity.Authorize(w, r, h.d.Log, ids[0], "",
-		h.d.Authenticating, h.d.Permits); !ok {
-		return
-	}
-	h.listCredentialsRaw(w, r)
-}
-
-func (h *handlers) listCredentialsRaw(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Query().Get("partyId") == "" {
-		httpx.WriteError(w, http.StatusBadRequest, "missing_parameter",
-			"partyId is required: this endpoint answers what was issued to one worker")
-		return
-	}
-	ids, ok := sameParty(w, r, h.d)
-	if !ok {
-		return
-	}
-	creds, err := credentialsFor(r.Context(), h.d.DB.Q(), ids)
-	if err != nil {
-		httpx.Fail(w, h.d.Log, "list credentials", err)
-		return
-	}
-	if creds == nil {
-		creds = []json.RawMessage{}
-	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"credentials": creds, "count": len(creds)})
 }
 
 // windowFor loads the confirmation window a request is about, answering 404
@@ -574,73 +494,6 @@ func (h *handlers) finish(w http.ResponseWriter, r *http.Request, route string) 
 	default:
 		httpx.WriteJSON(w, http.StatusOK, result)
 	}
-}
-
-func (h *handlers) getCredential(w http.ResponseWriter, r *http.Request) {
-	c, err := getCredential(r.Context(), h.d.DB.Q(), r.PathValue("id"))
-	if err != nil {
-		httpx.NotFoundOr(w, h.d.Log, "credential", err, store.ErrNotFound)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, c)
-}
-
-// revoke flips one bit. Withdrawal is the single central fact about credentials
-// (§9), and this is the whole of it.
-func (h *handlers) revoke(w http.ResponseWriter, r *http.Request) {
-	// Withdrawal is the issuer's act (§9). Until issuer roles are modelled,
-	// the gate is a signed-in caller — recorded, not anonymous (#102).
-	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
-		return
-	}
-	now := h.d.Clock.Now()
-	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
-		idx, err := revokeCredential(r.Context(), tx, r.PathValue("id"), now)
-		if err != nil {
-			return err
-		}
-		list, err := loadStatusList(r.Context(), tx)
-		if err != nil {
-			return err
-		}
-		if err := list.Revoke(idx); err != nil {
-			return err
-		}
-		return saveStatusList(r.Context(), tx, list)
-	})
-	if err != nil {
-		httpx.NotFoundOr(w, h.d.Log, "credential", err, store.ErrNotFound)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// statusList returns the whole bitstring, signed. Whole, because a verifier who
-// asks about one credential tells the issuer which credential they are checking.
-func (h *handlers) statusList(w http.ResponseWriter, r *http.Request) {
-	list, err := loadStatusList(r.Context(), h.d.DB.Q())
-	if err != nil {
-		httpx.Fail(w, h.d.Log, "load status list", err)
-		return
-	}
-	doc, err := h.issuer.StatusListCredential(
-		config.Str("STATUS_LIST_URL", "http://confirmation:8080/v1/status-list"), list, h.d.Clock.Now())
-	if err != nil {
-		httpx.Fail(w, h.d.Log, "sign status list", err)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, doc)
-}
-
-// issuerInfo publishes the verification key. A verifier needs it once and then
-// never again — which is what makes offline verification possible.
-func (h *handlers) issuerInfo(w http.ResponseWriter, r *http.Request) {
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"issuer":             h.issuer.ID(),
-		"verificationMethod": h.issuer.VerificationMethod(),
-		"publicKeyMultibase": h.issuer.PublicKeyMultibase(),
-		"cryptosuite":        credential.CryptosuiteName,
-	})
 }
 
 // unreleased should always answer zero. It exists so W4 can be checked rather

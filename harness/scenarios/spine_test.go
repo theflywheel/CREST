@@ -205,7 +205,7 @@ func (w *world) credential(t *testing.T, credID string) map[string]any {
 	var out struct {
 		Credential map[string]any `json:"credential"`
 	}
-	if err := w.Confirmation.Get(w.ctx, "/v1/credentials/"+credID, &out); err != nil {
+	if err := w.Verification.Get(w.ctx, "/v1/credentials/"+credID, &out); err != nil {
 		t.Fatalf("read credential %s: %v", credID, err)
 	}
 	return out.Credential
@@ -649,7 +649,7 @@ func TestARevokedCredentialStopsVerifying(t *testing.T) {
 	if v := w.verify(t, cred); !v.Valid {
 		t.Fatalf("not valid before revocation: %v", v.Reasons)
 	}
-	if err := w.Confirmation.As(w.login(t, fixtures.OrgID)).Post(w.ctx,
+	if err := w.Verification.As(w.login(t, fixtures.OrgID)).Post(w.ctx,
 		"/v1/credentials/"+exit.Credential.ID+"/revoke", nil, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -1111,7 +1111,7 @@ func TestAWorkerWithoutAPhoneGetsACardThatCarriesTheWholeRecord(t *testing.T) {
 	}
 
 	// The payload, as a print station would fetch it.
-	code, payload, err := w.Confirmation.Status(w.ctx, http.MethodGet,
+	code, payload, err := w.Verification.Status(w.ctx, http.MethodGet,
 		"/v1/credentials/"+exit.Credential.ID+"/card?format=payload", nil)
 	if err != nil || code != http.StatusOK {
 		t.Fatalf("fetch the card payload: %d %v", code, err)
@@ -1153,7 +1153,7 @@ func TestAWorkerWithoutAPhoneGetsACardThatCarriesTheWholeRecord(t *testing.T) {
 	}
 
 	// And the printable page, which is what actually reaches a printer.
-	code, page, err := w.Confirmation.Status(w.ctx, http.MethodGet,
+	code, page, err := w.Verification.Status(w.ctx, http.MethodGet,
 		"/v1/credentials/"+exit.Credential.ID+"/card", nil)
 	if err != nil || code != http.StatusOK {
 		t.Fatalf("fetch the printable card: %d %v", code, err)

@@ -384,3 +384,33 @@ func TestAGrantIsReadableByItsAuthorityAlone(t *testing.T) {
 		t.Fatalf("a stranger reading a grant answered %d, want 403", code)
 	}
 }
+
+// Issuance is the substrate's act (#127, #137). The confirmation service —
+// the payments application — no longer holds keys, a credential store or a
+// status list: it asks verification to issue at a confirming exit, and every
+// credential question is answered on the infrastructure side of the boundary.
+// The positive half (an exit still lands a signed credential in the wallet)
+// is the spine's assertion; this is the negative half — the application
+// really did give the surface up.
+func TestIssuanceLivesInTheSubstrateNotThePaymentsApplication(t *testing.T) {
+	w := setup(t)
+	for _, path := range []string{"/v1/issuer", "/v1/status-list", "/v1/credentials?partyId=x"} {
+		code, _, err := w.Confirmation.Status(w.ctx, http.MethodGet, path, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		if code != http.StatusNotFound {
+			t.Fatalf("confirmation still answers %s (%d); issuance belongs to the substrate", path, code)
+		}
+	}
+	var issuer struct {
+		Issuer string `json:"issuer"`
+		Key    string `json:"publicKeyMultibase"`
+	}
+	if err := w.Verification.Get(w.ctx, "/v1/issuer", &issuer); err != nil {
+		t.Fatalf("verification does not publish the issuer key: %v", err)
+	}
+	if issuer.Issuer == "" || issuer.Key == "" {
+		t.Fatalf("verification's issuer info is incomplete: %+v", issuer)
+	}
+}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/theflywheel/crest/pkg/credential"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -160,77 +159,6 @@ func recordExit(ctx context.Context, tx store.Querier, claimID, route string,
 	return err
 }
 
-func insertCredential(ctx context.Context, tx store.Querier, c issuedCredential) error {
-	_, err := tx.Exec(ctx, `
-		INSERT INTO credentials (id, claim_id, subject_ref, status_index, digest, doc, issued_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		c.ID, c.ClaimID, c.SubjectRef, c.StatusIndex, c.Digest, c.Doc, c.IssuedAt)
-	return err
-}
-
-type issuedCredential struct {
-	ID          string          `json:"id"`
-	ClaimID     string          `json:"claimId"`
-	SubjectRef  string          `json:"subjectRef"`
-	StatusIndex int             `json:"statusIndex"`
-	Digest      string          `json:"digest"`
-	Doc         json.RawMessage `json:"credential"`
-	IssuedAt    time.Time       `json:"issuedAt"`
-	RevokedAt   *time.Time      `json:"revokedAt,omitempty"`
-
-	// Carried between building and signing, never stored: the credential is
-	// assembled before its status slot is known, and signed after.
-	unit  schema.Unit `json:"-"`
-	route string      `json:"-"`
-
-	// Resolved once, at build time, from the definitions service. Nil where
-	// there is nothing a verifier could check.
-	defProof  *schema.WorkEventCredentialCredentialSubjectWorkEventDefinitionProof `json:"-"`
-	skillCode *string                                                              `json:"-"`
-	authority *schema.WorkEventCredentialCredentialSubjectIssuerAuthority          `json:"-"`
-}
-
-func getCredential(ctx context.Context, q store.Querier, credID string) (issuedCredential, error) {
-	var c issuedCredential
-	err := q.QueryRow(ctx, `
-		SELECT id, claim_id, subject_ref, status_index, digest, doc, issued_at, revoked_at
-		FROM credentials WHERE id = $1`, credID).
-		Scan(&c.ID, &c.ClaimID, &c.SubjectRef, &c.StatusIndex, &c.Digest, &c.Doc, &c.IssuedAt, &c.RevokedAt)
-	return c, err
-}
-
-// nextStatusIndex hands out the next slot in the bitstring, inside the caller's
-// transaction so two issuances cannot take the same one. Two credentials
-// sharing a status index means revoking one revokes both.
-func nextStatusIndex(ctx context.Context, tx store.Querier) (int, error) {
-	var idx int
-	err := tx.QueryRow(ctx,
-		`UPDATE status_list SET next_index = next_index + 1 WHERE id = 1 RETURNING next_index - 1`).
-		Scan(&idx)
-	return idx, err
-}
-
-func loadStatusList(ctx context.Context, q store.Querier) (*credential.StatusList, error) {
-	var bits []byte
-	if err := q.QueryRow(ctx, `SELECT bits FROM status_list WHERE id = 1`).Scan(&bits); err != nil {
-		return nil, err
-	}
-	return credential.FromBytes(bits), nil
-}
-
-func saveStatusList(ctx context.Context, tx store.Querier, list *credential.StatusList) error {
-	_, err := tx.Exec(ctx, `UPDATE status_list SET bits = $1 WHERE id = 1`, list.Bytes())
-	return err
-}
-
-func revokeCredential(ctx context.Context, tx store.Querier, credID string, at time.Time) (int, error) {
-	var idx int
-	err := tx.QueryRow(ctx,
-		`UPDATE credentials SET revoked_at = $2 WHERE id = $1 RETURNING status_index`, credID, at).
-		Scan(&idx)
-	return idx, err
-}
-
 func insertContest(ctx context.Context, tx store.Querier, c schema.Contest) error {
 	doc, err := json.Marshal(c)
 	if err != nil {
@@ -289,26 +217,6 @@ func contestsAgainst(ctx context.Context, q store.Querier, targetKind, targetID 
 // credential it issued. Until now the service could only be asked about one
 // claim at a time, so there was no way to ask it about a person at all — which
 // made the merge gap invisible here rather than absent.
-// credentialsFor lists the signed credentials issued to a set of party ids —
-// in practice, one person across a merge (#104). Revoked credentials are
-// included: a withdrawn credential is part of what happened, and the verifier
-// checking it against the status list is the mechanism for finding that out;
-// filtering it here would make this listing quietly disagree with the list.
-func credentialsFor(ctx context.Context, q store.Querier, partyIDs []string) ([]json.RawMessage, error) {
-	rows, err := q.Query(ctx, `
-		SELECT doc FROM credentials
-		 WHERE subject_ref = ANY($1)
-		 ORDER BY issued_at, id`, partyIDs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return store.Collect(rows, func(r store.Row) (json.RawMessage, error) {
-		var doc []byte
-		return doc, r.Scan(&doc)
-	})
-}
-
 func windowsFor(ctx context.Context, q store.Querier, partyIDs []string) ([]Window, error) {
 	rows, err := q.Query(ctx, `
 		SELECT `+windowColumns+` FROM windows

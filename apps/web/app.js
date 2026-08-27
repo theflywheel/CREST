@@ -133,7 +133,7 @@ async function workerMoney(){
 
 async function workerWallet(){
   const me = S.me.partyId;
-  const out = await api.get("confirmation", `/v1/credentials?partyId=${encodeURIComponent(me)}`);
+  const out = await api.get("verification", `/v1/credentials?partyId=${encodeURIComponent(me)}`);
   const creds = out.credentials||[];
   return `<h2>My credentials</h2>
     <p class="lede">Each one is provable to a stranger in a minute, offline — the printed card carries the whole signed credential, not a link to one.</p>
@@ -145,7 +145,7 @@ async function workerWallet(){
         <div class="kv"><b>period</b>${when((we.period||{}).start)}</div>
         <div class="kv"><b>id</b><code>${short(c.id)}</code></div>
         <div class="row" style="margin-top:6px"><button class="btn small" data-showdoc="${esc(c.id)}">Show the document</button>
-        <a class="btn small" href="${esc(location.origin.replace(':59100',':59004'))}/v1/credentials/${encodeURIComponent(c.id)}/card" target="_blank" rel="noopener">Printed card (QR)</a></div>
+        <a class="btn small" href="${esc(location.origin.replace(':59100',':59005'))}/v1/credentials/${encodeURIComponent(c.id)}/card" target="_blank" rel="noopener">Printed card (QR)</a></div>
         <pre class="doc" id="doc-${esc(c.id)}" hidden>${esc(JSON.stringify(c,null,2))}</pre></div>`;
     }).join(""):`<div class="empty">No credentials yet — they are issued when a confirmation window closes.</div>`}`;
 }

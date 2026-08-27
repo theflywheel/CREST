@@ -30,8 +30,8 @@ import (
 )
 
 type stack struct {
-	registry, evidence, confirmation, payments string
-	http                                       *http.Client
+	registry, evidence, confirmation, verification, payments string
+	http                                                     *http.Client
 }
 
 func env(k, def string) string {
@@ -46,6 +46,7 @@ func main() {
 		registry:     env("PARTIES_URL", "http://localhost:59001"),
 		evidence:     env("EVIDENCE_URL", "http://localhost:59003"),
 		confirmation: env("CONFIRMATION_URL", "http://localhost:59004"),
+		verification: env("VERIFICATION_URL", "http://localhost:59005"),
 		payments:     env("PAYMENTS_URL", "http://localhost:59006"),
 		http:         &http.Client{Timeout: 60 * time.Second},
 	}
@@ -219,7 +220,7 @@ func main() {
 			continue
 		}
 		credentials++
-		body, err := s.raw(s.confirmation + "/v1/credentials/" + *win.CredentialID + "/card?format=payload")
+		body, err := s.raw(s.verification + "/v1/credentials/" + *win.CredentialID + "/card?format=payload")
 		if err == nil && bytes.HasPrefix(body, []byte("NCF")) {
 			cards++
 		}

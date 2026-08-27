@@ -177,7 +177,7 @@ export async function orgView() {
 
 /* ————— Instance view (J2 / G-1) ————— */
 export async function instanceView() {
-  const issuer = await api.get("confirmation", "/v1/issuer").catch(() => null);
+  const issuer = await api.get("verification", "/v1/issuer").catch(() => null);
   const instAnswer = await api.get("parties", "/v1/instance").catch(() => null);
   const inst = (instAnswer || {}).instance || null;
   const reg = (inst || {}).registry || {};
@@ -196,7 +196,7 @@ export async function instanceView() {
   ]);
   return `${title("Instance — the deployment itself")}
     ${cardTitled("Instance facts", instRows + kvRows([
-      ["issuer (per the confirmation service)", issuer ? mono(issuer.id || issuer.issuer || JSON.stringify(issuer).slice(0, 60)) : "the confirmation service did not answer /v1/issuer"],
+      ["issuer (per the verification service)", issuer ? mono(issuer.id || issuer.issuer || JSON.stringify(issuer).slice(0, 60)) : "the verification service did not answer /v1/issuer"],
       ["services", String(names.length) + " CREST services behind this console"],
     ]) + `<p class="muted" style="margin-top:8px">GET /v1/instance is the deployment's public self-description (#70) — every field is configuration or derived from it, read live rather than stored, which is exactly where the layering test puts it.</p>`)}
     ${cardTitled("The services behind all of it — live health sweep", `<div class="stats" style="flex-wrap:wrap">
