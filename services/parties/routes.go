@@ -332,13 +332,41 @@ func (h *handlers) createTerms(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
-	// A grant decides who may act for whom; minting one is a custodian act,
-	// not a public door. Signed-in callers only, same as /v1/holds (#102).
-	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
-		return
-	}
 	var a schema.Authorization
 	if !httpx.ReadJSON(w, r, &a) {
+		return
+	}
+	// A grant decides who may act for whom, and a valid token is not, by
+	// itself, authority to decide that: any signed-in worker could otherwise
+	// mint themselves act-for-party and pass every later permits() check
+	// (#124 review). The caller must prove they ARE — or act for — the
+	// authority the grant names, because authorityPartyId is "who says so"
+	// and this request is that party saying so.
+	ctxID := ""
+	if a.Scope.ContextID != nil {
+		ctxID = *a.Scope.ContextID
+	}
+	if _, ok := identity.Authorize(w, r, h.d.Log, a.AuthorityPartyID, ctxID,
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
+	// approvedByPartyId stays a recorded fact rather than a cross-checked
+	// claim: the fixture world already holds a grant approved by a custodian
+	// person under the organisation's authority, and requiring it to equal
+	// the acting party would make that history unloadable. The gate above is
+	// the one that matters — whoever the record names as approver, only the
+	// authority (or somebody proven to act for it) can put the record here.
+	// And the authority must be an organisation — the same line
+	// listAuthorizations draws. A person naming themselves as their own
+	// authority is the self-mint above wearing different field names.
+	authority, err := getParty(r.Context(), h.d.DB.Q(), a.AuthorityPartyID)
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "authority party", err, store.ErrNotFound)
+		return
+	}
+	if authority.Kind != schema.PartyKindOrganisation {
+		httpx.WriteError(w, http.StatusForbidden, "not_an_organisation",
+			"authorityPartyId must name an organisation; a person cannot be their own authority")
 		return
 	}
 	if a.ID == "" {
@@ -526,13 +554,26 @@ func (h *handlers) overdueAuthorizations(w http.ResponseWriter, r *http.Request)
 // narrower authorization; there is deliberately no edit, because an edited
 // grant has no record of what it used to allow.
 func (h *handlers) revokeAuthorization(w http.ResponseWriter, r *http.Request) {
-	// Revocation changes who may act from the next permits() answer onward —
-	// a custodian act. Signed-in callers only, same as resolving a hold (#102).
-	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+	// Revocation changes who may act from the next permits() answer onward,
+	// so it is gated like creation: the caller must prove they are — or act
+	// for — the authority whose grant this is. Any signed-in subject who
+	// learned a grant id could otherwise switch off another party's ability
+	// to submit (#124 review).
+	grant, err := getAuthorization(r.Context(), h.d.DB.Q(), r.PathValue("id"))
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "authorization", err, store.ErrNotFound)
+		return
+	}
+	ctxID := ""
+	if grant.Scope.ContextID != nil {
+		ctxID = *grant.Scope.ContextID
+	}
+	if _, ok := identity.Authorize(w, r, h.d.Log, grant.AuthorityPartyID, ctxID,
+		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
 	var out schema.Authorization
-	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		a, err := revokeAuthorization(r.Context(), tx, r.PathValue("id"), h.d.Clock.Now())
 		if err != nil {
 			return err

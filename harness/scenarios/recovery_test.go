@@ -34,7 +34,10 @@ func (w *world) vouchedParty(t *testing.T, name, authority string) string {
 	party := w.newWorker(t, name)
 	epoch := w.w.Instance.Epoch
 	end := epoch.Add(300 * 24 * time.Hour)
-	if err := w.Parties.As(w.login(t, fixtures.OrgID)).Post(
+	// As the authority itself: minting a grant is the named authority saying
+	// so, and the registry now refuses a caller who is not the authority the
+	// grant names (#124 review).
+	if err := w.Parties.As(w.login(t, authority)).Post(
 		w.ctx, "/v1/authorizations", schema.Authorization{
 			PartyID: party,
 			Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},

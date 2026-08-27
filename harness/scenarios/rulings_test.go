@@ -177,3 +177,60 @@ func TestARevokedGrantStopsNewWorkButNotWorkInFlight(t *testing.T) {
 		return err
 	})
 }
+
+// #124 review: a valid token is not authority to mint or revoke grants. The
+// escalation it closes: a signed-in worker POSTs an ACTIVE authorization
+// granting themselves act-for-party — naming themselves as approver and
+// authority — and every later permits() check answers yes. Both doors, both
+// halves: minting is refused, and revoking somebody else's grant by id is
+// refused.
+func TestAValidTokenIsNotAuthorityToMintOrRevokeGrants(t *testing.T) {
+	w := setup(t)
+
+	attacker := w.newWorker(t, "Self-Appointed Authority "+runID)
+	epoch := w.w.Instance.Epoch
+	end := epoch.Add(300 * 24 * time.Hour)
+	mint := func(authority, approver string) (int, []byte) {
+		t.Helper()
+		code, body, err := w.Parties.As(w.login(t, attacker)).Status(w.ctx, http.MethodPost,
+			"/v1/authorizations", schema.Authorization{
+				PartyID: attacker,
+				Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
+				Scope: schema.AuthorizationScope{
+					Kind:      schema.AuthorizationScopeKindContext,
+					ContextID: ptr(fixtures.ProjectID),
+				},
+				Functions:         []string{"act-for-party"},
+				Period:            schema.Period{Start: epoch, End: &end},
+				AuthorityPartyID:  authority,
+				ApprovedByPartyID: approver,
+				ApprovedAt:        epoch,
+				State:             schema.AuthorizationStateACTIVE,
+			})
+		if err != nil {
+			t.Fatalf("mint attempt: %v", err)
+		}
+		return code, body
+	}
+
+	// Naming the organisation as authority without being it: impersonation.
+	if code, body := mint(fixtures.OrgID, fixtures.OrgID); code != http.StatusForbidden {
+		t.Fatalf("minting a grant in the organisation's name was answered %d, not 403: %s", code, body)
+	}
+	// Naming themselves as their own authority: a person is not an authority.
+	if code, body := mint(attacker, attacker); code != http.StatusForbidden {
+		t.Fatalf("a self-authorised grant was answered %d, not 403: %s", code, body)
+	}
+
+	// And the revoke door: a grant the organisation stands behind cannot be
+	// switched off by a stranger who learned its id.
+	_, authID := w.grantSubmitter(t, "Grant Holder Under Attack "+runID, nil)
+	code, body, err := w.Parties.As(w.login(t, attacker)).Status(w.ctx, http.MethodPost,
+		"/v1/authorizations/"+url.PathEscape(authID)+"/revoke", nil)
+	if err != nil {
+		t.Fatalf("revoke attempt: %v", err)
+	}
+	if code != http.StatusForbidden {
+		t.Fatalf("a stranger revoking the organisation's grant was answered %d, not 403: %s", code, body)
+	}
+}

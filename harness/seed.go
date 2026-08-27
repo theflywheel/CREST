@@ -68,10 +68,13 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 			return nil, fmt.Errorf("context %s: %w", c.Name, err)
 		}
 	}
-	// Authorizations are a custodian surface — signed-in callers only — so the
-	// seeder authenticates for exactly this loop, with a token minted from the
-	// stack's own mock issuer. The rest of the seed goes through doors that
-	// are deliberately open (parties, terms, contexts).
+	// Minting a grant is the named authority saying so, and every fixture
+	// grant names the organisation — so the seeder proves it IS the
+	// organisation, exactly as a first login would: mint a token from the
+	// stack's own mock issuer and self-bind its subject to the org party,
+	// which the never-yet-bound org accepts as bootstrap. The rest of the
+	// seed goes through doors that are deliberately open (parties, terms,
+	// contexts).
 	oidc := NewOIDC()
 	if err := oidc.WaitReady(ctx, 60*time.Second); err != nil {
 		return nil, fmt.Errorf("identity provider: %w", err)
@@ -81,6 +84,14 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 		return nil, fmt.Errorf("mint seeding token: %w", err)
 	}
 	asSeeder := s.Parties.As(Caller{Token: token})
+	if err := asSeeder.Post(ctx, "/v1/parties/"+fixtures.OrgID+"/identity-bindings",
+		map[string]any{
+			"provider":      "mock-oidc",
+			"providerClass": "generic-oidc",
+			"subjectRef":    oidc.Subject("seed|custodian"),
+		}, nil); err != nil {
+		return nil, fmt.Errorf("bind the seeder to the organisation: %w", err)
+	}
 	for _, a := range w.Authorizations {
 		if err := asSeeder.Post(ctx, "/v1/authorizations", a, nil); err != nil {
 			return nil, fmt.Errorf("authorization %s: %w", a.ID, err)

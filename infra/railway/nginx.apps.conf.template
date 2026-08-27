@@ -13,12 +13,20 @@ server {
     # do not exist as far as the internet is concerned.
     location ~ ^/api/[a-z-]+/internal/ { return 404; }
 
-    location ~ ^/api/(?<svc>[a-z-]+)/(?<rest>.*)$ {
+    # The fence's second half: the first refuses /internal/*, this one refuses
+    # hosts that are not CREST's — the Railway project is shared, and an open
+    # (?<svc>[a-z-]+) would proxy to any service in it. crest-mock-oidc stays
+    # listed deliberately: it is the demo's login.
+    location ~ ^/api/(?<svc>crest-(registry|definitions|evidence|confirmation|verification|payments|notify|mock-oidc))/(?<rest>.*)$ {
         set $upstream http://$svc.railway.internal:8080/$rest$is_args$args;
         proxy_pass $upstream;
         proxy_set_header Host $svc.railway.internal;
         proxy_read_timeout 30s;
     }
+
+    # An /api/ name the allowlist refused must 404, not fall through to the
+    # app fallback and answer 200 with index.html.
+    location ~ ^/api/ { return 404; }
 
     # Multi-app door: each app is a directory with its own index.html; hash
     # routing means no history fallback is needed. $uri/ (which crest-web's
