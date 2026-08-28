@@ -6,7 +6,7 @@
 
 SHELL := bash
 COMPOSE := docker compose -f infra/compose/docker-compose.yml
-SERVICES := parties definitions evidence confirmation verification payments notify
+SERVICES := parties definitions evidence verification payments notify
 GO ?= go
 
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
@@ -191,7 +191,7 @@ CREST_WEB_URL ?= https://crest-web-production.up.railway.app
 # The demo fleet, named the way Railway names it (crest-$name). Order matters
 # to deploy-demo: services before the doors that front them, mocks in between
 # because the services call them.
-FLEET_SERVICES := registry definitions evidence confirmation verification payments notify
+FLEET_SERVICES := registry definitions evidence verification payments notify
 FLEET_MOCKS := mock-oidc mock-rail mock-sms
 FLEET_DOORS := web apps worker field console verifier docs
 

@@ -45,7 +45,7 @@ func main() {
 	s := &stack{
 		registry:     env("PARTIES_URL", "http://localhost:59001"),
 		evidence:     env("EVIDENCE_URL", "http://localhost:59003"),
-		confirmation: env("CONFIRMATION_URL", "http://localhost:59004"),
+		confirmation: env("CONFIRMATION_URL", "http://localhost:59006"),
 		verification: env("VERIFICATION_URL", "http://localhost:59005"),
 		payments:     env("PAYMENTS_URL", "http://localhost:59006"),
 		http:         &http.Client{Timeout: 60 * time.Second},
