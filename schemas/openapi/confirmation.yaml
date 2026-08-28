@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: CREST confirmation
+  title: CREST payments application — the confirmation window
   version: "1"
   description: |
     ## Who may call what (#102)
@@ -20,15 +20,19 @@ info:
       service-identity ruling (§16, 2026-08-25): service traffic lives on
       internal routes and fencing them to the service network is the
       deployment's job.
-    The T=7 window and what comes out of it: a signed credential, a payment
-    release, and - whichever of the four exits was taken - the money.
+    The confirmation window and what comes out of it: an issuance request to
+    the verification service, a payment release, and - whichever of the four
+    exits was taken - the money. Since #129 these paths are served by the
+    `payments` service (the payments application, one deployable); this file
+    keeps its name so the surface's history stays findable, and
+    payments.yaml documents the instruction side of the same service.
 
     Credentials and contests are referenced by the `$id` of their JSON Schema
     under `schemas/` rather than restated here. `schemas/` is the source of truth;
     a second copy of a primitive is what `schemas/README.md` exists to prevent.
 servers:
-  - url: http://confirmation:8080
-    description: In-cluster address used by the other services.
+  - url: http://payments:8080
+    description: In-cluster address used by the other services (#129 — the payments application serves this surface).
 
 paths:
   /v1/windows:

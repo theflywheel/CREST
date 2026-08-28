@@ -67,7 +67,8 @@ x-service: &crest-service
     PARTIES_URL: http://parties:8080
     DEFINITIONS_URL: http://definitions:8080
     EVIDENCE_URL: http://evidence:8080
-    CONFIRMATION_URL: http://confirmation:8080
+    # The confirmation window lives in the payments application (#129).
+    CONFIRMATION_URL: http://payments:8080
     PAYMENTS_URL: http://payments:8080
     NOTIFY_URL: http://notify:8080
     VERIFICATION_URL: http://verification:8080
@@ -481,15 +482,6 @@ services:
       args:
         SERVICE: evidence
     ports: ["${EVIDENCE_PORT:-59003}:8080"]
-
-  confirmation:
-    <<: [*crest-service, *crest-healthcheck]
-    build:
-      context: ../..
-      dockerfile: infra/compose/Dockerfile.service
-      args:
-        SERVICE: confirmation
-    ports: ["${CONFIRMATION_PORT:-59004}:8080"]
 
   verification:
     <<: [*crest-service, *crest-healthcheck]

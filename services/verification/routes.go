@@ -44,7 +44,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 		d:             d,
 		definitions:   client.New(config.Str("DEFINITIONS_URL", "http://definitions:8080")),
 		registry:      client.New(config.Str("PARTIES_URL", "http://parties:8080")),
-		confirmation:  client.New(config.Str("CONFIRMATION_URL", "http://confirmation:8080")),
+		confirmation:  client.New(config.Str("CONFIRMATION_URL", "http://payments:8080")),
 		evidence:      client.New(config.Str("EVIDENCE_URL", "http://evidence:8080")),
 		dediURL:       config.Str("DEDI_URL", ""),
 		issuer:        issuer,

@@ -26,7 +26,7 @@ import (
 var migrations embed.FS
 
 func main() {
-	confirmation := client.New(config.Str("CONFIRMATION_URL", "http://confirmation:8080"))
+	confirmation := client.New(config.Str("CONFIRMATION_URL", "http://payments:8080"))
 	notify := client.New(config.Str("NOTIFY_URL", "http://notify:8080"))
 
 	service.Main("evidence", service.Options{
