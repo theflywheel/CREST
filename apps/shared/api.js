@@ -16,7 +16,7 @@ const defaults = {
   parties:      at(59001),
   definitions:  at(59002),
   evidence:     at(59003),
-  confirmation: at(59004),
+  confirmation: at(59006), // the payments application answers the window (#129)
   verification: at(59005),
   payments:     at(59006),
   notify:       at(59007),

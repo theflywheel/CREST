@@ -11,21 +11,26 @@ import (
 	"github.com/theflywheel/crest/harness/fixtures"
 )
 
-// The outbox's actual promise, tested by breaking the thing it protects against
-// (#47).
+// The outbox's actual promise, tested by breaking the thing it protects
+// against (#47), reshaped by #129.
 //
-// services/confirmation/exit.go says of the enqueue beside the exit: "A crash
-// between them is the failure W4 cannot survive, and this is what makes it
-// impossible rather than unlikely." That sentence was true by construction and
-// had never been executed. #47's done-when asks for it in as many words — "an
-// outbox entry survives a crash between commit and publish" — and it was the
-// half of that issue nobody had proven.
+// When the window and the instruction were two services, this test killed
+// payments, confirmed while it was down, and SIGKILLed confirmation between
+// the exit's commit and the release's delivery — a deterministic crash in the
+// owed state. The merge collapsed that seam: the exit, the outbox entry and
+// the instruction now live in one service and one database, so "the
+// downstream is down while the entry is owed" cannot be staged from outside.
 //
-// The failure it rules out is specific and it is the worst one this system has:
-// a worker's record says the work counted, the money never moved, and nothing
-// anywhere remembers that a call was owed. Not an error anybody sees. Just a
-// worker who was not paid, with a confirmed record saying they should have been.
-func TestAPaymentReleaseSurvivesTheConfirmationServiceBeingKilled(t *testing.T) {
+// What survives, and still deserves executing, is the promise itself: the
+// release is enqueued in the same transaction as the exit, so a SIGKILL of
+// the payments service immediately after the exit commits must never lose the
+// payment — whichever side of the relay's delivery the kill lands on, the
+// restart finds either a delivered instruction or an owed entry and finishes
+// the job, exactly once. The kill races the in-process relay rather than
+// deterministically beating it; both interleavings assert the property that
+// matters (nothing lost, nothing doubled), and the losing interleaving is
+// still a restart-recovery proof.
+func TestAPaymentReleaseSurvivesThePaymentsServiceBeingKilled(t *testing.T) {
 	w := setup(t)
 
 	phone, err := harness.PhoneOf(w.w, fixtures.WorkerAID)
@@ -43,19 +48,7 @@ func TestAPaymentReleaseSurvivesTheConfirmationServiceBeingKilled(t *testing.T) 
 		return err
 	})
 
-	// Payments goes away. Now the release cannot be delivered, which is the
-	// state we need the crash to happen in — an entry committed and owed.
-	if err := harness.Kill(w.ctx, "payments"); err != nil {
-		t.Fatalf("kill payments: %v", err)
-	}
-	restored := false
-	defer func() {
-		if !restored {
-			_ = harness.Start(w.ctx, "payments")
-		}
-	}()
-
-	// The worker confirms. The exit and the release commit together.
+	// The worker confirms: the exit and the owed release commit together.
 	var exit struct {
 		Credential struct {
 			ID string `json:"id"`
@@ -63,41 +56,20 @@ func TestAPaymentReleaseSurvivesTheConfirmationServiceBeingKilled(t *testing.T) 
 	}
 	if err := w.confirmClaim(t, claimID,
 		map[string]any{"route": "self"}, &exit); err != nil {
-		t.Fatalf("confirm while payments is down: %v.\n"+
-			"The exit must not depend on the downstream being reachable — that dependency "+
-			"is the reason the outbox exists.", err)
+		t.Fatalf("confirm: %v", err)
 	}
 	if exit.Credential.ID == "" {
 		t.Fatal("confirming produced no credential")
 	}
 
-	// Nothing was delivered: payments is not running, so there is no
-	// instruction anywhere. The state change is committed regardless, which is
-	// the first half of the property.
-	if _, err := w.instruction(claimID); err == nil {
-		t.Fatal("a payment instruction exists while payments is down; this test is not testing anything")
-	}
-	win, err := w.window(claimID)
-	if err != nil {
-		t.Fatalf("read the window after the exit: %v", err)
-	}
-	if win.ExitRoute == nil {
-		t.Fatal("the exit was not committed; the confirm returned but recorded nothing")
-	}
-
 	// The crash. SIGKILL, so nothing gets to drain, flush or apologise — the
-	// process is simply gone, after the commit and before the publish.
-	if err := harness.Kill(w.ctx, "confirmation"); err != nil {
-		t.Fatalf("kill confirmation: %v", err)
-	}
-	if err := harness.Start(w.ctx, "confirmation"); err != nil {
-		t.Fatalf("restart confirmation: %v", err)
+	// process is simply gone, as soon after the commit as a test can arrange.
+	if err := harness.Kill(w.ctx, "payments"); err != nil {
+		t.Fatalf("kill payments: %v", err)
 	}
 	if err := harness.Start(w.ctx, "payments"); err != nil {
 		t.Fatalf("restart payments: %v", err)
 	}
-	restored = true
-
 	if err := w.WaitReady(w.ctx, 90*time.Second); err != nil {
 		t.Fatalf("the stack did not come back: %v", err)
 	}

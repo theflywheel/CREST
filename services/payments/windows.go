@@ -25,14 +25,14 @@ const (
 	routeDispute  = "dispute"
 )
 
-func routes(mux *http.ServeMux, d service.Deps) {
+func windowRoutes(mux *http.ServeMux, d service.Deps) {
 	window, err := config.Duration("CONFIRMATION_WINDOW", 7*24*time.Hour)
 	if err != nil {
 		d.Log.Error("confirmation window is unreadable", "error", err)
 		panic(err)
 	}
 
-	h := &handlers{
+	h := &windowHandlers{
 		d:      d,
 		window: window,
 		ex: &exiter{
@@ -77,7 +77,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/claims/{claimId}/assist", h.assist)
 }
 
-type handlers struct {
+type windowHandlers struct {
 	d      service.Deps
 	window time.Duration
 	ex     *exiter
@@ -88,7 +88,7 @@ type handlers struct {
 // Opening the window and queueing the notification happen together: a window
 // nobody was told about is a worker who cannot confirm and cannot dispute,
 // which is W2 broken quietly.
-func (h *handlers) openWindow(w http.ResponseWriter, r *http.Request) {
+func (h *windowHandlers) openWindow(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ClaimID      string    `json:"claimId"`
 		UnitID       string    `json:"unitId"`
@@ -137,7 +137,7 @@ func (h *handlers) openWindow(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, out)
 }
 
-func (h *handlers) getWindow(w http.ResponseWriter, r *http.Request) {
+func (h *windowHandlers) getWindow(w http.ResponseWriter, r *http.Request) {
 	win, err := getWindow(r.Context(), h.d.DB.Q(), r.PathValue("claimId"), false)
 	if err != nil {
 		httpx.NotFoundOr(w, h.d.Log, "window", err, store.ErrNotFound)
@@ -155,7 +155,7 @@ func (h *handlers) getWindow(w http.ResponseWriter, r *http.Request) {
 // derived from who the caller proved to be, and a body that contradicts it is
 // refused rather than believed — because the whole value of recording an
 // assisted confirmation as assisted is that somebody's name is on it.
-func (h *handlers) confirm(w http.ResponseWriter, r *http.Request) {
+func (h *windowHandlers) confirm(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Route string `json:"route"`
 	}
@@ -205,7 +205,7 @@ func (h *handlers) confirm(w http.ResponseWriter, r *http.Request) {
 // It requires a partyId. A list of every window in the deployment is not a
 // worker's record, it is a report, and serving one from the endpoint a worker's
 // own client calls is how a bulk export gets built by accident.
-func (h *handlers) listWindows(w http.ResponseWriter, r *http.Request) {
+func (h *windowHandlers) listWindows(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("partyId") == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "missing_parameter",
 			"partyId is required: this endpoint answers what happened to one worker's claims")
@@ -236,7 +236,7 @@ func (h *handlers) listWindows(w http.ResponseWriter, r *http.Request) {
 // windowFor loads the confirmation window a request is about, answering 404
 // itself. Loaded before the action so the party to check against comes from
 // the record rather than from the request.
-func (h *handlers) windowFor(w http.ResponseWriter, r *http.Request) (Window, bool) {
+func (h *windowHandlers) windowFor(w http.ResponseWriter, r *http.Request) (Window, bool) {
 	win, err := getWindow(r.Context(), h.d.DB.Q(), r.PathValue("claimId"), false)
 	if err != nil {
 		httpx.NotFoundOr(w, h.d.Log, "window", err, store.ErrNotFound)
@@ -247,7 +247,7 @@ func (h *handlers) windowFor(w http.ResponseWriter, r *http.Request) (Window, bo
 
 // dispute contests the record. It does not contest the money: the release below
 // is the same release every other exit makes (W4).
-func (h *handlers) dispute(w http.ResponseWriter, r *http.Request) {
+func (h *windowHandlers) dispute(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Reason          string `json:"reason"`
 		RaisedByPartyID string `json:"raisedByPartyId"`
@@ -317,7 +317,7 @@ func (h *handlers) dispute(w http.ResponseWriter, r *http.Request) {
 // So the credential stands and the dispute is visible beside it. This endpoint
 // is that visibility. It returns standing only: never the reason, never who
 // raised it.
-func (h *handlers) contests(w http.ResponseWriter, r *http.Request) {
+func (h *windowHandlers) contests(w http.ResponseWriter, r *http.Request) {
 	kind, target := r.URL.Query().Get("targetKind"), r.URL.Query().Get("targetId")
 	if kind == "" || target == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_query",
@@ -347,7 +347,7 @@ func (h *handlers) contests(w http.ResponseWriter, r *http.Request) {
 // Driven by the clock and nothing else, and exposed as an endpoint so the
 // harness can advance seven days and then ask for the consequences, rather than
 // waiting for a ticker it cannot see.
-func (h *handlers) sweep(w http.ResponseWriter, r *http.Request) {
+func (h *windowHandlers) sweep(w http.ResponseWriter, r *http.Request) {
 	now, due, swept, waiting, err := h.sweepOnce(r.Context())
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "sweep", err)
@@ -364,7 +364,7 @@ func (h *handlers) sweep(w http.ResponseWriter, r *http.Request) {
 
 // sweepOnce is one pass: auto-confirm everything due, and name everything due
 // that it deliberately did not touch.
-func (h *handlers) sweepOnce(ctx context.Context) (time.Time, int, []string, []string, error) {
+func (h *windowHandlers) sweepOnce(ctx context.Context) (time.Time, int, []string, []string, error) {
 	now := h.d.Clock.Now()
 	due, err := dueWindows(ctx, h.d.DB.Q(), now, 500)
 	if err != nil {
@@ -410,7 +410,7 @@ func (h *handlers) sweepOnce(ctx context.Context) (time.Time, int, []string, []s
 // forever and the payment it owes is never released. "Every T=7 exit releases
 // payment" is not a property of the exit routes alone — auto-confirm is one of
 // the four exits, and it is the only one no person triggers.
-func (h *handlers) sweepLoop(ctx context.Context, every time.Duration) {
+func (h *windowHandlers) sweepLoop(ctx context.Context, every time.Duration) {
 	t := time.NewTicker(every) //nolint:forbidigo // a ticker is elapsed time, not a reading of the clock
 	defer t.Stop()
 	for {
@@ -442,7 +442,7 @@ func (h *handlers) sweepLoop(ctx context.Context, every time.Duration) {
 // than a timer's. That is the whole difference: auto-confirmation on a worker
 // who never heard is silence the system manufactured, and this is somebody
 // taking responsibility for saying the record is true.
-func (h *handlers) assist(w http.ResponseWriter, r *http.Request) {
+func (h *windowHandlers) assist(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		AssistedByPartyID string `json:"assistedByPartyId"`
 	}
@@ -467,7 +467,7 @@ func (h *handlers) assist(w http.ResponseWriter, r *http.Request) {
 // unreached is the counterpart to /v1/unreleased: windows past T=7 whose worker
 // was never told, waiting for a person. Both exist so that a promise is a query
 // rather than a hope.
-func (h *handlers) unreached(w http.ResponseWriter, r *http.Request) {
+func (h *windowHandlers) unreached(w http.ResponseWriter, r *http.Request) {
 	// An operations list over other people's payments and windows: signed-in
 	// callers (#102).
 	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
@@ -484,7 +484,7 @@ func (h *handlers) unreached(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"windows": rows, "count": len(rows)})
 }
 
-func (h *handlers) finish(w http.ResponseWriter, r *http.Request, route string) {
+func (h *windowHandlers) finish(w http.ResponseWriter, r *http.Request, route string) {
 	result, err := h.ex.exit(r.Context(), r.PathValue("claimId"), route)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -498,7 +498,7 @@ func (h *handlers) finish(w http.ResponseWriter, r *http.Request, route string) 
 
 // unreleased should always answer zero. It exists so W4 can be checked rather
 // than believed.
-func (h *handlers) unreleased(w http.ResponseWriter, r *http.Request) {
+func (h *windowHandlers) unreleased(w http.ResponseWriter, r *http.Request) {
 	// An operations list over other people's payments and windows: signed-in
 	// callers (#102).
 	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
