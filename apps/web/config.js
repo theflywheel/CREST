@@ -9,7 +9,7 @@ if (location.port !== "59100") {
     parties:      "/api/crest-registry",
     definitions:  "/api/crest-definitions",
     evidence:     "/api/crest-evidence",
-    confirmation: "/api/crest-confirmation",
+    confirmation: "/api/crest-payments", // the payments application answers the window (#129)
     verification: "/api/crest-verification",
     payments:     "/api/crest-payments",
     notify:       "/api/crest-notify",
