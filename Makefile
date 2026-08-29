@@ -193,7 +193,9 @@ CREST_WEB_URL ?= https://crest-web-production.up.railway.app
 # because the services call them.
 FLEET_SERVICES := registry definitions evidence verification payments notify
 FLEET_MOCKS := mock-oidc mock-rail mock-sms
-FLEET_DOORS := web apps worker field console verifier docs
+# docs is not a door of its own since #148: the design docs ride inside
+# crest-apps at /docs/.
+FLEET_DOORS := web apps worker field console verifier
 
 verify-deployed: ## Check every deployed fleet member answers, and verify the log independently
 	@echo "── the seven services, through the crest-web proxy"
@@ -216,6 +218,12 @@ verify-deployed: ## Check every deployed fleet member answers, and verify the lo
 		curl -fsS --max-time 10 -o /dev/null https://crest-$$d-production.up.railway.app/ \
 			&& echo ok || exit 1; \
 	done
+	@printf '%-14s' docs
+	@# The docs ride inside the apps door (#148); prove the rendering and an
+	@# extensionless Quartz link, not just the directory.
+	@curl -fsS --max-time 10 -o /dev/null https://crest-apps-production.up.railway.app/docs/ \
+		&& curl -fsS --max-time 10 -o /dev/null https://crest-apps-production.up.railway.app/docs/DEMO \
+		&& echo ok || exit 1
 	@echo "── crest-registry"
 	@curl -fsS $(CREST_REGISTRY_URL)/healthz && echo
 	@echo "── crest-dedi"
