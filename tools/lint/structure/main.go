@@ -22,7 +22,7 @@ type violation struct {
 // Top-level directories that are allowed to exist, and what each is for.
 var allowedTop = map[string]string{
 	"schemas":   "JSON Schema — source of truth for Go and TypeScript",
-	"services":  "the six L1 services plus notify",
+	"services":  "crest-core (the infrastructure service) and the payments application",
 	"pkg":       "shared Go libraries",
 	"adapters":  "source-system adapters",
 	"cmd":       "operator and harness CLIs",
@@ -43,10 +43,10 @@ var ignoredDir = map[string]bool{
 
 // Exactly the services named in the blueprint. A new top-level service is a
 // design decision, not a directory someone creates on a Tuesday.
+// core is one deployable holding four member packages (#150) — the members
+// are its subdirectories, not top-level services.
 var knownServices = map[string]bool{
-	"parties": true, "definitions": true, "evidence": true,
-	"confirmation": true, "verification": true, "payments": true,
-	"notify": true,
+	"core": true, "payments": true,
 }
 
 func main() {

@@ -12,7 +12,6 @@ if (location.port !== "59110") {
     confirmation: "/api/crest-payments", // the payments application answers the window (#129)
     verification: "/api/crest-verification",
     payments:     "/api/crest-payments",
-    notify:       "/api/crest-notify",
     oidc:         "/api/crest-mock-oidc",
   };
 }

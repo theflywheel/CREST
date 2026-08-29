@@ -27,9 +27,7 @@ type Stack struct {
 	Confirmation *Service
 	Verification *Service
 	Payments     *Service
-	Notify       *Service
 
-	SMS  *Service
 	Rail *Service
 
 	http *http.Client
@@ -67,16 +65,16 @@ func New() *Stack {
 		return &Service{Name: name, Base: env(name, def), http: c}
 	}
 	return &Stack{
-		Parties:     svc("PARTIES_URL", "http://localhost:59001"),
-		Definitions: svc("DEFINITIONS_URL", "http://localhost:59002"),
-		Evidence:    svc("EVIDENCE_URL", "http://localhost:59003"),
+		// The four member names answer from the one core service (#150); the
+		// clients keep their names because the questions they ask kept theirs.
+		Parties:     svc("PARTIES_URL", "http://localhost:59000"),
+		Definitions: svc("DEFINITIONS_URL", "http://localhost:59000"),
+		Evidence:    svc("EVIDENCE_URL", "http://localhost:59000"),
 		// The confirmation window answers on the payments application (#129);
 		// the client keeps its name because the questions it asks kept theirs.
 		Confirmation: svc("CONFIRMATION_URL", "http://localhost:59006"),
-		Verification: svc("VERIFICATION_URL", "http://localhost:59005"),
+		Verification: svc("VERIFICATION_URL", "http://localhost:59000"),
 		Payments:     svc("PAYMENTS_URL", "http://localhost:59006"),
-		Notify:       svc("NOTIFY_URL", "http://localhost:59007"),
-		SMS:          svc("SMS_URL", "http://localhost:59101"),
 		Rail:         svc("RAIL_URL", "http://localhost:59102"),
 		http:         c,
 	}
@@ -84,8 +82,9 @@ func New() *Stack {
 
 // Services is every CREST service, for the operations that apply to all of them.
 func (s *Stack) Services() []*Service {
-	return []*Service{s.Parties, s.Definitions, s.Evidence,
-		s.Verification, s.Payments, s.Notify}
+	// One entry per PROCESS, not per name: Parties/Definitions/Evidence/
+	// Verification are one core deployable (#150), so it appears once.
+	return []*Service{s.Parties, s.Payments}
 }
 
 // WaitReady polls /readyz until every service answers, or gives up.
@@ -95,9 +94,9 @@ func (s *Stack) Services() []*Service {
 // suite that gets ignored within a week.
 func (s *Stack) WaitReady(ctx context.Context, within time.Duration) error {
 	deadline := time.Now().Add(within)
-	for _, svc := range append(s.Services(), s.SMS, s.Rail) {
+	for _, svc := range append(s.Services(), s.Rail) {
 		path := "/readyz"
-		if svc == s.SMS || svc == s.Rail {
+		if svc == s.Rail {
 			path = "/healthz" // the mocks have no dependencies to be ready for
 		}
 		for {
@@ -170,7 +169,7 @@ func (svc *Service) Now(ctx context.Context) (time.Time, error) {
 // Reset clears the mocks between scenarios, so one scenario's messages are
 // never another's evidence.
 func (s *Stack) Reset(ctx context.Context) error {
-	for _, m := range []*Service{s.SMS, s.Rail} {
+	for _, m := range []*Service{s.Rail} {
 		if err := m.Post(ctx, "/reset", nil, nil); err != nil {
 			return err
 		}

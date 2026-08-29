@@ -5,8 +5,6 @@ package scenarios
 import (
 	"fmt"
 	"net/http"
-	"net/url"
-	"strings"
 	"testing"
 	"time"
 
@@ -133,30 +131,12 @@ func TestASourceThatGoesQuietIsNoticedAndItsOwnerIsTold(t *testing.T) {
 		t.Fatalf("the sweep did not discover the silent source: %+v", swept)
 	}
 
-	// The owner is told, and the message is addressed to somebody who has to go
-	// and ask a question rather than somebody who already knows the system.
-	var messages []struct {
-		To   string `json:"to"`
-		Body string `json:"body"`
-	}
-	supervisorPhone, err := harness.PhoneOf(w.w, fixtures.SupervisorID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, "the source's owner is told", 20*time.Second, func() error {
-		// Escaped: a phone number starts with '+', which in a query string
-		// means a space, so the unescaped form looks up a different number and
-		// finds nothing.
-		if err := w.SMS.Get(w.ctx, "/messages?to="+url.QueryEscape(supervisorPhone), &messages); err != nil {
-			return err
-		}
-		for _, m := range messages {
-			if strings.Contains(m.Body, "stopped sending") {
-				return nil
-			}
-		}
-		return fmt.Errorf("no outage message among %d", len(messages))
-	})
+	// Nobody is told (#150): notifications are dropped, so the outage's only
+	// witnesses are the sweep's own record and the log line the delivery
+	// writes instead of sending. What this test can still hold is that the
+	// detection machinery keeps working — the silence is discovered, counted,
+	// and not re-alerted — so the day a channel returns, it has something
+	// true to say.
 
 	// Swept again with nothing fixed: still quiet, and NOT reported as a new
 	// discovery. An alert per sweep is how an alert channel becomes something

@@ -23,12 +23,20 @@ linters:
   settings:
     depguard:
       rules:
-        # Services talk to each other over HTTP, exactly as they do in production.
-        # Importing another service's package makes a distributed system that only
-        # works when it isn't distributed.
+        # The two deployables talk to each other over HTTP, exactly as they
+        # do in production. Importing across that boundary makes a distributed
+        # system that only works when it isn't distributed. Inside core the
+        # rule is different since #150: its members ARE one deployable, and
+        # core/main.go composing them is the design — but the members still
+        # must not import each other (they keep talking over HTTP so the
+        # boundaries stay honest), and nothing in core touches payments.
         no-cross-service-imports:
           files:
-            - "**/services/**"
+            - "**/services/core/parties/**"
+            - "**/services/core/definitions/**"
+            - "**/services/core/evidence/**"
+            - "**/services/core/verification/**"
+            - "**/services/payments/**"
           deny:
             - pkg: github.com/theflywheel/crest/services
               desc: "services must not import each other — talk over HTTP, like in production"
