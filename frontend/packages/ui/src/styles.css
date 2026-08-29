@@ -1,0 +1,243 @@
+/* The CREST design system — ported from apps/shared/crest.css (itself lifted
+   from docs/reference/CREST — Actor Journeys_17Aug.html: DIGIT palette v6.0.0
+   tokens, layered shadows, the component grammar every journey screen uses),
+   extended with the desktop console grammar the reference's 109 console
+   frames use inline: 54px teal appbar, sidebar with border-left active state,
+   grid-row lists instead of <table>.
+
+   Classnames pinned by tests/e2e-apps/apps.spec.js are public contract:
+   .screen .errbar .appbar .sidebar .stat .n .held .bottomnav .panel-shell */
+
+:root{
+  --p1:#C84C0E; --p1-dark:#A63D0B; --p2:#0B4B66; --p1-bg:#FBEEE8;
+  --text-1:#363636; --text-2:#787878; --text-3:#C5C5C5;
+  --error:#B91900; --error-bg:#FFF5F4; --success:#00703C; --success-bg:#F1FFF8;
+  --warning:#EA8D00; --warning-bg:#FFF9F0; --warning-text:#A96500;
+  --info:#0057BD; --info-bg:#DEEFFF;
+  --generic-bg:#EEEEEE; --divider:#D6D5D4; --paper-1:#FFFFFF; --paper-2:#FAFAFA;
+  --p2-tint:#EAF1F5; --pill-bg:#E8F1FB; --tier2-text:#854F0B;
+  --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:24px;
+  --sh-1:0 1px 2px rgba(11,75,102,.06), 0 2px 8px rgba(11,75,102,.05);
+  --sh-2:0 2px 4px rgba(11,75,102,.06), 0 8px 24px rgba(11,75,102,.09);
+  --sh-3:0 8px 20px rgba(11,75,102,.10), 0 28px 60px rgba(11,75,102,.14);
+  --ease:cubic-bezier(.2,.8,.25,1);
+  --mono:'Roboto Mono', ui-monospace, Menlo, monospace;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body,#app,#root{height:100%}
+body{
+  font:400 15px/1.6 Roboto, system-ui, sans-serif; color:var(--text-1);
+  background:
+    radial-gradient(1100px 500px at 12% -8%, rgba(200,76,14,.05), transparent 60%),
+    radial-gradient(900px 480px at 95% 0%, rgba(11,75,102,.05), transparent 55%),
+    var(--paper-2);
+}
+button{font:inherit;cursor:pointer}
+a{color:var(--p2)}
+
+/* ————— type scale ————— */
+h1{font:300 38px/1.15 Roboto;letter-spacing:-.9px}
+.scr-title{font:400 24px/1.3 Roboto;letter-spacing:-.3px;color:var(--text-1);text-wrap:pretty}
+.scr-title.m{font-size:21px}
+.big-amount{font:300 32px/1.12 Roboto;letter-spacing:-1px}
+.big-stat{font:400 25px/1.05 Roboto}
+.person-name{font:400 23px/1.25 Roboto;letter-spacing:-.5px}
+.muted{font:400 12.5px/1.5 Roboto;color:var(--text-2)}
+.body-2{font:400 12.8px/1.5 Roboto;color:var(--text-1)}
+.eyebrow{font:500 10.5px/1 var(--mono);letter-spacing:.9px;text-transform:uppercase;color:var(--text-2)}
+.mono,.id{font-family:var(--mono);font-size:12px}
+.num{font-variant-numeric:tabular-nums}
+
+/* ————— chips / pills ————— */
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:13px;font:500 11.5px/1.4 Roboto}
+.chip.sm{padding:4px 10px;border-radius:12px;font:500 11px/1.4 Roboto}
+.chip.ok{background:var(--success-bg);color:var(--success)}
+.chip.brand{background:var(--p1-bg);color:var(--p1)}
+.chip.warn{background:var(--warning-bg);color:var(--warning-text)}
+.chip.info{background:var(--pill-bg);color:var(--p2)}
+.chip.err{background:var(--error-bg);color:var(--error)}
+.chip.plain{background:var(--generic-bg);color:var(--text-1)}
+.chip.tier1{background:var(--success-bg);color:var(--success)}
+.chip.tier2{background:var(--warning-bg);color:var(--tier2-text)}
+.chip.tier3{background:var(--generic-bg);color:var(--text-1)}
+
+/* ————— buttons ————— */
+.btn{display:block;width:100%;background:var(--p1);color:#fff;border:none;border-radius:6px;padding:14px 18px;font:500 14.5px/1 Roboto;text-align:center;text-decoration:none}
+.btn:hover{background:var(--p1-dark)}
+.btn.secondary{background:#fff;color:var(--p2);border:1px solid var(--divider);padding:13px 18px}
+.btn.secondary:hover{background:var(--paper-2)}
+.btn[disabled],.btn.disabled{background:#fff;color:var(--text-3);border:1px solid var(--generic-bg);cursor:default}
+.btn.inline{display:inline-block;width:auto}
+.btn-row{display:flex;gap:10px}
+.btn-row .btn{flex:1}
+.btn-row .btn.dominant{flex:1.3}
+
+/* ————— cards ————— */
+.card{border:1px solid var(--divider);border-radius:10px;padding:13px 14px;background:#fff}
+.card.hi{border-color:var(--p1);background:#FFFDFB}
+.card.quiet{border:1px solid var(--generic-bg);border-radius:8px;padding:12px 13px}
+button.card{text-align:left;width:100%}
+
+/* ————— key/value table ————— */
+.kv{border:1px solid var(--generic-bg);border-radius:8px;overflow:hidden;background:#fff}
+.kv .row{display:flex;justify-content:space-between;gap:14px;padding:10px 13px;font:400 13px/1.45 Roboto}
+.kv .row+.row{border-top:1px solid var(--generic-bg)}
+.kv .row .k{color:var(--text-2);flex:none}
+.kv .row .v{color:var(--text-1);text-align:right;word-break:break-word}
+
+/* ————— vertical timeline ————— */
+.tline{display:flex;flex-direction:column}
+.tline .step{display:flex;gap:12px}
+.tline .rail{width:19px;display:flex;flex-direction:column;align-items:center}
+.tline .dot{width:11px;height:11px;border-radius:50%;margin-top:4px;flex:none;background:var(--success)}
+.tline .step.active .dot{background:var(--p1)}
+.tline .step.todo .dot{background:var(--text-3)}
+.tline .conn{flex:1;width:2px;background:var(--success);min-height:14px}
+.tline .step.active .conn,.tline .step.todo .conn{background:var(--generic-bg)}
+.tline .lbl{font:500 13.5px/1.35 Roboto;padding-bottom:2px}
+.tline .meta{font:400 12.3px/1.45 Roboto;color:var(--text-2);padding-bottom:14px}
+
+/* ————— honest sidecar ————— */
+.sidecar{display:flex;gap:10px;align-items:flex-start;border-radius:7px;padding:11px 13px;background:var(--info-bg)}
+.sidecar.ok{background:var(--success-bg)}
+.sidecar .txt{font:400 12.5px/1.55 Roboto;color:var(--text-1)}
+.sidecar .ico{flex:none;width:15px;height:15px;margin-top:2px}
+.sidecar .ico circle{fill:none;stroke:var(--info);stroke-width:1.6}
+.sidecar .ico line{stroke:var(--info);stroke-width:1.6;stroke-linecap:round}
+.sidecar.ok .ico circle,.sidecar.ok .ico line{stroke:var(--success)}
+
+/* ————— "What happens next" block ————— */
+.next{border:1px solid #00703C33;background:var(--success-bg);border-radius:9px;padding:12px 14px;display:flex;flex-direction:column;gap:7px}
+.next .eyebrow{color:var(--success)}
+.next .nrow{display:flex;gap:10px}
+.next .nrow .k{flex:none;width:118px;font:500 11px/1.5 Roboto;color:var(--success)}
+.next .nrow .v{flex:1;font:400 12.3px/1.45 Roboto;color:var(--text-1)}
+.next .ifnot{border-top:1px solid #00703C22;padding-top:7px;font:400 11.4px/1.45 Roboto;color:var(--warning-text)}
+
+/* ————— open-note (unresolved question, amber) ————— */
+.open-note{background:var(--warning-bg);border:1px solid #F3CE94;border-left:3px solid var(--warning);border-radius:7px;padding:11px 13px;font:400 12.5px/1.55 Roboto;color:#7A4B00}
+
+/* ————— error banner ————— */
+.errbar{background:var(--error-bg);color:var(--error);border:1px solid #EDC0A6;border-radius:8px;padding:10px 13px;font:400 13px/1.5 Roboto}
+
+/* ————— consent script quote ————— */
+.consent-quote{border:1px solid var(--divider);border-radius:9px;padding:14px;background:var(--paper-2);font:400 13.5px/1.65 Roboto}
+
+/* ————— consent disclosure list ————— */
+.dis{display:flex;flex-direction:column;gap:9px}
+.dis .li{display:flex;gap:10px;align-items:flex-start}
+.dis .tick{flex:none;width:18px;height:18px;border-radius:50%;background:var(--success);display:flex;align-items:center;justify-content:center;margin-top:1px}
+.dis .tick svg{width:10px;height:10px}
+.dis .li.off .tick{background:none;border:1.6px solid var(--text-3)}
+.dis .t{font:400 13px/1.4 Roboto}
+.dis .s{font:400 11.5px/1.4 Roboto;color:var(--text-2)}
+
+/* ————— held payment card ————— */
+.held{border:1px solid var(--divider);border-radius:10px;padding:13px 14px;background:#fff;display:flex;flex-direction:column;gap:8px}
+.held .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.held .amt{font:500 13.4px/1.3 Roboto}
+.held .why{font:400 12.5px/1.5 Roboto;color:var(--text-1)}
+.held .who{font:500 12.3px/1.45 Roboto;color:var(--p2)}
+
+/* ————— forms ————— */
+input,textarea,select{font:inherit;padding:11px 13px;border:1px solid var(--divider);border-radius:8px;background:#fff;max-width:100%}
+textarea{resize:vertical}
+input:focus-visible,textarea:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--p2);outline-offset:1px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field>span{font:500 11.5px/1 Roboto;color:var(--text-2)}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* ————— console shell (the reference's desktop grammar) ————— */
+.console-shell{min-height:100vh;display:flex;flex-direction:column}
+.appbar{height:54px;padding:0 22px;background:var(--p2);color:#fff;display:flex;align-items:center;gap:12px;flex:none}
+.appbar .mark{width:24px;height:24px;border-radius:5px;background:var(--p1);flex:none}
+.appbar .t{font:500 14.5px/1 Roboto}
+.appbar .who{margin-left:auto;font:400 12.5px/1 Roboto;color:#CFE0E8;display:flex;align-items:center;gap:10px}
+.appbar .who button{background:none;border:1px solid #FFFFFF44;border-radius:6px;color:#CFE0E8;padding:6px 11px;font:500 12px/1 Roboto}
+.appbar .who button:hover{background:#FFFFFF14}
+.console-body{flex:1;display:flex;min-height:0}
+.sidebar{width:212px;background:var(--paper-2);border-right:1px solid var(--generic-bg);padding:16px 0;display:flex;flex-direction:column;gap:2px;flex:none}
+.sidebar .cap{padding:12px 18px 8px;font:500 10.5px/1 var(--mono);letter-spacing:.9px;text-transform:uppercase;color:var(--text-2)}
+.sidebar .cap:first-child{padding-top:4px}
+.sidebar a,.sidebar button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;padding:10px 18px;font:400 13.5px/1.3 Roboto;color:var(--text-2);border-left:3px solid transparent;text-decoration:none}
+.sidebar a.active,.sidebar button.active{font-weight:500;color:var(--p1);background:var(--p1-bg);border-left-color:var(--p1)}
+.sidebar svg{width:18px;height:18px;flex:none}
+.pane{flex:1;padding:24px 28px 28px;display:flex;flex-direction:column;gap:15px;min-height:0;overflow:auto}
+.pane-narrow{max-width:720px}
+.pane-wide{max-width:1080px}
+.pagehead{display:flex;align-items:baseline;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.pane-cols{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;align-items:start}
+.pane-cols>div{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+/* ————— grid table (the reference's row-list idiom; no <table>) ————— */
+.grid-tbl{border:1px solid var(--generic-bg);border-radius:8px;background:#fff;overflow:hidden}
+.grid-tbl .g-row{display:grid;grid-template-columns:var(--cols, 1fr 1fr);gap:14px;align-items:center;padding:10px 14px;font:400 13px/1.45 Roboto}
+.grid-tbl .g-row+.g-row{border-top:1px solid var(--generic-bg)}
+.grid-tbl .g-head{font:500 10.5px/1 var(--mono);letter-spacing:.9px;text-transform:uppercase;color:var(--text-2);background:var(--paper-2)}
+a.g-row,button.g-row{width:100%;text-align:left;background:#fff;border:none;color:inherit;text-decoration:none;cursor:pointer}
+a.g-row:hover,button.g-row:hover{background:var(--paper-2)}
+.gt-wrap{overflow-x:auto;border-radius:8px}
+
+/* ————— stats ————— */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat{border:1px solid var(--divider);border-radius:10px;padding:13px 14px;background:#fff}
+.stat .n{font:400 25px/1.05 Roboto;font-variant-numeric:tabular-nums}
+.stat .l{font:400 12.3px/1.45 Roboto;color:var(--text-2);margin-top:4px}
+
+/* ————— panel shell (external form) ————— */
+.panel-shell{max-width:440px;margin:28px auto;background:#fff;border-radius:var(--r-lg);border:1px solid var(--divider);box-shadow:var(--sh-3);padding:22px;display:flex;flex-direction:column;gap:14px}
+
+/* ————— login hero (full-page, replaces the phone login frame) ————— */
+.login-shell{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.login-card{max-width:480px;width:100%;display:flex;flex-direction:column;gap:14px}
+
+/* ————— offline banner (field app) ————— */
+.offline-banner{background:var(--warning-bg);color:var(--warning-text);padding:9px 18px;font:400 12.5px/1.5 Roboto;border-bottom:1px solid #F3CE94}
+
+/* ————— bottom nav (worker, mobile only) ————— */
+.bottomnav{display:none;border-top:1px solid var(--generic-bg);background:var(--paper-2);padding:10px 0 12px;flex:none;position:sticky;bottom:0}
+.bottomnav a{flex:1;background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:3px;font:400 10.5px/1.4 Roboto;color:var(--text-2);text-decoration:none}
+.bottomnav a.active{font-weight:500;color:var(--p1)}
+.bottomnav svg{width:20px;height:20px}
+
+/* ————— screen entry ————— */
+.screen{animation:rise .32s var(--ease);display:flex;flex-direction:column;gap:15px;min-width:0}
+@keyframes rise{from{opacity:0;transform:translateY(10px) scale(.994)}}
+@media (prefers-reduced-motion: reduce){*{animation-duration:.01ms !important;transition-duration:.01ms !important}}
+
+/* ————— responsive: tablet — sidebar narrows ————— */
+@media (max-width: 1023px){
+  .sidebar{width:184px}
+  .pane{padding:18px 20px 24px}
+  .pane-cols{grid-template-columns:1fr}
+}
+
+/* ————— responsive: mobile — sidebar becomes a chip rail ————— */
+@media (max-width: 720px){
+  .console-body{flex-direction:column}
+  .sidebar{width:100%;flex-direction:row;align-items:center;gap:8px;
+    padding:8px 16px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    border-right:none;border-bottom:1px solid var(--generic-bg)}
+  .sidebar .cap{display:none}
+  .sidebar a,.sidebar button{width:auto;flex:none;border-left:none;border:1px solid var(--divider);
+    border-radius:16px;padding:7px 13px;background:var(--paper-1);white-space:nowrap}
+  .sidebar a.active,.sidebar button.active{background:var(--p1);border-color:var(--p1);color:#fff}
+  .sidebar svg{display:none}
+  .pane{padding:16px;min-height:0}
+  .pane-narrow,.pane-wide{max-width:none}
+  .appbar{padding:0 16px}
+  .appbar .who{overflow:hidden;max-width:55%}
+  .appbar .who .who-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* worker: chip rail yields to the bottom nav */
+  .with-bottomnav .sidebar{display:none}
+  .with-bottomnav .bottomnav{display:flex}
+
+  .panel-shell{max-width:none;margin:0;border-radius:0;border-left:none;border-right:none;
+    box-shadow:none;padding:18px 16px 20px}
+  .form-grid{grid-template-columns:1fr}
+  .kv .row .v{word-break:break-all}
+  .btn-row{flex-wrap:wrap}
+  .grid-tbl .g-row{gap:10px}
+}

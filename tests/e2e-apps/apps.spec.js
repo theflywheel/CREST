@@ -39,7 +39,8 @@ test("landing names the four apps", async ({ page }) => {
   for (const name of ["worker", "field", "console", "Verification"]) {
     await expect(page.locator("body")).toContainText(new RegExp(name, "i"));
   }
-  await expect(page.locator(".app-card")).toHaveCount(4);
+  // Four product doors + the design-docs card (#148).
+  await expect(page.locator(".app-card")).toHaveCount(5);
   await assertAlive(page, errors, "landing");
 });
 
@@ -49,7 +50,10 @@ test("worker app: every route, on real data", async ({ page }) => {
   await settle(page);
   await page.click("#login-grace");
   await settle(page);
-  await expect(page.locator(".bottomnav")).toBeVisible();
+  // The worker door is a desktop console now: appbar + sidebar on wide
+  // viewports; the bottom nav exists but shows only under 720px.
+  await expect(page.locator(".appbar")).toBeVisible();
+  await expect(page.locator(".sidebar")).toBeVisible();
 
   // Home: the two stat cards are real counts from the story.
   await expect(page.locator(".stat").first()).toBeVisible();
@@ -198,6 +202,21 @@ test("mobile viewport: no horizontal overflow, console nav becomes a chip rail",
   await settle(page);
   const dir = await page.locator(".sidebar").evaluate(el => getComputedStyle(el).flexDirection);
   expect(dir).toBe("row");
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBe(0);
+});
+
+test("mobile viewport: the worker door keeps its bottom nav", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/worker/");
+  await settle(page);
+  await page.click("#login-grace");
+  await settle(page);
+  // Under 720px the worker's sidebar chip rail yields to the phone-style
+  // bottom nav — the phone experience survives the desktop rebuild.
+  await expect(page.locator(".bottomnav")).toBeVisible();
+  await expect(page.locator(".sidebar")).toBeHidden();
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBe(0);
