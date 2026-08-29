@@ -25,10 +25,17 @@ import (
 func routes(mux *http.ServeMux, d service.Deps) {
 	// The issuer lives here, in the credential substrate, since #137. A fixed
 	// development seed keeps a local stack reproducible; it is not a secret
-	// and is not pretending to be: a deployment sets ISSUER_SEED, and key
-	// custody is G1 #7.
-	seed, err := credential.SeedFromBase64(config.Str("ISSUER_SEED",
-		"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="))
+	// and is not pretending to be. A deployment holds the real seed in Vault
+	// (VAULT_ADDR + VAULT_SECRET_PATH, #130's custody ruling) — and when
+	// Vault is configured but cannot answer, this service refuses to start
+	// rather than sign with a key nobody escrowed.
+	rawSeed, err := config.SecretStr("ISSUER_SEED",
+		"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")
+	if err != nil {
+		d.Log.Error("issuer seed unavailable", "error", err)
+		panic(err)
+	}
+	seed, err := credential.SeedFromBase64(rawSeed)
 	if err != nil {
 		d.Log.Error("issuer seed unusable", "error", err)
 		panic(err)
