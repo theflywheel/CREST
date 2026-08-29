@@ -38,6 +38,11 @@ server {
     # app fallback and answer 200 with index.html.
     location ~ ^/api/ { return 404; }
 
+    # The design docs live under /docs/ since #148. Quartz links pages
+    # without extensions (/docs/DEMO for DEMO.html); the raw HTML design docs
+    # keep theirs. Serve both.
+    location /docs/ { try_files $uri $uri.html $uri/index.html =404; }
+
     # Multi-app door: each app is a directory with its own index.html; hash
     # routing means no history fallback is needed. $uri/ (which crest-web's
     # single-app fallback lacks) is what lets /worker/ resolve to its index.
