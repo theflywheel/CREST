@@ -17,9 +17,16 @@ server {
     # hosts that are not CREST's — the Railway project is shared, and an open
     # (?<svc>[a-z-]+) would proxy to any service in it. crest-mock-oidc stays
     # listed deliberately: it is the demo's login.
-    # crest-confirmation is an alias kept for links already in the wild: the
-    # confirmation window lives in the payments application since #129, and
-    # the old name proxies there rather than 404ing on stakeholders.
+    # Alias names for links already in the wild: the four member names
+    # answer from crest-core since #150, and crest-confirmation answers from
+    # the payments application since #129. The old names proxy rather than
+    # 404 on stakeholders.
+    location ~ ^/api/crest-(registry|definitions|evidence|verification)/(?<crest>.*)$ {
+        set $upstream http://crest-core.railway.internal:8080/$crest$is_args$args;
+        proxy_pass $upstream;
+        proxy_set_header Host crest-core.railway.internal;
+        proxy_read_timeout 30s;
+    }
     location ~ ^/api/crest-confirmation/(?<crest>.*)$ {
         set $upstream http://crest-payments.railway.internal:8080/$crest$is_args$args;
         proxy_pass $upstream;
@@ -27,7 +34,7 @@ server {
         proxy_read_timeout 30s;
     }
 
-    location ~ ^/api/(?<svc>crest-(registry|definitions|evidence|verification|payments|notify|mock-oidc))/(?<rest>.*)$ {
+    location ~ ^/api/(?<svc>crest-(core|payments|mock-oidc))/(?<rest>.*)$ {
         set $upstream http://$svc.railway.internal:8080/$rest$is_args$args;
         proxy_pass $upstream;
         proxy_set_header Host $svc.railway.internal;

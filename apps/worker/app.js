@@ -253,7 +253,7 @@ async function disputeView(claimId) {
 function declinedView() {
   return `
     <h2 class="scr-title m">Work you declined</h2>
-    ${openNote(`<b>Illustrative — no L1 endpoint serves this yet.</b> The journeys (w1_14) show declined offers kept on your side only, never on your record. The services expose no offers or declines API today; when one lands it belongs to the definitions/notify surface. Nothing is drawn here because nothing real exists to draw.`)}
+    ${openNote(`<b>Illustrative — no L1 endpoint serves this yet.</b> The journeys (w1_14) show declined offers kept on your side only, never on your record. The services expose no offers or declines API today; when one lands it belongs to the definitions surface. Nothing is drawn here because nothing real exists to draw.`)}
     <p class="body-2">The promise this screen will keep: declining work is not recorded about you. A verifier can never see what you said no to.</p>`;
 }
 
@@ -471,19 +471,11 @@ async function checksView() {
 }
 
 async function messagesView() {
-  const out = await soft(api.get("notify", `/v1/notifications?partyId=${encodeURIComponent(S.me)}`));
-  const list = (out && out.notifications) || [];
+  // Notifications are dropped (#150): no service sends messages, so this
+  // screen says so instead of showing an inbox that can never fill.
   return `
     <h2 class="scr-title m">Messages to me</h2>
-    <p class="body-2">Every message the system sent you, kept — so "you were told" is checkable, in both directions.</p>
-    ${list.length ? list.map(n => `<div class="card">
-      <div style="display:flex;justify-content:space-between;gap:10px">
-        <span style="font:500 13.5px/1.4 Roboto">${esc(n.kind || "message")}</span>
-        <span class="chip sm ${n.state === "SENT" ? "ok" : "info"}">${esc(n.state || "")}</span>
-      </div>
-      <p class="body-2" style="margin-top:4px">${esc(n.body || "")}</p>
-      <div class="muted">via ${esc(n.channel || "")} to ${esc(n.destination || "")} · ${esc(when(n.createdAt))}</div>
-    </div>`).join("") : (!out ? openNote(`The notify service did not answer; your messages cannot be shown right now.`) : `<div class="card quiet"><p class="body-2">No messages yet. When a record of your work opens its seven-day window, the message that tells you lands here too.</p></div>`)}`;
+    ${openNote(`<b>Notifications are switched off in this deployment (#150).</b> Nothing sends you a message when a window opens or a payment is held — you learn by opening this app. The record itself is unaffected; the gap is the telling.`)}`;
 }
 
 /* w1_7 — recovery contacts */
