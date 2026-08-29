@@ -62,7 +62,6 @@ jobs:
             field,
             console,
             verifier,
-            docs,
           ]
 
     steps:
@@ -98,7 +97,7 @@ jobs:
               URL="https://crest-web-production.up.railway.app/api/crest-${{ matrix.service }}/readyz" ;;
             mock-oidc)
               URL="https://crest-web-production.up.railway.app/api/crest-mock-oidc/healthz" ;;
-            web|apps|worker|field|console|verifier|docs)
+            web|apps|worker|field|console|verifier)
               URL="https://crest-${{ matrix.service }}-production.up.railway.app/" ;;
             *)
               echo "crest-${{ matrix.service }} is private with no proxied health path; build accepted is the observable"

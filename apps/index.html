@@ -46,6 +46,11 @@
       <h3>Verification</h3>
       <p class="muted">Account-free checking: yes, plus facts, nothing identifying. Refusals shown as refusals. Bounded batches.</p>
     </div></a>
+    <a class="app-card" href="/docs/"><div class="card">
+      <span class="chip" style="align-self:flex-start">Reference</span>
+      <h3>The design docs</h3>
+      <p class="muted">The blueprint and everything built against it, rendered — the design of record, the service roster, the test manifest.</p>
+    </div></a>
   </div>
   <div class="sidecar"><svg class="ico" viewBox="0 0 15 15"><circle cx="7.5" cy="7.5" r="6.7"/><line x1="7.5" y1="6.8" x2="7.5" y2="11"/><line x1="7.5" y1="4.2" x2="7.5" y2="4.3"/></svg>
     <span class="txt">The earlier single-page proof of concept lives separately and is unchanged.
@@ -54,8 +59,11 @@
 <script>
   // Local dev serves all four apps behind this one door; production ships
   // each as its own deployment and the cards link there.
-  if (["localhost","127.0.0.1"].includes(location.hostname))
+  if (["localhost","127.0.0.1"].includes(location.hostname)) {
     document.querySelectorAll("[data-local]").forEach(a => { a.href = a.dataset.local; });
+    // The docs are rendered at image build, not present in the raw mount.
+    document.querySelector('a[href="/docs/"]').href = "https://crest-apps-production.up.railway.app/docs/";
+  }
 </script>
 </body>
 </html>
