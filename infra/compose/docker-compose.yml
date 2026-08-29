@@ -64,15 +64,16 @@ x-service: &crest-service
     # should not be one yet: seven names in a compose file is a dependency graph
     # a person can read, and the day it stops being readable is the day it needs
     # something better.
-    PARTIES_URL: http://parties:8080
-    DEFINITIONS_URL: http://definitions:8080
-    EVIDENCE_URL: http://evidence:8080
+    # The four member names all resolve to the one core service (#150); the
+    # env names survive so nothing that reads them has to know about the
+    # merge. There is no NOTIFY_URL: notifications are dropped, not mocked.
+    PARTIES_URL: http://core:8080
+    DEFINITIONS_URL: http://core:8080
+    EVIDENCE_URL: http://core:8080
     # The confirmation window lives in the payments application (#129).
     CONFIRMATION_URL: http://payments:8080
     PAYMENTS_URL: http://payments:8080
-    NOTIFY_URL: http://notify:8080
-    VERIFICATION_URL: http://verification:8080
-    SMS_URL: http://mock-sms:8080
+    VERIFICATION_URL: http://core:8080
     RAIL_URL: http://mock-rail:8080
 
     # Who authenticates a caller (#89, §4.1). The local stack points at
@@ -128,7 +129,7 @@ x-service: &crest-service
     NATIONAL_ID_SALT: "${NATIONAL_ID_SALT:-local-development-salt-not-for-any-real-deployment}"
     NATIONAL_ID_SALT_REF: "${NATIONAL_ID_SALT_REF:-local-1}"
     ISSUER_ID: "${ISSUER_ID:-did:crest:issuer:local}"
-    STATUS_LIST_URL: "${STATUS_LIST_URL:-http://verification:8080/v1/status-list}"
+    STATUS_LIST_URL: "${STATUS_LIST_URL:-http://core:8080/v1/status-list}"
   depends_on:
     postgres:
       condition: service_healthy
@@ -386,16 +387,6 @@ services:
 
   # ── Mocks: ours, so the stack is usable without paid externals ───────────
 
-  mock-sms:
-    build:
-      context: ../..
-      dockerfile: infra/compose/Dockerfile.tool
-      args:
-        TOOL: sms
-    ports: ["${MOCK_SMS_PORT:-59101}:8080"]
-    environment:
-      ADDR: ":8080"
-
   mock-rail:
     build:
       context: ../..
@@ -445,42 +436,32 @@ services:
 
   # ── CREST services: ours ─────────────────────────────────────────────────
 
-  parties:
+  # One infrastructure service (#150): parties, definitions, evidence and
+  # verification are member packages of the core binary — schemas, outboxes
+  # and route families intact, deployment shape merged. It stores consent
+  # artefacts (#24) so it needs the object store, and it signs credentials
+  # (#137) so it needs Vault (#130); refusing to start without either is the
+  # point.
+  core:
     <<: [*crest-service, *crest-healthcheck]
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile.service
       args:
-        SERVICE: parties
-    ports: ["${PARTIES_PORT:-59001}:8080"]
-    # parties (né registry, #50) is the one service that stores consent
-    # artefacts (#24), so it
-    # needs the object store before it will start. Refusing to start is the
-    # right behaviour: a parties service that came up without somewhere to put a
-    # recording would accept a voice consent it cannot evidence.
+        SERVICE: core
+    ports: ["${CORE_PORT:-59000}:8080"]
+    environment:
+      <<: *crest-env
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: crest-dev-root
+      VAULT_SECRET_PATH: secret/data/crest/issuer
     depends_on:
       postgres:
         condition: service_healthy
       objectstore:
         condition: service_healthy
-
-  definitions:
-    <<: [*crest-service, *crest-healthcheck]
-    build:
-      context: ../..
-      dockerfile: infra/compose/Dockerfile.service
-      args:
-        SERVICE: definitions
-    ports: ["${DEFINITIONS_PORT:-59002}:8080"]
-
-  evidence:
-    <<: [*crest-service, *crest-healthcheck]
-    build:
-      context: ../..
-      dockerfile: infra/compose/Dockerfile.service
-      args:
-        SERVICE: evidence
-    ports: ["${EVIDENCE_PORT:-59003}:8080"]
+      vault:
+        condition: service_healthy
 
   # Key custody (#130): the issuance seed lives in Vault, and verification —
   # the one service that signs since #137 — fetches it at startup. Dev mode
@@ -506,23 +487,6 @@ services:
       timeout: 3s
       retries: 30
 
-  verification:
-    <<: [*crest-service, *crest-healthcheck]
-    build:
-      context: ../..
-      dockerfile: infra/compose/Dockerfile.service
-      args:
-        SERVICE: verification
-    ports: ["${VERIFICATION_PORT:-59005}:8080"]
-    environment:
-      <<: *crest-env
-      VAULT_ADDR: http://vault:8200
-      VAULT_TOKEN: crest-dev-root
-      VAULT_SECRET_PATH: secret/data/crest/issuer
-    depends_on:
-      postgres: { condition: service_healthy }
-      vault: { condition: service_healthy }
-
   payments:
     <<: [*crest-service, *crest-healthcheck]
     build:
@@ -531,15 +495,6 @@ services:
       args:
         SERVICE: payments
     ports: ["${PAYMENTS_PORT:-59006}:8080"]
-
-  notify:
-    <<: [*crest-service, *crest-healthcheck]
-    build:
-      context: ../..
-      dockerfile: infra/compose/Dockerfile.service
-      args:
-        SERVICE: notify
-    ports: ["${NOTIFY_PORT:-59007}:8080"]
 
 volumes:
   pgdata:

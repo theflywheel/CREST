@@ -39,7 +39,7 @@ type Deps struct {
 	Ctx context.Context
 
 	// DB is nil for a service that declares no migrations. A service with no
-	// database is a legitimate thing (notify is nearly one); a service that
+	// database is a legitimate thing; a service that
 	// silently got a nil DB because its migrations failed is not, which is why
 	// a migration error is fatal rather than logged.
 	DB *store.DB
@@ -171,165 +171,9 @@ type Options struct {
 
 // Main is the entire main() of a CREST service.
 func Main(name string, opts Options) {
-	cfg, err := config.LoadBase(name)
-	log := newLogger(cfg.LogLevel, name)
-	if err != nil {
-		log.Error("configuration invalid", "error", err)
-		os.Exit(1)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	clk, driveable := chooseClock(cfg, log)
-	d := Deps{Config: cfg, Log: log, Clock: clk, Ctx: ctx}
-
-	var ready httpx.ReadyFunc
-	if opts.Migrations != nil {
-		db, err := store.Open(ctx, cfg.DatabaseURL, name, clk)
-		if err != nil {
-			log.Error("database unavailable", "error", err)
-			os.Exit(1)
-		}
-		defer db.Close()
-
-		if opts.FormerName != "" {
-			if err := db.AdoptLegacySchema(ctx, opts.FormerName); err != nil {
-				log.Error("could not adopt the former schema", "former", opts.FormerName, "error", err)
-				os.Exit(1)
-			}
-		}
-
-		// Fatal on purpose. A service that starts with its schema half-applied
-		// answers requests it cannot honour, and the failure surfaces later as
-		// a missing column in a payment path.
-		if err := db.Migrate(ctx, opts.Migrations, opts.Dir); err != nil {
-			log.Error("migrations failed", "error", err)
-			os.Exit(1)
-		}
-		log.Info("schema up to date", "schema", db.Schema())
-		d.DB = db
-		ready = db.Ping
-
-		if len(opts.DeDiRegistries) > 0 {
-			cfg := dedi.LoadConfig()
-			pub, err := dedi.New(cfg, db, clk, log)
-			if err != nil {
-				log.Error("registry substrate unusable", "error", err)
-				os.Exit(1)
-			}
-			// Bootstrap is fatal on failure for the same reason a migration
-			// is. A service that starts without its registries answers writes
-			// it cannot publish, and the outbox then retries them forever
-			// against a namespace that does not exist.
-			for _, reg := range opts.DeDiRegistries {
-				if err := pub.EnsureRegistry(ctx, cfg.Namespace, reg,
-					"CREST public facts — Blueprint §3"); err != nil {
-					log.Error("could not create registry", "registry", reg, "error", err)
-					os.Exit(1)
-				}
-			}
-			d.DeDi, d.DeDiNamespace = pub, cfg.Namespace
-		}
-
-		if opts.NeedsBlobs {
-			s3cfg, ok := store.LoadS3Config()
-			if !ok {
-				log.Error("this service stores artefacts and S3_ENDPOINT is not set")
-				os.Exit(1)
-			}
-			blobs, err := store.NewS3(s3cfg)
-			if err != nil {
-				log.Error("object store unusable", "error", err)
-				os.Exit(1)
-			}
-			if err := blobs.EnsureBucket(ctx); err != nil {
-				log.Error("object store unreachable", "error", err)
-				os.Exit(1)
-			}
-			log.Info("object store ready", "bucket", s3cfg.Bucket)
-			d.Blobs = blobs
-		}
-
-		if opts.Deliver != nil {
-			relay := store.NewRelay(db, opts.Deliver(d), log, clk, time.Second)
-			go relay.Run(ctx)
-		}
-	}
-
-	if opts.OnStart != nil {
-		if err := opts.OnStart(ctx, d); err != nil {
-			log.Error("start-up task failed", "error", err)
-			os.Exit(1)
-		}
-	}
-
-	idCfg, haveIdentity, err := identity.LoadConfig()
-	if err != nil {
-		log.Error("identity provider configuration is unusable", "error", err)
-		os.Exit(1)
-	}
-	if why := startupRefusal(cfg.Env, haveIdentity); why != "" {
-		log.Error("refusing to start", "why", why,
-			"set", "CREST_OIDC_ISSUER, CREST_OIDC_JWKS_URL, CREST_SUBJECT_SALT")
-		os.Exit(1)
-	}
-
-	d.SameParty = remoteSameParty(config.Str("PARTIES_URL", ""))
-	if opts.SameParty != nil {
-		d.SameParty = opts.SameParty(d)
-	}
-
-	d.Authenticating = haveIdentity
-	d.Permits = refuseEverything
-	if haveIdentity {
-		if opts.Permits != nil {
-			d.Permits = opts.Permits(d)
-		} else {
-			d.Permits = remotePermits(config.Str("PARTIES_URL", ""))
-		}
-	}
-
-	var mw []httpx.Middleware
-	// CORS is outermost so a browser's preflight is answered before identity
-	// looks for a token the preflight never carries. Off unless the
-	// deployment names its web origins.
-	if origins := config.Str("CREST_CORS_ORIGINS", ""); origins != "" {
-		mw = append(mw, httpx.CORSFromOrigins(origins))
-	}
-	// Identity is wired BEFORE routes so the handlers' copy of Deps carries
-	// ForgetSubject — a handler holding a Deps snapshot from before this line
-	// would silently never invalidate the binding cache, which is exactly the
-	// first-login bug Forget exists to prevent.
-	if haveIdentity {
-		binder := identity.RemoteBinder(config.Str("PARTIES_URL", ""))
-		if opts.Binder != nil {
-			binder = opts.Binder(d)
-		}
-		m, forget := identity.Middleware(identity.NewVerifier(idCfg), binder, clk, log)
-		mw = append(mw, m)
-		d.ForgetSubject = forget
-		log.Info("callers are authenticated", "issuer", idCfg.Issuer, "jwks", idCfg.JWKSURL)
-	} else {
-		// Loud on purpose. This is the state the whole package exists to end,
-		// and a service that entered it silently would look identical in a log
-		// to one that did not.
-		log.Warn("no identity provider is configured: callers are not authenticated",
-			"consequence", "an endpoint that acts in somebody's name will refuse rather than guess")
-	}
-
-	mux := http.NewServeMux()
-	if opts.Routes != nil {
-		opts.Routes(mux, d)
-	}
-	if driveable != nil {
-		registerClockControl(mux, driveable, log)
-	}
-
-	if err := httpx.New(name, cfg.Addr, mux, clk, log, ready, mw...).Run(); err != nil {
-		log.Error("server stopped", "error", err)
-		os.Exit(1)
-	}
+	// One member, same machinery: Compose is Main for a list, and keeping a
+	// single path is what stops the two from drifting apart.
+	Compose(name, []Member{{Name: name, Opts: opts}})
 }
 
 // chooseClock decides whether this process reads wall-clock time or is driven.

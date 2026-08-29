@@ -4,7 +4,6 @@ package scenarios
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -25,17 +24,11 @@ func TestASweepAndAConfirmationRacingAtT7ExitOnce(t *testing.T) {
 	result := w.submit(t, batch(row(phone, 2, "HH-RACE")))
 	claimID := result.ClaimIDs[0]
 
-	// The sweep only auto-confirms a reached worker, so wait for the
-	// notification to land before making the window due.
-	eventually(t, "the worker is reached", 20*time.Second, func() error {
-		win, err := w.window(claimID)
-		if err != nil {
-			return err
-		}
-		if win.Reach == nil || *win.Reach != "reached" {
-			return fmt.Errorf("reach is not yet recorded")
-		}
-		return nil
+	// Notifications are dropped (#150): no reach verdict exists, and the
+	// sweep auto-confirms on NULL reach. Wait only for the window itself.
+	eventually(t, "the window opens", 20*time.Second, func() error {
+		_, err := w.window(claimID)
+		return err
 	})
 	if err := w.Advance(w.ctx, window+time.Minute); err != nil {
 		t.Fatal(err)

@@ -63,7 +63,7 @@ paths:
     get:
       operationId: getParty
       summary: Read a party
-      description: Answers who this identifier belongs to, including the contact routes notify uses to reach them.
+      description: Answers who this identifier belongs to, including their contact routes.
       parameters: [{ $ref: "#/components/parameters/PartyID" }]
       responses:
         "200":

@@ -268,16 +268,20 @@ func TestARecordBecomesACredentialAndAPayment(t *testing.T) {
 	}
 	claimID := result.ClaimIDs[0]
 
-	// W2: the worker is told before it counts. The window and the notification
-	// commit together, so if the window exists the message was at least tried.
+	// W2 used to be proven here: the worker was told before it counted, the
+	// window and the notification committing together. Notifications are
+	// dropped (#150) — nothing is sent, notified_at stays unset, the reach
+	// column stays NULL — so this test now records the gap instead of proving
+	// the promise: the window must still open and run its full seven days,
+	// and W2 is an open wound until a channel exists again.
 	var win winView
 	eventually(t, "the confirmation window opens", 15*time.Second, func() error {
 		var err error
 		win, err = w.window(claimID)
 		return err
 	})
-	if win.NotifiedAt == nil {
-		t.Error("a window opened without the worker being notified (W2)")
+	if win.NotifiedAt != nil {
+		t.Error("a window claims the worker was notified, but no notification channel exists (#150); this is a lie in the record")
 	}
 	// Measured from when the window actually opened, not from the fixture
 	// epoch. The clock a stack runs on is driveable but it ticks, so the epoch
@@ -286,28 +290,6 @@ func TestARecordBecomesACredentialAndAPayment(t *testing.T) {
 	// epoch" anyway. It is seven days from the record reaching the worker.
 	if got := win.ClosesAt.Sub(win.OpenedAt); got != window {
 		t.Errorf("the window is %s long, want %s (T=7, §14)", got, window)
-	}
-
-	var messages struct {
-		Messages []struct {
-			To   string `json:"to"`
-			Body string `json:"body"`
-		} `json:"messages"`
-	}
-	eventually(t, "the SMS reaches the worker", 15*time.Second, func() error {
-		if err := w.SMS.Get(w.ctx, "/messages?to="+url.QueryEscape(phone), &messages.Messages); err != nil {
-			return err
-		}
-		if len(messages.Messages) == 0 {
-			return fmt.Errorf("no message for %s", phone)
-		}
-		return nil
-	})
-	// The wording matters: a worker told they must reply or lose money would be
-	// a worker under duress. They are told they will be paid either way.
-	if !strings.Contains(messages.Messages[0].Body, "paid either way") {
-		t.Errorf("the notification does not tell the worker they will be paid either way: %q",
-			messages.Messages[0].Body)
 	}
 
 	// The worker confirms.
@@ -838,9 +820,14 @@ func TestAnUnmatchedNationalIdentifierIsNeverStoredRaw(t *testing.T) {
 // fails she is not reached at all — and a record must never be auto-confirmed
 // against a worker during a silence the system produced.
 //
-// This is the fourth T=7 exit, and the one nobody demos: supervisor-assisted.
-// Until this test it was unexercised, which is exactly how a route that does
-// not release payment survives to a pilot.
+// Notifications are dropped (#150), which changes what this test can hold.
+// The reach machinery — record whether the worker was told, refuse to
+// auto-confirm past a recorded failure — is dormant: nothing records reach,
+// so it stays NULL and the sweep treats the window like any other. What
+// survives is the fourth T=7 exit, supervisor-assisted: a person taking
+// responsibility rather than a timer, and it must release payment like every
+// other exit. Until this test that route was unexercised, which is exactly
+// how a route that does not release payment survives to a pilot.
 func TestAnUnreachedWorkerIsNotAutoConfirmedAgainst(t *testing.T) {
 	w := setup(t)
 
@@ -860,59 +847,23 @@ func TestAnUnreachedWorkerIsNotAutoConfirmedAgainst(t *testing.T) {
 	claimID := result.ClaimIDs[0]
 
 	var win winView
-	eventually(t, "the reach outcome is recorded", 15*time.Second, func() error {
+	eventually(t, "the confirmation window opens", 15*time.Second, func() error {
 		var err error
 		win, err = w.window(claimID)
-		if err != nil {
-			return err
-		}
-		if win.Reach == nil {
-			return fmt.Errorf("reach not yet established")
-		}
-		return nil
+		return err
 	})
-
-	// Worker C's only route is her supervisor, who does have a phone — so she
-	// is reachable, through a person. That is the designed behaviour, and the
-	// assertion is on the mechanism rather than on a particular outcome.
-	if *win.Reach != "reached" && *win.Reach != "unreached" {
-		t.Fatalf("reach is %q, want reached or unreached", *win.Reach)
+	// With no notification channel, no reach verdict may exist. A recorded
+	// verdict here would mean something claimed to have told Worker C, and
+	// nothing can have (#150).
+	if win.Reach != nil {
+		t.Fatalf("reach is %q with no notification channel; nothing can have told the worker", *win.Reach)
 	}
 
-	if err := w.Advance(w.ctx, window+time.Minute); err != nil {
-		t.Fatal(err)
-	}
-	var swept struct {
-		AutoConfirmed          []string `json:"autoConfirmed"`
-		HeldForSomeoneToLookAt []string `json:"heldForSomeoneToLookAt"`
-	}
-	if err := w.Confirmation.Post(w.ctx, "/v1/sweep", nil, &swept); err != nil {
-		t.Fatal(err)
-	}
-
-	if *win.Reach == "unreached" {
-		for _, id := range swept.AutoConfirmed {
-			if id == claimID {
-				t.Fatal("a worker who was never reached had their record auto-confirmed against them")
-			}
-		}
-		var found bool
-		for _, id := range swept.HeldForSomeoneToLookAt {
-			if id == claimID {
-				found = true
-			}
-		}
-		if !found {
-			t.Error("an unreached window was neither auto-confirmed nor surfaced for a person; " +
-				"it is simply stuck, which is the worst of the three")
-		}
-
-		// The supervisor-assisted route: a person taking responsibility rather
-		// than a timer. It must release payment like every other exit.
-		if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/assist",
-			map[string]any{"assistedByPartyId": fixtures.SupervisorID}, nil); err != nil {
-			t.Fatalf("assisted confirmation: %v", err)
-		}
+	// The supervisor-assisted route: a person taking responsibility rather
+	// than a timer. It must release payment like every other exit.
+	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/assist",
+		map[string]any{"assistedByPartyId": fixtures.SupervisorID}, nil); err != nil {
+		t.Fatalf("assisted confirmation: %v", err)
 	}
 
 	var in instructionView

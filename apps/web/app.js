@@ -145,7 +145,7 @@ async function workerWallet(){
         <div class="kv"><b>period</b>${when((we.period||{}).start)}</div>
         <div class="kv"><b>id</b><code>${short(c.id)}</code></div>
         <div class="row" style="margin-top:6px"><button class="btn small" data-showdoc="${esc(c.id)}">Show the document</button>
-        <a class="btn small" href="${esc(location.origin.replace(':59100',':59005'))}/v1/credentials/${encodeURIComponent(c.id)}/card" target="_blank" rel="noopener">Printed card (QR)</a></div>
+        <a class="btn small" href="${esc(location.origin.replace(':59100',':59000'))}/v1/credentials/${encodeURIComponent(c.id)}/card" target="_blank" rel="noopener">Printed card (QR)</a></div>
         <pre class="doc" id="doc-${esc(c.id)}" hidden>${esc(JSON.stringify(c,null,2))}</pre></div>`;
     }).join(""):`<div class="empty">No credentials yet — they are issued when a confirmation window closes.</div>`}`;
 }
@@ -197,16 +197,8 @@ async function workerWork(){
 }
 
 async function workerMessages(){
-  const me = S.me.partyId;
-  const out = await api.get("notify", `/v1/notifications?partyId=${encodeURIComponent(me)}`);
-  const list = out.notifications||[];
   return `<h2>Messages to me</h2>
-    <p class="lede">Every message the system sent you, kept — so "you were told" is checkable, in both directions.</p>
-    ${list.length?list.map(n=>`<div class="card">
-      <div class="row"><h3>${esc(n.kind||"message")}</h3><span class="pill ${n.state==="SENT"?"ok":"hold"}">${esc(n.state)}</span></div>
-      <p style="max-width:60ch">${esc(n.body||"")}</p>
-      <div class="kv"><b>via</b>${esc(n.channel||"")} to ${esc(n.destination||"")} · ${when(n.createdAt)}</div></div>`).join("")
-    :`<div class="empty">No messages yet. When a record of your work opens its seven-day window, the message that tells you lands here too.</div>`}`;
+    <p class="lede">Notifications are switched off in this deployment (#150): the system does not send messages right now, so there is nothing to show — honestly, rather than an empty inbox pretending otherwise. You learn about a window by opening "My record".</p>`;
 }
 
 /* ————— supervisor face ————— */

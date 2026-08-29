@@ -6,7 +6,7 @@
 // reconciliation). It is the Trusted Payments profile's runtime — a deployment
 // that never pays anyone simply does not run it (§2.1) — and it is an
 // application on the CREST substrate, not part of it (#127): it consumes
-// evidence, notify and verification through their public service APIs, and
+// evidence and verification through their public service APIs, and
 // nothing beneath it knows a window or a rail exists.
 //
 // The invariants that live here: every confirmation-window exit releases
@@ -34,7 +34,6 @@ var migrations embed.FS
 
 func main() {
 	rail := client.New(config.Str("RAIL_URL", "http://mock-rail:8080"))
-	notify := client.New(config.Str("NOTIFY_URL", "http://notify:8080"))
 	// The window's exit and the instruction's creation are one service now,
 	// but the release still crosses the outbox and this hop on purpose:
 	// at-least-once delivery with an idempotent consumer survived the merge,
@@ -52,12 +51,16 @@ func main() {
 			return func(ctx context.Context, topic string, payload json.RawMessage) error {
 				switch topic {
 				case topicNotifyClaim:
-					// The outcome comes back and is written down. notify
-					// answers 201 for a send that failed and for a worker with
-					// no reachable route, which is right for the outbox — but
-					// it means "delivered" here has never meant "the worker
-					// knows". The sweep reads what this records.
-					return deliverNotification(ctx, d, notify, payload)
+					// Notifications are dropped (#150): nothing is enqueued
+					// under this topic any more, and a row already in the
+					// outbox drains here instead of wedging the relay. No
+					// reach verdict is recorded — reach stays NULL, which the
+					// sweep reads as "nobody claimed the worker was told",
+					// not as "the worker was told". The gap is §16's, not
+					// this switch's.
+					d.Log.Warn("notification dropped: no channel exists (#150)",
+						"topic", topic)
+					return nil
 				case topicPaymentRelease:
 					// Idempotent on the claim at the far end; the relay is
 					// at-least-once, and a redelivered release must not pay twice.
