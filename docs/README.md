@@ -1,6 +1,6 @@
 # CREST design documents
 
-Everything the implementation builds against. Each is a self-contained HTML page — clone and open in a browser, or read the hosted rendering at **https://crest-docs-production.up.railway.app** (the markdown docs rendered by Quartz, the HTML design docs served beside them; see DEPLOYMENT.md for how it publishes).
+Everything the implementation builds against. Each is a self-contained HTML page — clone and open in a browser, or read the hosted rendering at **https://crest-apps-production.up.railway.app/docs/** (the markdown docs rendered by Quartz, the HTML design docs served beside them, inside the journey-apps door since #148; see DEPLOYMENT.md for how it publishes).
 
 | Document | Role | Sections |
 |---|---|---|
@@ -9,6 +9,7 @@ Everything the implementation builds against. Each is a self-contained HTML page
 | [crest-inji-architecture.html](crest-inji-architecture.html) | How the Inji stack maps onto CREST's credential lifecycle. | 6 (`#s0`…`#s5`) |
 | [TRACKING.md](TRACKING.md) | How the work is tracked in GitHub — epics, gates, dependencies. | — |
 | [COMPONENTS.md](COMPONENTS.md) | What we run vs what we build, and the repository shape. | — |
+| [SERVICES.md](SERVICES.md) | The roster of backend services: layer, schema, deployed name, API prefix. | — |
 | [TESTING.md](TESTING.md) | The four test layers, the harness contract, and why in-toto waits. | — |
 | [test-manifest.md](test-manifest.md) | Every feature and how it is proven. Maintained by hand. | — |
 | [DEMO.md](DEMO.md) | The demo layer — `apps/web` and the story seeder: what they demonstrate and refuse to fake. | — |
