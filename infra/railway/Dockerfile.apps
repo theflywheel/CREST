@@ -33,10 +33,19 @@ RUN rm -rf content && mkdir content \
     && node ./quartz/bootstrap-cli.mjs build \
     && cp /docs/*.html public/
 
+# The rebuilt doors (React/Vite, frontend/ pnpm workspace) build here; doors
+# not yet ported keep shipping as the static files under apps/.
+FROM node:22-alpine AS webapps
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
+COPY frontend /frontend
+WORKDIR /frontend
+RUN pnpm install --frozen-lockfile && pnpm -r build
+
 FROM nginx:1.27-alpine
 COPY apps/index.html   /usr/share/nginx/html/index.html
 COPY apps/shared       /usr/share/nginx/html/shared
-COPY apps/worker       /usr/share/nginx/html/worker
+COPY --from=webapps /frontend/apps/worker/dist /usr/share/nginx/html/worker
 COPY apps/enrolment    /usr/share/nginx/html/enrolment
 COPY apps/console      /usr/share/nginx/html/console
 COPY apps/verify       /usr/share/nginx/html/verify

@@ -426,12 +426,13 @@ services:
     ports: ["${WEB_PORT:-59100}:80"]
 
   # The journey apps (apps/console, worker, enrolment, verify over apps/shared):
-  # the reference design rebuilt as separate products, one door. Static files,
-  # no build step; the landing page is apps/index.html.
+  # the reference design rebuilt as separate products, one door. The docroot
+  # is assembled by `make apps-build` (frontend/scripts/assemble.mjs): the
+  # rebuilt doors from their Vite dist, the rest straight from apps/.
   apps:
     image: nginx:1.27-alpine
     volumes:
-      - ../../apps:/usr/share/nginx/html:ro
+      - ../../frontend/dist-site:/usr/share/nginx/html:ro
     ports: ["${APPS_PORT:-59110}:80"]
 
   # ── CREST services: ours ─────────────────────────────────────────────────

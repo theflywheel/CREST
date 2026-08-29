@@ -5,9 +5,17 @@ products through its device frames; these are those products, built against
 the live services. `apps/index.html` is the landing page of the door that
 serves them; `make apps-up` brings everything up story-seeded on :59110.
 
+**The doors are being rebuilt as desktop consoles** (responsive down to
+mobile) in the `../frontend/` pnpm workspace — React + Vite + TypeScript,
+`@crest/ui` carrying the design system, flows ported 1:1. The worker door
+lives there now; the rows below move over one PR at a time, and this
+directory shrinks to `web` (the untouchable PoC) plus whatever is not yet
+ported. `make apps-build` builds the rebuilt doors and assembles the compose
+docroot; `make apps-dev` runs their Vite dev servers.
+
 | App | What it is | Reference journeys |
 |---|---|---|
-| `worker` | The worker's app: the wallet-not-a-dashboard — record, money **including why any of it is held**, credentials, who checked me, consents | J7 (W-1) |
+| `worker` *(moved to `frontend/apps/worker`)* | The worker's app: the wallet-not-a-dashboard — record, money **including why any of it is held**, credentials, who checked me, consents | J7 (W-1) |
 | `enrolment` | Field app: assisted registration, voice consent read aloud, duplicate holds, confirm-what-you-saw, close the roster. Offline-aware | J6 (W-2), J8 (W-4) |
 | `console` | One console, role-based views — project status/payments/trace, defining the work, payment set-up, organisation, instance, custodian queues, support, funder | J1–J5, J10, J11 |
 | `verify` | Account-free checking: yes plus facts, refusals shown as refusals, bounded batches, the external-institution panel | J9 (V-1/V-2), P-10 |
@@ -16,10 +24,10 @@ serves them; `make apps-up` brings everything up story-seeded on :59110.
 
 ## Build discipline
 
-- **No build step.** Plain ES modules served by nginx, same as the PoC proved
-  out. The earlier plan here said TypeScript with generated types; that is
-  deliberately not what shipped — a build pipeline is a cost the demo does not
-  pay yet, and the schema-generated-types rule below applies the day one exists.
+- **No build step** was the rule for the first cut — plain ES modules served
+  by nginx. The desktop-console rebuild (frontend/) retires it door by door:
+  the rebuilt doors are Vite builds, and the day every door has moved this
+  bullet goes with them.
 - **Real endpoints only.** Nothing on any screen is fixture data held in the
   browser. Where the reference draws a screen no L1 endpoint serves, the
   screen exists and says so (`.open-note`, the reference's own "Illustrative,
