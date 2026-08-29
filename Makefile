@@ -6,7 +6,9 @@
 
 SHELL := bash
 COMPOSE := docker compose -f infra/compose/docker-compose.yml
-SERVICES := parties definitions evidence verification payments notify
+# One infrastructure service and one application since #150; notifications
+# and their mock are gone with notify.
+SERVICES := core payments
 GO ?= go
 
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
@@ -77,10 +79,10 @@ test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
 	@# reports one line — "container X is unhealthy" — naming no cause at all.
 	@# That is the same shape as #79: a failure nobody can read gets re-run
 	@# rather than investigated.
-	@$(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail mock-oidc $(SERVICES) || { \
+	@$(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES) || { \
 		echo "── the stack did not come up; logs follow ──" ; \
 		$(COMPOSE) ps ; \
-		$(COMPOSE) logs --tail=60 postgres objectstore mock-sms mock-rail $(SERVICES) ; \
+		$(COMPOSE) logs --tail=60 postgres objectstore mock-rail $(SERVICES) ; \
 		$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 ; \
 		exit 1 ; \
 	}
@@ -109,7 +111,7 @@ poc-batch: ## Regenerate the PoC batches from their generators
 	@echo "wrote tests/fixtures/poc/*.csv"
 
 e2e-up: ## Bring up just what the spine needs, and leave it running
-	$(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail mock-oidc $(SERVICES)
+	$(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES)
 
 web-up: e2e-up ## Bring up the stack with the web app, seeded and ready to click
 	@$(COMPOSE) up -d --wait web
@@ -129,7 +131,7 @@ test-e2e-sweep: ## Prove the auto-confirm sweep runs on its own, with nobody ask
 	@# suite needs it off: every other T=7 scenario advances the clock and then
 	@# posts /v1/sweep, and a background sweeper would take the window first.
 	@$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true
-	SWEEP_EVERY=2s $(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail mock-oidc $(SERVICES)
+	SWEEP_EVERY=2s $(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES)
 	SWEEP_EVERY=2s $(GO) test -tags=e2e -count=1 -timeout=5m -run TestScheduledSweepPaysWithNobodyAsking ./harness/scenarios/
 	@$(COMPOSE) down -v --remove-orphans
 
@@ -138,7 +140,7 @@ test-e2e-short-window: ## Prove the window length is configuration: seconds-long
 	@# assumes the 168h default, and a seconds-long window would auto-confirm
 	@# claims out from under them.
 	@$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true
-	CONFIRMATION_WINDOW=6s SWEEP_EVERY=2s $(COMPOSE) up -d --build --wait postgres objectstore mock-sms mock-rail mock-oidc $(SERVICES)
+	CONFIRMATION_WINDOW=6s SWEEP_EVERY=2s $(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES)
 	CONFIRMATION_WINDOW=6s SWEEP_EVERY=2s $(GO) test -tags=e2e -count=1 -timeout=5m -run TestAShortWindowPaysByRealTimeAlone ./harness/scenarios/
 	@$(COMPOSE) down -v --remove-orphans
 
@@ -191,18 +193,26 @@ CREST_WEB_URL ?= https://crest-web-production.up.railway.app
 # The demo fleet, named the way Railway names it (crest-$name). Order matters
 # to deploy-demo: services before the doors that front them, mocks in between
 # because the services call them.
-FLEET_SERVICES := registry definitions evidence verification payments notify
-FLEET_MOCKS := mock-oidc mock-rail mock-sms
+# The four member names stay proxied as aliases onto crest-core (#150), so
+# the sweep still proves each name a stakeholder link might carry.
+FLEET_SERVICES := core payments
+FLEET_ALIASES := registry definitions evidence verification confirmation
+FLEET_MOCKS := mock-oidc mock-rail
 # docs is not a door of its own since #148: the design docs ride inside
 # crest-apps at /docs/.
 FLEET_DOORS := web apps worker field console verifier
 
 verify-deployed: ## Check every deployed fleet member answers, and verify the log independently
-	@echo "── the seven services, through the crest-web proxy"
+	@echo "── the services, through the crest-web proxy"
 	@# /readyz, not /healthz: readyz is the endpoint wired to the database
 	@# ping, and a process that is alive but cannot reach its store must fail
 	@# this sweep rather than pass it.
 	@for s in $(FLEET_SERVICES); do \
+		printf '%-14s' $$s; \
+		curl -fsS --max-time 10 $(CREST_WEB_URL)/api/crest-$$s/readyz && echo || exit 1; \
+	done
+	@echo "── the alias names, each answering from crest-core or crest-payments"
+	@for s in $(FLEET_ALIASES); do \
 		printf '%-14s' $$s; \
 		curl -fsS --max-time 10 $(CREST_WEB_URL)/api/crest-$$s/readyz && echo || exit 1; \
 	done

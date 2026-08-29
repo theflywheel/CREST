@@ -277,27 +277,32 @@ func TestAPartyThatWasNeverMergedReadsTheSameAsBefore(t *testing.T) {
 func TestAnIncompleteHistoryIsRefusedRatherThanServed(t *testing.T) {
 	w := setup(t)
 
-	// Every list read now asks the registry which ids are one person, which
-	// means a registry that is down could make a worker's history look shorter
-	// than it is. The tempting behaviour — fall back to the single id — returns
-	// a history with a hole and nothing anywhere saying something is missing,
-	// and the caller believes it. On a system whose records decide whether
-	// somebody gets paid, a read that fails loudly is worth more than one that
-	// quietly under-reports.
+	// Every party-scoped list read asks the registry which ids are one
+	// person, and a registry that cannot answer must stop the read: the
+	// tempting fallback — the single id — returns a history with a hole and
+	// nothing anywhere saying something is missing. Since #150 the registry
+	// answer is in-process for the core members, so the outage this test used
+	// to stage (evidence up, registry down) cannot occur there by
+	// construction. The seam that remains is the payments application, which
+	// still reaches the registry over the wire — so the outage is staged
+	// against payments, and the refusal may come from either door: the
+	// same-party expansion (registry_unavailable) or the identity binder
+	// (identity_unavailable). Both refuse loudly; neither under-reports.
 	phone := sharedNumber(304)
 	worker := newWorkerWithPhone(t, w, "Registry Outage", phone)
 	res := w.submit(t, batch(row(phone, 2, "HH-outage-"+runID)))
 	if len(res.ClaimIDs) != 1 {
 		t.Fatalf("expected one claim, got %+v", res)
 	}
+	caller := w.login(t, worker)
 
-	if err := harness.Kill(w.ctx, "parties"); err != nil {
+	if err := harness.Kill(w.ctx, "core"); err != nil {
 		t.Fatalf("kill the registry: %v", err)
 	}
 	// Brought back whatever happens below, or every scenario after this one
 	// fails for a reason that has nothing to do with what it was testing.
 	t.Cleanup(func() {
-		if err := harness.Start(context.Background(), "parties"); err != nil {
+		if err := harness.Start(context.Background(), "core"); err != nil {
 			t.Fatalf("restart the registry: %v", err)
 		}
 		if err := w.WaitReady(context.Background(), 90*time.Second); err != nil {
@@ -305,15 +310,16 @@ func TestAnIncompleteHistoryIsRefusedRatherThanServed(t *testing.T) {
 		}
 	})
 
-	code, body, err := w.Evidence.Status(w.ctx, http.MethodGet,
-		"/v1/claims?partyId="+url.QueryEscape(worker), nil)
+	code, body, err := w.Payments.As(caller).Status(w.ctx, http.MethodGet,
+		"/v1/instructions?partyId="+url.QueryEscape(worker), nil)
 	if err != nil {
-		t.Fatalf("list claims: %v", err)
+		t.Fatalf("list instructions: %v", err)
 	}
 	if code != http.StatusServiceUnavailable {
-		t.Fatalf("with the registry down the claim list answered %d, not 503: %s", code, body)
+		t.Fatalf("with the registry down the list answered %d, not 503: %s", code, body)
 	}
-	if !strings.Contains(string(body), "registry_unavailable") {
+	if !strings.Contains(string(body), "registry_unavailable") &&
+		!strings.Contains(string(body), "identity_unavailable") {
 		t.Fatalf("the refusal does not name the cause: %s", body)
 	}
 }

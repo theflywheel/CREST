@@ -43,10 +43,10 @@ func env(k, def string) string {
 
 func main() {
 	s := &stack{
-		registry:     env("PARTIES_URL", "http://localhost:59001"),
-		evidence:     env("EVIDENCE_URL", "http://localhost:59003"),
+		registry:     env("PARTIES_URL", "http://localhost:59000"),
+		evidence:     env("EVIDENCE_URL", "http://localhost:59000"),
 		confirmation: env("CONFIRMATION_URL", "http://localhost:59006"),
-		verification: env("VERIFICATION_URL", "http://localhost:59005"),
+		verification: env("VERIFICATION_URL", "http://localhost:59000"),
 		payments:     env("PAYMENTS_URL", "http://localhost:59006"),
 		http:         &http.Client{Timeout: 60 * time.Second},
 	}

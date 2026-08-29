@@ -115,15 +115,13 @@ func (h *windowHandlers) openWindow(w http.ResponseWriter, r *http.Request) {
 		if err != nil || !created {
 			return err // a redelivery: the window already exists, and one is enough
 		}
-		if err := store.Enqueue(r.Context(), tx, topicNotifyClaim, map[string]any{
-			"partyId":  req.PartyID,
-			"claimId":  req.ClaimID,
-			"kind":     "confirm-your-work",
-			"closesAt": win.ClosesAt,
-		}); err != nil {
-			return err
-		}
-		return markNotified(r.Context(), tx, req.ClaimID, now)
+		// Notifications are dropped (#150): the window opens with nothing
+		// enqueued and notified_at unset, and the reach column stays NULL —
+		// the truthful reading, "nobody claimed the worker was told". The
+		// enqueue returns here when a channel exists again; the recorded gap
+		// is that until then a worker learns about a window only by opening
+		// the app.
+		return nil
 	})
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "open window", err)

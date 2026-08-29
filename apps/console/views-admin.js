@@ -181,7 +181,7 @@ export async function instanceView() {
   const instAnswer = await api.get("parties", "/v1/instance").catch(() => null);
   const inst = (instAnswer || {}).instance || null;
   const reg = (inst || {}).registry || {};
-  const names = ["parties", "definitions", "evidence", "confirmation", "verification", "payments", "notify"];
+  const names = ["parties", "definitions", "evidence", "confirmation", "verification", "payments"]; // all but payments answer from crest-core (#150)
   const health = await Promise.all(names.map(n =>
     api.get(n, "/healthz").then(h => ({ n, ok: true, h })).catch(e => ({ n, ok: false, e }))));
   const instRows = inst ? kvRows([

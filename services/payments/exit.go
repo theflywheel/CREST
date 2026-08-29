@@ -11,7 +11,6 @@ import (
 
 	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/schema"
-	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
 )
 
@@ -220,45 +219,4 @@ func (e *exiter) transitionClaim(ctx context.Context, claimID string, to schema.
 		return fmt.Errorf("evidence would not move claim %s to %s: %w", claimID, to, err)
 	}
 	return nil
-}
-
-// deliverNotification sends a notification and records whether it reached the
-// worker.
-//
-// notify deliberately answers 201 whether the send succeeded, failed, or found
-// no route at all — returning an error there would have the relay redeliver and
-// write the row again. That is correct for the outbox and wrong for the sweep,
-// which until now could not tell the difference and auto-confirmed regardless.
-//
-// So the outcome comes back in the body and is written onto the window. A
-// window marked unreached is never auto-confirmed; it is surfaced, the same way
-// a held payment is surfaced, because the alternative is a worker whose record
-// was confirmed against them during a silence the system produced.
-func deliverNotification(ctx context.Context, d service.Deps, notify *client.Client,
-	payload json.RawMessage) error {
-	var req struct {
-		ClaimID string `json:"claimId"`
-	}
-	if err := json.Unmarshal(payload, &req); err != nil {
-		return err
-	}
-	var out struct {
-		State   string `json:"state"`
-		Channel string `json:"channel"`
-	}
-	if err := notify.Do(ctx, "POST", "/internal/notifications", payload, &out); err != nil {
-		return err
-	}
-
-	reach, detail := "reached", out.Channel
-	if out.State != "SENT" {
-		reach = "unreached"
-		detail = out.State
-		if out.Channel != "" && out.Channel != "none" {
-			detail += " on " + out.Channel
-		}
-	}
-	return d.DB.InTx(ctx, func(tx store.Querier) error {
-		return recordReach(ctx, tx, req.ClaimID, reach, detail)
-	})
 }

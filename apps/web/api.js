@@ -13,13 +13,13 @@
 const host = location.hostname || "localhost";
 const at = port => `http://${host}:${port}`;
 const defaults = {
-  parties:      at(59001),
-  definitions:  at(59002),
-  evidence:     at(59003),
+  // The four member names all answer from the one core service (#150).
+  parties:      at(59000),
+  definitions:  at(59000),
+  evidence:     at(59000),
   confirmation: at(59006), // the payments application answers the window (#129)
-  verification: at(59005),
+  verification: at(59000),
   payments:     at(59006),
-  notify:       at(59007),
   oidc:         at(59103),
 };
 export const services = Object.assign({}, defaults, window.CREST_SERVICES || {});
