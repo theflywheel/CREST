@@ -128,7 +128,6 @@ x-service: &crest-service
     NATIONAL_ID_SALT: "${NATIONAL_ID_SALT:-local-development-salt-not-for-any-real-deployment}"
     NATIONAL_ID_SALT_REF: "${NATIONAL_ID_SALT_REF:-local-1}"
     ISSUER_ID: "${ISSUER_ID:-did:crest:issuer:local}"
-    ISSUER_SEED: "${ISSUER_SEED:-AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=}"
     STATUS_LIST_URL: "${STATUS_LIST_URL:-http://verification:8080/v1/status-list}"
   depends_on:
     postgres:
@@ -483,6 +482,30 @@ services:
         SERVICE: evidence
     ports: ["${EVIDENCE_PORT:-59003}:8080"]
 
+  # Key custody (#130): the issuance seed lives in Vault, and verification —
+  # the one service that signs since #137 — fetches it at startup. Dev mode
+  # locally (in-memory, root token fixed) so a clean stack is reproducible;
+  # the deployed Vault runs Raft storage on a volume with operator-held
+  # unseal keys, which is the point.
+  vault:
+    image: hashicorp/vault:1.17
+    restart: unless-stopped
+    cap_add: [IPC_LOCK]
+    entrypoint: >
+      sh -c 'vault server -dev -dev-root-token-id=crest-dev-root
+      -dev-listen-address=0.0.0.0:8200 &
+      sleep 2 &&
+      VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=crest-dev-root
+      vault kv put secret/crest/issuer
+      issuer_seed="${ISSUER_SEED:-AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=}" &&
+      wait'
+    ports: ["${VAULT_PORT:-59200}:8200"]
+    healthcheck:
+      test: ["CMD-SHELL", "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=crest-dev-root vault kv get -field=issuer_seed secret/crest/issuer"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
   verification:
     <<: [*crest-service, *crest-healthcheck]
     build:
@@ -491,6 +514,14 @@ services:
       args:
         SERVICE: verification
     ports: ["${VERIFICATION_PORT:-59005}:8080"]
+    environment:
+      <<: *crest-env
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: crest-dev-root
+      VAULT_SECRET_PATH: secret/data/crest/issuer
+    depends_on:
+      postgres: { condition: service_healthy }
+      vault: { condition: service_healthy }
 
   payments:
     <<: [*crest-service, *crest-healthcheck]
