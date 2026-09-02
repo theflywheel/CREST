@@ -68,6 +68,10 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	// Issuance and the credential record (#137): requested by the payments
 	// application at window exit, owned here.
 	mux.HandleFunc("POST /internal/credentials/issue", h.issue)
+	// What Inji Certify's data-provider plugin reads at issuance (#155 phase
+	// C): the confirmed-work facts for one provider subject, pairwise-derived
+	// here so the salt never leaves this deployment. See certify.go.
+	mux.HandleFunc("GET /internal/certify/work-events", h.certifyWorkEvents)
 	mux.HandleFunc("GET /internal/credentials", h.listCredentialsRaw)
 	mux.HandleFunc("GET /internal/credentials/by-claim/{claimId}", h.credentialForClaim)
 	mux.HandleFunc("POST /internal/credentials/{id}/revoke", h.revokeInternal)

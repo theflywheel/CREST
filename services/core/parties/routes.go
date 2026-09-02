@@ -75,6 +75,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/holds/{id}/resolve", h.resolveHold)
 	mux.HandleFunc("GET /v1/holds/metrics", h.mergeMetrics)
 	mux.HandleFunc("POST /v1/terms", h.createTerms)
+	mux.HandleFunc("GET /v1/terms", h.listTerms)
 	mux.HandleFunc("POST /v1/authorizations", h.createAuthorization)
 	mux.HandleFunc("GET /v1/authorizations/permits", h.permits)
 	mux.HandleFunc("GET /v1/authorizations", h.listAuthorizations)
@@ -311,6 +312,20 @@ func (h *handlers) listHolds(w http.ResponseWriter, r *http.Request) {
 		holds = []Hold{}
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"holds": holds, "count": len(holds)})
+}
+
+// listTerms answers what an applicant would be agreeing to. Public, like the
+// terms themselves — they are published to the registry log (§3).
+func (h *handlers) listTerms(w http.ResponseWriter, r *http.Request) {
+	terms, err := listTerms(r.Context(), h.d.DB.Q())
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "list terms", err)
+		return
+	}
+	if terms == nil {
+		terms = []schema.Terms{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"terms": terms, "count": len(terms)})
 }
 
 func (h *handlers) createTerms(w http.ResponseWriter, r *http.Request) {

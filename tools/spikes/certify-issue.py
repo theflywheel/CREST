@@ -263,11 +263,45 @@ def main():
     did_doc = get_json(f"{CERTIFY}/v1/certify/.well-known/did.json")
     check(did_doc["id"] == issuer, "the DID document Certify serves is the credential's issuer")
     raw = multibase_ed25519(did_doc["verificationMethod"][0]["publicKeyMultibase"])
-    try:
-        verify_data_integrity(credential, raw)
-        check(True, "the credential's Ed25519 proof verifies against that key")
-    except Exception as exc:  # noqa: BLE001 — the failure text is the finding
-        check(False, f"the credential's Ed25519 proof verifies against that key ({exc})")
+    proof_type = (credential.get("proof") or {}).get("type", "")
+    suite = (credential.get("proof") or {}).get("cryptosuite", proof_type)
+    if suite == "eddsa-jcs-2022":
+        # The JCS suite this script can canonicalise itself, stdlib only.
+        try:
+            verify_data_integrity(credential, raw)
+            check(True, "the credential's Ed25519 proof verifies against that key")
+        except Exception as exc:  # noqa: BLE001 — the failure text is the finding
+            check(False, f"the credential's Ed25519 proof verifies against that key ({exc})")
+    else:
+        # Ed25519Signature2020 (#155 phase C): RDF canonicalisation needs a
+        # JSON-LD engine this stdlib-only script deliberately does not carry.
+        # The independent check is Inji Verify itself — a separate verifier
+        # from a separate codebase — which is also the point of the suite:
+        # it is the one Inji's verifier implements (eddsa-jcs-2022 answers
+        # INVALID there, the recorded finding).
+        check(proof_type == "Ed25519Signature2020",
+              f"the proof suite is the one Inji Verify implements ({proof_type})")
+        verify_url = os.environ.get(
+            "INJI_VERIFY", "https://crest-verify-production.up.railway.app")
+        if "localhost" in issuer:
+            # A localhost did:web cannot be resolved from inside Inji Verify's
+            # container, so the verdict would test networking, not the proof.
+            # The proof itself is checked independently in
+            # tools/spikes/verify-2020.py; the Inji Verify verdict is a
+            # deployed-fleet assertion.
+            print("[SKIP] Inji Verify verdict: localhost issuer DID is not "
+                  "resolvable from the verifier's container; run against the "
+                  "deployed fleet for this assertion, or check the proof "
+                  "independently with tools/spikes/verify-2020.py")
+        else:
+            try:
+                body, _ = post(f"{verify_url}/v1/verify/vc-verification", credential,
+                               {"Content-Type": "application/json"})
+                status = body.get("verificationStatus")
+                check(status in ("SUCCESS", "VALID"),
+                      f"Inji Verify accepts the credential (verificationStatus={status})")
+            except Exception as exc:  # noqa: BLE001
+                check(False, f"Inji Verify accepts the credential ({exc})")
 
     # 5 ── facts, not judgements
     provenance = subject.get("provenance", {})

@@ -367,6 +367,26 @@ func insertTerms(ctx context.Context, tx store.Querier, t schema.Terms) error {
 	return err
 }
 
+// listTerms returns every published terms version, newest publication first.
+// Terms are public facts (§3, published to the registry log); a listing is
+// what lets an applying organisation see what it would be agreeing to
+// (#155 phase D) rather than being handed an id out of band.
+func listTerms(ctx context.Context, q store.Querier) ([]schema.Terms, error) {
+	rows, err := q.Query(ctx, `SELECT doc FROM terms ORDER BY published_at DESC, id, version DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.Collect(rows, func(r store.Row) (schema.Terms, error) {
+		var doc []byte
+		if err := r.Scan(&doc); err != nil {
+			return schema.Terms{}, err
+		}
+		var t schema.Terms
+		return t, json.Unmarshal(doc, &t)
+	})
+}
+
 func getTerms(ctx context.Context, q store.Querier, id string, version int) (schema.Terms, error) {
 	var doc []byte
 	err := q.QueryRow(ctx,

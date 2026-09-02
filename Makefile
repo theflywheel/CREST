@@ -253,6 +253,23 @@ verify-deployed: ## Check every deployed fleet member answers, and verify the lo
 		  iss=d['issuer']; want='$(CREST_ESIGNET_URL)'; \
 		  sys.exit(0) if iss==want else sys.exit('issuer is %s, expected %s' % (iss, want))"
 	@echo "issuer ok"
+	@echo "── the Inji issuance path (#155 phase C, #130)"
+	@# Certify advertises the credential, its DID resolves, Mimoto offers it
+	@# to the wallet, and Inji Verify answers. The full authenticated loop is
+	@# `make certify-issue`; this sweep proves every fixed surface of it.
+	@curl -fsS --max-time 10 $(CERTIFY_URL)/v1/certify/.well-known/openid-credential-issuer \
+		| python3 -c "import json,sys; d=json.load(sys.stdin); \
+		  sys.exit(0) if 'WorkEventCredential' in d.get('credential_configurations_supported',{}) \
+		  else sys.exit('Certify no longer advertises the WorkEventCredential')"
+	@echo "certify advertises the WorkEventCredential"
+	@curl -fsS --max-time 10 -o /dev/null $(CERTIFY_URL)/v1/certify/.well-known/did.json && echo "issuer DID resolves"
+	@curl -fsS --max-time 10 https://crest-mimoto-production.up.railway.app/v1/mimoto/issuers \
+		| python3 -c "import json,sys; d=json.load(sys.stdin); \
+		  ids=[i['issuer_id'] for i in d['response']['issuers']]; \
+		  sys.exit(0) if 'CREST' in ids else sys.exit('Mimoto does not offer the CREST issuer')"
+	@echo "the wallet is offered the CREST issuer"
+	@curl -fsS --max-time 10 -o /dev/null https://crest-inji-web-production.up.railway.app/ && echo "inji-web up"
+	@curl -fsS --max-time 10 -o /dev/null https://crest-verify-production.up.railway.app/v1/verify/actuator/health && echo "inji-verify up"
 
 # Sequential on purpose, for the same reason deploy.yml is: the services share
 # one database, and a failure part-way through a parallel fan-out leaves a mix

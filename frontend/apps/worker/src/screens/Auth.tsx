@@ -4,7 +4,7 @@
 // screen — phase B turns that into self-registration.
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { OpenNote, Sidecar } from "@crest/ui";
+import { Sidecar } from "@crest/ui";
 import { useSession, describeError } from "../session";
 
 export function AuthReturn() {
@@ -62,23 +62,56 @@ export function AuthReturn() {
       </div>
     );
   }
+  return <SignUp />;
+}
+
+/* Phase B (#155): the authenticated stranger creates their own record. */
+function SignUp() {
+  const s = useSession();
+  const nav = useNavigate();
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const submit = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    setBusy(true);
+    setErr("");
+    try {
+      await s.signUp(name.trim(), phone.trim());
+      nav("/home", { replace: true });
+    } catch (e) {
+      setErr(describeError(e));
+      setBusy(false);
+    }
+  };
   return (
     <div className="login-shell">
       <div className="login-card screen">
         <span className="eyebrow">CREST · Worker</span>
-        <h1 className="scr-title">You are signed in — and not yet enrolled here</h1>
+        <h1 className="scr-title">You are signed in — create your record</h1>
         <p className="body-2">
-          Your identity checked out. But no party in this CREST deployment is bound to it, so there is no record for
-          this app to show you — being unknown here is a fact, not an error.
+          Your identity checked out, and nobody in this deployment is bound to it yet. Give a name to show and one way
+          to reach you, and this becomes your own record — yours from the first minute, before any programme enrols
+          you.
         </p>
-        <OpenNote>
-          <b>Self-registration is not built yet (#155 phase B).</b> Today a worker is enrolled by a programme's
-          registering agent (the field app), and your identity is bound to that record on your first login after
-          enrolment. When self-registration lands, this screen becomes the place you create your own party.
-        </OpenNote>
+        <form id="signupform" onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <label className="body-2">
+            Name to show
+            <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="How you want to appear" style={{ width: "100%", marginTop: 4 }} />
+          </label>
+          <label className="body-2">
+            Phone
+            <input required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+254…" style={{ width: "100%", marginTop: 4 }} />
+          </label>
+          {err ? <div className="errbar">{err}</div> : null}
+          <button className="btn" disabled={busy}>
+            {busy ? "Creating your record…" : "Create my record"}
+          </button>
+        </form>
         <Sidecar>
-          Nothing about you was stored by this sign-in attempt beyond a pairwise reference — not your ID number, not
-          your name. Signing in and walking away leaves no record that matters.
+          What is stored: this name, this phone, and a pairwise reference that means nothing outside this deployment.
+          Not your ID number — the sign-in already proved it and it never comes to rest here.
         </Sidecar>
         <a className="btn secondary" href="#/">
           Back
