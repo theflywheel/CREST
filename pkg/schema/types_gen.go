@@ -560,7 +560,7 @@ type Outcome struct {
 type Party struct {
 
 	// Self-declared descriptive facts about the party — an
-	// organisation's kind, sector, country, contact person (#166). L1
+	// organisation's kind, sector, country, contact person (#168). L1
 	// holds the map, never the vocabulary: which keys exist and what
 	// values are legal is deployment configuration (the layering test —
 	// two deployments can reasonably disagree about a sector taxonomy and
