@@ -8,11 +8,11 @@ script's MAPPING and re-run. Assessment context: `docs/JOURNEY_GAP_ASSESSMENT.md
 
 | Status | Screens | Share |
 |---|---:|---:|
-| implemented | 30 | 20% |
-| compressed | 28 | 19% |
+| implemented | 37 | 25% |
+| compressed | 27 | 18% |
 | semantically-different | 8 | 5% |
 | illustrative | 16 | 11% |
-| missing | 61 | 42% |
+| missing | 55 | 38% |
 | **total** | **143** | |
 
 ## The fidelity gate
@@ -26,7 +26,7 @@ red, which is the check that stops this table claiming coverage the
 screens do not have. Nothing here is evidence that an asserted screen
 passed — only the gate run is that.
 
-In scope today (J3 — `p1_*`, `p2_*` — and G-2 — `g2_*` — plus the design screens `n1`–`n5`): **40** screens — **15** asserted, **3** quarantined, **22** skipped with a reason.
+In scope today (J3 — `p1_*`, `p2_*` — and G-2 — `g2_*` — plus the design screens `n1`–`n5`): **40** screens — **15** asserted, **10** quarantined, **15** skipped with a reason.
 
 ## G-1 — Instance Administrator (8 screens)
 
@@ -46,14 +46,14 @@ In scope today (J3 — `p1_*`, `p2_*` — and G-2 — `g2_*` — plus the design
 |---|---|---|---|---|---|---|
 | `g2_1` | Register | Six fields, and one of them decides everything after | **implemented** | console `#/onboard` | **asserted** | The reference's six-field identity form (legal name, country, work email, contact person, kind, sector) as a desktop console frame — Registration · 1 of 4 with the Register/Terms/Certificates/Done rail; registration documents deliberately not asked, per the reference's own callout → POST /v1/organisations. Since #168 the whole form persists: country/kind/sector/contact person ride the Party's generic attributes map and are read back from GET /v1/organisations/{id}/registration — a registry round-trip, not browser state |
 | `g2_4` | Done | Listed, approved, connected — and still on nobody’s project | **implemented** | console `#/onboard/status` | quarantined (#179) | GET /v1/organisations/{id}/registration: state, exact terms version, decider. Under REGISTRY_ORG_APPROVAL=manual (the local default) the terminal state waits on the operator's decision; on-terms-acceptance approves in the acceptance's transaction. 'On nobody's project' is true — no project membership exists |
-| `g2_5` | Standalone | Before or after an invitation — either order works | **missing** | — | skipped (missing) | Invitation-before-or-after ordering: no invitation service |
-| `g2_6` | Status | Wider terms, asked for only when they are needed | **missing** | — | skipped (missing) | Asking for wider terms later: only one terms listing exists (GET /v1/terms), no term-upgrade request |
-| `g2_7` | Status | The documents that were not asked for at registration | **missing** | — | skipped (missing) | Qualification documents: no document upload on onboarding |
-| `g2_8` | Status | An ending that says what to watch for | **compressed** | console `#/onboard/status` | skipped (compressed) | Terminal screen says what was decided and by whom; 'what to watch for' guidance partially present |
-| `g2_9` | Invitations | The enable step, seen from the side that receives it | **missing** | — | skipped (missing) | Receiving an invitation/enablement: no invitation service |
-| `g2_10` | Invitations | Live, and what to do first | **missing** | — | skipped (missing) | 'Live, and what to do first' post-enablement onboarding: not built |
+| `g2_5` | Standalone | Before or after an invitation — either order works | **implemented** | console `#/onboard/standalone` | quarantined (#179) | The org's real invitation inbox via GET /v1/organisations/{id}/invitations; an empty inbox is the true 'stands alone' answer, and either ordering works — offers are sendable before or after registration (#182) |
+| `g2_6` | Status | Wider terms, asked for only when they are needed | **implemented** | console `#/onboard/wider` | quarantined (#179) | Held permissions vs other published terms sets, read live; POST /v1/organisations/{id}/terms-requests opens the request (#182) |
+| `g2_7` | Status | The documents that were not asked for at registration | **implemented** | console `#/onboard/documents` | quarantined (#179) | Declared {kind, ref, hash} references only via PUT .../documents then POST .../submit — no file input exists and the walk asserts its absence; document custody is a stated gap (#182) |
+| `g2_8` | Status | An ending that says what to watch for | **implemented** | console `#/onboard/review` | quarantined (#179) | The submitted request read whole — state, documents, checks; Withdraw works via POST .../withdraw and the walk proves withdraw-then-resubmit |
+| `g2_9` | Invitations | The enable step, seen from the side that receives it | **implemented** | console `#/onboard/invited` | quarantined (#179) | Decline requires a reason (422 without), Ask a question appends to the trail, Accept before APPROVED renders the 409 as 'not yet, not no' without expiring the offer |
+| `g2_10` | Invitations | Live, and what to do first | **implemented** | console `#/onboard/project` | quarantined (#179) | The accepted invitation and the partner grant its acceptance minted, read back — grantId, functions, real end date; 'Assign your people' carries the honest later-journey note |
 | `g2_11` | Terms | Published, named, and never edited underneath you | **implemented** | console `#/onboard/terms` | quarantined (#179) | GET /v1/terms lists published versions; acceptance names an exact version via POST /v1/organisations/{id}/terms-acceptance — 'never edited underneath you' is the backend's versioning rule |
-| `g2_12` | Certificates | The check that mostly runs without a person | **missing** | — | skipped (missing) | Certificate checks: no certificate verification exists |
+| `g2_12` | Certificates | The check that mostly runs without a person | **implemented** | console `#/onboard/checks` | quarantined (#179) | Checks are recorded PASS/FAIL verdicts with a named owner (party or policy) from GET .../terms-requests/{id} — no fake automation, per the honest-checks call in #182 |
 | `g2_13` | Done | Approval is what makes the connection real | **implemented** | console `#/onboard/status` | quarantined (#179) | Approval recorded with decider (policy or person); publication to the registry log happens in the approving transaction |
 ## G-4 — Worker Registry Custodian (4 screens)
 
