@@ -50,7 +50,7 @@ const proxyPaths: Record<ServiceName, string> = {
 // :59110 is the compose nginx that serves the built apps; import.meta.env.DEV
 // covers `vite dev`, whose port is arbitrary. Built behaviour off :59110 is
 // unchanged: the same-origin proxy.
-const isLocalStack = location.port === "59110" || import.meta.env.DEV;
+export const isLocalStack = location.port === "59110" || import.meta.env.DEV;
 
 export const services: Record<ServiceName, string> = Object.assign(
   {},

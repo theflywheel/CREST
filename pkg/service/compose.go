@@ -181,7 +181,7 @@ func Compose(name string, members []Member) {
 			binder = members[authority].Opts.Binder(deps[authority])
 		}
 		var m httpx.Middleware
-		m, forget = identity.Middleware(identity.NewVerifier(idCfg), binder, clk, log)
+		m, forget = identity.Middleware(identity.NewMultiVerifier(idCfg), binder, clk, log)
 		mw = append(mw, m)
 		log.Info("callers are authenticated", "issuer", idCfg.Issuer, "jwks", idCfg.JWKSURL)
 	} else {
