@@ -5,9 +5,9 @@
  "screens": 143,
  "coverage": {
   "compressed": 23,
-  "illustrative": 15,
+  "illustrative": 18,
   "implemented": 25,
-  "missing": 72,
+  "missing": 69,
   "semantically-different": 8
  },
  "statuses": {
@@ -327,7 +327,7 @@
    "status": "compressed",
    "app": "console",
    "route": "#/org",
-   "note": "Organisation view reads the party, terms and authorizations (GET /v1/parties/{id}, /v1/terms, /v1/authorizations); standing-configuration framing only",
+   "note": "The reference's own frame — 'Welcome to <organisation>', the terms held with the version and decider, the custodian-sits-here card, the two actions — over live registry reads (GET /v1/parties/{id}, GET /v1/organisations/{id}/registration). Compressed, not implemented, for one measured reason stated on the frame itself: the projects count reads '—' because no project list is readable to this console door yet",
    "gate": "skipped (compressed)"
   },
   {
@@ -337,11 +337,11 @@
    "title": "A role is held, not just recorded",
    "source": "reference",
    "roleName": "Org Admin",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Role assignment ('a role is held, not just recorded'): no role-grant write surface",
-   "gate": "skipped (missing)"
+   "status": "compressed",
+   "app": "console",
+   "route": "#/people",
+   "note": "The reference's frame at the rail's People & roles entry, listing every grant GET /v1/authorizations reports for the organisation with its grantor and grant date. Compressed: the invited/active distinction, the vacant-role line and the invitation itself need a role-grant write path and a notification service, and the screen says so rather than drawing states it cannot read",
+   "gate": "skipped (compressed)"
   },
   {
    "id": "p1_3",
@@ -350,11 +350,11 @@
    "title": "Creating a project is not configuring one",
    "source": "reference",
    "roleName": "Org Admin",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Project creation: no POST for projects; the fixture context is seeded",
-   "gate": "skipped (missing)"
+   "status": "illustrative",
+   "app": "console",
+   "route": "#/projects/new",
+   "note": "The reference's three-field frame (project name, coverage, named Configurator) with its 'not decided here' callout verbatim, and nothing to submit to: creating a project and naming its Configurator has no write path from this door yet. Labelled on its face — a named owner who never agreed is the failure the handover exists to prevent, so no local state pretends one exists",
+   "gate": "skipped (illustrative)"
   },
   {
    "id": "p2_1",
@@ -377,9 +377,9 @@
    "source": "reference",
    "roleName": "Project Configurator",
    "status": "compressed",
-   "app": "field",
-   "route": "#/register",
-   "note": "Worker registration exists in the field door (assisted) and worker door (self); the configurator's registration-vs-import choice screen does not",
+   "app": "console",
+   "route": "#/workers",
+   "note": "The configurator's own frame now exists at the rail's Workers entry: the three reference options (register in CREST / import existing records / import only) with the reference's copy verbatim, the source-registry field and the 'importing does not create identities' callout. Compressed: the choice has no composition record to be written to, and the registration it configures lives in the field and worker doors",
    "gate": "skipped (compressed)"
   },
   {
@@ -403,9 +403,9 @@
    "source": "reference",
    "roleName": "Project Configurator",
    "status": "compressed",
-   "app": "field",
-   "route": "#/roster",
-   "note": "Evidence intake: roster CSV close posts real batches (POST /v1/evidence/batches); the two-ways-in configuration screen itself is absent",
+   "app": "console",
+   "route": "#/intake",
+   "note": "The two-ways-in frame now exists at #/intake with the reference's three options — including 'somebody entering work into CREST' shown as not available, which is the point of the screen — and the pull list read from GET /v1/sources, so an empty list means no feed exists rather than one being hidden. Compressed: which ways-in a project allows has no store. The upload half is real in the field door's roster close (POST /v1/batches)",
    "gate": "skipped (compressed)"
   },
   {
@@ -431,7 +431,7 @@
    "status": "implemented",
    "app": "console",
    "route": "#/unclear",
-   "note": "GET /v1/unclear; a mismatch is a named row in the custodian's queue, resolvable by attribution — never a silent drop",
+   "note": "The reference's frame over GET /v1/unclear: held-now, share-of-everything-received (claims plus held rows) and oldest-unresolved, every row naming what did not match and who it sits with, and the 'who is not told about this' callout verbatim. A mismatch is somebody named, not a status; attribution is checked against the actor's authorization and the submitter deliberately cannot make it",
    "gate": "**asserted**"
   },
   {
@@ -443,8 +443,8 @@
    "roleName": "Project Configurator",
    "status": "compressed",
    "app": "console",
-   "route": "#/unclear",
-   "note": "What happens when evidence does not clear: the unclear queue shows it; the validation-posture configuration does not exist",
+   "route": "#/validation",
+   "note": "The reference's routing frame — the two postures, 'a returned work unit goes to', and the Evidence Validator vacancy with its consequence — in the reference's own words. Compressed: the posture cannot be stored, so the screen chooses nothing on the service's behalf; the queue it warns about is the real unclear queue this console works at #/unclear",
    "gate": "skipped (compressed)"
   },
   {
@@ -532,11 +532,11 @@
    "title": "The same integration pattern, a different registry",
    "source": "reference",
    "roleName": "Project Configurator",
-   "status": "compressed",
+   "status": "illustrative",
    "app": "console",
-   "route": "#/sources",
-   "note": "Source registration is real (the story registers riverside-dhis2, heartbeat state shows); the connect-wizard framing is absent",
-   "gate": "skipped (compressed)"
+   "route": "#/finance",
+   "note": "The reference's finance-connection frame with its adaptor table, endpoint/credential fields and 'one direction only' callout verbatim — and an on-screen note that the adaptor library shown is the REFERENCE's, not this deployment's: CREST has no finance adaptor, so nothing here can be tested or saved. The evidence-side twin of this integration pattern is real and lives at #/sources",
+   "gate": "skipped (illustrative)"
   },
   {
    "id": "p2_10",
@@ -545,11 +545,11 @@
    "title": "Support belongs to the project, not the platform",
    "source": "reference",
    "roleName": "Project Configurator",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Support ownership configuration: not built",
-   "gate": "skipped (missing)"
+   "status": "illustrative",
+   "app": "console",
+   "route": "#/support",
+   "note": "The reference's frame and its 'what moved, and why' callout verbatim; no support owner can be named because there is nothing to write it to, and a support contact this console invented would send a worker to nobody",
+   "gate": "skipped (illustrative)"
   },
   {
    "id": "p2_11",
@@ -561,7 +561,7 @@
    "status": "implemented",
    "app": "console",
    "route": "#/status",
-   "note": "The funnel reads real queues: windows, exits, credentials, instructions",
+   "note": "The reference's funnel frame: work units received, cleared-not-yet-paid and stuck-with-nobody-holding read from the real queues (claims, unreleased windows, held instructions), a needs-somebody-today list where every row names its owning office, and the reference's own rail — Work status · Quality · Payments · Proof · Reports. The straight-through tile reads '—': its metric contract (#31) does not exist, and a fabricated rate on the screen that says whether a project is healthy is the one thing this frame must not do",
    "gate": "**asserted**"
   },
   {
@@ -573,8 +573,8 @@
    "roleName": "Project Configurator",
    "status": "illustrative",
    "app": "console",
-   "route": "#/status",
-   "note": "STP headline with ranked causes: metric contract unbuilt (Project.tsx names it)",
+   "route": "#/stp",
+   "note": "The reference's frame at its own route, with the ranked-cause table real — every unclear row and every held payment, ranked by count, each naming the party who can fix it — and the headline percentage reading '—' because the straight-through contract (#31) does not exist. Illustrative for the headline, live for the causes underneath it, and the screen says which is which",
    "gate": "skipped (illustrative)"
   },
   {
@@ -586,8 +586,8 @@
    "roleName": "Project Configurator",
    "status": "illustrative",
    "app": "console",
-   "route": "#/status",
-   "note": "Tier mix (capped-by-source vs fell-short): metric contract unbuilt",
+   "route": "#/quality",
+   "note": "The reference's tier frame at its own route: the capped-by-source / fell-short split stated, each registered source shown with the ceiling GET /v1/source-assessments really puts on it, and the definition's own tier map. The tier-share tiles read '—': credentials are listable per worker only, by design, so a project-wide tier mix needs #31's contract",
    "gate": "skipped (illustrative)"
   },
   {
@@ -600,7 +600,7 @@
    "status": "implemented",
    "app": "console",
    "route": "#/payments",
-   "note": "GET /v1/instructions grouped by state and held reason; money-delayed vs people-waiting distinction shown with owners",
+   "note": "The reference's frame: confirmed-paid, instructed-not-confirmed, failed-at-the-rail and oldest-unpaid tiles from GET /v1/instructions, then the why-it-is-delayed table with a worker count, an amount, a median age and the owning office per reason — and a row that could not name an owner would itself be the defect to raise. On the reference's own rail",
    "gate": "**asserted**"
   },
   {
@@ -613,7 +613,7 @@
    "status": "implemented",
    "app": "console",
    "route": "#/trace",
-   "note": "One claim id → windows, exits, credential, instruction — each hop a real GET",
+   "note": "One claim id → the worker it belongs to, then windows, exits, credential and instruction, each hop a real GET, with the consent posture stated on the frame. On the reference's own rail. What the reference also draws and this cannot: a whole per-worker project history and a portable proof bundle — neither has an endpoint, so neither is drawn",
    "gate": "**asserted**"
   },
   {
@@ -626,7 +626,7 @@
    "status": "illustrative",
    "app": "console",
    "route": "#/reports",
-   "note": "Pre-built funder reports: labelled not backed; no report endpoint",
+   "note": "The reference's funder frame: the stage-by-stage reconciliation with instructed and confirmed-paid live from GET /v1/instructions and the difference explained, the proof-of-work table, and the 'why tier is in a funder report' callout verbatim. Illustrative because the allocation row has no funding ledger, the tier column has no project-wide read (#31), and there is no report endpoint to save or schedule one",
    "gate": "skipped (illustrative)"
   },
   {
@@ -1884,13 +1884,13 @@
    "role": "P-1",
    "stage": "Sign in",
    "title": "Sign in to CREST Console",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "",
-   "note": "No console sign-in screen: every persona card is a dev-build session mint, and the roles-decide-what-you-see contract has no surface",
+   "route": "#/",
+   "note": "The console door: eSignet as the primary way in (the same server-side flow the worker door uses), the instance-configured demo personas below a divider, and NO role selector anywhere — a role is granted in the registry and read back, never self-declared. The persona block probes the mock issuer's discovery document and is absent where no mock provider answers",
    "source": "crest-design",
    "roleName": "Org Admin",
-   "gate": "skipped (missing)"
+   "gate": "**asserted**"
   },
   {
    "id": "n2",
@@ -1910,13 +1910,13 @@
    "role": "P-1",
    "stage": "Navigate",
    "title": "One rail, two actors",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "",
-   "note": "The console rail is role-derived per persona (JOURNEY_GAP_ASSESSMENT finding 1); the reference's single five-entry J3 rail, identical for both actors, does not exist",
+   "route": "#/projects",
+   "note": "The rail contract, and the rail itself: both J3 actors get the same five entries per section, with no entry removed by role. Carries the correction to finding F1 — the reference uses THREE rails across the 24 J3 frames (setup, dashboard, finance/support), so 'identical for both actors' holds per section rather than across all of J3",
    "source": "crest-design",
    "roleName": "Org Admin",
-   "gate": "skipped (missing)"
+   "gate": "**asserted**"
   },
   {
    "id": "n4",
@@ -1936,13 +1936,13 @@
    "role": "P-2",
    "stage": "Guard",
    "title": "People & roles is not yours to change",
-   "status": "missing",
+   "status": "compressed",
    "app": "console",
-   "route": "",
-   "note": "No role guard screen: there are no per-role backend permits in the console yet, so there is nothing to be refused by",
+   "route": "#/people",
+   "note": "The guard renders at the same rail entry the Org Admin uses: the Configurator sees the boundary stated, the organisation that can grant the role with its real contact route, and every grant with its grantor and date, read only. Compressed: the role a Configurator would need is named as 'Org Admin' in copy because role-to-function mapping is L2 and unbuilt, so nothing derives it from a permit",
    "source": "crest-design",
    "roleName": "Project Configurator",
-   "gate": "skipped (missing)"
+   "gate": "skipped (compressed)"
   }
  ],
  "fidelityGate": {
@@ -1973,8 +1973,8 @@
    "g4_6": "—",
    "g4_7": "—",
    "p1_1": "skipped (compressed)",
-   "p1_2": "skipped (missing)",
-   "p1_3": "skipped (missing)",
+   "p1_2": "skipped (compressed)",
+   "p1_3": "skipped (illustrative)",
    "p2_1": "skipped (missing)",
    "p2_2": "skipped (compressed)",
    "p2_3": "skipped (missing)",
@@ -1988,8 +1988,8 @@
    "p2_18": "skipped (missing)",
    "p2_7": "skipped (missing)",
    "p2_8": "skipped (missing)",
-   "p2_9": "skipped (compressed)",
-   "p2_10": "skipped (missing)",
+   "p2_9": "skipped (illustrative)",
+   "p2_10": "skipped (illustrative)",
    "p2_11": "**asserted**",
    "p2_12": "skipped (illustrative)",
    "p2_13": "skipped (illustrative)",
@@ -2092,11 +2092,11 @@
    "ext_2": "—",
    "ext_3": "—",
    "ext_4": "—",
-   "n1": "skipped (missing)",
+   "n1": "**asserted**",
    "n2": "skipped (missing)",
-   "n3": "skipped (missing)",
+   "n3": "**asserted**",
    "n4": "skipped (missing)",
-   "n5": "skipped (missing)"
+   "n5": "skipped (compressed)"
   },
   "note": "asserted = the gate drives the real stack to this screen and holds it to its journey-spec entry; skipped = the status is not implemented, reported with the reason; quarantined = claimed implemented but unjudgeable today, with an issue."
  }
