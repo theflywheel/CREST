@@ -28,6 +28,10 @@ const legacy = [];
 cpSync(join(repo, "apps/index.html"), join(out, "index.html"));
 // The landing page styles itself from the design system, served as /crest.css.
 cpSync(join(root, "packages/ui/src/styles.css"), join(out, "crest.css"));
+// The JSON-LD context the wallet credential's signature depends on (#155
+// phase C): Ed25519Signature2020 canonicalisation dereferences it, so the
+// door that serves the apps serves the context too.
+cpSync(join(repo, "apps/contexts"), join(out, "contexts"), { recursive: true });
 for (const dir of legacy) cpSync(join(repo, "apps", dir), join(out, dir), { recursive: true });
 for (const [name, dist] of Object.entries(built)) cpSync(join(root, dist), join(out, name), { recursive: true });
 

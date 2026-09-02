@@ -1,6 +1,7 @@
 // V-1, the pass-only verifier (v1_1–v1_3), ported 1:1 from apps/verify.
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { links } from "@crest/api";
 import { Chip, KV, Sidecar, OpenNote, NextBlock, DisLi } from "@crest/ui";
 import { useVerify, loadSampleCredential, short, day, type Verdict } from "../state";
 
@@ -136,6 +137,14 @@ export function V12() {
       <Sidecar>
         Every check — with a purpose or without one — leaves a line in the worker's own trail. That is by design: the
         record of who looked belongs to the person looked at.
+      </Sidecar>
+      <Sidecar>
+        You do not have to take CREST's word for the answer: the same credential verifies in{" "}
+        <a href={links.injiVerify} target="_blank" rel="noopener noreferrer">
+          Inji Verify
+        </a>{" "}
+        — a separate verifier from a separate project, checking the same signature against the issuer's published key
+        (#155 phase C).
       </Sidecar>
     </>
   );

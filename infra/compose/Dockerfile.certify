@@ -11,6 +11,14 @@
 # plugin-resolution failure; it is the wrong image for any deployment that
 # actually issues something. See docs/p0-findings.md.
 ARG INJI_CERTIFY_IMAGE=mosipid/inji-certify-with-plugins:0.14.0
+
+# The CREST data-provider plugin (#155 phase C), built from source in the same
+# image build so the jar Certify loads is always the code in this checkout —
+# a prebuilt jar checked into the repo would drift from its source silently.
+FROM maven:3.9-eclipse-temurin-21 AS crest-plugin
+COPY infra/certify/plugin /plugin
+RUN cd /plugin && mvn -q -B -DskipTests package
+
 FROM ${INJI_CERTIFY_IMAGE}
 
 # 0.14.0 renamed the container user from `mosip` to `inji` and moved its home
@@ -20,6 +28,10 @@ USER root
 COPY --chown=1001:1001 infra/certify/config/certify-default.properties /home/inji/config/certify-default.properties
 COPY --chown=1001:1001 infra/certify/config/certify-crest.properties   /home/inji/config/certify-crest.properties
 COPY --chown=1001:1001 infra/certify/config/work_events.csv            /home/inji/config/work_events.csv
+# Onto the loader path beside the upstream plugins. The property
+# `mosip.certify.integration.data-provider-plugin` selects which of them runs;
+# shipping the jar does not activate it.
+COPY --from=crest-plugin --chown=1001:1001 /plugin/target/certify-crest-plugin-*.jar /home/inji/additional_jars/
 
 # The keystore is minted here on first boot and IS the issuer key. Created now
 # so that the directory exists and is writable even when a volume is mounted

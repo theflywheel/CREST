@@ -101,6 +101,19 @@ x-service: &crest-service
     # so a restart must not leave the services rejecting valid tokens for a
     # quarter of an hour. A deployment against a real provider leaves these at
     # their defaults.
+    # Extra token issuers beside the primary (issuer|jwks|audience, comma-
+    # separated). Locally this is how the eSignet substrate's tokens are
+    # accepted by CREST — the wallet's self-bind (#155 phase C) needs the
+    # binding's token verifiable here.
+    CREST_OIDC_EXTRA_PROVIDERS: "${CREST_OIDC_EXTRA_PROVIDERS:-}"
+    # The eSignet login surface (#155 phase A). Off by default locally —
+    # ESIGNET_URL unset means the surface is not served and the doors show
+    # the dev login. Set all four to run the real surface against the local
+    # substrate (the key comes from `go run ./tools/esignet`).
+    ESIGNET_URL: "${ESIGNET_URL:-}"
+    ESIGNET_UI_URL: "${ESIGNET_UI_URL:-}"
+    ESIGNET_CLIENT_KEY: "${ESIGNET_CLIENT_KEY:-}"
+    CREST_AUTH_DOORS: "${CREST_AUTH_DOORS:-}"
     CREST_OIDC_JWKS_CACHE: "${CREST_OIDC_JWKS_CACHE:-30s}"
     CREST_OIDC_JWKS_MIN_REFRESH: "${CREST_OIDC_JWKS_MIN_REFRESH:-5s}"
     # The dev web app's origin (apps/web, served on 59100). CORS is off unless
@@ -268,6 +281,13 @@ services:
       CERTIFY_DB_USER: ${POSTGRES_USER:-crest}
       CERTIFY_DB_PASSWORD: ${POSTGRES_PASSWORD:-crest}
       CERTIFY_KEYSTORE_PASSWORD: ${CERTIFY_KEYSTORE_PASSWORD:-local}
+      # The live data provider (#155 phase C): issuance reads confirmed-claim
+      # facts from CREST over the compose network. Set
+      # CERTIFY_DATA_PROVIDER=MockCSVDataProviderPlugin to run the substrate
+      # with no CREST services, which is spike #1's configuration.
+      CERTIFY_DATA_PROVIDER: ${CERTIFY_DATA_PROVIDER:-CrestDataProviderPlugin}
+      CERTIFY_CREST_DATA_URL: http://core:8080
+      CERTIFY_CREST_ISSUER: ${CERTIFY_CREST_ISSUER:-http://localhost:${ESIGNET_PORT:-58088}}
     volumes:
       # The issuer key lives here. A named volume rather than the container
       # filesystem because `docker compose up --build` would otherwise mint a
@@ -288,6 +308,20 @@ services:
   inji-verify-service:
     image: ${INJI_VERIFY_SERVICE_IMAGE:-mosipid/inji-verify-service:0.16.0}
     ports: ["${VERIFY_SERVICE_PORT:-58091}:8080"]
+    environment:
+      # The same variables the deployed service runs on (docs/DEPLOYMENT.md);
+      # without them the datasource URL's placeholders reach the JDBC driver
+      # literally and every request 500s while the container looks healthy.
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: inji_verify
+      DATABASE_SCHEMA: verify
+      DATABASE_USERNAME: ${POSTGRES_USER:-crest}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-crest}
+      active_profile_env: default
+    depends_on:
+      postgres:
+        condition: service_healthy
     profiles: ["substrate", "full"]
 
   inji-verify-ui:

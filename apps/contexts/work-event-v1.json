@@ -1,0 +1,8 @@
+{
+  "@context": {
+    "@version": 1.1,
+    "@protected": true,
+    "@vocab": "https://crest-apps-production.up.railway.app/vocab/work-event#",
+    "WorkEventCredential": "https://crest-apps-production.up.railway.app/vocab/work-event#WorkEventCredential"
+  }
+}

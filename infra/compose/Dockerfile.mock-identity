@@ -8,6 +8,16 @@ FROM ${ESIGNET_MOCK_IMAGE}
 
 COPY --chmod=0755 infra/compose/esignet-start.sh /home/mosip/esignet-start.sh
 
+# The keystore volume mounts here (FINDING #4). Created in the image, owned by
+# the runtime user, so a fresh named volume inherits that ownership — without
+# this, Docker creates the mount point root-owned and the first boot dies with
+# `mock_local.p12 (Permission denied)`, which is exactly what took the Railway
+# service down (there the fix is RAILWAY_RUN_UID=0; compose initialises volumes
+# from the image, so here the image is the right place).
+USER root
+RUN mkdir -p /home/mosip/keys && chown -R 1001:1001 /home/mosip/keys
+USER 1001
+
 ENV JAR_NAME=mock-identity-system.jar
 
 ENTRYPOINT ["/bin/bash", "/home/mosip/esignet-start.sh"]
