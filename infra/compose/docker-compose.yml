@@ -270,7 +270,7 @@ services:
       # somebody has to remember to update. The `%3A` is a literal colon: a
       # did:web with a port must percent-encode it.
       CERTIFY_DOMAIN_URL: http://localhost:${CERTIFY_PORT:-58090}
-      CERTIFY_DID_URL: did:web:localhost%3A${CERTIFY_PORT:-58090}:v1:certify
+      CERTIFY_DID_URL: did:web:localhost%3A${CERTIFY_PORT:-58090}:v1:certify:.well-known
       # Three values, not one, because they answer different questions: what
       # the token's `iss` literally says, where Certify can fetch the signing
       # keys, and what audience it will accept. Locally the first is the URL the
