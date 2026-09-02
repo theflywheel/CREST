@@ -1,30 +1,58 @@
 {
-  "_note": [
-    "Screens the ledger calls implemented that the gate cannot judge today,",
-    "each with an issue. A quarantined screen's failures are printed and",
-    "recorded, never blocking — and one that starts passing every facet FAILS",
-    "the run, so a stale quarantine cannot survive the thing it was hiding",
-    "being fixed.",
-    "",
-    "The three G-2 entries share one root: the onboarding terms/status screens",
-    "read the in-session application from sessionStorage (written by the g2_1",
-    "register form), and the gate's arrival vocabulary can only cold-load a",
-    "route — it lands on the honest 'No application in progress' frame. The",
-    "screens are proven by apps.spec.js, which drives the whole flow; the gap",
-    "is the gate's, and #179 is where it closes."
-  ],
-  "screens": {
-    "g2_4": {
-      "issue": "#179",
-      "why": "Implemented at console #/onboard/status, but the screen shows the application the session started and the gate arrives with no session — it sees 'No application in progress', not the decided registration g2_4 draws (state, exact terms version, decider). Needs a scripted-flow arrival mode in the gate."
-    },
-    "g2_11": {
-      "issue": "#179",
-      "why": "Implemented at console #/onboard/terms, but the published-terms screen is scoped to the session's in-progress application (orgId from sessionStorage) and the gate arrives with no session — it sees 'No application in progress' instead of the terms list and 'Request these terms'. Needs a scripted-flow arrival mode in the gate."
-    },
-    "g2_13": {
-      "issue": "#179",
-      "why": "Implemented at console #/onboard/status (the approved terminal state of the same status screen as g2_4), and unreachable by cold-loading the route for the same reason — no in-session application, so the gate sees 'No application in progress'. Needs a scripted-flow arrival mode in the gate."
-    }
+ "_note": [
+  "Screens the ledger calls implemented that the gate cannot judge today,",
+  "each with an issue. A quarantined screen's failures are printed and",
+  "recorded, never blocking — and one that starts passing every facet FAILS",
+  "the run, so a stale quarantine cannot survive the thing it was hiding",
+  "being fixed.",
+  "",
+  "The three G-2 entries share one root: the onboarding terms/status screens",
+  "read the in-session application from sessionStorage (written by the g2_1",
+  "register form), and the gate's arrival vocabulary can only cold-load a",
+  "route — it lands on the honest 'No application in progress' frame. The",
+  "screens are proven by apps.spec.js, which drives the whole flow; the gap",
+  "is the gate's, and #179 is where it closes."
+ ],
+ "screens": {
+  "g2_4": {
+   "issue": "#179",
+   "why": "Implemented at console #/onboard/status, but the screen shows the application the session started and the gate arrives with no session — it sees 'No application in progress', not the decided registration g2_4 draws (state, exact terms version, decider). Needs a scripted-flow arrival mode in the gate."
+  },
+  "g2_11": {
+   "issue": "#179",
+   "why": "Implemented at console #/onboard/terms, but the published-terms screen is scoped to the session's in-progress application (orgId from sessionStorage) and the gate arrives with no session — it sees 'No application in progress' instead of the terms list and 'Request these terms'. Needs a scripted-flow arrival mode in the gate."
+  },
+  "g2_13": {
+   "issue": "#179",
+   "why": "Implemented at console #/onboard/status (the approved terminal state of the same status screen as g2_4), and unreachable by cold-loading the route for the same reason — no in-session application, so the gate sees 'No application in progress'. Needs a scripted-flow arrival mode in the gate."
+  },
+  "g2_5": {
+   "issue": "#179",
+   "why": "Implemented at console #/onboard/standalone, but the whole onboarding flow is scoped to the session's in-progress application (sessionStorage written by g2_1) and the gate's arrival vocabulary can only cold-load a route — it lands on the honest 'No application in progress' frame. Proven by the apps.spec.js walk; the gap is the gate's, and #179 is where it closes."
+  },
+  "g2_6": {
+   "issue": "#179",
+   "why": "Implemented at console #/onboard/wider, but the whole onboarding flow is scoped to the session's in-progress application (sessionStorage written by g2_1) and the gate's arrival vocabulary can only cold-load a route — it lands on the honest 'No application in progress' frame. Proven by the apps.spec.js walk; the gap is the gate's, and #179 is where it closes."
+  },
+  "g2_7": {
+   "issue": "#179",
+   "why": "Implemented at console #/onboard/documents, but the whole onboarding flow is scoped to the session's in-progress application (sessionStorage written by g2_1) and the gate's arrival vocabulary can only cold-load a route — it lands on the honest 'No application in progress' frame. Proven by the apps.spec.js walk; the gap is the gate's, and #179 is where it closes."
+  },
+  "g2_8": {
+   "issue": "#179",
+   "why": "Implemented at console #/onboard/review, but the whole onboarding flow is scoped to the session's in-progress application (sessionStorage written by g2_1) and the gate's arrival vocabulary can only cold-load a route — it lands on the honest 'No application in progress' frame. Proven by the apps.spec.js walk; the gap is the gate's, and #179 is where it closes."
+  },
+  "g2_9": {
+   "issue": "#179",
+   "why": "Implemented at console #/onboard/invited, but the whole onboarding flow is scoped to the session's in-progress application (sessionStorage written by g2_1) and the gate's arrival vocabulary can only cold-load a route — it lands on the honest 'No application in progress' frame. Proven by the apps.spec.js walk; the gap is the gate's, and #179 is where it closes."
+  },
+  "g2_10": {
+   "issue": "#179",
+   "why": "Implemented at console #/onboard/project, but the whole onboarding flow is scoped to the session's in-progress application (sessionStorage written by g2_1) and the gate's arrival vocabulary can only cold-load a route — it lands on the honest 'No application in progress' frame. Proven by the apps.spec.js walk; the gap is the gate's, and #179 is where it closes."
+  },
+  "g2_12": {
+   "issue": "#179",
+   "why": "Implemented at console #/onboard/checks, but the whole onboarding flow is scoped to the session's in-progress application (sessionStorage written by g2_1) and the gate's arrival vocabulary can only cold-load a route — it lands on the honest 'No application in progress' frame. Proven by the apps.spec.js walk; the gap is the gate's, and #179 is where it closes."
   }
+ }
 }

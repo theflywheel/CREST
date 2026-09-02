@@ -1,80 +1,83 @@
 {
-  "_note": [
-    "Facets the gate does not hold a screen to, each with the reason why.",
-    "A waiver is fidelity DEBT, recorded where it can be counted — never a",
-    "quiet loosening of an assertion. Keys are a facet name ('callouts',",
-    "'rail', 'counter', 'fields', 'buttons', 'layout', 'appbar', 'title') or",
-    "'facet:needle' for one item — prefer per-item, so the rest of the facet",
-    "stays asserted.",
-    "",
-    "Every entry below was written from a measured run against a clean",
-    "story-seeded stack, not guessed.",
-    "",
-    "WHAT CHANGED IN THE J3 SCREENS WAVE (crest/j3-screens, Phase A):",
-    "",
-    "  * Root cause 1 — 'the reference's J3 rail does not exist' — is GONE for",
-    "    the dashboard frames. The console now navigates by the reference's own",
-    "    rails (Work status · Quality · Payments · Proof · Reports for",
-    "    p2_11–p2_16; the five-entry setup rail for p1_* and p2_1–p2_7,",
-    "    p2_17–p2_21), so every rail waiver on p2_11/p2_14/p2_15 is deleted",
-    "    rather than re-argued. It survives only where a screen genuinely lives",
-    "    in another door or another persona's console (p2_20 in the field door,",
-    "    p2_21 in the custodian's).",
-    "",
-    "  * Root cause 2 — reference callout prose written over a fixture world —",
-    "    is now recorded PER CALLOUT instead of per screen, so the callouts the",
-    "    implementation does carry verbatim are asserted. What remains waived is",
-    "    of two kinds, and the reason on each says which: prose that narrates",
-    "    fixture data no deployment reproduces ('the 96 workers…', 'sitting",
-    "    sent-back for 29 days', 'Ten held rows'), and one EXTRACTION artifact —",
-    "    docs/journey-spec.json's callout text puts the bolded metric name after",
-    "    the sentence it opens ('looks better if slow records are excluded…",
-    "    Confirmed-paid percentage Guarded by …'), because",
-    "    tools/journey-trace/extract-spec.py collects a node's own text before",
-    "    its children's. No faithful screen can contain that word order; the fix",
-    "    belongs in the extractor, and the waiver names it rather than hiding it.",
-    "",
-    "Deleting a waiver is the unit of fidelity work. Nothing here loosens the",
-    "gate's rules — each entry is a named piece of unbuilt design, unwritten",
-    "copy, or a tool defect, and `make fidelity` counts them every run."
-  ],
-  "screens": {
-    "g2_1": {
-      "callouts:This is the one answer that branches. A delivery organisation and a bank are shown entirely different sets of terms on the next screen, because they are doing entirely different things here.": "Unwritten copy, one clause: the screen carries this callout's title and every sentence after the first, but opens 'The kind is the one answer that branches' where the reference opens 'This is the one answer that branches' — the implementation names the field because its callout sits in a sidecar away from the form, where the reference's deictic 'This' points at nothing. The rule the callout teaches is stated verbatim; the debt is the opening two words."
-    },
-    "g2_4": {
-      "callouts:Your terms say what you do. A project says what you do, and it can grant less than your terms allow but never more. may will": "EXTRACTION ARTIFACT, not a copy gap: extract-spec.py collects a node's own text before its children's, so the bolded emphasis words the reference sets inside this callout ('may' and 'will') comes out moved after the sentence it belongs in. No faithful screen can contain that word order; the fix is in the extractor (same defect the p2_14 waiver records), and this waiver names it rather than hiding it. Recorded now, while the screen itself sits quarantined behind #179, so the debt is already counted when the quarantine lifts."
-    },
-    "g2_11": {
-      "callouts:Two other published sets apply to organisations like yours: , for a partner that sends records but defines nothing, and , which adds the money side and asks for more at the certificate stage. Submit-only Full delivery with payment": "EXTRACTION ARTIFACT, not a copy gap: extract-spec.py collects a node's own text before its children's, so the bolded terms-set names the reference sets inside this callout ('Submit-only' and 'Full delivery with payment') comes out moved after the sentence it belongs in. No faithful screen can contain that word order; the fix is in the extractor (same defect the p2_14 waiver records), and this waiver names it rather than hiding it. Recorded now, while the screen itself sits quarantined behind #179, so the debt is already counted when the quarantine lifts.",
-      "callouts:What these screens call a is the object the PRD calls a . Terms is the word an organisation reads; policy is the word the registry uses. One object, one version number, one approval. set of terms policy": "EXTRACTION ARTIFACT, not a copy gap: extract-spec.py collects a node's own text before its children's, so the bolded term names the reference sets inside this callout ('set of terms' and 'policy') comes out moved after the sentence it belongs in. No faithful screen can contain that word order; the fix is in the extractor (same defect the p2_14 waiver records), and this waiver names it rather than hiding it. Recorded now, while the screen itself sits quarantined behind #179, so the debt is already counted when the quarantine lifts."
-    },
-    "p2_20": {
-      "appbar": "The reference frames evidence intake as a console screen for the Project Configurator; the implementation puts it in the FIELD door (docs/journey-traceability.md records the surface as field `#/roster`), whose appbar reads 'CREST · Field'. Cross-door placement is real fidelity debt — the row-by-row check itself is the part that is implemented.",
-      "rail": "The reference's five-entry J3 console rail now exists (p1_*/p2_* setup frames render it), but this screen is not in the console at all: the field door carries its own agent nav. Closing this waiver means building the configurator's own console-side intake-file frame, not renaming anything.",
-      "callouts": "Root cause 2 — the reference's callout names the fixture definition version ('WD-4471 v1.2') and its five specific checks as narration. The field screen states the rule in its own words ('The file is checked against the definition. A row that does not match becomes somebody named in the unclear queue — never a silent drop.'), which the forbidden-content rule for the sibling screen p2_21 holds to.",
-      "buttons:Accept 306, hold 6": "The label quotes the fixture's own counts. The implementation's action is 'Close the roster', which posts the real batch; the reference's per-file accept/hold verdict wording is unbuilt copy, not a missing capability.",
-      "buttons:Reject the whole file": "A whole-file rejection does not exist: the evidence service accepts a batch and holds the rows that fail. Named here as a MISSING ACTION rather than a copy difference — it needs an endpoint before it can need a button."
-    },
-    "p2_21": {
-      "rail": "The custodian console's rail is the custodian's own five views (Find a worker · Duplicates · Unclear rows · Recoveries · Overdue reviews), not the reference's J3 rail — this screen is reached as the registry custodian, whose whole flow is a different journey. Cross-persona placement debt: closing it means the configurator's own console-side view of held rows, not a rail rename.",
-      "callouts:The last one is the failure mode that matters. A source system changed its own shape and did not tell anybody, which is silent until evidence stops arriving. Ten held rows is visible. A source that quietly went to zero is not, and nothing here watches for that.": "Fixture narration ('the last one', 'Ten held rows') over a specific queue. The screen carries this callout's title and states the same gap in its own numbers-free words, because the count belongs to the reference's walkthrough, not to any deployment. The gap itself is real and unbuilt: nothing watches for a source that quietly went to zero.",
-      "buttons:Open the first one": "The unclear queue is a table where every row is openable and each carries its own 'Attribute' action; the reference's single 'open the first one' affordance is a walkthrough device, not a control the screen is missing."
-    },
-    "p2_14": {
-      "callouts:looks better if slow records are excluded from the period rather than chased. Confirmed-paid percentage Guarded by · ageing buckets and an oldest-unpaid figure that cannot be netted away.": "EXTRACTION ARTIFACT, not a copy gap: the spec's callout text carries the bolded metric name ('Confirmed-paid percentage') after the sentence it opens, because extract-spec.py collects a node's own text before its children's. The screen renders the reference's sentence in the reference's order, which cannot contain this word order. The fix is in the extractor.",
-      "callouts:The row that crosses a boundary": "The callout exists only to narrate one fixture row ('the 96 workers with no valid payment details'). The screen states the rule the callout is about — that a delay reason can belong to another team's list — through the owner named on every delay row instead.",
-      "callouts:The 96 workers with no valid payment details are the largest group, and the fix is not in this project — it is the same 380 failed-validation records the registry custodian is looking at. One list, two dashboards, and neither of you can close it alone.": "Fixture narration: specific counts from the reference's walkthrough world. The cross-boundary fact it teaches is on the screen as the owning office on each reason, which is the part a deployment can be truthful about.",
-      "buttons:Open the 17": "The label quotes the fixture's own count of held instructions. The implementation lists every held instruction with its reason and owner in the table below the tiles, which is the substance the affordance existed for."
-    },
-    "p2_15": {
-      "callouts:You can see this without asking her, because these are your project’s own records. Anything from another project — and she has worked on two — needs her explicit consent through the disclosure flow, and would arrive as a narrower disclosure than this.": "The screen carries this callout and its title, with one word changed: 'she has worked on two' becomes 'she may have worked on two', because no deployment knows how many projects the worker in front of you has worked on. Asserting the reference's clause would be asserting the fixture. The consent posture itself — this project's own records need no consent, another project's needs a narrower disclosure — is stated verbatim.",
-      "callouts:One row worth acting on": "The callout narrates one fixture row ('sitting sent-back for 29 days'). The trail shows every hop's real state instead; a screen that invented a stale row to have something to point at would be worse than the missing callout.",
-      "callouts:The last row has been sitting sent-back for 29 days. She may not know. This is the single most common way a worker quietly loses money, and it appears on no other screen in the project.": "Fixture narration, same root as its title above.",
-      "buttons:Export the bundle": "There is no bundle export: no endpoint produces a portable proof bundle. A missing capability, named — not a copy difference."
-    },
-    "n1": {
-      "layout": "The gate's desktop idiom requires an appbar AND a navigation rail. n1 is the door: nothing is scoped until somebody has signed in, so it deliberately renders the appbar alone — the design spec says so in as many words (docs/design/j3-connective-tissue/README.md: 'appbar only (no rail — nothing is scoped yet)'). The debt is in the gate's idiom vocabulary, which cannot express 'appbar only', not in the screen; a rail added here to pass this facet would be a rail over nothing."
-    }
+ "_note": [
+  "Facets the gate does not hold a screen to, each with the reason why.",
+  "A waiver is fidelity DEBT, recorded where it can be counted — never a",
+  "quiet loosening of an assertion. Keys are a facet name ('callouts',",
+  "'rail', 'counter', 'fields', 'buttons', 'layout', 'appbar', 'title') or",
+  "'facet:needle' for one item — prefer per-item, so the rest of the facet",
+  "stays asserted.",
+  "",
+  "Every entry below was written from a measured run against a clean",
+  "story-seeded stack, not guessed.",
+  "",
+  "WHAT CHANGED IN THE J3 SCREENS WAVE (crest/j3-screens, Phase A):",
+  "",
+  "  * Root cause 1 — 'the reference's J3 rail does not exist' — is GONE for",
+  "    the dashboard frames. The console now navigates by the reference's own",
+  "    rails (Work status · Quality · Payments · Proof · Reports for",
+  "    p2_11–p2_16; the five-entry setup rail for p1_* and p2_1–p2_7,",
+  "    p2_17–p2_21), so every rail waiver on p2_11/p2_14/p2_15 is deleted",
+  "    rather than re-argued. It survives only where a screen genuinely lives",
+  "    in another door or another persona's console (p2_20 in the field door,",
+  "    p2_21 in the custodian's).",
+  "",
+  "  * Root cause 2 — reference callout prose written over a fixture world —",
+  "    is now recorded PER CALLOUT instead of per screen, so the callouts the",
+  "    implementation does carry verbatim are asserted. What remains waived is",
+  "    of two kinds, and the reason on each says which: prose that narrates",
+  "    fixture data no deployment reproduces ('the 96 workers…', 'sitting",
+  "    sent-back for 29 days', 'Ten held rows'), and one EXTRACTION artifact —",
+  "    docs/journey-spec.json's callout text puts the bolded metric name after",
+  "    the sentence it opens ('looks better if slow records are excluded…",
+  "    Confirmed-paid percentage Guarded by …'), because",
+  "    tools/journey-trace/extract-spec.py collects a node's own text before",
+  "    its children's. No faithful screen can contain that word order; the fix",
+  "    belongs in the extractor, and the waiver names it rather than hiding it.",
+  "",
+  "Deleting a waiver is the unit of fidelity work. Nothing here loosens the",
+  "gate's rules — each entry is a named piece of unbuilt design, unwritten",
+  "copy, or a tool defect, and `make fidelity` counts them every run."
+ ],
+ "screens": {
+  "g2_1": {
+   "callouts:This is the one answer that branches. A delivery organisation and a bank are shown entirely different sets of terms on the next screen, because they are doing entirely different things here.": "Unwritten copy, one clause: the screen carries this callout's title and every sentence after the first, but opens 'The kind is the one answer that branches' where the reference opens 'This is the one answer that branches' — the implementation names the field because its callout sits in a sidecar away from the form, where the reference's deictic 'This' points at nothing. The rule the callout teaches is stated verbatim; the debt is the opening two words."
+  },
+  "g2_4": {
+   "callouts:Your terms say what you do. A project says what you do, and it can grant less than your terms allow but never more. may will": "EXTRACTION ARTIFACT, not a copy gap: extract-spec.py collects a node's own text before its children's, so the bolded emphasis words the reference sets inside this callout ('may' and 'will') comes out moved after the sentence it belongs in. No faithful screen can contain that word order; the fix is in the extractor (same defect the p2_14 waiver records), and this waiver names it rather than hiding it. Recorded now, while the screen itself sits quarantined behind #179, so the debt is already counted when the quarantine lifts."
+  },
+  "g2_11": {
+   "callouts:Two other published sets apply to organisations like yours: , for a partner that sends records but defines nothing, and , which adds the money side and asks for more at the certificate stage. Submit-only Full delivery with payment": "EXTRACTION ARTIFACT, not a copy gap: extract-spec.py collects a node's own text before its children's, so the bolded terms-set names the reference sets inside this callout ('Submit-only' and 'Full delivery with payment') comes out moved after the sentence it belongs in. No faithful screen can contain that word order; the fix is in the extractor (same defect the p2_14 waiver records), and this waiver names it rather than hiding it. Recorded now, while the screen itself sits quarantined behind #179, so the debt is already counted when the quarantine lifts.",
+   "callouts:What these screens call a is the object the PRD calls a . Terms is the word an organisation reads; policy is the word the registry uses. One object, one version number, one approval. set of terms policy": "EXTRACTION ARTIFACT, not a copy gap: extract-spec.py collects a node's own text before its children's, so the bolded term names the reference sets inside this callout ('set of terms' and 'policy') comes out moved after the sentence it belongs in. No faithful screen can contain that word order; the fix is in the extractor (same defect the p2_14 waiver records), and this waiver names it rather than hiding it. Recorded now, while the screen itself sits quarantined behind #179, so the debt is already counted when the quarantine lifts."
+  },
+  "p2_20": {
+   "appbar": "The reference frames evidence intake as a console screen for the Project Configurator; the implementation puts it in the FIELD door (docs/journey-traceability.md records the surface as field `#/roster`), whose appbar reads 'CREST · Field'. Cross-door placement is real fidelity debt — the row-by-row check itself is the part that is implemented.",
+   "rail": "The reference's five-entry J3 console rail now exists (p1_*/p2_* setup frames render it), but this screen is not in the console at all: the field door carries its own agent nav. Closing this waiver means building the configurator's own console-side intake-file frame, not renaming anything.",
+   "callouts": "Root cause 2 — the reference's callout names the fixture definition version ('WD-4471 v1.2') and its five specific checks as narration. The field screen states the rule in its own words ('The file is checked against the definition. A row that does not match becomes somebody named in the unclear queue — never a silent drop.'), which the forbidden-content rule for the sibling screen p2_21 holds to.",
+   "buttons:Accept 306, hold 6": "The label quotes the fixture's own counts. The implementation's action is 'Close the roster', which posts the real batch; the reference's per-file accept/hold verdict wording is unbuilt copy, not a missing capability.",
+   "buttons:Reject the whole file": "A whole-file rejection does not exist: the evidence service accepts a batch and holds the rows that fail. Named here as a MISSING ACTION rather than a copy difference — it needs an endpoint before it can need a button."
+  },
+  "p2_21": {
+   "rail": "The custodian console's rail is the custodian's own five views (Find a worker · Duplicates · Unclear rows · Recoveries · Overdue reviews), not the reference's J3 rail — this screen is reached as the registry custodian, whose whole flow is a different journey. Cross-persona placement debt: closing it means the configurator's own console-side view of held rows, not a rail rename.",
+   "callouts:The last one is the failure mode that matters. A source system changed its own shape and did not tell anybody, which is silent until evidence stops arriving. Ten held rows is visible. A source that quietly went to zero is not, and nothing here watches for that.": "Fixture narration ('the last one', 'Ten held rows') over a specific queue. The screen carries this callout's title and states the same gap in its own numbers-free words, because the count belongs to the reference's walkthrough, not to any deployment. The gap itself is real and unbuilt: nothing watches for a source that quietly went to zero.",
+   "buttons:Open the first one": "The unclear queue is a table where every row is openable and each carries its own 'Attribute' action; the reference's single 'open the first one' affordance is a walkthrough device, not a control the screen is missing."
+  },
+  "p2_14": {
+   "callouts:looks better if slow records are excluded from the period rather than chased. Confirmed-paid percentage Guarded by · ageing buckets and an oldest-unpaid figure that cannot be netted away.": "EXTRACTION ARTIFACT, not a copy gap: the spec's callout text carries the bolded metric name ('Confirmed-paid percentage') after the sentence it opens, because extract-spec.py collects a node's own text before its children's. The screen renders the reference's sentence in the reference's order, which cannot contain this word order. The fix is in the extractor.",
+   "callouts:The row that crosses a boundary": "The callout exists only to narrate one fixture row ('the 96 workers with no valid payment details'). The screen states the rule the callout is about — that a delay reason can belong to another team's list — through the owner named on every delay row instead.",
+   "callouts:The 96 workers with no valid payment details are the largest group, and the fix is not in this project — it is the same 380 failed-validation records the registry custodian is looking at. One list, two dashboards, and neither of you can close it alone.": "Fixture narration: specific counts from the reference's walkthrough world. The cross-boundary fact it teaches is on the screen as the owning office on each reason, which is the part a deployment can be truthful about.",
+   "buttons:Open the 17": "The label quotes the fixture's own count of held instructions. The implementation lists every held instruction with its reason and owner in the table below the tiles, which is the substance the affordance existed for."
+  },
+  "p2_15": {
+   "callouts:You can see this without asking her, because these are your project’s own records. Anything from another project — and she has worked on two — needs her explicit consent through the disclosure flow, and would arrive as a narrower disclosure than this.": "The screen carries this callout and its title, with one word changed: 'she has worked on two' becomes 'she may have worked on two', because no deployment knows how many projects the worker in front of you has worked on. Asserting the reference's clause would be asserting the fixture. The consent posture itself — this project's own records need no consent, another project's needs a narrower disclosure — is stated verbatim.",
+   "callouts:One row worth acting on": "The callout narrates one fixture row ('sitting sent-back for 29 days'). The trail shows every hop's real state instead; a screen that invented a stale row to have something to point at would be worse than the missing callout.",
+   "callouts:The last row has been sitting sent-back for 29 days. She may not know. This is the single most common way a worker quietly loses money, and it appears on no other screen in the project.": "Fixture narration, same root as its title above.",
+   "buttons:Export the bundle": "There is no bundle export: no endpoint produces a portable proof bundle. A missing capability, named — not a copy difference."
+  },
+  "n1": {
+   "layout": "The gate's desktop idiom requires an appbar AND a navigation rail. n1 is the door: nothing is scoped until somebody has signed in, so it deliberately renders the appbar alone — the design spec says so in as many words (docs/design/j3-connective-tissue/README.md: 'appbar only (no rail — nothing is scoped yet)'). The debt is in the gate's idiom vocabulary, which cannot express 'appbar only', not in the screen; a rail added here to pass this facet would be a rail over nothing."
+  },
+  "g2_5": {
+   "callouts:whether organisations register themselves at all. Three ways are on the table — the deployment creates them administratively; they register and request terms, which is what these screens draw; or an already-recognised organisation vouches for them. What settles it is whether an unfamiliar verifier needs to know stood behind the work, or only . Still being decided: which organisation which country": "EXTRACTION ARTIFACT, not a copy gap: extract-spec.py collects a node's own text before its children's, so this callout's bolded phrases ('which organisation', 'which country', and the emphasised subject of 'stood behind the work') come out moved after the sentences they belong in. No faithful screen can contain that word order; the screen carries the reference's real copy. Same extractor defect the g2_4 and p2_14 waivers record; recorded now, while the screen sits quarantined behind #179, so the debt is already counted when the quarantine lifts."
   }
+ }
 }

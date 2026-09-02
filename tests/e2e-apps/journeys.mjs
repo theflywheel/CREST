@@ -242,7 +242,7 @@ const J9 = async (p, cap) => {
 const J1 = async (p, cap) => {
   await go(p, C + "#/onboard", 2200);
   await cap("J1 · Six fields, and one of them decides everything after (g2_1)",
-    "Legal name, country, work email, contact person, kind, sector — the desktop console frame, step 1 of 4. Registration documents are deliberately NOT asked here, exactly as the reference's callout says. Name and email persist; country/kind/sector/contact are held client-side and the screen says so.");
+    "Legal name, country, work email, contact person, kind, sector — the desktop console frame, step 1 of 4. Registration documents are deliberately NOT asked here, exactly as the reference's callout says. Since #168 every field persists — country, kind, sector and contact ride the Party's attributes and read back from the registry.");
   await pause(p, 5500);
   await p.fill('[name="orgname"]', "Lakeside Health Trust " + STAMP);
   await pause(p, 500);
@@ -265,8 +265,24 @@ const J1 = async (p, cap) => {
   await p.waitForURL(/#\/onboard\/status/, { timeout: 20000 });
   await pause(p, 2000);
   await cap("The terminal state, honestly (g2_4, g2_13)",
-    "The exact terms version accepted is on record. This deployment's approval model is manual, so the state waits on the operator's decision — where policy-on-acceptance is configured, approval lands in the acceptance's own transaction. Invitations, wider terms and certificate checks remain the named gaps (g2_5–g2_12).");
+    "The exact terms version accepted is on record. This deployment's approval model is manual, so the state waits on the operator's decision — where policy-on-acceptance is configured, approval lands in the acceptance's own transaction.");
   await pause(p, 5500);
+  await hash(p, "#/onboard/standalone", 2200);
+  await cap("This registration stands alone (g2_5)",
+    "The real invitation inbox, read from the registry. An empty inbox is a true answer — either ordering works, and an invitation can arrive before or after this registration.");
+  await pause(p, 4500);
+  await hash(p, "#/onboard/wider", 2200);
+  await cap("Wider terms, asked for only when needed (g2_6, g2_11)",
+    "What these terms allow today against the other published sets. Requesting wider terms opens a reviewed request — it never edits the terms you hold.");
+  await pause(p, 4500);
+  await hash(p, "#/onboard/documents", 2200);
+  await cap("What we need to see (g2_7)",
+    "Declared references — kind, ref, hash — never the documents themselves. No file input exists on this screen, and that is asserted, not just intended.");
+  await pause(p, 4500);
+  await hash(p, "#/onboard/checks", 2200);
+  await cap("What is checked before this is live (g2_12)",
+    "Checks are recorded verdicts, each with a named owner — a person or a policy. Nothing here pretends to be automation that does not exist.");
+  await pause(p, 4500);
 };
 
 /* ── J2 · Setting up the instance (G-1) ───────────────────────────────── */
