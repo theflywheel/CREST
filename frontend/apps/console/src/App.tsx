@@ -1,20 +1,35 @@
-// CREST Console — one console, role-based views, ported 1:1 from
-// apps/console. The persona chosen at login decides the sidebar; every view
-// keeps its old hash (#/status …) so bookmarks and the Playwright walk both
-// keep working.
+// CREST Console — one console, role-derived sessions. Each persona maps to
+// one reference role flow (docs/journey-traceability.md) and its navigation
+// shows only that flow's views; a route outside the persona's flow redirects
+// home rather than rendering. Every view keeps its old hash (#/status …) so
+// bookmarks keep working.
 import { useEffect } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { ConsoleShell, ErrBar, type NavGroup } from "@crest/ui";
 import { personas, useConsole, type PersonaKey } from "./state";
 import { Status, Payments, Trace, Definition, Sources, Reports } from "./views/Project";
 import { DefineWork, PaySetup, Org, Instance, Portfolio } from "./views/Admin";
+import { Ratify } from "./views/Ratify";
 import { Find, Dupes, Unclear, Recoveries, Review, Cases, SupportTraceNote } from "./views/Custodian";
 import { OnboardApply, OnboardTerms, OnboardStatus } from "./views/Onboard";
 
 const NAV: Record<PersonaKey, NavGroup[]> = {
-  org: [
+  // P-1: standing configuration, not project work.
+  orgadmin: [
     {
-      caption: "Project view",
+      caption: "Org admin · P-1",
+      items: [
+        { to: "/org", label: "Organisation" },
+        { to: "/status", label: "Project status" },
+        { to: "/reports", label: "Reports" },
+      ],
+    },
+  ],
+  // P-2: the operational project — monitoring subset (composition screens are
+  // missing; the traceability manifest says so, this nav does not pretend).
+  configurator: [
+    {
+      caption: "Project configurator · P-2",
       items: [
         { to: "/status", label: "Status" },
         { to: "/payments", label: "Payments" },
@@ -24,33 +39,36 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
         { to: "/reports", label: "Reports" },
       ],
     },
-    { caption: "Define work", items: [{ to: "/definework", label: "The wizard" }] },
-    { caption: "Payment set up", items: [{ to: "/paysetup", label: "Rate & rail" }] },
-    { caption: "Organisation view", items: [{ to: "/org", label: "Organisation" }] },
-    { caption: "Funder", items: [{ to: "/portfolio", label: "Portfolio" }] },
   ],
-  custodian: [
+  // P-3, the author's half: the wizard belongs to the author alone.
+  author: [
     {
-      caption: "Registry",
+      caption: "Definition author · P-3",
       items: [
-        { to: "/find", label: "Find a worker" },
-        { to: "/dupes", label: "Duplicates" },
-        { to: "/unclear", label: "Unclear rows" },
-        { to: "/recover", label: "Recoveries" },
-        { to: "/review", label: "Overdue reviews" },
+        { to: "/definework", label: "The wizard" },
+        { to: "/definition", label: "As published" },
       ],
     },
+  ],
+  // P-3, the approver's half: ratifies, never drafts — no /definework here,
+  // and the route guard refuses it even typed by hand.
+  approver: [
     {
-      caption: "Support",
+      caption: "Definition approver · P-3",
       items: [
-        { to: "/cases", label: "Open cases" },
-        { to: "/supportfind", label: "Find a worker" },
-        { to: "/supporttrace", label: "Payment trace" },
+        { to: "/ratify", label: "Ratify" },
+        { to: "/definition", label: "As published" },
       ],
     },
+  ],
+  rateowner: [
+    { caption: "Rate owner · F-1", items: [{ to: "/paysetup", label: "The rate" }] },
+  ],
+  payowner: [
+    { caption: "Payment mechanism · F-2", items: [{ to: "/paysetup", label: "Rail & mechanism" }] },
   ],
   instance: [
-    { caption: "Instance view", items: [{ to: "/instance", label: "The deployment" }] },
+    { caption: "Instance admin · G-1", items: [{ to: "/instance", label: "The deployment" }] },
     {
       caption: "Project view",
       items: [
@@ -62,7 +80,42 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
       ],
     },
   ],
+  custodian: [
+    {
+      caption: "Registry custodian · G-4",
+      items: [
+        { to: "/find", label: "Find a worker" },
+        { to: "/dupes", label: "Duplicates" },
+        { to: "/unclear", label: "Unclear rows" },
+        { to: "/recover", label: "Recoveries" },
+        { to: "/review", label: "Overdue reviews" },
+      ],
+    },
+  ],
+  support: [
+    {
+      caption: "Support agent · W-3",
+      items: [
+        { to: "/cases", label: "Open cases" },
+        { to: "/supportfind", label: "Find a worker" },
+        { to: "/supporttrace", label: "Payment trace" },
+      ],
+    },
+  ],
+  funder: [
+    {
+      caption: "Funding oversight · V-4",
+      items: [
+        { to: "/portfolio", label: "Portfolio" },
+        { to: "/status", label: "Project status" },
+      ],
+    },
+  ],
 };
+
+const homeOf = (key: PersonaKey) => NAV[key][0].items[0].to;
+const allowed = (key: PersonaKey, path: string) =>
+  NAV[key].some((g) => g.items.some((i) => i.to === path));
 
 function LoginPage() {
   const s = useConsole();
@@ -71,7 +124,7 @@ function LoginPage() {
     s.clearErr();
     try {
       const key = await s.login(i);
-      nav(NAV[key][0].items[0].to);
+      nav(homeOf(key));
     } catch (e) {
       s.fail(e);
     }
@@ -83,8 +136,9 @@ function LoginPage() {
         <div style={{ font: "500 16px/1 Roboto" }}>CREST Console</div>
       </div>
       <p className="muted">
-        One console, role-based views. In this dev build, signing in mints a token from the stack's own identity
-        provider and binds it through the real first-login path.
+        One console, role-derived sessions: each card is one reference role flow, and its navigation shows only that
+        flow's views. In this dev build, signing in mints a token from the stack's own identity provider and binds it
+        through the real first-login path.
       </p>
       {s.err ? <ErrBar>{s.err}</ErrBar> : null}
       <button
@@ -97,9 +151,9 @@ function LoginPage() {
         <div className="muted">Apply, accept the published terms, get approved — the real flow, no seeded party.</div>
       </button>
       {personas.map((p, i) => (
-        <button className="card" data-p={i} key={i} style={{ textAlign: "left", cursor: "pointer" }} onClick={() => pick(i)}>
+        <button className="card" data-p={i} data-persona={p.key} key={p.key} style={{ textAlign: "left", cursor: "pointer" }} onClick={() => pick(i)}>
           <div style={{ font: "500 14px/1.4 Roboto" }}>
-            {p.who} <span className="muted">· {p.role}</span>
+            {p.who} <span className="muted">· {p.role} · {p.ref}</span>
           </div>
           <div className="muted">{p.what}</div>
         </button>
@@ -113,6 +167,9 @@ function Shell() {
   const loc = useLocation();
   useEffect(() => s.clearErr(), [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!s.me || !s.persona) return <LoginPage />;
+  // The role boundary: a view outside this persona's flow is not rendered —
+  // an approver who types #/definework lands back on their own home.
+  if (!allowed(s.persona, loc.pathname)) return <Navigate to={homeOf(s.persona)} replace />;
   return (
     <ConsoleShell
       appName="CREST Console"
@@ -153,6 +210,7 @@ export function App() {
         <Route path="/sources" element={<Sources />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/definework" element={<DefineWork />} />
+        <Route path="/ratify" element={<Ratify />} />
         <Route path="/paysetup" element={<PaySetup />} />
         <Route path="/org" element={<Org />} />
         <Route path="/instance" element={<Instance />} />
@@ -173,7 +231,7 @@ export function App() {
             </>
           }
         />
-        <Route path="*" element={<Navigate to={s.persona ? NAV[s.persona][0].items[0].to : "/status"} replace />} />
+        <Route path="*" element={<Navigate to={s.persona ? homeOf(s.persona) : "/status"} replace />} />
       </Route>
     </Routes>
   );

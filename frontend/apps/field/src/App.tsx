@@ -1,5 +1,7 @@
-// CREST field door (journeys J6 and J8: Naomi as registering agent and
-// attestor) as a desktop console: appbar + sidebar, the offline queue held
+// CREST field door (journey J6, plus assisted confirmation — the W1/W4
+// window exits made on an unreached worker's behalf; NOT J8 source
+// attestation, which belongs to the delivery platform) as a desktop
+// console: appbar + sidebar, the offline queue held
 // on-device with its count in the appbar, and every flow ported 1:1 from
 // apps/enrolment. Same hash routes, so a bookmarked screen keeps working.
 import { useEffect } from "react";
@@ -19,10 +21,14 @@ const NAV: NavGroup[] = [
     ],
   },
   {
-    caption: "Supervisor · attestor · J8",
+    // Not J8/W-4 source attestation: those screens live in the delivery
+    // platform (reference w3_1–w3_4, traceability manifest). What this door
+    // does is assisted confirmation — W1/W4 window exits made for a worker
+    // who cannot be reached — and evidence intake into CREST.
+    caption: "Assisted confirmation · window exits",
     items: [
       { to: "/toconfirm", label: "To confirm" },
-      { to: "/roster", label: "Close the roster" },
+      { to: "/roster", label: "Evidence intake" },
       { to: "/handoff", label: "Who holds it next" },
     ],
   },
@@ -51,7 +57,9 @@ function Login() {
             <h2 className="scr-title">Who is carrying this device?</h2>
             <p className="muted">
               In this dev build, signing in mints a token from the stack's own identity provider and binds it through
-              the real first-login path. Naomi carries both hats here: registering agent (J6) and attestor (J8).
+              the real first-login path. Naomi carries both hats here: registering agent (J6) and assisted
+              confirmer — a supervisor exiting CREST windows for workers who cannot be reached, which is not the
+              delivery platform's source attestation (that system is not CREST's to build).
             </p>
             <div className="btn-row">
               <button className="btn" data-login="1" onClick={doLogin}>

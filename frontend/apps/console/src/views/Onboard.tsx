@@ -10,7 +10,14 @@ import { Chip, ErrBar, KV, Sidecar } from "@crest/ui";
 
 const OKEY = "crest.console.onboarding";
 
-export function readOnboarding(): { orgId: string; name: string } | null {
+export type OrgProfile = {
+  kind: string;
+  sector: string;
+  regNumber: string;
+  contactName: string;
+};
+
+export function readOnboarding(): ({ orgId: string; name: string } & Partial<OrgProfile>) | null {
   try {
     const raw = sessionStorage.getItem(OKEY);
     return raw ? JSON.parse(raw) : null;
@@ -18,7 +25,7 @@ export function readOnboarding(): { orgId: string; name: string } | null {
     return null;
   }
 }
-function storeOnboarding(v: { orgId: string; name: string }) {
+function storeOnboarding(v: { orgId: string; name: string } & Partial<OrgProfile>) {
   try {
     sessionStorage.setItem(OKEY, JSON.stringify(v));
   } catch {
@@ -40,10 +47,23 @@ function OnboardFrame(props: { step: string; title: string; children: React.Reac
   );
 }
 
-/* g-1 — the application */
+/* g2_1 — the six-field identity form: name, kind, sector, registration
+   number, contact name, contact email. The kind is the one answer that
+   branches later terms in the reference.
+
+   Honest gap, recorded rather than patched around (traceability g2_1): the
+   Party schema is closed (additionalProperties: false) and POST
+   /v1/organisations rejects unknown fields, so kind/sector/registration
+   number/contact name cannot be persisted server-side without an L1 schema
+   change. They are held client-side for the flow and shown on the status
+   screen; the server holds the name and the contact email. */
 export function OnboardApply() {
   const nav = useNavigate();
   const [name, setName] = useState("");
+  const [kind, setKind] = useState("delivery");
+  const [sector, setSector] = useState("health");
+  const [regNumber, setRegNumber] = useState("");
+  const [contactName, setContactName] = useState("");
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -57,33 +77,77 @@ export function OnboardApply() {
         kind: "organisation",
         contactRoutes: [{ kind: "email", value: email.trim() }],
       });
-      storeOnboarding({ orgId: out.party.id, name: out.party.displayName });
+      storeOnboarding({
+        orgId: out.party.id,
+        name: out.party.displayName,
+        kind,
+        sector,
+        regNumber: regNumber.trim(),
+        contactName: contactName.trim(),
+      });
       nav("/onboard/terms");
     } catch (e: any) {
       setErr(String(e?.message || e));
       setBusy(false);
     }
   };
+  const sel = { width: "100%", marginTop: 4, font: "inherit" } as const;
   return (
-    <OnboardFrame step="Onboarding · Step 1 of 3" title="Apply as an organisation">
+    <OnboardFrame step="Onboarding · Step 1 of 3" title="Register your organisation">
       <p className="body-2">
-        An application creates your organisation's record and nothing else: it grants no authority, publishes nothing
-        to the registry log, and can be walked away from. Authority arrives only with approval.
+        About two minutes, and nothing on this screen needs anyone's approval. An application creates your
+        organisation's record and nothing else: it grants no authority, publishes nothing to the registry log, and can
+        be walked away from. Authority arrives only with approval.
       </p>
       <form id="orgapplyform" onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 480 }}>
         <label className="body-2">
-          Organisation name
-          <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lakeside Health Trust" style={{ width: "100%", marginTop: 4 }} />
+          Legal name
+          <input required name="orgname" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lakeside Health Trust" style={{ width: "100%", marginTop: 4 }} />
+        </label>
+        <label className="body-2">
+          What kind of organisation are you?
+          <select name="orgkind" value={kind} onChange={(e) => setKind(e.target.value)} style={sel}>
+            <option value="delivery">Delivery — we do the work, or manage people who do</option>
+            <option value="payment">Payment — we move the money</option>
+            <option value="verifying">Verifying institution — we check credentials</option>
+          </select>
+          <span className="muted" style={{ display: "block", marginTop: 2 }}>
+            The one answer that branches: a delivery organisation and a bank are shown different terms.
+          </span>
+        </label>
+        <label className="body-2">
+          What sector do you work in?
+          <select name="orgsector" value={sector} onChange={(e) => setSector(e.target.value)} style={sel}>
+            <option value="health">Health &amp; community health</option>
+            <option value="agriculture">Agriculture</option>
+            <option value="education">Education</option>
+            <option value="finance">Financial services</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <label className="body-2">
+          Registration number
+          <input required name="orgreg" value={regNumber} onChange={(e) => setRegNumber(e.target.value)} placeholder="e.g. NGO/2091/2018" style={{ width: "100%", marginTop: 4 }} />
+        </label>
+        <label className="body-2">
+          Contact person
+          <input required name="contactname" value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Who signs for this application" style={{ width: "100%", marginTop: 4 }} />
         </label>
         <label className="body-2">
           Contact email
-          <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="programmes@example.org" style={{ width: "100%", marginTop: 4 }} />
+          <input required name="contactemail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="programmes@example.org" style={{ width: "100%", marginTop: 4 }} />
         </label>
         {err ? <ErrBar>{err}</ErrBar> : null}
         <button className="btn" disabled={busy}>
           {busy ? "Applying…" : "Apply"}
         </button>
       </form>
+      <Sidecar>
+        What is stored where, honestly: the name and the contact email persist in the registry. Kind, sector,
+        registration number and contact person are held in this browser for the flow — the registry's Party schema has
+        no profile field yet, and inventing one client-side would fake a record. The gap is recorded in
+        docs/journey-traceability.md (g2_1).
+      </Sidecar>
       <p className="muted">
         <Link to="/">Back to the console</Link>
       </p>
@@ -173,6 +237,9 @@ export function OnboardStatus() {
         <KV
           rows={[
             ["Organisation", <span className="mono">{ob.orgId}</span>],
+            ["Kind · sector", ob.kind ? `${ob.kind} · ${ob.sector} (held in this browser — not yet a registry fact)` : "—"],
+            ["Registration no.", ob.regNumber || "—"],
+            ["Contact", ob.contactName || "—"],
             ["Applied", reg.appliedAt || "—"],
             ["Terms accepted", reg.termsAcceptedAt ? `${reg.termsId} v${reg.termsVersion}` : "not yet"],
             ["Decided by", reg.decidedBy || "—"],

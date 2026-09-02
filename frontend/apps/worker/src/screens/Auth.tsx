@@ -65,20 +65,76 @@ export function AuthReturn() {
   return <SignUp />;
 }
 
-/* Phase B (#155): the authenticated stranger creates their own record. */
+/* The consent script a self-enrolling worker agrees to (reference w1_5).
+   The exact sentence is posted as the consent's purpose, so what was agreed
+   to is what is recorded — not a paraphrase. */
+const CONSENT_PURPOSE =
+  "hold my enrolment details and fetch records of my work for this programme, until I withdraw";
+
+/* Phase B (#155): the authenticated stranger creates their own record —
+   with the enrollment-consent step FIRST (reference w1_5): the record is
+   never created before the worker has said yes. */
 function SignUp() {
   const s = useSession();
   const nav = useNavigate();
+  const [consented, setConsented] = useState(false);
+  const [agree, setAgree] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+
+  if (!consented) {
+    return (
+      <div className="login-shell">
+        <div className="login-card screen">
+          <span className="eyebrow">CREST · Worker · Enrollment consent</span>
+          <h1 className="scr-title">Before anything is created — do you agree?</h1>
+          <p className="body-2">
+            Nothing exists about you here yet, and nothing will until you say yes. If you agree, CREST will:{" "}
+            {CONSENT_PURPOSE}. You can withdraw this at any time from your profile — withdrawal stops new records; it
+            never deletes the work you already did.
+          </p>
+          <form
+            id="consentform"
+            onSubmit={(ev) => {
+              ev.preventDefault();
+              if (agree) setConsented(true);
+            }}
+            style={{ display: "flex", flexDirection: "column", gap: 10 }}
+          >
+            <label className="body-2" style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <input
+                type="checkbox"
+                id="consentbox"
+                checked={agree}
+                onChange={(e) => setAgree(e.target.checked)}
+                style={{ marginTop: 3 }}
+              />
+              <span>I agree — recorded on screen, in my name, scoped to this programme.</span>
+            </label>
+            <button className="btn" id="consentcontinue" disabled={!agree}>
+              I agree — continue
+            </button>
+          </form>
+          <Sidecar>
+            This consent is recorded through the real consents API the moment your record exists, and shows on your
+            profile under Consents, where withdrawing it is one tap.
+          </Sidecar>
+          <a className="btn secondary" href="#/">
+            No — take me back
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     setBusy(true);
     setErr("");
     try {
-      await s.signUp(name.trim(), phone.trim());
+      await s.signUp(name.trim(), phone.trim(), CONSENT_PURPOSE);
       nav("/home", { replace: true });
     } catch (e) {
       setErr(describeError(e));
@@ -110,8 +166,9 @@ function SignUp() {
           </button>
         </form>
         <Sidecar>
-          What is stored: this name, this phone, and a pairwise reference that means nothing outside this deployment.
-          Not your ID number — the sign-in already proved it and it never comes to rest here.
+          What is stored: this name, this phone, the consent you just gave, and a pairwise reference that means
+          nothing outside this deployment. Not your ID number — the sign-in already proved it and it never comes to
+          rest here.
         </Sidecar>
         <a className="btn secondary" href="#/">
           Back

@@ -1,5 +1,13 @@
-// J8 (W-4): from attestation to credential — the supervisor's half:
-// w3_1..w3_5, ported 1:1 from apps/enrolment.
+// Assisted confirmation and evidence intake — NOT J8/W-4 source attestation.
+//
+// The reference's W-4 flow (w3_1..w3_5) has a supervisor confirm work inside
+// the delivery/source platform, whose roster close then reaches CREST as
+// ingested evidence. That platform is not CREST's to build, and this file no
+// longer pretends to be it (docs/JOURNEY_GAP_ASSESSMENT.md finding 3;
+// traceability rows w3_1–w3_5 record the difference). What is here is real
+// and CREST-side: assisted W1/W4 confirmation-window exits for workers who
+// cannot be reached — every exit releases payment — and the roster-CSV
+// evidence intake into CREST's own evidence service.
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "@crest/api";
@@ -29,11 +37,17 @@ export function ToConfirm() {
   return (
     <>
       <div className="scr-title m">Workers waiting on you</div>
-      <Chip sm kind="info">DIGIT HCM · the worklist belongs to the delivery platform</Chip>
+      <Chip sm kind="info">assisted confirmation — a CREST window exit, not source attestation</Chip>
       <p className="muted">
         Open windows whose worker could not be told — no phone, or no signal. You are their route; an assisted exit is
         one of the four, recorded as itself with your name on it. Every exit releases payment.
       </p>
+      <OpenNote>
+        Honest boundary: the reference's W-4 worklist lives in the delivery platform (DIGIT HCM in the storyboard),
+        where a supervisor attests or corrects the source record before it ever reaches CREST. That surface is the
+        source system's, not CREST's — this screen is the later, CREST-side moment: exiting a worker's confirmation
+        window on their behalf.
+      </OpenNote>
       {list.length ? (
         list.map((w) => (
           <div className="card" key={w.claimId}>
@@ -246,11 +260,12 @@ export function Roster() {
   };
   return (
     <>
-      <div className="scr-title m">The month's tally, row by row</div>
+      <div className="scr-title m">Evidence intake — the month's tally, row by row</div>
       <p className="muted">
         The file is checked against the definition. A row that does not match becomes somebody named in the unclear
         queue — never a silent drop.
       </p>
+      <Chip sm kind="info">CREST's evidence intake — in the reference (w3_4) the roster closes in the delivery platform first</Chip>
       <div className="card">
         <form id="rosterform" onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <label className="body-2">

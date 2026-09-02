@@ -24,12 +24,16 @@ export function Login() {
           Your money, explained.
         </h1>
         <p className="muted">
-          You prove who you are to the identity system, not to CREST — CREST only ever sees a pairwise reference,
-          never your ID number.
+          Two ways in, and neither is a fallback — both give the same record, the same consent, the same CREST ID. A
+          verifier can never tell which you used.
         </p>
         {err ? <div className="errbar">{err}</div> : null}
-        <div className="card hi">
-          <p className="body-2">Sign in with your national identity through eSignet.</p>
+        <div className="card hi" data-pathway="self">
+          <span className="eyebrow">Pathway A — enroll yourself</span>
+          <p className="body-2">
+            On your own phone. You prove who you are to the identity system, not to CREST — CREST only ever sees a
+            pairwise reference, never your ID number. Then you say yes to enrollment before any record is created.
+          </p>
           <div style={{ height: 10 }} />
           <button className="btn" id="login-esignet" onClick={() => startEsignetLogin()}>
             Continue with eSignet
@@ -38,6 +42,18 @@ export function Login() {
             In this deployment eSignet authenticates against a test identity registry — a real national registry
             arrives with a pilot (#53). The flow, and what CREST sees, is identical.
           </p>
+        </div>
+        <div className="card" data-pathway="assisted">
+          <span className="eyebrow">Pathway B — be enrolled with help</span>
+          <p className="body-2">
+            No phone, no document, or you would rather someone walked through it with you: a registering agent enrols
+            you on a shared device, reads the consent aloud, and your record carries their name as the enroller —
+            equal rigour, the same CREST ID at the end.
+          </p>
+          <div style={{ height: 10 }} />
+          <a className="btn secondary" id="login-assisted" href="/enrolment/">
+            Find a registering agent · the field door
+          </a>
         </div>
         {isLocalStack ? (
           <div className="card">
