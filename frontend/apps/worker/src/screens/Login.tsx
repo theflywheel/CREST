@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Sidecar } from "@crest/ui";
 import { isLocalStack, startEsignetLogin } from "@crest/api";
 import { useSession, describeError } from "../session";
@@ -10,26 +10,49 @@ export const Ussd = () => (
   </p>
 );
 
+/* The worker door's entry frame, in the reference's desktop console grammar:
+   teal appbar with the orange mark, wide pane — no more 480px centered card.
+   Shared by the entry fork (w1_1) and the eSignet return leg (Auth.tsx). */
+export function EntryShell(props: { who?: string; children: ReactNode }) {
+  return (
+    <div className="console-shell">
+      <div className="appbar">
+        <span className="mark" />
+        <span className="t">CREST · Worker</span>
+        <span className="who">
+          <span className="who-label">{props.who || "Not signed in"}</span>
+        </span>
+      </div>
+      <div className="console-body">
+        <main className="pane">
+          <div className="screen pane-wide">{props.children}</div>
+        </main>
+      </div>
+    </div>
+  );
+}
+
 export function Login() {
   const s = useSession();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
-    <div className="login-shell">
-      <div className="login-card screen">
-        <span className="eyebrow">CREST · Worker</span>
-        <h1 className="scr-title">
-          Your work, on the record.
-          <br />
-          Your money, explained.
-        </h1>
-        <p className="muted">
-          You prove who you are to the identity system, not to CREST — CREST only ever sees a pairwise reference,
-          never your ID number.
-        </p>
-        {err ? <div className="errbar">{err}</div> : null}
-        <div className="card hi">
-          <p className="body-2">Sign in with your national identity through eSignet.</p>
+    <EntryShell>
+      <h1 className="scr-title">
+        Your work, on the record. Your money, explained.
+      </h1>
+      <p className="muted" style={{ maxWidth: 700 }}>
+        Two ways in, and neither is a fallback — both give the same record, the same consent, the same CREST ID. A
+        verifier can never tell which you used.
+      </p>
+      {err ? <div className="errbar">{err}</div> : null}
+      <div className="form-grid" style={{ alignItems: "stretch" }}>
+        <div className="card hi" data-pathway="self">
+          <span className="eyebrow">Pathway A — enroll yourself</span>
+          <p className="body-2" style={{ marginTop: 6 }}>
+            On your own phone. You prove who you are to the identity system, not to CREST — CREST only ever sees a
+            pairwise reference, never your ID number. Then you say yes to enrollment before any record is created.
+          </p>
           <div style={{ height: 10 }} />
           <button className="btn" id="login-esignet" onClick={() => startEsignetLogin()}>
             Continue with eSignet
@@ -39,6 +62,20 @@ export function Login() {
             arrives with a pilot (#53). The flow, and what CREST sees, is identical.
           </p>
         </div>
+        <div className="card" data-pathway="assisted">
+          <span className="eyebrow">Pathway B — be enrolled with help</span>
+          <p className="body-2" style={{ marginTop: 6 }}>
+            No phone, no document, or you would rather someone walked through it with you: a registering agent enrols
+            you on a shared device, reads the consent aloud, and your record carries their name as the enroller —
+            equal rigour, the same CREST ID at the end.
+          </p>
+          <div style={{ height: 10 }} />
+          <a className="btn secondary" id="login-assisted" href="/enrolment/">
+            Find a registering agent · the field door
+          </a>
+        </div>
+      </div>
+      <div className="pane-cols">
         {isLocalStack ? (
           <div className="card">
             <span className="eyebrow">Dev login — local stack only</span>
@@ -62,13 +99,15 @@ export function Login() {
               {busy ? "Signing in…" : "Continue as Grace"}
             </button>
           </div>
-        ) : null}
-        <Sidecar>
-          Signing in never uploads anything about you. It only proves to CREST that the person holding this phone is
-          the person the record is about.
-        </Sidecar>
-        <Ussd />
+        ) : <span />}
+        <div>
+          <Sidecar>
+            Signing in never uploads anything about you. It only proves to CREST that the person holding this phone
+            is the person the record is about.
+          </Sidecar>
+          <Ussd />
+        </div>
       </div>
-    </div>
+    </EntryShell>
   );
 }

@@ -48,16 +48,24 @@ type schema struct {
 	// detected, but they never affect the generated shape: a Go type cannot
 	// express "minLength 1", and pretending otherwise would be worse than the
 	// runtime validation that does express it.
-	MinLength  *int     `json:"minLength"`
-	MinItems   *int     `json:"minItems"`
-	MaxItems   *int     `json:"maxItems"`
-	Minimum    *float64 `json:"minimum"`
-	Maximum    *float64 `json:"maximum"`
-	ExclMin    *float64 `json:"exclusiveMinimum"`
-	Pattern    string   `json:"pattern"`
-	AllOf      []any    `json:"allOf"`
-	AddlProps  *bool    `json:"additionalProperties"`
-	SchemaMeta string   `json:"$schema"`
+	MinLength *int     `json:"minLength"`
+	MinItems  *int     `json:"minItems"`
+	MaxItems  *int     `json:"maxItems"`
+	Minimum   *float64 `json:"minimum"`
+	Maximum   *float64 `json:"maximum"`
+	ExclMin   *float64 `json:"exclusiveMinimum"`
+	Pattern   string   `json:"pattern"`
+	AllOf     []any    `json:"allOf"`
+	// additionalProperties may be a bool or a schema (e.g. Party.attributes
+	// constrains its values with {"type":"string"}). The generator never reads
+	// it — the runtime validator enforces it — so it is kept raw rather than
+	// typed, and an object here must not break parsing.
+	AddlProps json.RawMessage `json:"additionalProperties"`
+	// Constraints the validator enforces and the generator has no type-level
+	// use for; parsed so their presence does not break codegen.
+	MaxProps   *int            `json:"maxProperties"`
+	PropNames  json.RawMessage `json:"propertyNames"`
+	SchemaMeta string          `json:"$schema"`
 }
 
 type generator struct {

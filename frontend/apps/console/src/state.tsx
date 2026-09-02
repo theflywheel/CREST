@@ -1,33 +1,100 @@
-// Console session state, ported from apps/console/app.js: which persona is
-// signed in, the claim being traced, the wizard step, the last error.
+// Console session state: which persona is signed in, the claim being traced,
+// the wizard step, the last error.
+//
+// Personas are role-derived (docs/JOURNEY_GAP_ASSESSMENT.md finding 1): each
+// selectable session maps to one reference role flow, and its navigation shows
+// only that flow's views. Author/approver separation is expressed here — the
+// Definition Approver ratifies and can never open the authoring wizard.
+//
+// Honest limit, named: the separation is a session/navigation contract in the
+// UI. The fixture world (harness/seed.go) seeds backend grants on only two
+// parties (the programme organisation and the custodian), so every org-side
+// role signs in as the organisation party and every registry/support role as
+// the custodian party. Per-role backend permits are L1 work the traceability
+// manifest records as missing (p1_2 role assignment).
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { ApiError, loginAs, setSession, FIX } from "@crest/api";
 
-// Personas. The instance administrator reuses FIX.org: the fixture world
-// seeds the instance-scoped grants on the organisation party, because in
-// this deployment the programme organisation is also the deployment
-// operator — a real deployment would separate them.
 export const personas = [
   {
-    key: "org",
+    key: "orgadmin",
     id: FIX.org,
-    who: "Ministry of Health",
-    role: "org admin · project",
-    what: "PRJ-118 — the funnel, the payments, the definition, the money set up",
+    who: "Adhiambo",
+    role: "org admin",
+    ref: "P-1",
+    what: "The organisation's standing record — terms held, authorizations, status",
+  },
+  {
+    key: "configurator",
+    id: FIX.org,
+    who: "Wanjiru",
+    role: "project configurator",
+    ref: "P-2",
+    what: "PRJ-118 operations — the funnel, payments, trace, sources, reports",
+  },
+  {
+    key: "author",
+    id: FIX.org,
+    who: "Dr. Achieng",
+    role: "work definition author",
+    ref: "P-3",
+    what: "The definition, section by section — drafting is the author's alone",
+  },
+  {
+    key: "approver",
+    id: FIX.org,
+    who: "Prof. Ndegwa",
+    role: "work definition approver",
+    ref: "P-3",
+    what: "Ratifies what the author drafted — reads everything, drafts nothing",
+  },
+  {
+    key: "rateowner",
+    id: FIX.org,
+    who: "Mutua",
+    role: "rate owner",
+    ref: "F-1",
+    what: "The rate on the unit the author defined",
+  },
+  {
+    key: "payowner",
+    id: FIX.org,
+    who: "Njeri",
+    role: "payment mechanism owner",
+    ref: "F-2",
+    what: "The rail beyond the boundary where CREST stops",
+  },
+  {
+    key: "instance",
+    id: FIX.org,
+    who: "Instance administrator",
+    role: "instance admin",
+    ref: "G-1",
+    what: "The deployment itself: services, issuer, consent floor, admission",
   },
   {
     key: "custodian",
     id: FIX.custodian,
     who: "Otieno",
     role: "registry custodian",
-    what: "Duplicates, unattributed rows, recoveries, the review queue — and support",
+    ref: "G-4",
+    what: "Duplicates, unattributed rows, recoveries, the review queue",
   },
   {
-    key: "instance",
+    key: "support",
+    id: FIX.custodian,
+    who: "Naliaka",
+    role: "support agent",
+    ref: "W-3",
+    what: "The queue of things that stalled — lookup, payment trace",
+  },
+  {
+    key: "funder",
     id: FIX.org,
-    who: "Instance administrator",
-    role: "instance view",
-    what: "The deployment itself: services, issuer, consent floor, admission",
+    who: "Funding oversight",
+    role: "funding viewer",
+    ref: "V-4",
+    what: "Allocated against paid, and the trail from an amount downward",
   },
 ] as const;
 

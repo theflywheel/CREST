@@ -73,7 +73,23 @@ func (h *handlers) getRegistration(w http.ResponseWriter, r *http.Request) {
 		httpx.NotFoundOr(w, h.d.Log, "registration", err, store.ErrNotFound)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, reg)
+	// The organisation's self-declared attributes (kind, sector, country,
+	// contact person — #168) ride the registration read: this is the surface
+	// the applicant's own status screen polls, and serving the profile here
+	// proves the round-trip without opening the Party document itself, which
+	// stays behind the authorized read (#102). Attributes are descriptive
+	// facts the organisation asserted about itself — never identity data, the
+	// schema forbids more than bounded strings — so the applicant-facing
+	// registration read may carry them.
+	party, err := getParty(r.Context(), h.d.DB.Q(), reg.PartyID)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "read registration party", err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, struct {
+		Registration
+		Attributes map[string]any `json:"attributes,omitempty"`
+	}{reg, party.Attributes})
 }
 
 // acceptTerms records agreement to a specific terms version.

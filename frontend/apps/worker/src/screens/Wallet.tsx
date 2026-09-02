@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import QRCode from "qrcode";
 import { links } from "@crest/api";
 import { Chip, DisLi, GridTable, KV, OpenNote, Sidecar } from "@crest/ui";
 import { useSession } from "../session";
@@ -180,15 +182,62 @@ export function CredShow() {
         </Sidecar>
       </div>
       <div>
-        <div className="card">
-          <span className="eyebrow">The signed document itself</span>
+        <CredQR c={c} />
+        <details className="card" style={{ marginTop: 12 }}>
+          <summary className="eyebrow" style={{ cursor: "pointer" }} id="show-json">
+            The signed document itself — show the JSON
+          </summary>
           <div style={{ overflowX: "auto", marginTop: 8 }}>
             <pre className="mono" style={{ fontSize: "10.5px", lineHeight: 1.5 }}>
               {JSON.stringify(c, null, 2)}
             </pre>
           </div>
-        </div>
+        </details>
       </div>
+    </div>
+  );
+}
+
+/* The offline presentation (reference w1_18): the whole signed credential as
+   a QR, generated on this device — a verifier scans and checks the signature
+   without asking CREST, which is the "provable to a stranger in a minute,
+   offline" promise. Rendered locally; nothing leaves the phone. */
+function CredQR({ c }: { c: any }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [tooBig, setTooBig] = useState(false);
+  useEffect(() => {
+    let live = true;
+    QRCode.toDataURL(JSON.stringify(c), { errorCorrectionLevel: "L", margin: 2, scale: 3 }).then(
+      (url) => live && setSrc(url),
+      // A QR holds ~3KB; a credential past that cannot fit in one code.
+      () => live && setTooBig(true),
+    );
+    return () => {
+      live = false;
+    };
+  }, [c]);
+  return (
+    <div className="card" style={{ textAlign: "center" }}>
+      <span className="eyebrow">Scan this — it works with no signal</span>
+      {src ? (
+        <img
+          id="cred-qr"
+          src={src}
+          alt="This credential as a QR code"
+          style={{ width: "100%", maxWidth: 280, imageRendering: "pixelated", marginTop: 8 }}
+        />
+      ) : tooBig ? (
+        <OpenNote>
+          This credential is larger than one QR code can carry. The reference's answer is a compressed PixelPass-style
+          encoding, which is not built yet (traceability w1_18) — until then, show the JSON below or share from your
+          Inji wallet.
+        </OpenNote>
+      ) : (
+        <p className="muted">Drawing the code…</p>
+      )}
+      <p className="muted" style={{ marginTop: 8 }}>
+        The code carries the signed credential itself. The signature, not this site, is what the verifier believes.
+      </p>
     </div>
   );
 }

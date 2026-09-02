@@ -65,6 +65,13 @@
       "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp",
       "description": "When the merge was recorded."
     },
+    "attributes": {
+      "type": "object",
+      "description": "Self-declared descriptive facts about the party — an organisation's kind, sector, country, contact person (#168). L1 holds the map, never the vocabulary: which keys exist and what values are legal is deployment configuration (the layering test — two deployments can reasonably disagree about a sector taxonomy and both be CREST). Small bounded strings only: never identity data, never a national ID or biometric (W9), never provenance — bindings, consents and enrolments have their own typed records precisely so they cannot be smuggled in here as text.",
+      "maxProperties": 16,
+      "propertyNames": { "minLength": 1, "maxLength": 64 },
+      "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 200 }
+    },
     "createdAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" }
   },
   "required": ["id", "kind", "displayName", "contactRoutes", "createdAt"],
