@@ -336,7 +336,7 @@ INSERT INTO certify.credential_config (
     -- Overwritten at deploy time to match the deployment's own domain: did:web
     -- maps host and path, so a DID minted for localhost does not resolve
     -- anywhere else. See infra/certify/certify-start.sh.
-    'did:web:localhost%3A58090:v1:certify',
+    'did:web:localhost%3A58090:v1:certify:.well-known',
     'CERTIFY_VC_SIGN_ED25519',
     'ED25519_SIGN',
     'EdDSA',
