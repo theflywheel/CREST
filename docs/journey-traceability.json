@@ -146,7 +146,7 @@
    "app": "console",
    "route": "#/onboard/status",
    "note": "GET /v1/organisations/{id}/registration: state, exact terms version, decider. Under REGISTRY_ORG_APPROVAL=manual (the local default) the terminal state waits on the operator's decision; on-terms-acceptance approves in the acceptance's transaction. 'On nobody's project' is true — no project membership exists",
-   "gate": "quarantined (#179)"
+   "gate": "**asserted**"
   },
   {
    "id": "g2_5",
@@ -159,7 +159,7 @@
    "app": "console",
    "route": "#/onboard/standalone",
    "note": "The org's real invitation inbox via GET /v1/organisations/{id}/invitations; an empty inbox is the true 'stands alone' answer, and either ordering works — offers are sendable before or after registration (#182)",
-   "gate": "quarantined (#179)"
+   "gate": "**asserted**"
   },
   {
    "id": "g2_6",
@@ -172,7 +172,7 @@
    "app": "console",
    "route": "#/onboard/wider",
    "note": "Held permissions vs other published terms sets, read live; POST /v1/organisations/{id}/terms-requests opens the request (#182)",
-   "gate": "quarantined (#179)"
+   "gate": "**asserted**"
   },
   {
    "id": "g2_7",
@@ -185,7 +185,7 @@
    "app": "console",
    "route": "#/onboard/documents",
    "note": "Declared {kind, ref, hash} references only via PUT .../documents then POST .../submit — no file input exists and the walk asserts its absence; document custody is a stated gap (#182)",
-   "gate": "quarantined (#179)"
+   "gate": "**asserted**"
   },
   {
    "id": "g2_8",
@@ -198,7 +198,7 @@
    "app": "console",
    "route": "#/onboard/review",
    "note": "The submitted request read whole — state, documents, checks; Withdraw works via POST .../withdraw and the walk proves withdraw-then-resubmit",
-   "gate": "quarantined (#179)"
+   "gate": "**asserted**"
   },
   {
    "id": "g2_9",
@@ -211,7 +211,7 @@
    "app": "console",
    "route": "#/onboard/invited",
    "note": "Decline requires a reason (422 without), Ask a question appends to the trail, Accept before APPROVED renders the 409 as 'not yet, not no' without expiring the offer",
-   "gate": "quarantined (#179)"
+   "gate": "**asserted**"
   },
   {
    "id": "g2_10",
@@ -224,7 +224,7 @@
    "app": "console",
    "route": "#/onboard/project",
    "note": "The accepted invitation and the partner grant its acceptance minted, read back — grantId, functions, real end date; 'Assign your people' carries the honest later-journey note",
-   "gate": "quarantined (#179)"
+   "gate": "**asserted**"
   },
   {
    "id": "g2_11",
@@ -237,7 +237,7 @@
    "app": "console",
    "route": "#/onboard/terms",
    "note": "GET /v1/terms lists published versions; acceptance names an exact version via POST /v1/organisations/{id}/terms-acceptance — 'never edited underneath you' is the backend's versioning rule",
-   "gate": "quarantined (#179)"
+   "gate": "**asserted**"
   },
   {
    "id": "g2_12",
@@ -250,7 +250,7 @@
    "app": "console",
    "route": "#/onboard/checks",
    "note": "Checks are recorded PASS/FAIL verdicts with a named owner (party or policy) from GET .../terms-requests/{id} — no fake automation, per the honest-checks call in #182",
-   "gate": "quarantined (#179)"
+   "gate": "**asserted**"
   },
   {
    "id": "g2_13",
@@ -263,7 +263,7 @@
    "app": "console",
    "route": "#/onboard/status",
    "note": "Approval recorded with decider (policy or person); publication to the registry log happens in the approving transaction",
-   "gate": "quarantined (#179)"
+   "gate": "**asserted**"
   },
   {
    "id": "g4_4",
@@ -1958,16 +1958,16 @@
    "g4_2": "—",
    "g4_3": "—",
    "g2_1": "**asserted**",
-   "g2_4": "quarantined (#179)",
-   "g2_5": "quarantined (#179)",
-   "g2_6": "quarantined (#179)",
-   "g2_7": "quarantined (#179)",
-   "g2_8": "quarantined (#179)",
-   "g2_9": "quarantined (#179)",
-   "g2_10": "quarantined (#179)",
-   "g2_11": "quarantined (#179)",
-   "g2_12": "quarantined (#179)",
-   "g2_13": "quarantined (#179)",
+   "g2_4": "**asserted**",
+   "g2_5": "**asserted**",
+   "g2_6": "**asserted**",
+   "g2_7": "**asserted**",
+   "g2_8": "**asserted**",
+   "g2_9": "**asserted**",
+   "g2_10": "**asserted**",
+   "g2_11": "**asserted**",
+   "g2_12": "**asserted**",
+   "g2_13": "**asserted**",
    "g4_4": "—",
    "g4_5": "—",
    "g4_6": "—",
