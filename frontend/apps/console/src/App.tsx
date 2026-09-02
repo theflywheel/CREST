@@ -1,45 +1,83 @@
 // CREST Console — one console, role-derived sessions. Each persona maps to
-// one reference role flow (docs/journey-traceability.md) and its navigation
-// shows only that flow's views; a route outside the persona's flow redirects
-// home rather than rendering. Every view keeps its old hash (#/status …) so
-// bookmarks keep working.
+// one reference role flow (docs/journey-traceability.md); every view keeps its
+// old hash (#/status …) so bookmarks and tests keep working.
+//
+// The J3 actors (P-1 Org Admin, P-2 Project Configurator) navigate by the
+// reference's own rails rather than a per-persona list, because the reference
+// draws THREE of them across the 24 J3 frames:
+//
+//   setup      Projects · People & roles · Work definitions · Payment set up · Workers   (p1_*, p2_1–p2_7, p2_17–p2_21)
+//   dashboard  Work status · Quality · Payments · Proof · Reports                        (p2_11–p2_16)
+//   finance    Project · Work definitions · Finance · Support · Dashboard                (p2_8–p2_10)
+//
+// Within a section the rail is IDENTICAL for both J3 actors and no entry is
+// ever removed by role — that is finding F1's rule, and screen n3 states it on
+// its own face. What differs is what an entry does, and an entry you cannot
+// act on says who can (n5). The "one rail across all of J3" reading of F1 is
+// corrected in docs/design/j3-connective-tissue/README.md: it holds per
+// section, not across all 24 frames.
 import { useEffect } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { ConsoleShell, ErrBar, type NavGroup } from "@crest/ui";
-import { personas, useConsole, type PersonaKey } from "./state";
-import { Status, Payments, Trace, Definition, Sources, Reports } from "./views/Project";
-import { DefineWork, PaySetup, Org, Instance, Portfolio } from "./views/Admin";
+import { ConsoleShell, ErrBar, type NavGroup, type NavItem } from "@crest/ui";
+import { useConsole, type PersonaKey } from "./state";
+import { Definition, Sources } from "./views/Project";
+import { Status, Stp, Quality, Payments, Trace, Reports } from "./views/Dashboard";
+import { DefineWork, PaySetup, Instance, Portfolio } from "./views/Admin";
 import { Ratify } from "./views/Ratify";
 import { Find, Dupes, Unclear, Recoveries, Review, Cases, SupportTraceNote } from "./views/Custodian";
 import { OnboardApply, OnboardTerms, OnboardStatus } from "./views/Onboard";
+import { SignIn } from "./views/SignIn";
+import {
+  Projects as OrgHome, NewProject, People, Workers, Validation, Intake, Finance, Support, Navigation,
+} from "./views/Setup";
+
+// ── The reference's three J3 rails ─────────────────────────────────────────
+const SETUP_RAIL: NavItem[] = [
+  { to: "/org", label: "Projects" },
+  { to: "/people", label: "People & roles" },
+  { to: "/definition", label: "Work definitions" },
+  { to: "/paysetup", label: "Payment set up" },
+  { to: "/workers", label: "Workers" },
+];
+const DASHBOARD_RAIL: NavItem[] = [
+  { to: "/status", label: "Work status" },
+  { to: "/quality", label: "Quality" },
+  { to: "/payments", label: "Payments" },
+  { to: "/trace", label: "Proof" },
+  { to: "/reports", label: "Reports" },
+];
+const FINANCE_RAIL: NavItem[] = [
+  { to: "/org", label: "Project" },
+  { to: "/definition", label: "Work definitions" },
+  { to: "/finance", label: "Finance" },
+  { to: "/support", label: "Support" },
+  { to: "/status", label: "Dashboard" },
+];
+
+const DASHBOARD_ROUTES = ["/status", "/quality", "/stp", "/payments", "/trace", "/reports"];
+const FINANCE_ROUTES = ["/finance", "/support"];
+
+// Every route a J3 actor may open. The rail shows five entries per section;
+// this is the whole surface behind them, including the screens reached by a
+// frame's own buttons rather than by the rail.
+const J3_ROUTES = [
+  "/org", "/people", "/projects", "/projects/new", "/definition", "/paysetup", "/workers",
+  "/validation", "/intake", "/sources", ...DASHBOARD_ROUTES, ...FINANCE_ROUTES,
+];
+
+function railFor(pathname: string): NavGroup[] {
+  // No caption: the reference's J3 rail is five plain entries, and a caption
+  // here would be one more thing to get wrong about whose console this is.
+  if (DASHBOARD_ROUTES.includes(pathname)) return [{ items: DASHBOARD_RAIL }];
+  if (FINANCE_ROUTES.includes(pathname)) return [{ items: FINANCE_RAIL }];
+  return [{ items: SETUP_RAIL }];
+}
 
 const NAV: Record<PersonaKey, NavGroup[]> = {
-  // P-1: standing configuration, not project work.
-  orgadmin: [
-    {
-      caption: "Org admin · P-1",
-      items: [
-        { to: "/org", label: "Organisation" },
-        { to: "/status", label: "Project status" },
-        { to: "/reports", label: "Reports" },
-      ],
-    },
-  ],
-  // P-2: the operational project — monitoring subset (composition screens are
-  // missing; the traceability manifest says so, this nav does not pretend).
-  configurator: [
-    {
-      caption: "Project configurator · P-2",
-      items: [
-        { to: "/status", label: "Status" },
-        { to: "/payments", label: "Payments" },
-        { to: "/trace", label: "Trace" },
-        { to: "/definition", label: "Definition" },
-        { to: "/sources", label: "Sources" },
-        { to: "/reports", label: "Reports" },
-      ],
-    },
-  ],
+  // P-1 and P-2 navigate by the reference's rails (railFor); these entries are
+  // their default landing places.
+  orgadmin: [{ caption: "Org admin · P-1", items: SETUP_RAIL }],
+  configurator: [{ caption: "Project configurator · P-2", items: SETUP_RAIL }],
   // P-3, the author's half: the wizard belongs to the author alone.
   author: [
     {
@@ -61,20 +99,16 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
       ],
     },
   ],
-  rateowner: [
-    { caption: "Rate owner · F-1", items: [{ to: "/paysetup", label: "The rate" }] },
-  ],
-  payowner: [
-    { caption: "Payment mechanism · F-2", items: [{ to: "/paysetup", label: "Rail & mechanism" }] },
-  ],
+  rateowner: [{ caption: "Rate owner · F-1", items: [{ to: "/paysetup", label: "The rate" }] }],
+  payowner: [{ caption: "Payment mechanism · F-2", items: [{ to: "/paysetup", label: "Rail & mechanism" }] }],
   instance: [
     { caption: "Instance admin · G-1", items: [{ to: "/instance", label: "The deployment" }] },
     {
       caption: "Project view",
       items: [
-        { to: "/status", label: "Status" },
+        { to: "/status", label: "Work status" },
         { to: "/payments", label: "Payments" },
-        { to: "/trace", label: "Trace" },
+        { to: "/trace", label: "Proof" },
         { to: "/definition", label: "Definition" },
         { to: "/sources", label: "Sources" },
       ],
@@ -107,98 +141,40 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
       caption: "Funding oversight · V-4",
       items: [
         { to: "/portfolio", label: "Portfolio" },
-        { to: "/status", label: "Project status" },
+        { to: "/status", label: "Work status" },
       ],
     },
   ],
 };
 
-const homeOf = (key: PersonaKey) => NAV[key][0].items[0].to;
+const isJ3 = (key: PersonaKey) => key === "orgadmin" || key === "configurator";
+const homeOf = (key: PersonaKey) => (isJ3(key) ? "/org" : NAV[key][0].items[0].to);
 const allowed = (key: PersonaKey, path: string) =>
-  NAV[key].some((g) => g.items.some((i) => i.to === path));
-
-function LoginPage() {
-  const s = useConsole();
-  const nav = useNavigate();
-  const pick = async (i: number) => {
-    s.clearErr();
-    try {
-      const key = await s.login(i);
-      nav(homeOf(key));
-    } catch (e) {
-      s.fail(e);
-    }
-  };
-  return (
-    <div className="console-shell">
-      <div className="appbar">
-        <span className="mark" />
-        <span className="t">CREST Console</span>
-        <span className="who">
-          <span className="who-label">Not signed in</span>
-        </span>
-      </div>
-      <div className="console-body">
-        <main className="pane">
-          <div className="screen pane-wide">
-            <div className="pagehead">
-              <h2 className="scr-title">Who is at the console?</h2>
-            </div>
-            <p className="muted" style={{ maxWidth: 700 }}>
-              One console, role-derived sessions: each card is one reference role flow, and its navigation shows only
-              that flow's views. In this dev build, signing in mints a token from the stack's own identity provider
-              and binds it through the real first-login path.
-            </p>
-            {s.err ? <ErrBar>{s.err}</ErrBar> : null}
-            <button
-              className="card hi"
-              id="onboard-org"
-              style={{ textAlign: "left", cursor: "pointer", maxWidth: 700 }}
-              onClick={() => nav("/onboard")}
-            >
-              <div style={{ font: "500 14px/1.4 Roboto" }}>Onboard your organisation</div>
-              <div className="muted">Apply, accept the published terms, get approved — the real flow, no seeded party.</div>
-            </button>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-                gap: 12,
-              }}
-            >
-              {personas.map((p, i) => (
-                <button
-                  className="card"
-                  data-p={i}
-                  data-persona={p.key}
-                  key={p.key}
-                  style={{ textAlign: "left", cursor: "pointer" }}
-                  onClick={() => pick(i)}
-                >
-                  <div style={{ font: "500 14px/1.4 Roboto" }}>
-                    {p.who}{" "}
-                    <span className="muted">
-                      · {p.role} · {p.ref}
-                    </span>
-                  </div>
-                  <div className="muted">{p.what}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </main>
-      </div>
-    </div>
-  );
-}
+  (isJ3(key) && J3_ROUTES.includes(path)) || NAV[key].some((g) => g.items.some((i) => i.to === path));
 
 function Shell() {
   const s = useConsole();
   const loc = useLocation();
+  const nav = useNavigate();
   useEffect(() => s.clearErr(), [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!s.me || !s.persona) return <LoginPage />;
+  if (!s.me || !s.persona)
+    return (
+      <SignIn
+        onSignedIn={async (i) => {
+          s.clearErr();
+          try {
+            const key = await s.login(i);
+            nav(homeOf(key));
+          } catch (e) {
+            s.fail(e);
+          }
+        }}
+      />
+    );
   // The role boundary: a view outside this persona's flow is not rendered —
-  // an approver who types #/definework lands back on their own home.
+  // an approver who types #/definework lands back on their own home. For the
+  // J3 actors nothing is hidden: both hold every route, and a screen they
+  // cannot write to says who can instead of vanishing.
   if (!allowed(s.persona, loc.pathname)) return <Navigate to={homeOf(s.persona)} replace />;
   return (
     <ConsoleShell
@@ -213,7 +189,7 @@ function Shell() {
           </button>
         </>
       }
-      nav={NAV[s.persona]}
+      nav={isJ3(s.persona) ? railFor(loc.pathname) : NAV[s.persona]}
     >
       <div className="screen" key={loc.pathname} style={{ display: "flex", flexDirection: "column", gap: 15 }}>
         {s.err ? <ErrBar>{s.err}</ErrBar> : null}
@@ -233,16 +209,28 @@ export function App() {
       <Route path="/onboard/terms" element={<OnboardTerms />} />
       <Route path="/onboard/status" element={<OnboardStatus />} />
       <Route element={<Shell />}>
+        {/* J3 — setting up a project */}
+        <Route path="/org" element={<OrgHome />} />
+        <Route path="/projects" element={<Navigation />} />
+        <Route path="/projects/new" element={<NewProject />} />
+        <Route path="/people" element={<People />} />
+        <Route path="/workers" element={<Workers />} />
+        <Route path="/validation" element={<Validation />} />
+        <Route path="/intake" element={<Intake />} />
+        <Route path="/finance" element={<Finance />} />
+        <Route path="/support" element={<Support />} />
+        {/* J3 — the project's own dashboard wave */}
         <Route path="/status" element={<Status />} />
+        <Route path="/stp" element={<Stp />} />
+        <Route path="/quality" element={<Quality />} />
         <Route path="/payments" element={<Payments />} />
         <Route path="/trace" element={<Trace />} />
+        <Route path="/reports" element={<Reports />} />
         <Route path="/definition" element={<Definition />} />
         <Route path="/sources" element={<Sources />} />
-        <Route path="/reports" element={<Reports />} />
         <Route path="/definework" element={<DefineWork />} />
         <Route path="/ratify" element={<Ratify />} />
         <Route path="/paysetup" element={<PaySetup />} />
-        <Route path="/org" element={<Org />} />
         <Route path="/instance" element={<Instance />} />
         <Route path="/portfolio" element={<Portfolio />} />
         <Route path="/find" element={<Find />} />

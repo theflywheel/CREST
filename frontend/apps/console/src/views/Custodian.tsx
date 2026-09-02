@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError, FIX } from "@crest/api";
-import { Chip, Sidecar } from "@crest/ui";
+import { Callout, Chip, OpenNote, Sidecar } from "@crest/ui";
 import {
   short, when, agoDays, Mono, MonoShort, Stat, KVR, Title, Lede, Empty,
   Tbl, Card, CardTitled, useLoad, LoadFrame,
@@ -190,13 +190,25 @@ export function Dupes() {
   );
 }
 
+// p2_21 — "Evidence that did not match". The reference's frame: a handoff
+// queue, not an error log. Every held row names what did not match, why, and
+// the party who has to act; the two callouts are the reference's own text.
 export function Unclear() {
   const s = useConsole();
   const [gen, setGen] = useState(0);
   const [attr, setAttr] = useState<Record<string, string>>({});
+  const nav = useNavigate();
   const r = useLoad(async () => {
-    const out = await api.get("evidence", "/v1/unclear");
-    return ((out.unclear || []) as Array<{ id: string; rowRef?: string; kind?: string; reason?: string; createdAt?: string; resolvedAt?: string }>).filter((u) => !u.resolvedAt);
+    const [out, claims] = await Promise.all([
+      api.get("evidence", "/v1/unclear"),
+      api.get("evidence", "/v1/claims").catch(() => ({ claims: [] })),
+    ]);
+    const rows = ((out.unclear || []) as Array<{ id: string; rowRef?: string; kind?: string; reason?: string; sitsWith?: string; createdAt?: string; resolvedAt?: string }>).filter((u) => !u.resolvedAt);
+    // Everything received = the rows that became claims plus the rows that
+    // did not: there is no batch listing, and these two queues are exactly
+    // the two outcomes an intake row can have.
+    const received = ((claims.claims || []) as unknown[]).length + rows.length;
+    return { rows, received };
   }, [gen]);
   const attribute = async (id: string) => {
     try {
@@ -211,35 +223,69 @@ export function Unclear() {
   };
   return (
     <LoadFrame r={r}>
-      {(list) => (
-        <>
-          <Title t="Whose work was this row" />
-          <Lede>
-            A mismatch is somebody named, not a status. Attributing a row is a decision with your name on it, checked
-            against your authorization — the submitter deliberately cannot make it.
-          </Lede>
-          <Tbl
-            heads={["Row", "Kind", "Why it is here", "Waiting", "Attribute to"]}
-            rows={list.map((u) => [
-              <Mono>{u.rowRef || u.id}</Mono>,
-              u.kind || "",
-              u.reason || "",
-              String(agoDays(u.createdAt) ?? "—") + "d",
-              <form
-                onSubmit={(ev) => {
-                  ev.preventDefault();
-                  attribute(u.id);
-                }}
-                style={{ display: "flex", gap: 6 }}
-              >
-                <input className="mono" placeholder="did:crest:party:…" required value={attr[u.id] || ""} onChange={(e) => setAttr({ ...attr, [u.id]: e.target.value })} style={{ width: 230 }} />
-                <button className="btn" style={{ width: "auto", padding: "7px 14px" }}>Attribute</button>
-              </form>,
-            ])}
-            empty="The queue is empty. A row that fails to match never disappears — it waits here for a named decision."
-          />
-        </>
-      )}
+      {({ rows, received }) => {
+        const ages = rows.map((u) => agoDays(u.createdAt)).filter((d): d is number => d !== null);
+        return (
+          <>
+            <Title t="Evidence that did not match" />
+            <Lede>
+              Each one is somebody's to fix, and none of them is the worker's.
+            </Lede>
+            <div className="stats">
+              <Stat n={rows.length} label="Held now" />
+              <Stat
+                n={received ? ((rows.length / received) * 100).toFixed(1) + "%" : "—"}
+                label={received ? "Of everything received — claims plus held rows" : "Nothing has been received yet"}
+              />
+              <Stat n={ages.length ? Math.max(...ages) + " days" : "—"} label="Oldest, unresolved" />
+            </div>
+            <Tbl
+              heads={["Row", "Kind", "What did not match", "Waiting", "Sits with", "Attribute to"]}
+              rows={rows.map((u) => [
+                <Mono>{u.rowRef || u.id}</Mono>,
+                u.kind || "",
+                u.reason || "",
+                String(agoDays(u.createdAt) ?? "—") + "d",
+                <span style={{ color: "var(--p2)" }}>
+                  Sits with: {u.sitsWith || "the registry custodian — nobody else may attribute a row"}
+                </span>,
+                <form
+                  onSubmit={(ev) => {
+                    ev.preventDefault();
+                    attribute(u.id);
+                  }}
+                  style={{ display: "flex", gap: 6 }}
+                >
+                  <input className="mono" placeholder="did:crest:party:…" required value={attr[u.id] || ""} onChange={(e) => setAttr({ ...attr, [u.id]: e.target.value })} style={{ width: 230 }} />
+                  <button className="btn" style={{ width: "auto", padding: "7px 14px" }}>Attribute</button>
+                </form>,
+              ])}
+              empty="The queue is empty. A row that fails to match never disappears — it waits here for a named decision."
+            />
+            <Callout kind="green" title="Who is not told about this">
+              None of these is a worker’s fault and none of them appears in a worker’s app. A worker sees a record they
+              can check once it exists; they are not asked to resolve why a spreadsheet named the wrong version of a
+              definition.
+            </Callout>
+            <Callout kind="teal" title="The one this screen does not catch">
+              The failure mode that matters is a source system that changed its own shape and did not tell anybody,
+              which is silent until evidence stops arriving. Held rows are visible. A source that quietly went to zero
+              is not, and nothing here watches for that.
+            </Callout>
+            <OpenNote>
+              Attribution is a decision with your name on it, checked against your authorization — the submitter
+              deliberately cannot make it. What the reference also shows and this deployment cannot: a per-row
+              "sits with" party read from the row itself. Until the evidence service carries one, each row names the
+              custodian, which is who can actually act.
+            </OpenNote>
+            <div className="btn-row" style={{ maxWidth: 520 }}>
+              <button className="btn secondary" data-act="secondary" onClick={() => nav("/status")}>
+                Back to the project
+              </button>
+            </div>
+          </>
+        );
+      }}
     </LoadFrame>
   );
 }

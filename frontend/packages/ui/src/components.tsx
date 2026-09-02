@@ -153,6 +153,71 @@ export function DisLi(props: { on: boolean; t: ReactNode; s: ReactNode }) {
   );
 }
 
+// ————— the reference's callout grammar —————
+// Two boxes carry every J3 frame's reasoning: teal (#F4F8FA / #0B4B66) for
+// "the rule this screen sets", green (#F1FFF8 / #00703C) for "what this
+// screen never does", plus the untitled-eyebrow grey variant the dashboard
+// frames use for "How this could be gamed". Title is an uppercase eyebrow,
+// body is the reference's own sentence — quoted verbatim by the callers.
+export function Callout(props: { kind?: "teal" | "green" | "grey"; title?: ReactNode; children: ReactNode }) {
+  return (
+    <div className={"callout " + (props.kind || "teal")} data-callout={props.kind || "teal"}>
+      {props.title ? <div className="c-title">{props.title}</div> : null}
+      <div className="c-body">{props.children}</div>
+    </div>
+  );
+}
+
+// A reference field: uppercase small label over a bordered control/value, and
+// an optional hint under it (journey-spec.json's `fields[].hint`).
+export function RefField(props: { label: ReactNode; hint?: ReactNode; children?: ReactNode; value?: ReactNode }) {
+  return (
+    <div className="rfield">
+      <span className="r-label">{props.label}</span>
+      {props.children ? props.children : <div className="r-value">{props.value}</div>}
+      {props.hint ? <span className="r-hint">{props.hint}</span> : null}
+    </div>
+  );
+}
+
+// A choice card — the reference's option idiom on every composition screen.
+// `unavailable` renders the "not available" posture (p2_19's third option),
+// which stays on screen precisely so nobody wonders whether it is hidden.
+export function OptionCard(props: {
+  t: ReactNode;
+  s: ReactNode;
+  on?: boolean;
+  unavailable?: boolean;
+  onPick?: () => void;
+  tag?: ReactNode;
+}) {
+  const cls = "optcard" + (props.on ? " on" : "") + (props.unavailable ? " na" : "");
+  const body = (
+    <>
+      <div className="o-head">
+        <span className="o-t">{props.t}</span>
+        {props.unavailable ? <span className="o-na">not available</span> : null}
+        {props.tag}
+      </div>
+      <div className="o-s">{props.s}</div>
+    </>
+  );
+  if (props.unavailable || !props.onPick) return <div className={cls}>{body}</div>;
+  return (
+    <button type="button" className={cls} aria-pressed={!!props.on} onClick={props.onPick}>
+      {body}
+    </button>
+  );
+}
+
+// The reference's step counter, above the title on a wizard frame
+// ("Project setup · 5 of 7").
+export const StepCounter = (p: { children: ReactNode }) => (
+  <span className="eyebrow" id="stepcounter">
+    {p.children}
+  </span>
+);
+
 // Grid-row list — the reference's table idiom (no <table> anywhere in the
 // Actor Journeys frames; tabular data is a grid row list with a header row).
 export function GridTable(props: { cols: string; head?: ReactNode[]; children: ReactNode }) {
