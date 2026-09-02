@@ -4,10 +4,10 @@
  "generatedBy": "tools/journey-trace/build.py",
  "screens": 143,
  "coverage": {
-  "compressed": 27,
-  "illustrative": 16,
-  "implemented": 37,
-  "missing": 55,
+  "compressed": 25,
+  "illustrative": 13,
+  "implemented": 44,
+  "missing": 53,
   "semantically-different": 8
  },
  "statuses": {
@@ -25,11 +25,11 @@
    "title": "The first screen anyone ever sees",
    "source": "reference",
    "roleName": "Instance Administrator",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Instance stand-up wizard: no deployment-creation surface; a stack is stood up by compose/Railway, not in the console",
-   "gate": "—"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/instance/setup",
+   "note": "Honest stand-up front door: deployment read live from GET /v1/instance; stand-up is deploy-time (compose/Railway); no wizard write faked",
+   "gate": "**asserted**"
   },
   {
    "id": "g1_2",
@@ -38,11 +38,11 @@
    "title": "Naming the instance, and binding identity",
    "source": "reference",
    "roleName": "Instance Administrator",
-   "status": "compressed",
+   "status": "implemented",
    "app": "console",
-   "route": "#/instance",
-   "note": "Read-only: GET /v1/instance shows the instance identity/issuer; naming and identity binding are deploy-time configuration, not console actions",
-   "gate": "—"
+   "route": "#/instance/covers",
+   "note": "Read-only by design: published self-description live; the four unpublished reference fields named as deploy-time config, not invented",
+   "gate": "**asserted**"
   },
   {
    "id": "g1_3",
@@ -51,11 +51,11 @@
    "title": "Consent rules come before the first worker",
    "source": "reference",
    "roleName": "Instance Administrator",
-   "status": "illustrative",
+   "status": "implemented",
    "app": "console",
-   "route": "#/instance",
-   "note": "Consent floor is displayed; consent-policy editing has no endpoint (Admin.tsx Instance view labels it)",
-   "gate": "—"
+   "route": "#/instance/consent",
+   "note": "Consent floor stated as enforced infrastructure facts; scripts/templates are deployment config (#59); officer appointment recordless, said so",
+   "gate": "**asserted**"
   },
   {
    "id": "g1_5",
@@ -64,11 +64,11 @@
    "title": "The invitation names a person",
    "source": "reference",
    "roleName": "Instance Administrator",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Invitation naming a person: no invitation service exists",
-   "gate": "—"
+   "status": "compressed",
+   "app": "console",
+   "route": "#/instance/invite",
+   "note": "Reference's five fields, no Send: instance-level invitation has no primitive (#182 is project→org; entry decision open per g2_5) — design finding #185",
+   "gate": "skipped (compressed)"
   },
   {
    "id": "g1_6",
@@ -77,11 +77,11 @@
    "title": "Services, not roles",
    "source": "reference",
    "roleName": "Instance Administrator",
-   "status": "compressed",
+   "status": "implemented",
    "app": "console",
-   "route": "#/instance",
-   "note": "Service health sweep reads real /healthz of each member; the services-not-roles framing is shown read-only",
-   "gate": "—"
+   "route": "#/instance/services",
+   "note": "Real six-service /healthz sweep in the reference frame; 'Done — awaiting the organisation' walks to the queue",
+   "gate": "**asserted**"
   },
   {
    "id": "g4_1",
@@ -90,11 +90,11 @@
    "title": "A queue of exceptions, not of everybody",
    "source": "reference",
    "roleName": "Instance Administrator",
-   "status": "illustrative",
+   "status": "implemented",
    "app": "console",
-   "route": "#/instance",
-   "note": "Admission queue rendered from the registration states; the review queue itself is labelled illustrative in Admin.tsx",
-   "gate": "—"
+   "route": "#/admissions",
+   "note": "Real queue: GET /v1/registrations (new) + GET /v1/terms-requests; both reference callouts verbatim",
+   "gate": "**asserted**"
   },
   {
    "id": "g4_2",
@@ -103,11 +103,11 @@
    "title": "What can actually be checked, and what cannot",
    "source": "reference",
    "roleName": "Instance Administrator",
-   "status": "illustrative",
+   "status": "implemented",
    "app": "console",
-   "route": "#/instance",
-   "note": "What-can-be-checked review detail: display only",
-   "gate": "—"
+   "route": "#/admissions/:pid",
+   "note": "Registration read with declared name/attributes; 'what this does not prove' callout verbatim",
+   "gate": "**asserted**"
   },
   {
    "id": "g4_3",
@@ -116,11 +116,11 @@
    "title": "Approval is the whole decision",
    "source": "reference",
    "roleName": "Instance Administrator",
-   "status": "compressed",
+   "status": "implemented",
    "app": "console",
-   "route": "#/onboard/status",
-   "note": "The approval decision exists as POST /v1/organisations/{id}/decision (unit-tested), but the console has no reviewer surface for it; the deployed model is REGISTRY_ORG_APPROVAL=on-terms-acceptance",
-   "gate": "—"
+   "route": "#/admissions/:pid",
+   "note": "POST /v1/organisations/{id}/decision through the screen; decider is the authenticated caller (#89); reasonless rejection refused; 'issue the key' named unbuilt",
+   "gate": "**asserted**"
   },
   {
    "id": "g2_1",
@@ -1949,14 +1949,14 @@
   "suite": "tests/e2e-apps/fidelity.spec.js",
   "scope": "tests/e2e-apps/fidelity-map.json",
   "verdicts": {
-   "g1_1": "—",
-   "g1_2": "—",
-   "g1_3": "—",
-   "g1_5": "—",
-   "g1_6": "—",
-   "g4_1": "—",
-   "g4_2": "—",
-   "g4_3": "—",
+   "g1_1": "**asserted**",
+   "g1_2": "**asserted**",
+   "g1_3": "**asserted**",
+   "g1_5": "skipped (compressed)",
+   "g1_6": "**asserted**",
+   "g4_1": "**asserted**",
+   "g4_2": "**asserted**",
+   "g4_3": "**asserted**",
    "g2_1": "**asserted**",
    "g2_4": "**asserted**",
    "g2_5": "**asserted**",

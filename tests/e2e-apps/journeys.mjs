@@ -287,19 +287,60 @@ const J1 = async (p, cap) => {
 
 /* ── J2 · Setting up the instance (G-1) ───────────────────────────────── */
 const J2 = async (p, cap) => {
+  // The admission queue at the end of this walk needs a real pending
+  // application. Register one through the same open door the g2_1 form
+  // posts to — a unique organisation per run, so J2 re-records cleanly.
+  const PARTIES = new URL(BASE).port === "59110"
+    ? `http://${new URL(BASE).hostname}:59000`
+    : BASE.replace(/\/$/, "") + "/api/crest-registry";
+  const regOut = await fetch(PARTIES + "/v1/organisations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      displayName: "Ministry of Health (demo) " + STAMP,
+      kind: "organisation",
+      contactRoutes: [{ kind: "email", value: `g.wanjiru+${STAMP}@health.example` }],
+      attributes: { kind: "government", sector: "health", country: "KE", contactPerson: "Dr. Grace Wanjiru" },
+    }),
+  }).then((r) => r.json());
+  const regId = regOut.party.id;
+
   await consoleLogin(p, "instance");
-  await cap("J2 · The deployment itself (g1_2, g1_6)",
-    "The instance identity, issuer and consent floor are read live; naming and identity binding are deploy-time configuration, not console actions (g1_1 is the named gap).");
+  await hash(p, "#/instance/setup", 2200);
+  await cap("J2 · There is no wizard, and the screen says so (g1_1)",
+    "A CREST instance is stood up by its deployment — compose or Railway — and this front door reads what that stand-up already decided, live from GET /v1/instance. No stand-up write is faked.");
+  await pause(p, 5500);
+  await hash(p, "#/instance/covers", 2200);
+  await cap("What this instance covers — read-only by design (g1_2)",
+    "The published self-description, live. The reference's four other fields — jurisdiction, identity anchor, residency, languages — are named as deploy-time configuration, not invented values.");
   await pause(p, 5000);
-  await p.mouse.wheel(0, 600);
-  await pause(p, 2500);
-  await cap("Services, not roles — the health sweep is real (g1_6)", "Each member's /healthz, answered now.");
-  await pause(p, 3500);
-  await p.mouse.wheel(0, 800);
-  await pause(p, 2000);
-  await cap("Admission — a queue of exceptions, labelled illustrative (g4_1–g4_3)",
-    "The approval decision exists as a real endpoint; the reviewer surface does not, and the screen says so.");
+  await hash(p, "#/instance/consent", 2200);
+  await cap("Consent rules, before the first worker (g1_3)",
+    "The floor is enforced infrastructure: consent before any record, an artefact the worker can hear back, withdrawal that never unwinds a payment. Scripts and templates are deployment configuration (#59).");
+  await pause(p, 5000);
+  await hash(p, "#/instance/invite", 2200);
+  await cap("Inviting the first organisation — no Send button, on purpose (g1_5)",
+    "An instance-level invitation has no primitive: #182's invitation is a project's offer to an existing party, and g2_5 records the entry decision as still open. The gap is design finding #185, not a faked send.");
+  await pause(p, 5500);
+  await hash(p, "#/instance/services", 2200);
+  await cap("The services behind all of it (g1_6)",
+    "Six service doors, each answering its own /healthz live — a real sweep, not a status page. Services, not roles: who may do what is granted in the registry.");
   await pause(p, 4500);
+  await hash(p, "#/admissions", 2200);
+  await cap("Requests a person has to look at — the queue is real (g4_1)",
+    "Registrations from GET /v1/registrations, terms requests from GET /v1/terms-requests. This deployment approves manually, so every application waits for a named person's decision.");
+  await pause(p, 5000);
+  await hash(p, "#/admissions/" + encodeURIComponent(regId), 2200);
+  await cap("One request, and what the review cannot prove (g4_2)",
+    "The registration read back — declared name, kind, sector, contact. The reference's own caution carried verbatim: nothing here establishes that the submitter speaks for the body.");
+  await pause(p, 5000);
+  await p.fill("#decide-reason", "confirmed against the state register (demo)");
+  await pause(p, 1200);
+  await p.click("#approve-registration");
+  await pause(p, 2500);
+  await cap("Approved — the whole decision, under the decider's name (g4_3)",
+    "POST /v1/organisations/{id}/decision: approval publishes the organisation in the same transaction, the decider is the authenticated reviewer (#89), and a rejection without a reason is refused. Sender keys are named unbuilt.");
+  await pause(p, 5500);
 };
 
 /* ── J3 · Setting up a project (P-1 + P-2) ────────────────────────────── */

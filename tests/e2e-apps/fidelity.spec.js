@@ -193,6 +193,36 @@ async function flowArrive(page, request, mode) {
     return "";
   }
 
+  if (mode === "admissions-queue" || mode === "admissions-review") {
+    // g4_1–g4_3 — the operator's side of the same door. The registration
+    // above is the queue's real pending row; the reviewer is the instance
+    // administrator, signed in through the door's own persona card — the same
+    // first-login path every console: arrival takes. The token lives in
+    // memory, so the arrival must never reload after signing in; it lands by
+    // hash navigation, which mounts the screen fresh over live reads.
+    await page.goto("/console/");
+    await settle(page);
+    const card = page.locator('[data-persona="instance"]');
+    if (!(await card.count())) return 'no console persona card [data-persona="instance"]';
+    await card.click();
+    const signedIn = await page
+      .locator(".appbar")
+      .filter({ hasNotText: /Not signed in/i })
+      .first()
+      .waitFor({ state: "visible", timeout: 20000 })
+      .then(() => true, () => false);
+    if (!signedIn)
+      return 'persona instance could not sign in within 20s (the door still says "Not signed in")';
+    await settle(page);
+    const h = mode === "admissions-queue"
+      ? "#/admissions"
+      : "#/admissions/" + encodeURIComponent(orgId);
+    await page.evaluate((x) => { location.hash = x; }, h);
+    await settle(page);
+    await page.waitForTimeout(200);
+    return "";
+  }
+
   // Everything deeper walks Terms → Checks first (g2_11 → g2_12).
   await page.click("#requestterms");
   await page.waitForURL(/#\/onboard\/checks/, { timeout: 20000 });

@@ -39,6 +39,13 @@
   "copy, or a tool defect, and `make fidelity` counts them every run."
  ],
  "screens": {
+  "g1_3": {
+   "buttons:Save and continue": "MISSING ACTION named on the screen, not a copy difference: the reference's consent screen saves edited consent rules, and this deployment has nothing to save — the consent floor is enforced infrastructure read back, and scripts/templates are deployment configuration (#59), which the screen states on its face. The walk button says Continue because a 'Save' over nothing would fake a write, the exact class of dishonesty the G-1 wave refused (same rule g1_2 states verbatim for its own 'Save and continue')."
+  },
+  "g4_2": {
+   "fields:Work email domain": "MISSING CAPABILITY, named: the reference's review detail shows the work email domain with a uniqueness hint ('No other organisation uses this domain'), and no domain check exists in this deployment — the registration does not surface the work email and nothing verifies a domain against other organisations. The screen's 'What this does not prove' callout carries the reference's own caution about what the domain check would and would not establish; drawing the field without the check behind it would be inventing evidence on the screen that decides an admission.",
+   "buttons:Approve the request": "Unwritten copy, one word-form: the decision card is titled 'Approving the request' and its action reads 'Approve and publish' — the same single decision, labelled with its full consequence (approval publishes the organisation to the registry in the same transaction, under the decider's name). The reference's exact imperative 'Approve the request' appears nowhere in that word order; the control itself is real and asserted end to end through POST /v1/organisations/{id}/decision."
+  },
   "g2_1": {
    "callouts:This is the one answer that branches. A delivery organisation and a bank are shown entirely different sets of terms on the next screen, because they are doing entirely different things here.": "Unwritten copy, one clause: the screen carries this callout's title and every sentence after the first, but opens 'The kind is the one answer that branches' where the reference opens 'This is the one answer that branches' — the implementation names the field because its callout sits in a sidecar away from the form, where the reference's deictic 'This' points at nothing. The rule the callout teaches is stated verbatim; the debt is the opening two words."
   },
