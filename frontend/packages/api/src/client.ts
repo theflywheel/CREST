@@ -96,6 +96,20 @@ export async function loginAs(partyId: string): Promise<string> {
   return t;
 }
 
+// The real login (#155): hand the browser to CREST's server-side eSignet
+// flow. The parties service redirects to eSignet's UI, exchanges the code in
+// its callback, and bounces back to this door's #/auth route with the token.
+export function startEsignetLogin(): void {
+  const door = location.origin + location.pathname.replace(/\/$/, "");
+  location.href = services.parties + "/v1/auth/login?door=" + encodeURIComponent(door);
+}
+
+// Who am I, as this deployment sees me: pairwise subjectRef, and the party
+// bound to it (empty for an authenticated stranger — the enrol prompt).
+export async function whoAmI(): Promise<{ subjectRef: string; partyId: string; issuer: string }> {
+  return call("parties", "GET", "/v1/auth/me");
+}
+
 // The deployment's own pairwise derivation (HMAC-SHA256 under its salt) runs
 // server-side; the browser cannot and must not know the salt. The dev issuer
 // and stack share CREST_SUBJECT_SALT, and the mock issuer exposes the

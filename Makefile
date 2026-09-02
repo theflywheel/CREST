@@ -189,7 +189,6 @@ dedi-keys: ## Generate the DeDi node key and a CREST publisher key
 # The Railway production stack lives in the DeDi project so it can reach the
 # shared Postgres over private networking. See docs/DEPLOYMENT.md.
 CREST_DEDI_URL ?= https://crest-dedi-production.up.railway.app
-CREST_REGISTRY_URL ?= https://crest-registry-production.up.railway.app
 # The UI is eSignet's public hostname; the API service alone serves none of the
 # URLs its own discovery document advertises. See p0-findings C12.
 CREST_ESIGNET_URL ?= https://crest-esignet-ui-production.up.railway.app
@@ -240,8 +239,8 @@ verify-deployed: ## Check every deployed fleet member answers, and verify the lo
 	@curl -fsS --max-time 10 -o /dev/null https://crest-apps-production.up.railway.app/docs/ \
 		&& curl -fsS --max-time 10 -o /dev/null https://crest-apps-production.up.railway.app/docs/DEMO \
 		&& echo ok || exit 1
-	@echo "── crest-registry"
-	@curl -fsS $(CREST_REGISTRY_URL)/healthz && echo
+	@# crest-registry has no public hostname since #150 — the name is an
+	@# alias proxied to crest-core, and the alias sweep above already proved it.
 	@echo "── crest-dedi"
 	@curl -fsS $(CREST_DEDI_URL)/healthz && echo
 	@echo "── work definition WD-4471, inclusion proof checked by our own verifier"
