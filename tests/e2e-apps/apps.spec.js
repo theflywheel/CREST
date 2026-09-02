@@ -170,12 +170,19 @@ test("console: onboarding asks the six identity fields", async ({ page }) => {
   const errors = watch(page);
   await page.goto("/console/#/onboard");
   await settle(page);
-  for (const field of ["orgname", "orgkind", "orgsector", "orgreg", "contactname", "contactemail"]) {
+  for (const field of ["orgname", "country", "workemail", "contactname", "orgkind", "orgsector"]) {
     await expect(page.locator(`#orgapplyform [name="${field}"]`),
       `onboarding field ${field}`).toHaveCount(1);
   }
+  // The reference's green callout: registration documents are DELIBERATELY
+  // not asked on this screen — so no such field may exist.
+  await expect(page.locator('#orgapplyform [name="orgreg"]')).toHaveCount(0);
+  await expect(page.locator("body")).toContainText(/deliberately not asked/i);
   // The kind is the branching answer, and the client-side gap is stated.
   await expect(page.locator("body")).toContainText(/kind of organisation/i);
+  // Desktop console window, not a mobile card: appbar + step rail + counter.
+  await expect(page.locator(".appbar")).toBeVisible();
+  await expect(page.locator("#stepcounter")).toContainText("Registration · 1 of 4");
   await assertAlive(page, errors, "console onboarding form");
 });
 

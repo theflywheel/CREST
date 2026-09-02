@@ -33,3 +33,6 @@ tools/spikes/printedcard/node_modules/
 /oidc
 tests/e2e-apps/node_modules/
 tests/e2e-apps/test-results/
+
+# recorded journey demos — regenerated, never committed
+demos/

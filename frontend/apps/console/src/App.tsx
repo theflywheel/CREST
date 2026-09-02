@@ -130,34 +130,64 @@ function LoginPage() {
     }
   };
   return (
-    <div className="panel-shell screen">
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ width: 24, height: 24, borderRadius: 5, background: "var(--p1)" }} />
-        <div style={{ font: "500 16px/1 Roboto" }}>CREST Console</div>
+    <div className="console-shell">
+      <div className="appbar">
+        <span className="mark" />
+        <span className="t">CREST Console</span>
+        <span className="who">
+          <span className="who-label">Not signed in</span>
+        </span>
       </div>
-      <p className="muted">
-        One console, role-derived sessions: each card is one reference role flow, and its navigation shows only that
-        flow's views. In this dev build, signing in mints a token from the stack's own identity provider and binds it
-        through the real first-login path.
-      </p>
-      {s.err ? <ErrBar>{s.err}</ErrBar> : null}
-      <button
-        className="card hi"
-        id="onboard-org"
-        style={{ textAlign: "left", cursor: "pointer" }}
-        onClick={() => nav("/onboard")}
-      >
-        <div style={{ font: "500 14px/1.4 Roboto" }}>Onboard your organisation</div>
-        <div className="muted">Apply, accept the published terms, get approved — the real flow, no seeded party.</div>
-      </button>
-      {personas.map((p, i) => (
-        <button className="card" data-p={i} data-persona={p.key} key={p.key} style={{ textAlign: "left", cursor: "pointer" }} onClick={() => pick(i)}>
-          <div style={{ font: "500 14px/1.4 Roboto" }}>
-            {p.who} <span className="muted">· {p.role} · {p.ref}</span>
+      <div className="console-body">
+        <main className="pane">
+          <div className="screen pane-wide">
+            <div className="pagehead">
+              <h2 className="scr-title">Who is at the console?</h2>
+            </div>
+            <p className="muted" style={{ maxWidth: 700 }}>
+              One console, role-derived sessions: each card is one reference role flow, and its navigation shows only
+              that flow's views. In this dev build, signing in mints a token from the stack's own identity provider
+              and binds it through the real first-login path.
+            </p>
+            {s.err ? <ErrBar>{s.err}</ErrBar> : null}
+            <button
+              className="card hi"
+              id="onboard-org"
+              style={{ textAlign: "left", cursor: "pointer", maxWidth: 700 }}
+              onClick={() => nav("/onboard")}
+            >
+              <div style={{ font: "500 14px/1.4 Roboto" }}>Onboard your organisation</div>
+              <div className="muted">Apply, accept the published terms, get approved — the real flow, no seeded party.</div>
+            </button>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+                gap: 12,
+              }}
+            >
+              {personas.map((p, i) => (
+                <button
+                  className="card"
+                  data-p={i}
+                  data-persona={p.key}
+                  key={p.key}
+                  style={{ textAlign: "left", cursor: "pointer" }}
+                  onClick={() => pick(i)}
+                >
+                  <div style={{ font: "500 14px/1.4 Roboto" }}>
+                    {p.who}{" "}
+                    <span className="muted">
+                      · {p.role} · {p.ref}
+                    </span>
+                  </div>
+                  <div className="muted">{p.what}</div>
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="muted">{p.what}</div>
-        </button>
-      ))}
+        </main>
+      </div>
     </div>
   );
 }

@@ -115,7 +115,7 @@
    "status": "implemented",
    "app": "console",
    "route": "#/onboard",
-   "note": "Six-field identity form (name, kind, sector, registration number, contact name, contact email) → POST /v1/organisations. Gap kept honest: the Party schema is closed (additionalProperties:false), so kind/sector/regNo/contact name are held client-side for the flow and do not persist server-side"
+   "note": "The reference's six-field identity form (legal name, country, work email, contact person, kind, sector) as a desktop console frame — Registration · 1 of 4 with the Register/Terms/Certificates/Done rail; registration documents deliberately not asked, per the reference's own callout → POST /v1/organisations. Gap kept honest: the Party schema is closed (additionalProperties:false), so country/kind/sector/contact person are held client-side for the flow and do not persist server-side"
   },
   {
    "id": "g2_4",

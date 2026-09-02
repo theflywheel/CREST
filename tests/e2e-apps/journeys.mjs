@@ -242,21 +242,21 @@ const J9 = async (p, cap) => {
 const J1 = async (p, cap) => {
   await go(p, C + "#/onboard", 2200);
   await cap("J1 · Six fields, and one of them decides everything after (g2_1)",
-    "Name and email persist to the registry. Kind, sector, registration no. and contact are held client-side — the Party schema has no profile field yet, and the screen says so rather than faking a record.");
-  await pause(p, 5000);
+    "Legal name, country, work email, contact person, kind, sector — the desktop console frame, step 1 of 4. Registration documents are deliberately NOT asked here, exactly as the reference's callout says. Name and email persist; country/kind/sector/contact are held client-side and the screen says so.");
+  await pause(p, 5500);
   await p.fill('[name="orgname"]', "Lakeside Health Trust " + STAMP);
   await pause(p, 500);
+  await p.selectOption('[name="country"]', "KE");
+  await pause(p, 400);
+  await p.fill('[name="workemail"]', `programmes+${STAMP}@lakeside.example`);
+  await pause(p, 500);
+  await p.fill('[name="contactname"]', "Hon. Peter Demo");
+  await pause(p, 400);
   await p.selectOption('[name="orgkind"]', "delivery");
   await pause(p, 500);
   await p.selectOption('[name="orgsector"]', "health");
-  await pause(p, 500);
-  await p.fill('[name="orgreg"]', "NGO/" + STAMP + "/2026");
-  await pause(p, 400);
-  await p.fill('[name="contactname"]', "Hon. Peter Demo");
-  await pause(p, 400);
-  await p.fill('[name="contactemail"]', `programmes+${STAMP}@lakeside.example`);
   await pause(p, 900);
-  await p.click("#orgapplyform button.btn");
+  await p.click("#orgapplyform button.dominant");
   await p.waitForSelector("#acceptterms", { timeout: 20000 });
   await cap("Published, named, and never edited underneath you (g2_11)",
     "Acceptance names an exact published version — the fact verifiers walk back to.");
