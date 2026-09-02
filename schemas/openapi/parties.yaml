@@ -808,6 +808,810 @@ paths:
         "422": { $ref: "#/components/responses/SchemaViolation" }
         "500": { $ref: "#/components/responses/Internal" }
 
+  # ── Projects (J3) ─────────────────────────────────────────────────────────
+  #
+  # A project is a Context (§2: "'Project' and 'campaign' are what profiles
+  # call it"). These paths are a face over that primitive and over
+  # Authorization, not a second store of either. Everything a deployment
+  # could reasonably disagree about — coverage, composition choice names and
+  # values, definition origins, payment postures, role and function
+  # vocabularies, gate names, finance-code formats, sector taxonomies — is an
+  # opaque string or an opaque object here, and no schema below enumerates any
+  # of it.
+  /v1/projects:
+    post:
+      operationId: createProject
+      summary: Create a project and hand it to a configurator
+      description: >
+        Screen `p1_3`. Creating a project is not configuring one: what this
+        endpoint accepts is a name, an owning organisation, an opaque
+        configuration object (where coverage lives) and the party being named
+        as Configurator. Everything that decides how the project runs arrives
+        later, through a route that records who decided it.
+
+
+        Naming a configurator is a proposal, not an assignment. The project
+        comes back with `ownership.state = PENDING` and stays there until the
+        named party answers (design finding F2).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, ownerPartyId]
+              properties:
+                id: { type: string, description: "Supplied only by a seeder replaying a fixture world." }
+                name: { type: string }
+                kind:
+                  type: string
+                  default: project
+                  description: >
+                    Profile vocabulary. The core does not read the word — a
+                    cohort and a campaign are the same primitive.
+                ownerPartyId:
+                  type: string
+                  description: >
+                    The owning organisation. Must be APPROVED: party shape is
+                    not authority, because POST /v1/parties is the open
+                    bootstrap door.
+                configuratorPartyId:
+                  type: string
+                  description: The party being named. Optional — a project can be created unhanded.
+                parentId: { type: string }
+                period: { $ref: "urn:crest:schema:primitives:common:1#/$defs/period" }
+                configuration:
+                  type: object
+                  description: >
+                    L2, opaque. Coverage, and anything else this deployment's
+                    profile puts on a project. Stored and returned, never read
+                    inside.
+                activationGates:
+                  type: array
+                  items: { type: string }
+                  description: This deployment's readiness conditions, by name.
+      responses:
+        "201":
+          description: Created, DRAFT, and unacknowledged if a configurator was named.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectView" }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "403":
+          description: Not permitted to act for the owning organisation, or the organisation is not APPROVED.
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/SchemaViolation" }
+        "500": { $ref: "#/components/responses/Internal" }
+    get:
+      operationId: listProjects
+      summary: One party's projects
+      description: >
+        Screen `p1_1`'s project list, and `n2`'s "where do you want to work".
+
+
+        Exactly one of `ownerPartyId` and `configuratorPartyId` is required,
+        and the caller is authorized against whichever they gave. An
+        unnarrowed listing would answer "which projects exist and who
+        configures each" to any signed-in caller — the membership oracle #68
+        closed on the authorization listing, wearing a different query string.
+
+
+        Filter `ownership=DECLINED` for the Org Admin's queue: a declined
+        handover returns the project here rather than deleting it.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: ownerPartyId, in: query, schema: { type: string } }
+        - { name: configuratorPartyId, in: query, schema: { type: string } }
+        - { name: kind, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string, enum: [DRAFT, ACTIVE, CLOSED] } }
+        - { name: ownership, in: query, schema: { type: string, enum: [PENDING, ACCEPTED, DECLINED] } }
+      responses:
+        "200":
+          description: The projects, each with its activation conditions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projects: { type: array, items: { $ref: "#/components/schemas/ProjectView" } }
+                  count: { type: integer }
+        "400": { description: "Neither or both narrowing parameters were given." }
+        "403": { description: Not permitted to act for the party named. }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/projects/{id}:
+    get:
+      operationId: getProject
+      summary: One project, with what arrived and what is still unanswered
+      description: >
+        Screen `n4`'s "what arrived, already decided" column, read from the
+        record rather than re-entered.
+
+
+        Answers the owning organisation, somebody holding `act-for-party` for
+        it in this context, or the named configurator themselves — who at the
+        moment of deciding whether to accept may hold no grant at all. Reading
+        the handover must not require the grant that accepting it is a
+        precondition for.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The project, its activation conditions and its configuration records.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectView" }
+        "403": { description: Not permitted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/projects/{id}/configurator:
+    post:
+      operationId: nameProjectConfigurator
+      summary: Hand the project to a configurator
+      description: >
+        The handover, and the re-handover after a decline that keeps the Org
+        Admin's queue actionable. Always results in PENDING — including after
+        an ACCEPTED one, because a person who agreed to configure a project
+        has not thereby agreed to hand it on.
+
+
+        The owning organisation's act, never the outgoing configurator's: a
+        configurator who could hand the project on would be delegating an
+        authority granted to them personally.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [configuratorPartyId]
+              properties:
+                configuratorPartyId: { type: string }
+      responses:
+        "200":
+          description: Handed over, PENDING.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectView" }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "403": { description: Not permitted to act for the owning organisation. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/projects/{id}/ownership-decision:
+    post:
+      operationId: decideProjectOwnership
+      summary: Accept or decline a project handed to you
+      description: >
+        Screen `n4`, and design finding F2. The reference's `p1_3 → p2_1` step
+        changes actor with no acknowledgement, which leaves a project that
+        looks staffed and is not.
+
+
+        Declining is a first-class outcome and not an error: it records who
+        declined and why, leaves the project and every record keyed to it
+        exactly where they were, and returns the project to the Org Admin's
+        queue by way of an ownership state they can filter on. A reason is
+        required of a decline, for the same reason a held payment carries a
+        reason with an owner.
+
+
+        Answered by the named configurator, or by somebody proven to act for
+        them. A settled handover stays settled — a second answer is refused
+        rather than overwriting the first.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [accepted, declined] }
+                reason:
+                  type: string
+                  description: Required when declining.
+      responses:
+        "200":
+          description: The answer, recorded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectView" }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "403": { description: Not the named configurator. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Nobody was handed this project, or the handover is already answered. }
+        "422": { description: A decline with no reason. }
+
+  /v1/projects/{id}/ownership:
+    get:
+      operationId: readProjectOwnership
+      summary: The handover, and every answer it has ever had
+      description: >
+        The current state, plus the append-only trail. The trail is the point:
+        after a re-handover the current view says PENDING again, and "who
+        declined this, and why" would otherwise be gone — which on a system
+        whose records decide whether somebody gets paid is the record most
+        worth keeping.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: Current ownership and the trail.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projectId: { type: string }
+                  ownerPartyId: { type: string }
+                  ownership: { $ref: "urn:crest:schema:primitives:context:1#/properties/ownership" }
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        seq: { type: integer }
+                        event: { type: string, enum: [NAMED, ACCEPTED, DECLINED] }
+                        partyId: { type: string, description: The party the event is about. }
+                        actorPartyId: { type: string, description: The party who did it. }
+                        reason: { type: string }
+                        at: { type: string, format: date-time }
+        "403": { description: Not permitted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/projects/{id}/activation:
+    get:
+      operationId: readProjectActivation
+      summary: What this project still needs before it runs
+      description: >
+        Screen `p2_7`. Every condition, satisfied ones included — a list of
+        only the unmet ones cannot tell a ready project from one whose gates
+        were never declared, and those are not the same project.
+
+
+        Two conditions are infrastructure's own: the handover must be
+        acknowledged, and the project must be DRAFT. Every other condition is
+        a gate name this deployment declared, and the core never reads the
+        word.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The conditions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActivationView" }
+        "403": { description: Not permitted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: activateProject
+      summary: Activate the project
+      description: >
+        Screen `p2_7`'s button. A refusal answers 409 with every condition and
+        which of them are unmet: "cannot activate" without saying what is
+        missing is a dead end, and this system does not leave people at dead
+        ends. Activating an already-ACTIVE project is the outcome the caller
+        wanted, and answers 200.
+
+
+        A named configurator may write here only once they have **ACCEPTED** the
+        handover; before that, and after a decline, this answers 409
+        `handover_not_accepted`. Naming is a proposal, and a proposal must not
+        carry authority — otherwise the acknowledgement is decoration. The
+        owning organisation is unaffected: it is the authority.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: ACTIVE.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActivationView" }
+        "403": { description: Not permitted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Conditions unmet, or the project is CLOSED. The body names them.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActivationView" }
+
+  /v1/projects/{id}/activation/gates:
+    put:
+      operationId: declareProjectGates
+      summary: Declare this project's readiness conditions
+      description: >
+        Gate names are L2 vocabulary, so the list is the caller's to set. What
+        is not the caller's is the satisfaction timestamp: re-declaring a gate
+        keeps an answer somebody already gave, and a newly declared gate
+        starts unsatisfied.
+
+
+        A named configurator may write here only once they have **ACCEPTED** the
+        handover; before that, and after a decline, this answers 409
+        `handover_not_accepted`. Naming is a proposal, and a proposal must not
+        carry authority — otherwise the acknowledgement is decoration. The
+        owning organisation is unaffected: it is the authority.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                gates: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: The conditions after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActivationView" }
+        "400": { description: An unnamed or duplicated gate. }
+        "403": { description: Not permitted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The caller was named this project's configurator but has not accepted the handover." }
+
+  /v1/projects/{id}/activation/gates/{name}/satisfied:
+    post:
+      operationId: satisfyProjectGate
+      summary: Mark one declared gate satisfied
+      description: >
+        At the service's clock, never at a time the caller chose, and
+        re-asserting a satisfied gate does not move its date. An undeclared
+        gate is refused rather than created: a gate that appears when it is
+        satisfied never gated anything.
+
+
+        A named configurator may write here only once they have **ACCEPTED** the
+        handover; before that, and after a decline, this answers 409
+        `handover_not_accepted`. Naming is a proposal, and a proposal must not
+        carry authority — otherwise the acknowledgement is decoration. The
+        owning organisation is unaffected: it is the authority.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The conditions after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActivationView" }
+        "403": { description: Not permitted. }
+        "404": { description: No such project, or no such declared gate. }
+        "409": { description: "The caller was named this project's configurator but has not accepted the handover." }
+
+  /v1/projects/{id}/roles:
+    post:
+      operationId: grantProjectRole
+      summary: Grant a role on this project
+      description: >
+        Screen `p2_6`, and the grant a configurator needs before `n5` stops
+        guarding them. The grant is an Authorization, unchanged: the authority
+        is the owning organisation, the scope is this project, and the grantor
+        and grant date were already fields on the primitive — which is why "a
+        role is held, not just recorded" needed no new storage.
+
+
+        `functions` is the whole role vocabulary: opaque L2 strings the core
+        stores without knowing what any of the words mean.
+
+
+        The owning organisation's act. Deliberately not open to the named
+        configurator, who must not be able to grant themselves anything.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GrantRequest" }
+      responses:
+        "201":
+          description: The grant, as the People & roles screens read it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleGrant" }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "403": { description: Not permitted, or the owning organisation is not APPROVED. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: No terms for the grant to stand on, and CREST will not invent a permission set. }
+        "422": { $ref: "#/components/responses/SchemaViolation" }
+    get:
+      operationId: listProjectRoles
+      summary: Who holds a role on this project
+      description: >
+        Screen `n5`'s read-only half and `p2_6`'s list: the holders, with the
+        grant date and the grantor named from real authorization data, and
+        `grantableBy` naming the organisation a guard can point at — a refusal
+        without an owner is a dead end.
+
+
+        Revoked and expired grants are listed with their state rather than
+        filtered out, because a console showing only live grants cannot answer
+        "who used to be able to do this, and who took it away".
+
+
+        Not the roster query #68 refused: that refusal protects "where does
+        this person work" asked about an arbitrary person, and this answers
+        "who holds a role on this project" to the project's own organisation.
+        Worker participation is a Claim, not an Authorization, so no worker
+        appears here by holding work.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The role holders.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projectId: { type: string }
+                  roles: { type: array, items: { $ref: "#/components/schemas/RoleGrant" } }
+                  count: { type: integer }
+                  grantableBy: { type: string }
+        "403": { description: Not permitted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/organisations/{id}/roles:
+    get:
+      operationId: listOrganisationRoles
+      summary: Who holds a role under this organisation
+      description: >
+        Screen `p1_2`: the standing configuration's people, at instance scope.
+
+
+        The question GET /v1/authorizations cannot answer — that endpoint keys
+        on the party who HOLDS a grant, and this one keys on the party who
+        GAVE it. Answered to the granting organisation itself, or to somebody
+        proven to act for it, and to nobody else.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/PartyID" }]
+      responses:
+        "200":
+          description: The role holders under this authority.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organisationId: { type: string }
+                  roles: { type: array, items: { $ref: "#/components/schemas/RoleGrant" } }
+                  count: { type: integer }
+                  grantableBy: { type: string }
+        "403": { description: Not permitted to act for this organisation. }
+
+  /v1/projects/{id}/composition/{choice}:
+    put:
+      operationId: recordCompositionChoice
+      summary: Record one composition choice
+      description: >
+        Screens `p2_1` (five choices, answered separately), `p2_3` (definition
+        origin) and `p2_5` (payment posture).
+
+
+        The choice's name and its value are both this deployment's vocabulary
+        and both stored opaquely — there is no enum of postures or origins
+        anywhere in CREST, because two deployments could reasonably disagree
+        about every one of them and both still be CREST. What infrastructure
+        contributes is that somebody's name and a timestamp are attached to
+        every answer, and that answering one choice never overwrites another.
+
+
+        A named configurator may write here only once they have **ACCEPTED** the
+        handover; before that, and after a decline, this answers 409
+        `handover_not_accepted`. Naming is a proposal, and a proposal must not
+        carry authority — otherwise the acknowledgement is decoration. The
+        owning organisation is unaffected: it is the authority.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - name: choice
+          in: path
+          required: true
+          schema: { type: string }
+          description: A slug. The core checks that it is a name and nothing else.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value:
+                  description: >
+                    Anything JSON. An unanswered choice is the absence of a
+                    record, not a null.
+                note: { type: string }
+      responses:
+        "200":
+          description: The record, with its decider and date.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContextRecord" }
+        "400": { description: A choice name that is not a slug, or a missing value. }
+        "403": { description: Not permitted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The caller was named this project's configurator but has not accepted the handover." }
+
+  /v1/projects/{id}/composition:
+    get:
+      operationId: readProjectComposition
+      summary: The composition choices, with who decided each
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The choices recorded so far. An absent choice is unanswered.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projectId: { type: string }
+                  choices: { type: array, items: { $ref: "#/components/schemas/ContextRecord" } }
+                  count: { type: integer }
+        "403": { description: Not permitted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/partners:
+    get:
+      operationId: partnerDirectory
+      summary: The approved organisations, which is what registration was for
+      description: >
+        Screen `p2_17`. Nothing here re-examines an organisation and nothing
+        here can change one: the read is a join over decisions somebody else
+        already made, some of them years ago.
+
+
+        The three filters are all L2 vocabulary — a sector taxonomy, a country
+        list and a permission set, all the deployment's. `permission` filters
+        on what the organisation's accepted terms actually carry, "so nobody
+        appears here who could not do the work".
+
+
+        This is an authenticated read of registry facts, deliberately not the
+        published organisation face: that face stays the allowlist it is, and
+        self-declared attributes appear here precisely because they must never
+        appear there.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: sector, in: query, schema: { type: string } }
+        - { name: country, in: query, schema: { type: string } }
+        - name: permission
+          in: query
+          schema: { type: array, items: { type: string } }
+          description: Repeatable. Every one given must be covered by the organisation's terms.
+      responses:
+        "200":
+          description: The approved organisations matching the filters.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  partners:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        partyId: { type: string }
+                        displayName: { type: string }
+                        sector: { type: string }
+                        country: { type: string }
+                        termsId: { type: string }
+                        termsVersion: { type: integer }
+                        permissions: { type: array, items: { type: string } }
+                        approvedAt: { type: string, format: date-time }
+                  count: { type: integer }
+        "401": { description: This surface answers signed-in callers. }
+
+  /v1/projects/{id}/partner-grants:
+    post:
+      operationId: grantPartner
+      summary: Grant a partner what it may do on this project
+      description: >
+        Screen `p2_18`. Three rules, all of them infrastructure:
+
+
+        The partner must be an APPROVED organisation, because the directory's
+        promise is that onboarding already happened.
+
+
+        The grant must carry an end date. "The grant lapses on 31 March by
+        itself" is the screen's whole subject — and what ends is permission to
+        do more, never the standing of what was already validated.
+
+
+        The functions must be covered by the terms the partner actually
+        accepted; a wider grant is a permission nobody agreed to. The grant
+        rides that exact terms version rather than one the caller chose,
+        because which terms an organisation held is the fact a verifier walks
+        back to.
+
+
+        The grant is not delegable — that is the Authorization primitive's own
+        rule, and it is why a sub-contracted body is invited by the project
+        directly rather than brought in by its partner.
+
+
+        A named configurator may write here only once they have **ACCEPTED** the
+        handover; before that, and after a decline, this answers 409
+        `handover_not_accepted`. Naming is a proposal, and a proposal must not
+        carry authority — otherwise the acknowledgement is decoration. The
+        owning organisation is unaffected: it is the authority.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GrantRequest" }
+      responses:
+        "201":
+          description: The grant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleGrant" }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "403": { description: Not permitted, or the partner is not an APPROVED organisation. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The organisation has accepted no terms, so there is nothing to be narrower than. }
+        "422":
+          description: >
+            No end date, or functions wider than the terms — the uncovered
+            functions are listed by name.
+    get:
+      operationId: listPartnerGrants
+      summary: The partner grants on this project
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The grants held by organisations on this project.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  projectId: { type: string }
+                  grants: { type: array, items: { $ref: "#/components/schemas/RoleGrant" } }
+                  count: { type: integer }
+        "403": { description: Not permitted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/projects/{id}/finance-link:
+    put:
+      operationId: linkFinanceCode
+      summary: Link this project to a finance code
+      description: >
+        Screen `p2_8`, whose title is the rule: CREST does not invent account
+        codes. The code arrives from a finance system that already had it, is
+        stored verbatim, and is never generated, formatted, validated against
+        a pattern or reserved here. The screen's own callout is why — a code
+        that reads correctly and was closed last year is a rejection weeks
+        after the work was validated, and only the finance system can know
+        that.
+
+
+        `system` is required for the same reason: a code with no named source
+        cannot be traced back to whoever minted it.
+
+
+        A named configurator may write here only once they have **ACCEPTED** the
+        handover; before that, and after a decline, this answers 409
+        `handover_not_accepted`. Naming is a proposal, and a proposal must not
+        carry authority — otherwise the acknowledgement is decoration. The
+        owning organisation is unaffected: it is the authority.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [system, code]
+              properties:
+                system: { type: string, description: The finance system the code belongs to. }
+                code: { type: string, description: That system's own string, stored verbatim. }
+                label: { type: string }
+                note: { type: string }
+      responses:
+        "200":
+          description: The link, with who linked it and when.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContextRecord" }
+        "403": { description: Not permitted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { description: A link with no system or no code. }
+        "409": { description: "The caller was named this project's configurator but has not accepted the handover." }
+    get:
+      operationId: readFinanceLink
+      summary: This project's finance-code link
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The link.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContextRecord" }
+        "403": { description: Not permitted. }
+        "404": { description: No project, or no link recorded — which is an honest answer, not an error state. }
+
+  /v1/projects/{id}/support-owner:
+    put:
+      operationId: setSupportOwner
+      summary: Who a worker reaches when something goes wrong
+      description: >
+        Screen `p2_10`: support belongs to the project, not the platform. The
+        fact this stores is the one that move needs — a named party a worker's
+        question reaches, which must resolve to a real Party, because a
+        support owner nobody can name is the dead end that leaves a worker
+        with a missing payment and no explanation attached.
+
+
+        `escalatesToPartyId` is optional and its absence is honest: it means
+        escalation has not been arranged, not that it is unnecessary.
+
+
+        A named configurator may write here only once they have **ACCEPTED** the
+        handover; before that, and after a decline, this answers 409
+        `handover_not_accepted`. Naming is a proposal, and a proposal must not
+        carry authority — otherwise the acknowledgement is decoration. The
+        owning organisation is unaffected: it is the authority.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [partyId]
+              properties:
+                partyId: { type: string }
+                contactRoute:
+                  type: object
+                  properties:
+                    kind: { type: string }
+                    value: { type: string }
+                escalatesToPartyId: { type: string }
+                note: { type: string }
+      responses:
+        "200":
+          description: The owner, with who set it and when.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContextRecord" }
+        "403": { description: Not permitted. }
+        "404": { description: No project, or the named owner is not a Party here. }
+        "422": { description: No party named, or a contact route missing a kind or a value. }
+        "409": { description: "The caller was named this project's configurator but has not accepted the handover." }
+    get:
+      operationId: readSupportOwner
+      summary: This project's support owner
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The owner.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ContextRecord" }
+        "403": { description: Not permitted. }
+        "404": { description: No project, or no owner recorded. }
+
   # Every CREST service carries these two, added by pkg/httpx.Server.
   /healthz: { $ref: "#/components/pathItems/healthz" }
   /readyz: { $ref: "#/components/pathItems/readyz" }
@@ -1300,6 +2104,119 @@ components:
       description: The party identifier.
 
   schemas:
+    # ── Projects (J3) ─────────────────────────────────────────────────────
+    ProjectView:
+      description: >
+        A project as every read returns it: the Context primitive, plus the
+        derived answers a screen needs and must never re-derive for itself.
+      allOf:
+        - $ref: "urn:crest:schema:primitives:context:1"
+        - type: object
+          properties:
+            activationConditions:
+              type: array
+              items: { $ref: "#/components/schemas/ActivationCondition" }
+            records:
+              type: array
+              items: { $ref: "#/components/schemas/ContextRecord" }
+
+    ActivationCondition:
+      type: object
+      description: >
+        One readable answer to "what does this project still need before it
+        runs?". `because` says what the condition is in a sentence, because a
+        gate name a deployment chose is not self-explaining to the person
+        reading the screen.
+      properties:
+        name: { type: string }
+        satisfied: { type: boolean }
+        satisfiedAt: { type: string, format: date-time }
+        because: { type: string }
+
+    ActivationView:
+      type: object
+      properties:
+        projectId: { type: string }
+        state: { type: string, enum: [DRAFT, ACTIVE, CLOSED] }
+        conditions:
+          type: array
+          items: { $ref: "#/components/schemas/ActivationCondition" }
+        unmet:
+          type: array
+          items: { type: string }
+          description: The names of the conditions standing in the way. Empty is not the same as absent.
+        activatable: { type: boolean }
+
+    ContextRecord:
+      type: object
+      description: >
+        One configuration-level fact keyed to a project, with the two things
+        that make it accountable rather than merely present: who recorded it
+        and when. `kind` and `payload` are opaque — the core stores and
+        returns them and never reads inside, the same contract
+        Context.configuration carries.
+      properties:
+        kind: { type: string }
+        payload: { description: The profile's business, whatever shape it is. }
+        recordedBy: { type: string }
+        recordedAt: { type: string, format: date-time }
+
+    GrantRequest:
+      type: object
+      required: [partyId, functions]
+      properties:
+        partyId: { type: string }
+        functions:
+          type: array
+          minItems: 1
+          items: { type: string }
+          description: >
+            The role vocabulary, opaque. A role with no functions is a label,
+            so at least one is required.
+        terms:
+          description: >
+            Defaulted to the terms the authority accepted for a role grant,
+            and forced to the partner's own accepted version for a partner
+            grant. Refused rather than invented when there are none.
+          $ref: "urn:crest:schema:primitives:common:1#/$defs/versionedRef"
+        period: { $ref: "urn:crest:schema:primitives:common:1#/$defs/period" }
+        reviewBy:
+          type: string
+          format: date-time
+          description: >
+            When somebody should look at this again (§16). Passing it changes
+            nothing by itself — staleness is a flag a person reads, never a
+            gate a worker hits.
+        evidence:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string }
+              ref: { type: string }
+
+    RoleGrant:
+      type: object
+      description: >
+        One grant as the People & roles screens read it: who holds what, since
+        when, from whom, and whether it still stands. Every field is already on
+        the Authorization primitive.
+      properties:
+        grantId: { type: string }
+        partyId: { type: string }
+        displayName: { type: string, description: Best-effort; a grant whose holder cannot be named still lists. }
+        partyKind: { type: string, enum: [person, organisation] }
+        functions: { type: array, items: { type: string } }
+        grantedByPartyId: { type: string, description: Who granted it. }
+        authorityPartyId: { type: string, description: Who says so. A verifier walks this. }
+        grantedAt: { type: string, format: date-time }
+        from: { type: string, format: date-time }
+        until: { type: string, format: date-time }
+        state: { type: string, enum: [ACTIVE, REVOKED, EXPIRED] }
+        revokedAt: { type: string, format: date-time }
+        terms: { $ref: "urn:crest:schema:primitives:common:1#/$defs/versionedRef" }
+        reviewBy: { type: string, format: date-time }
+
     Recovery:
       type: object
       description: >

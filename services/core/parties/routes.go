@@ -84,6 +84,10 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/authorizations/{id}/revoke", h.revokeAuthorization)
 	mux.HandleFunc("POST /v1/contexts", h.createContext)
 
+	// The project surface (J3). A project is a Context, so these routes are a
+	// face over the primitive rather than a second store of the same thing.
+	registerProjectRoutes(mux, d)
+
 	// Onboarding (#20). Organisations apply for themselves; workers are often
 	// enrolled by someone else, and the two paths are deliberately different
 	// shapes rather than one endpoint with a flag.
