@@ -279,9 +279,34 @@ func (v *Verifier) fetch(ctx context.Context) (*jose.JSONWebKeySet, error) {
 	if err != nil {
 		return nil, err
 	}
-	var set jose.JSONWebKeySet
-	if err := json.Unmarshal(raw, &set); err != nil {
+	// The certificate chain is dropped before parsing, deliberately: eSignet
+	// publishes self-signed x5c certificates whose serial numbers Go's x509
+	// refuses outright ("negative serial number"), and go-jose fails the whole
+	// key on an unparseable chain. Verification never uses the chain — the JWKS
+	// URL itself is the trust anchor here, configured per provider — so the
+	// bare key material is what matters.
+	var chainless struct {
+		Keys []json.RawMessage `json:"keys"`
+	}
+	if err := json.Unmarshal(raw, &chainless); err != nil {
 		return nil, fmt.Errorf("%s did not return a JWKS: %w", v.cfg.JWKSURL, err)
+	}
+	var set jose.JSONWebKeySet
+	for _, k := range chainless.Keys {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(k, &fields); err != nil {
+			return nil, fmt.Errorf("%s did not return a JWKS: %w", v.cfg.JWKSURL, err)
+		}
+		delete(fields, "x5c")
+		bare, err := json.Marshal(fields)
+		if err != nil {
+			return nil, err
+		}
+		var key jose.JSONWebKey
+		if err := json.Unmarshal(bare, &key); err != nil {
+			return nil, fmt.Errorf("%s did not return a JWKS: %w", v.cfg.JWKSURL, err)
+		}
+		set.Keys = append(set.Keys, key)
 	}
 	if len(set.Keys) == 0 {
 		return nil, fmt.Errorf("%s returned no keys", v.cfg.JWKSURL)
