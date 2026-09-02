@@ -97,10 +97,10 @@ func nameConfigurator(c schema.Context, configuratorPartyID, actorPartyID string
 	at time.Time) (schema.Context, ownershipEvent) {
 
 	c.Ownership = &schema.ContextOwnership{
-		ConfiguratorPartyID: configuratorPartyID,
-		NamedByPartyID:      actorPartyID,
-		NamedAt:             at,
-		State:               schema.ContextOwnershipStatePENDING,
+		PartyID:        configuratorPartyID,
+		NamedByPartyID: actorPartyID,
+		NamedAt:        at,
+		State:          schema.ContextOwnershipStatePENDING,
 	}
 	return c, ownershipEvent{
 		Event: ownershipNamed, PartyID: configuratorPartyID,
@@ -129,7 +129,7 @@ func decideOwnership(c schema.Context, accept bool, reason, actorPartyID string,
 	// to act generally. An acknowledgement is somebody's own answer; a party
 	// permitted to act for them may still submit it on their behalf, which is
 	// what identity.Authorize decides before this function is reached.
-	if actorPartyID != "" && actorPartyID != c.Ownership.ConfiguratorPartyID {
+	if actorPartyID != "" && actorPartyID != c.Ownership.PartyID {
 		return c, ownershipEvent{}, errNotTheConfigurator
 	}
 	reason = strings.TrimSpace(reason)
@@ -143,7 +143,7 @@ func decideOwnership(c schema.Context, accept bool, reason, actorPartyID string,
 	next := c.Ownership
 	decided := at
 	next.DecidedAt = &decided
-	ev := ownershipEvent{PartyID: next.ConfiguratorPartyID, ActorPartyID: next.ConfiguratorPartyID, At: at}
+	ev := ownershipEvent{PartyID: next.PartyID, ActorPartyID: next.PartyID, At: at}
 	if accept {
 		next.State = schema.ContextOwnershipStateACCEPTED
 		next.Reason = nil
@@ -156,6 +156,32 @@ func decideOwnership(c schema.Context, accept bool, reason, actorPartyID string,
 	}
 	c.Ownership = next
 	return c, ev, nil
+}
+
+// isNamedConfigurator is "does this context name this party", and nothing
+// more. An empty caller — an unauthenticated deployment, where the identity
+// middleware is not enforcing — is never the named party: matching "" against
+// "" would let a stack with authentication switched off treat every caller as
+// the configurator of every unhanded project.
+func isNamedConfigurator(c schema.Context, callerPartyID string) bool {
+	return c.Ownership != nil && callerPartyID != "" &&
+		callerPartyID == c.Ownership.PartyID
+}
+
+// acknowledgedConfigurator is the gate on every write a named party makes to a
+// context they were handed.
+//
+// Naming is a proposal, and a proposal must not carry authority — otherwise
+// the acknowledgement F2 added is decoration. What this refusal prevents,
+// concretely: a party who was named and never answered, or who explicitly
+// DECLINED, setting the project's finance link and support owner, rewriting
+// its activation gates, marking them satisfied, and granting a partner
+// organisation a standing role on it. Every one of those writes would outlive
+// the refusal, because a re-handover replaces the current ownership view and
+// cannot un-grant what the previous nominee already did.
+func acknowledgedConfigurator(c schema.Context, callerPartyID string) bool {
+	return isNamedConfigurator(c, callerPartyID) &&
+		c.Ownership.State == schema.ContextOwnershipStateACCEPTED
 }
 
 // activationCondition is one readable answer to "what does this project still

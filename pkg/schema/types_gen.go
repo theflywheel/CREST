@@ -366,13 +366,17 @@ type ContextActivationGatesItem struct {
 // declined and why and leaves the context intact — nothing here deletes
 // anything. Absent on a context nobody was handed.
 type ContextOwnership struct {
+	DecidedAt      *time.Time `json:"decidedAt,omitempty"`
+	NamedAt        time.Time  `json:"namedAt"`
+	NamedByPartyID string     `json:"namedByPartyId"`
 
-	// The party named to configure this context. Stays named after a
-	// decline, so 'who declined' is readable.
-	ConfiguratorPartyID string     `json:"configuratorPartyId"`
-	DecidedAt           *time.Time `json:"decidedAt,omitempty"`
-	NamedAt             time.Time  `json:"namedAt"`
-	NamedByPartyID      string     `json:"namedByPartyId"`
+	// The party who was named. Deliberately not called 'configurator':
+	// that is the J3 profile's word for the role, and a primitive that
+	// named a role could not be reused where the same act hands a training
+	// cohort to a coordinator. The profile face (POST /v1/projects) takes
+	// it as configuratorPartyId; L1 knows only that somebody was named.
+	// Stays named after a decline, so 'who declined' is readable.
+	PartyID string `json:"partyId"`
 
 	// Why it was declined. Required of a decline for the same reason a
 	// held payment carries a reason with an owner: a refusal nobody

@@ -1097,6 +1097,13 @@ paths:
         missing is a dead end, and this system does not leave people at dead
         ends. Activating an already-ACTIVE project is the outcome the caller
         wanted, and answers 200.
+
+
+        A named configurator may write here only once they have **ACCEPTED** the
+        handover; before that, and after a decline, this answers 409
+        `handover_not_accepted`. Naming is a proposal, and a proposal must not
+        carry authority — otherwise the acknowledgement is decoration. The
+        owning organisation is unaffected: it is the authority.
       security: [{ bearerAuth: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
@@ -1122,6 +1129,13 @@ paths:
         is not the caller's is the satisfaction timestamp: re-declaring a gate
         keeps an answer somebody already gave, and a newly declared gate
         starts unsatisfied.
+
+
+        A named configurator may write here only once they have **ACCEPTED** the
+        handover; before that, and after a decline, this answers 409
+        `handover_not_accepted`. Naming is a proposal, and a proposal must not
+        carry authority — otherwise the acknowledgement is decoration. The
+        owning organisation is unaffected: it is the authority.
       security: [{ bearerAuth: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
@@ -1141,6 +1155,7 @@ paths:
         "400": { description: An unnamed or duplicated gate. }
         "403": { description: Not permitted. }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The caller was named this project's configurator but has not accepted the handover." }
 
   /v1/projects/{id}/activation/gates/{name}/satisfied:
     post:
@@ -1151,6 +1166,13 @@ paths:
         re-asserting a satisfied gate does not move its date. An undeclared
         gate is refused rather than created: a gate that appears when it is
         satisfied never gated anything.
+
+
+        A named configurator may write here only once they have **ACCEPTED** the
+        handover; before that, and after a decline, this answers 409
+        `handover_not_accepted`. Naming is a proposal, and a proposal must not
+        carry authority — otherwise the acknowledgement is decoration. The
+        owning organisation is unaffected: it is the authority.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
@@ -1163,6 +1185,7 @@ paths:
               schema: { $ref: "#/components/schemas/ActivationView" }
         "403": { description: Not permitted. }
         "404": { description: No such project, or no such declared gate. }
+        "409": { description: "The caller was named this project's configurator but has not accepted the handover." }
 
   /v1/projects/{id}/roles:
     post:
@@ -1280,6 +1303,13 @@ paths:
         about every one of them and both still be CREST. What infrastructure
         contributes is that somebody's name and a timestamp are attached to
         every answer, and that answering one choice never overwrites another.
+
+
+        A named configurator may write here only once they have **ACCEPTED** the
+        handover; before that, and after a decline, this answers 409
+        `handover_not_accepted`. Naming is a proposal, and a proposal must not
+        carry authority — otherwise the acknowledgement is decoration. The
+        owning organisation is unaffected: it is the authority.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
@@ -1310,6 +1340,7 @@ paths:
         "400": { description: A choice name that is not a slug, or a missing value. }
         "403": { description: Not permitted. }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The caller was named this project's configurator but has not accepted the handover." }
 
   /v1/projects/{id}/composition:
     get:
@@ -1410,6 +1441,13 @@ paths:
         The grant is not delegable — that is the Authorization primitive's own
         rule, and it is why a sub-contracted body is invited by the project
         directly rather than brought in by its partner.
+
+
+        A named configurator may write here only once they have **ACCEPTED** the
+        handover; before that, and after a decline, this answers 409
+        `handover_not_accepted`. Naming is a proposal, and a proposal must not
+        carry authority — otherwise the acknowledgement is decoration. The
+        owning organisation is unaffected: it is the authority.
       security: [{ bearerAuth: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
@@ -1466,6 +1504,13 @@ paths:
 
         `system` is required for the same reason: a code with no named source
         cannot be traced back to whoever minted it.
+
+
+        A named configurator may write here only once they have **ACCEPTED** the
+        handover; before that, and after a decline, this answers 409
+        `handover_not_accepted`. Naming is a proposal, and a proposal must not
+        carry authority — otherwise the acknowledgement is decoration. The
+        owning organisation is unaffected: it is the authority.
       security: [{ bearerAuth: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
@@ -1489,6 +1534,7 @@ paths:
         "403": { description: Not permitted. }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { description: A link with no system or no code. }
+        "409": { description: "The caller was named this project's configurator but has not accepted the handover." }
     get:
       operationId: readFinanceLink
       summary: This project's finance-code link
@@ -1517,6 +1563,13 @@ paths:
 
         `escalatesToPartyId` is optional and its absence is honest: it means
         escalation has not been arranged, not that it is unnecessary.
+
+
+        A named configurator may write here only once they have **ACCEPTED** the
+        handover; before that, and after a decline, this answers 409
+        `handover_not_accepted`. Naming is a proposal, and a proposal must not
+        carry authority — otherwise the acknowledgement is decoration. The
+        owning organisation is unaffected: it is the authority.
       security: [{ bearerAuth: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
@@ -1544,6 +1597,7 @@ paths:
         "403": { description: Not permitted. }
         "404": { description: No project, or the named owner is not a Party here. }
         "422": { description: No party named, or a contact route missing a kind or a value. }
+        "409": { description: "The caller was named this project's configurator but has not accepted the handover." }
     get:
       operationId: readSupportOwner
       summary: This project's support owner

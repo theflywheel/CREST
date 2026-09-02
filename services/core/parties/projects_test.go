@@ -58,7 +58,7 @@ func TestNamingAConfiguratorIsAProposalNotAnAssignment(t *testing.T) {
 	if c.Ownership.State != schema.ContextOwnershipStatePENDING {
 		t.Fatalf("a named configurator starts PENDING, got %q", c.Ownership.State)
 	}
-	if c.Ownership.NamedByPartyID != personPeter || c.Ownership.ConfiguratorPartyID != personAlice {
+	if c.Ownership.NamedByPartyID != personPeter || c.Ownership.PartyID != personAlice {
 		t.Fatal("both sides of the handover must be recorded: who named, and who was named")
 	}
 	if !c.Ownership.NamedAt.Equal(handoverTime) {
@@ -162,7 +162,7 @@ func TestDecliningDestroysNothingAndNamesWhoDeclined(t *testing.T) {
 	if after.Configuration["coverage"] != before.Configuration["coverage"] {
 		t.Fatal("a decline must not disturb the project's configuration")
 	}
-	if after.Ownership.ConfiguratorPartyID != personAlice {
+	if after.Ownership.PartyID != personAlice {
 		t.Fatal("the declining party must stay named, or 'who declined' is unreadable")
 	}
 	if after.Ownership.Reason == nil || *after.Ownership.Reason != "not my campaign" {
@@ -185,7 +185,7 @@ func TestReHandoverAfterADeclineReturnsToPending(t *testing.T) {
 	if renamed.Ownership.State != schema.ContextOwnershipStatePENDING {
 		t.Fatalf("a re-handover starts PENDING, got %q", renamed.Ownership.State)
 	}
-	if renamed.Ownership.ConfiguratorPartyID != personSarah {
+	if renamed.Ownership.PartyID != personSarah {
 		t.Fatal("the new configurator must be the one named")
 	}
 	if renamed.Ownership.Reason != nil {
@@ -205,6 +205,64 @@ func TestReNamingAnAcceptedProjectStillNeedsANewAcknowledgement(t *testing.T) {
 	renamed, _ := nameConfigurator(accepted, personSarah, personPeter, answerTime.Add(time.Hour))
 	if renamed.Ownership.State != schema.ContextOwnershipStatePENDING {
 		t.Fatal("handing an accepted project to somebody else must ask them too")
+	}
+}
+
+// A proposal must not carry authority, or the acknowledgement is decoration.
+// Found by review: the write gate originally compared party ids and never read
+// the state, so a party who had DECLINED kept full write authority over the
+// project's finance link, support owner, gates and partner grants — writes
+// that outlive the refusal, because a re-handover cannot un-grant what the
+// previous nominee did.
+func TestOnlyAnAcknowledgedConfiguratorMayWrite(t *testing.T) {
+	accepted, _, err := decideOwnership(handedToAlice(), true, "", personAlice, answerTime)
+	if err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	declined, _, err := decideOwnership(handedToAlice(), false, "not mine", personAlice, answerTime)
+	if err != nil {
+		t.Fatalf("decline: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name             string
+		in               schema.Context
+		caller           string
+		wantNamed        bool
+		wantMayConfigure bool
+	}{
+		{
+			name: "the accepted configurator may write", in: accepted, caller: personAlice,
+			wantNamed: true, wantMayConfigure: true,
+		},
+		{
+			name: "a merely named configurator may read but not write", in: handedToAlice(),
+			caller: personAlice, wantNamed: true,
+		},
+		{
+			name: "a configurator who declined may read but not write", in: declined,
+			caller: personAlice, wantNamed: true,
+		},
+		{
+			name: "a stranger is neither", in: accepted, caller: personSarah,
+		},
+		{
+			name: "an unhanded project names nobody", in: bednetProject(), caller: personAlice,
+		},
+		{
+			// The empty caller is the case that matters on a stack with
+			// authentication switched off: "" must never match "".
+			name: "an unauthenticated caller is never the named party", in: accepted,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isNamedConfigurator(tc.in, tc.caller); got != tc.wantNamed {
+				t.Fatalf("named: want %v, got %v", tc.wantNamed, got)
+			}
+			if got := acknowledgedConfigurator(tc.in, tc.caller); got != tc.wantMayConfigure {
+				t.Fatalf("may configure: want %v, got %v", tc.wantMayConfigure, got)
+			}
+		})
 	}
 }
 

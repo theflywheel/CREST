@@ -354,7 +354,7 @@ func insertContext(ctx context.Context, tx store.Querier, c schema.Context) erro
 	// no path that writes a doc whose owner disagrees with its column.
 	var configurator, ownershipState *string
 	if c.Ownership != nil {
-		configurator = &c.Ownership.ConfiguratorPartyID
+		configurator = &c.Ownership.PartyID
 		s := string(c.Ownership.State)
 		ownershipState = &s
 	}

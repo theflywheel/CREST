@@ -122,21 +122,62 @@ func (h *projectHandlers) project(w http.ResponseWriter, r *http.Request) (schem
 	return c, true
 }
 
-// actOnProject proves the caller may act on this project, and returns the
-// party they are acting as.
+// viewProject proves the caller may READ this project, and returns the party
+// they are acting as.
 //
 // Two ways in, and the second is the handover's whole point: the owning
 // organisation (or somebody holding act-for-party for it in this context), or
 // the named configurator themselves — who, at the moment they are deciding
 // whether to accept, may hold no grant at all. Reading n4 must not require the
-// grant that accepting it is a precondition for.
-func (h *projectHandlers) actOnProject(w http.ResponseWriter, r *http.Request,
+// grant that accepting it is a precondition for, so the read admits a named
+// configurator at any acknowledgement state, a decline included: somebody who
+// refused a handover is still entitled to see what they refused.
+func (h *projectHandlers) viewProject(w http.ResponseWriter, r *http.Request,
 	c schema.Context) (string, bool) {
 
+	return h.gateProject(w, r, c, false)
+}
+
+// configureProject proves the caller may WRITE to this project.
+//
+// The same two ways in, with one difference that is the whole reason
+// acknowledgement exists: a named configurator may write only once they have
+// ACCEPTED. Naming is a proposal, and a proposal must not carry authority —
+// otherwise the acknowledgement is decoration. Concretely, without this a
+// party who was named and never answered, or who explicitly DECLINED, could
+// still set the project's finance link and support owner, rewrite its
+// activation gates, mark them satisfied, and grant a partner organisation a
+// standing role on the project. Every one of those writes would outlive the
+// refusal, because a re-handover replaces the current ownership view and
+// cannot un-grant what the previous nominee did.
+//
+// The owning organisation is unaffected: it is the authority, and it can write
+// to its own project whether anybody has accepted it or not.
+func (h *projectHandlers) configureProject(w http.ResponseWriter, r *http.Request,
+	c schema.Context) (string, bool) {
+
+	return h.gateProject(w, r, c, true)
+}
+
+func (h *projectHandlers) gateProject(w http.ResponseWriter, r *http.Request,
+	c schema.Context, write bool) (string, bool) {
+
 	caller := identity.From(r.Context())
-	if c.Ownership != nil && caller.PartyID != "" &&
-		caller.PartyID == c.Ownership.ConfiguratorPartyID {
+	named := isNamedConfigurator(c, caller.PartyID)
+	if named && (!write || acknowledgedConfigurator(c, caller.PartyID)) {
 		return caller.PartyID, true
+	}
+	// A named configurator who has not accepted is told what is missing rather
+	// than being handed a bare refusal: the thing standing in their way is one
+	// button on the screen they are already looking at.
+	if write && named {
+		h.d.Log.Info("refused a project write from an unacknowledged configurator",
+			"path", r.URL.Path, "project", c.ID, "ownership", c.Ownership.State)
+		httpx.WriteError(w, http.StatusConflict, "handover_not_accepted",
+			"you were named this project's configurator but have not accepted the handover; "+
+				"accept it first — naming is a proposal, and a project nobody agreed to run "+
+				"must not be configurable by the person who has not agreed")
+		return "", false
 	}
 	return identity.Authorize(w, r, h.d.Log, c.OwnerPartyID, c.ID,
 		h.d.Authenticating, h.d.Permits)
@@ -285,7 +326,7 @@ func (h *projectHandlers) getProject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, ok := h.actOnProject(w, r, c); !ok {
+	if _, ok := h.viewProject(w, r, c); !ok {
 		return
 	}
 	records, err := listContextRecords(r.Context(), h.d.DB.Q(), c.ID, "")
@@ -385,7 +426,7 @@ func (h *projectHandlers) decideOwnership(w http.ResponseWriter, r *http.Request
 		return
 	}
 	// The named configurator answers, or somebody proven to act for them.
-	if _, ok := identity.Authorize(w, r, h.d.Log, c.Ownership.ConfiguratorPartyID, c.ID,
+	if _, ok := identity.Authorize(w, r, h.d.Log, c.Ownership.PartyID, c.ID,
 		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
@@ -396,7 +437,7 @@ func (h *projectHandlers) decideOwnership(w http.ResponseWriter, r *http.Request
 			return err
 		}
 		next, ev, err := decideOwnership(fresh, accept, body.Reason,
-			fresh.Ownership.ConfiguratorPartyID, h.d.Clock.Now())
+			fresh.Ownership.PartyID, h.d.Clock.Now())
 		if err != nil {
 			return err
 		}
@@ -439,7 +480,7 @@ func (h *projectHandlers) readOwnership(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	if _, ok := h.actOnProject(w, r, c); !ok {
+	if _, ok := h.viewProject(w, r, c); !ok {
 		return
 	}
 	events, err := ownershipEvents(r.Context(), h.d.DB.Q(), c.ID)
@@ -463,7 +504,7 @@ func (h *projectHandlers) readActivation(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if _, ok := h.actOnProject(w, r, c); !ok {
+	if _, ok := h.viewProject(w, r, c); !ok {
 		return
 	}
 	h.writeActivation(w, c, http.StatusOK)
@@ -494,7 +535,7 @@ func (h *projectHandlers) activateProject(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	if _, ok := h.actOnProject(w, r, c); !ok {
+	if _, ok := h.configureProject(w, r, c); !ok {
 		return
 	}
 	var out schema.Context
@@ -536,7 +577,7 @@ func (h *projectHandlers) declareGates(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, ok := h.actOnProject(w, r, c); !ok {
+	if _, ok := h.configureProject(w, r, c); !ok {
 		return
 	}
 	var out schema.Context
@@ -568,7 +609,7 @@ func (h *projectHandlers) satisfyGate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if _, ok := h.actOnProject(w, r, c); !ok {
+	if _, ok := h.configureProject(w, r, c); !ok {
 		return
 	}
 	var out schema.Context
@@ -657,7 +698,7 @@ func (h *projectHandlers) listProjectRoles(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	if _, ok := h.actOnProject(w, r, c); !ok {
+	if _, ok := h.viewProject(w, r, c); !ok {
 		return
 	}
 	grants, err := contextGrants(r.Context(), h.d.DB.Q(), c.ID)
@@ -727,7 +768,7 @@ func (h *projectHandlers) grantProjectRole(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	// Granting a role is the owning organisation's act. Deliberately not
-	// actOnProject: a configurator reading n4 must not be able to grant
+	// configureProject: a configurator reading n4 must not be able to grant
 	// themselves anything.
 	actor, ok := identity.Authorize(w, r, h.d.Log, c.OwnerPartyID, c.ID,
 		h.d.Authenticating, h.d.Permits)
@@ -758,7 +799,7 @@ func (h *projectHandlers) grantPartner(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	actor, ok := h.actOnProject(w, r, c)
+	actor, ok := h.configureProject(w, r, c)
 	if !ok {
 		return
 	}
@@ -874,7 +915,7 @@ func (h *projectHandlers) listPartnerGrants(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	if _, ok := h.actOnProject(w, r, c); !ok {
+	if _, ok := h.viewProject(w, r, c); !ok {
 		return
 	}
 	grants, err := contextGrants(r.Context(), h.d.DB.Q(), c.ID)
@@ -959,7 +1000,7 @@ func (h *projectHandlers) readComposition(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	if _, ok := h.actOnProject(w, r, c); !ok {
+	if _, ok := h.viewProject(w, r, c); !ok {
 		return
 	}
 	records, err := listContextRecords(r.Context(), h.d.DB.Q(), c.ID, recordCompositionPfx)
@@ -984,7 +1025,7 @@ func (h *projectHandlers) record(w http.ResponseWriter, r *http.Request, kind st
 	if !ok {
 		return
 	}
-	actor, ok := h.actOnProject(w, r, c)
+	actor, ok := h.configureProject(w, r, c)
 	if !ok {
 		return
 	}
@@ -1008,7 +1049,7 @@ func (h *projectHandlers) readRecord(w http.ResponseWriter, r *http.Request, kin
 	if !ok {
 		return
 	}
-	if _, ok := h.actOnProject(w, r, c); !ok {
+	if _, ok := h.viewProject(w, r, c); !ok {
 		return
 	}
 	rec, err := getContextRecord(r.Context(), h.d.DB.Q(), c.ID, kind)
