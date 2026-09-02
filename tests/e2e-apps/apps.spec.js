@@ -109,12 +109,21 @@ test("enrolment app: every route", async ({ page }) => {
   await expect(page.locator("body")).toContainText("outcome_value");
 });
 
+// Role-derived personas (docs/JOURNEY_GAP_ASSESSMENT.md finding 1): each
+// session walks only its own reference flow's views. Together the walks still
+// cover every console view.
 for (const [personaIdx, personaName, views] of [
-  [0, "Ministry of Health", ["status", "payments", "trace", "definition", "sources",
-    "reports", "definework", "paysetup", "org", "portfolio"]],
-  [1, "Otieno (custodian + support)", ["find", "dupes", "unclear", "recover", "review",
-    "cases", "supportfind", "supporttrace"]],
-  [2, "Instance administrator", ["instance", "status"]],
+  [0, "Adhiambo (org admin, P-1)", ["org", "status", "reports"]],
+  [1, "Wanjiru (configurator, P-2)", ["status", "payments", "trace", "definition",
+    "sources", "reports"]],
+  [2, "Dr. Achieng (definition author, P-3)", ["definework", "definition"]],
+  [3, "Prof. Ndegwa (definition approver, P-3)", ["ratify", "definition"]],
+  [4, "Mutua (rate owner, F-1)", ["paysetup"]],
+  [5, "Njeri (payment mechanism owner, F-2)", ["paysetup"]],
+  [6, "Instance administrator (G-1)", ["instance", "status"]],
+  [7, "Otieno (registry custodian, G-4)", ["find", "dupes", "unclear", "recover", "review"]],
+  [8, "Naliaka (support agent, W-3)", ["cases", "supportfind", "supporttrace"]],
+  [9, "Funding oversight (V-4)", ["portfolio", "status"]],
 ]) {
   test(`console: ${personaName} walks every view`, async ({ page }) => {
     const errors = watch(page);
@@ -136,11 +145,123 @@ for (const [personaIdx, personaName, views] of [
   });
 }
 
+// Author/approver separation: an approver ratifies and can never open the
+// authoring wizard — even a hand-typed #/definework bounces to their home.
+test("console: the approver cannot reach the author's wizard", async ({ page }) => {
+  const errors = watch(page);
+  await page.goto("/console/");
+  await settle(page);
+  await page.click('[data-persona="approver"]');
+  await settle(page);
+  // Their own flow renders.
+  await expect(page.locator("body")).toContainText(/Ratify/i);
+  // The sidebar carries no wizard entry…
+  await expect(page.locator('.sidebar a[href*="definework"]')).toHaveCount(0);
+  // …and typing the route lands back on the approver's home, not the wizard.
+  await page.evaluate(() => { location.hash = "#/definework"; });
+  await settle(page);
+  expect(page.url()).not.toContain("definework");
+  await expect(page.locator("body")).toContainText(/reads everything, drafts nothing/i);
+  await assertAlive(page, errors, "console approver boundary");
+});
+
+// G-2 onboarding opens with the reference's six identity fields (g2_1).
+test("console: onboarding asks the six identity fields", async ({ page }) => {
+  const errors = watch(page);
+  await page.goto("/console/#/onboard");
+  await settle(page);
+  for (const field of ["orgname", "country", "workemail", "contactname", "orgkind", "orgsector"]) {
+    await expect(page.locator(`#orgapplyform [name="${field}"]`),
+      `onboarding field ${field}`).toHaveCount(1);
+  }
+  // The reference's green callout: registration documents are DELIBERATELY
+  // not asked on this screen — so no such field may exist.
+  await expect(page.locator('#orgapplyform [name="orgreg"]')).toHaveCount(0);
+  await expect(page.locator("body")).toContainText(/deliberately not asked/i);
+  // The kind is the branching answer, and the client-side gap is stated.
+  await expect(page.locator("body")).toContainText(/kind of organisation/i);
+  // Desktop console window, not a mobile card: appbar + step rail + counter.
+  await expect(page.locator(".appbar")).toBeVisible();
+  await expect(page.locator("#stepcounter")).toContainText("Registration · 1 of 4");
+  await assertAlive(page, errors, "console onboarding form");
+});
+
+// #166: the six-field profile round-trips through the registry — the status
+// view renders kind/sector/country/contact from GET .../registration, not
+// from anything this browser held. Proven by clearing sessionStorage of the
+// profile at submit time (the app no longer stores it) and asserting the
+// server-served marker.
+test("console: onboarding profile round-trips through the registry", async ({ page }) => {
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+  await page.goto("/console/#/onboard");
+  await settle(page);
+  await page.fill('[name="orgname"]', "Roundtrip Trust " + stamp);
+  await page.selectOption('[name="country"]', "UG");
+  await page.fill('[name="workemail"]', `rt+${stamp}@example.org`);
+  await page.fill('[name="contactname"]', "Round Tripper");
+  await page.selectOption('[name="orgkind"]', "verifying");
+  await page.selectOption('[name="orgsector"]', "education");
+  await page.click("#orgapplyform button.dominant");
+  await page.waitForSelector("#acceptterms", { timeout: 20000 });
+  // The browser no longer holds the profile — what the status screen shows
+  // can only have come back from the registry.
+  const held = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem("crest.console.onboarding") || "{}"));
+  expect(held.kind, "profile must not be browser-held").toBeUndefined();
+  expect(held.sector, "profile must not be browser-held").toBeUndefined();
+  await page.click("#acceptterms");
+  await page.waitForURL(/#\/onboard\/status/, { timeout: 20000 });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("UG · verifying · education (served by the registry)");
+  await expect(page.locator("body")).toContainText("Round Tripper");
+  await assertAlive(page, errors, "onboarding round-trip");
+});
+
+// W-1 entry: two equal enrollment pathways, neither a fallback (w1_1).
+test("worker entry presents both enrollment pathways", async ({ page }) => {
+  const errors = watch(page);
+  await page.goto("/worker/");
+  await settle(page);
+  await expect(page.locator('[data-pathway="self"]')).toBeVisible();
+  await expect(page.locator('[data-pathway="assisted"]')).toBeVisible();
+  await expect(page.locator("body")).toContainText(/neither is a fallback/i);
+  // The self path names the consent-before-record rule (w1_5).
+  await expect(page.locator("body")).toContainText(/before any record is created/i);
+  // The assisted pathway hands off to the field door.
+  await expect(page.locator("#login-assisted")).toHaveAttribute("href", "/enrolment/");
+  await assertAlive(page, errors, "worker entry pathways");
+});
+
+// w1_18: the show screen presents a QR (offline presentation), JSON behind a
+// toggle — no raw JSON dump as the primary face.
+test("worker wallet: show-to-someone renders a QR, JSON behind a toggle", async ({ page }) => {
+  const errors = watch(page);
+  await page.goto("/worker/");
+  await settle(page);
+  await page.click("#login-grace");
+  await settle(page);
+  await page.evaluate(() => { location.hash = "#/wallet/0/show"; });
+  await settle(page);
+  // Either the QR image, or (for an oversized credential) the honest
+  // PixelPass gap note — never a silent failure.
+  const qr = page.locator("#cred-qr");
+  if (await qr.count()) {
+    await expect(qr).toBeVisible();
+  } else {
+    await expect(page.locator("body")).toContainText(/PixelPass/i);
+  }
+  // The JSON is present but folded.
+  await expect(page.locator("#show-json")).toBeVisible();
+  await expect(page.locator("details pre")).toBeHidden();
+  await assertAlive(page, errors, "worker wallet QR show");
+});
+
 test("console: the story shows through", async ({ page }) => {
   const errors = watch(page);
   await page.goto("/console/");
   await settle(page);
-  await page.click('[data-p="0"]');
+  await page.click('[data-p="1"]');
   await settle(page);
   // Sources: the story registered riverside-dhis2, and #117 is named on it.
   await page.evaluate(() => { location.hash = "#/sources"; });

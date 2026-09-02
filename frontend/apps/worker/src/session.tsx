@@ -15,7 +15,7 @@ type Session = {
   flash: Flash;
   login: () => Promise<void>;
   completeEsignet: (token: string) => Promise<"enrolled" | "stranger">;
-  signUp: (name: string, phone: string) => Promise<string>;
+  signUp: (name: string, phone: string, consentPurpose: string) => Promise<string>;
   logout: () => void;
   setFlash: (f: Flash) => void;
   fail: (e: unknown) => void;
@@ -88,7 +88,13 @@ export function SessionProvider(props: { children: ReactNode }) {
   // The bind's proof is possession of the token whose subject is bound — the
   // one proof that needs no prior enrolment (#102). The pairwise subjectRef
   // comes from /v1/auth/me; the browser never learns how it is derived.
-  const signUp = useCallback(async (name: string, phone: string) => {
+  // The enrollment-consent step (reference w1_5) happens BEFORE this is
+  // called: the signup screen refuses to submit until consent is given, so a
+  // party is never created without it. The consent is then recorded through
+  // the real consents API immediately after the party exists — it cannot be
+  // recorded earlier because the consent row needs a party to hang on
+  // (traceability w1_5 records this ordering honestly).
+  const signUp = useCallback(async (name: string, phone: string, consentPurpose: string) => {
     const who = await whoAmI();
     const party = await api.post("parties", "/v1/parties", {
       displayName: name,
@@ -102,6 +108,15 @@ export function SessionProvider(props: { children: ReactNode }) {
       providerClass: "esignet",
       subjectRef: who.subjectRef,
     });
+    // Enrolment consent is scoped to a programme context (§9): the deployment's
+    // seeded programme is the one a self-enrolled worker is joining here.
+    const q = new URLSearchParams({
+      moment: "enrolment",
+      purpose: consentPurpose,
+      captureMethod: "screen",
+      contextId: FIX.project,
+    });
+    await api.post("parties", `/v1/parties/${party.id}/consents?${q}`);
     store({ token: pendingToken.current, me: party.id });
     setMe(party.id);
     setErr(null);
