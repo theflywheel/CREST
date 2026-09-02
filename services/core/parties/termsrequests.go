@@ -148,7 +148,7 @@ type checkVerdict struct {
 func validDocuments(docs []declaredDocument) error {
 	for i, d := range docs {
 		if err := validRecordKind(d.Kind); err != nil {
-			return fmt.Errorf("document %d: %v", i+1, err)
+			return fmt.Errorf("document %d: %w", i+1, err)
 		}
 		ref := strings.TrimSpace(d.Ref)
 		switch {
@@ -305,7 +305,7 @@ func newCheckVerdict(req termsRequest, name, outcome, ownerKind, owner, note,
 		return checkVerdict{}, errRequestNotSubmitted
 	}
 	if err := validRecordKind(name); err != nil {
-		return checkVerdict{}, fmt.Errorf("check name: %v", err)
+		return checkVerdict{}, fmt.Errorf("check name: %w", err)
 	}
 	switch outcome {
 	case checkPass, checkFail:

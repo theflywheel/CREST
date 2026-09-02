@@ -159,9 +159,9 @@ func TestACheckVerdictHasABinaryOutcomeAndAnOwner(t *testing.T) {
 		t.Fatalf("a party-owned FAIL is just as recordable: %v", err)
 	}
 	cases := []struct {
-		name                              string
-		check, outcome, ownerKind, owner  string
-		recordedBy                        string
+		name                             string
+		check, outcome, ownerKind, owner string
+		recordedBy                       string
 	}{
 		{"an outcome that is neither passed nor failed did not run", "business-register", "MAYBE", checkOwnerPolicy, "crest:policy:x", regDecider},
 		{"an owner kind that is neither party nor policy", "business-register", checkPass, "robot", "r2", regDecider},
