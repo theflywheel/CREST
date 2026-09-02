@@ -16,7 +16,7 @@ RUN pnpm install --frozen-lockfile && pnpm -r build
 COPY apps /apps-src
 RUN mkdir -p /site \
     && cp -R /frontend/apps/field/dist /site/enrolment \
-    && cp -R /apps-src/console   /site/console \
+    && cp -R /frontend/apps/console/dist /site/console \
     && cp -R /frontend/apps/verify/dist /site/verify \
     && cp -R /frontend/apps/worker/dist /site/worker
 
