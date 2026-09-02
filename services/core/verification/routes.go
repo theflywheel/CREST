@@ -63,6 +63,9 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/source-assessments", h.assessments)
 	mux.HandleFunc("DELETE /v1/source-assessments/{adapterRef}", h.clearAssessment)
 	mux.HandleFunc("GET /v1/presentations", h.presentations)
+	// §9's disclosure consent as a flow: request → per-share decision →
+	// one collection of exactly the approved list (w1_15, w1_19, w1_20).
+	registerShareRoutes(mux, d)
 	// A verifier resolving a person rather than checking a document (#104).
 	mux.HandleFunc("GET /v1/parties/{id}/credentials", h.partyCredentials)
 	// Issuance and the credential record (#137): requested by the payments

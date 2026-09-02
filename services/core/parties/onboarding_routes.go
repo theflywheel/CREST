@@ -295,11 +295,9 @@ func (h *handlers) assistedEnrolment(w http.ResponseWriter, r *http.Request) {
 		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
-	switch body.Method {
-	case "supervisor-attested", "roster-import", "field-visit":
-	default:
+	if !validEnrolmentMethod(body.Method) {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body",
-			"method must be supervisor-attested, roster-import or field-visit")
+			"method must be supervisor-attested, roster-import, field-visit or confidence-check")
 		return
 	}
 

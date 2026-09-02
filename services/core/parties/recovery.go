@@ -79,6 +79,7 @@ func registerRecoveryRoutes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/recoveries/{id}", h.get)
 	mux.HandleFunc("GET /v1/recoveries", h.list)
 	mux.HandleFunc("POST /v1/recoveries/{id}/confirmations", h.confirm)
+	mux.HandleFunc("POST /v1/recoveries/{id}/refusals", h.refuse)
 	mux.HandleFunc("POST /v1/recoveries/{id}/override", h.override)
 	mux.HandleFunc("POST /v1/recoveries/{id}/complete", h.complete)
 }
@@ -101,6 +102,13 @@ type Recovery struct {
 
 	Confirmations []RecoveryConfirmation `json:"confirmations"`
 
+	// Refusals are the on-the-record "no" answers (w4_3). A refusal never
+	// closes the recovery — it is one voice, and any two other vouched voices
+	// may still carry it — but it is never silent either: it rides the record,
+	// and an undecided recovery with refusals surfaces on ?refused=true with
+	// the opener named as the person who owes it a next step.
+	Refusals []RecoveryRefusal `json:"refusals"`
+
 	OverrideBy     *string    `json:"overrideByPartyId,omitempty"`
 	OverrideReason *string    `json:"overrideReason,omitempty"`
 	OverrideAt     *time.Time `json:"overrideAt,omitempty"`
@@ -115,6 +123,31 @@ type RecoveryConfirmation struct {
 	ConfirmerPartyID string    `json:"confirmerPartyId"`
 	AuthorityPartyID string    `json:"authorityPartyId"`
 	ConfirmedAt      time.Time `json:"confirmedAt"`
+}
+
+// RecoveryRefusal is one on-the-record "this is not who they say they are" —
+// owned by the refuser, with the reason they gave.
+type RecoveryRefusal struct {
+	RefuserPartyID string    `json:"refuserPartyId"`
+	Reason         string    `json:"reason"`
+	RefusedAt      time.Time `json:"refusedAt"`
+}
+
+// refusalAdmissible is the pure rule a refusal must pass: the recovery is
+// still collecting answers, the refuser is not the person being recovered,
+// and there is a reason — a refusal without one is a dead end wearing a
+// record's clothes, and the reason is what the opener's next step reads.
+func refusalAdmissible(state, refuserID, workerPartyID, reason string) error {
+	if state != "OPEN" {
+		return errRecoveryNotOpen
+	}
+	if refuserID == workerPartyID {
+		return errSelfConfirmation
+	}
+	if reason == "" {
+		return errRefusalNeedsReason
+	}
+	return nil
 }
 
 func (h *recoveryHandlers) open(w http.ResponseWriter, r *http.Request) {
@@ -266,6 +299,84 @@ func (h *recoveryHandlers) confirm(w http.ResponseWriter, r *http.Request) {
 		return
 	case err != nil:
 		httpx.Fail(w, h.d.Log, "confirm recovery", err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, rec)
+}
+
+// refuse records a contacted person's "no" (w4_3). The reference design draws
+// the refusal screen and defines nothing after it; the defined path is here:
+// the refusal is a permanent record with an owner and a reason, the recovery
+// stays OPEN — other vouched voices may still confirm — and every undecided
+// recovery carrying refusals surfaces on the ?refused=true queue, where the
+// opener is the name that owes it a next step. Never a quiet dead end; the
+// same posture as a held payment.
+//
+// Anyone the request reached may refuse — a nominated contact, or a vouched
+// confirmer who was asked. Refusal is deliberately wider than confirmation:
+// saying "this is not them" needs no authority standing behind it, because it
+// grants nothing; it only puts a doubt on the record.
+func (h *recoveryHandlers) refuse(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		RefuserPartyID string `json:"refuserPartyId"`
+		Reason         string `json:"reason"`
+	}
+	if !httpx.ReadJSON(w, r, &body) {
+		return
+	}
+	if body.RefuserPartyID == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "missing_field",
+			"refuserPartyId is required: a refusal is owned by whoever made it")
+		return
+	}
+	// The refusal must belong to the person speaking (#102), same as a
+	// confirmation: one person must not be able to plant doubts in many names.
+	if _, ok := identity.Authorize(w, r, h.d.Log, body.RefuserPartyID, "",
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
+	now := h.d.Clock.Now()
+	var rec Recovery
+	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+		got, err := getRecovery(r.Context(), tx, r.PathValue("id"))
+		if err != nil {
+			return err
+		}
+		if err := refusalAdmissible(got.State, body.RefuserPartyID, got.PartyID, body.Reason); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(r.Context(), `
+			INSERT INTO recovery_refusals (recovery_id, refuser_party_id, reason, refused_at)
+			VALUES ($1, $2, $3, $4)`,
+			got.ID, body.RefuserPartyID, body.Reason, now); err != nil {
+			return err
+		}
+		rec, err = getRecovery(r.Context(), tx, got.ID)
+		return err
+	})
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "no such recovery")
+		return
+	case errors.Is(err, errRecoveryNotOpen):
+		httpx.WriteError(w, http.StatusConflict, "recovery_not_open",
+			"this recovery is not collecting answers any more")
+		return
+	case errors.Is(err, errSelfConfirmation):
+		httpx.WriteError(w, http.StatusBadRequest, "self_refusal",
+			"the person being recovered does not answer their own recovery")
+		return
+	case errors.Is(err, errRefusalNeedsReason):
+		httpx.WriteError(w, http.StatusBadRequest, "refusal_needs_a_reason",
+			"a refusal records why: the reason is what the opener's next step is read from, "+
+				"and a bare 'no' leaves the worker at a dead end nobody owns")
+		return
+	case store.IsUniqueViolation(err):
+		httpx.WriteError(w, http.StatusConflict, "already_refused",
+			"this person has already refused this recovery")
+		return
+	case err != nil:
+		httpx.Fail(w, h.d.Log, "refuse recovery", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, rec)
@@ -449,6 +560,29 @@ func (h *recoveryHandlers) get(w http.ResponseWriter, r *http.Request) {
 // recoveries whose review-by date has passed — the queue "flagged for review,
 // never silent" promises somebody is reading.
 func (h *recoveryHandlers) list(w http.ResponseWriter, r *http.Request) {
+	// The confirmer's own view (w4_1, w4_2): ?confirmerPartyId= narrows to
+	// open recoveries of workers who nominated the caller, and is answered to
+	// that person alone — who trusts you with their recovery is not a fact for
+	// browsing. This is the pull half of "a request arrives"; the push (SMS)
+	// is a channel this deployment does not have (§16, #150), stated in
+	// recoverycontacts.go.
+	if confirmer := r.URL.Query().Get("confirmerPartyId"); confirmer != "" {
+		if _, ok := identity.Authorize(w, r, h.d.Log, confirmer, "",
+			h.d.Authenticating, h.d.Permits); !ok {
+			return
+		}
+		rows, err := h.d.DB.Q().Query(r.Context(), `
+			SELECT r.id FROM recoveries r
+			JOIN recovery_contacts c ON c.party_id = r.party_id
+			WHERE c.contact_party_id = $1 AND c.revoked_at IS NULL AND r.state = 'OPEN'
+			ORDER BY r.created_at, r.id`, confirmer)
+		if err != nil {
+			httpx.Fail(w, h.d.Log, "list recoveries for confirmer", err)
+			return
+		}
+		h.writeRecoveryList(w, r, rows)
+		return
+	}
 	// The audit surface: signed-in callers (#102). Reading ONE recovery stays
 	// open below — the id is unguessable and the worker it belongs to may
 	// hold it printed on paper, which is exactly who must never be locked out
@@ -461,12 +595,24 @@ func (h *recoveryHandlers) list(w http.ResponseWriter, r *http.Request) {
 		where = `WHERE review_by IS NOT NULL AND review_by < $1`
 		args = append(args, h.d.Clock.Now())
 	}
+	// ?refused=true is w4_3's attention queue: undecided recoveries somebody
+	// said "no" to. The opener is on each record as the owner of the next step.
+	if r.URL.Query().Get("refused") == "true" {
+		where = `WHERE state = 'OPEN'
+			AND EXISTS (SELECT 1 FROM recovery_refusals f WHERE f.recovery_id = recoveries.id)`
+		args = nil
+	}
 	rows, err := h.d.DB.Q().Query(r.Context(), `
 		SELECT id FROM recoveries `+where+` ORDER BY created_at, id`, args...)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list recoveries", err)
 		return
 	}
+	h.writeRecoveryList(w, r, rows)
+}
+
+// writeRecoveryList expands a rowset of recovery ids into full records.
+func (h *recoveryHandlers) writeRecoveryList(w http.ResponseWriter, r *http.Request, rows store.Rows) {
 	ids, err := store.Collect(rows, func(r store.Row) (string, error) {
 		var v string
 		return v, r.Scan(&v)
@@ -491,6 +637,7 @@ var (
 	errRecoveryNotOpen    = errors.New("recovery is not open")
 	errRecoveryNotDecided = errors.New("recovery is not decided")
 	errSelfConfirmation   = errors.New("self confirmation")
+	errRefusalNeedsReason = errors.New("refusal needs a reason")
 	errOwnSupervisor      = errors.New("own supervisor cannot override")
 	errNotVouchedFor      = errors.New("not vouched for")
 )
@@ -518,6 +665,22 @@ func getRecovery(ctx context.Context, q store.Querier, id string) (Recovery, err
 	})
 	if rec.Confirmations == nil {
 		rec.Confirmations = []RecoveryConfirmation{}
+	}
+	if err != nil {
+		return Recovery{}, err
+	}
+	rows, err = q.Query(ctx, `
+		SELECT refuser_party_id, reason, refused_at
+		FROM recovery_refusals WHERE recovery_id = $1 ORDER BY refused_at`, rec.ID)
+	if err != nil {
+		return Recovery{}, err
+	}
+	rec.Refusals, err = store.Collect(rows, func(r store.Row) (RecoveryRefusal, error) {
+		var f RecoveryRefusal
+		return f, r.Scan(&f.RefuserPartyID, &f.Reason, &f.RefusedAt)
+	})
+	if rec.Refusals == nil {
+		rec.Refusals = []RecoveryRefusal{}
 	}
 	return rec, err
 }
