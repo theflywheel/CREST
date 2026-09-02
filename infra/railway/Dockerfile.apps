@@ -46,9 +46,9 @@ FROM nginx:1.27-alpine
 COPY apps/index.html   /usr/share/nginx/html/index.html
 COPY apps/shared       /usr/share/nginx/html/shared
 COPY --from=webapps /frontend/apps/worker/dist /usr/share/nginx/html/worker
+COPY --from=webapps /frontend/apps/verify/dist /usr/share/nginx/html/verify
 COPY apps/enrolment    /usr/share/nginx/html/enrolment
 COPY apps/console      /usr/share/nginx/html/console
-COPY apps/verify       /usr/share/nginx/html/verify
 COPY --from=docs /quartz/public /usr/share/nginx/html/docs
 COPY infra/railway/nginx.apps.conf.template /etc/nginx/templates/default.conf.template
 # Railway injects PORT; the stock nginx entrypoint substitutes ${PORT}.
