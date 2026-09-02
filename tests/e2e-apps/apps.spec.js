@@ -112,30 +112,54 @@ test("enrolment app: every route", async ({ page }) => {
 // Role-derived personas (docs/JOURNEY_GAP_ASSESSMENT.md finding 1): each
 // session walks only its own reference flow's views. Together the walks still
 // cover every console view.
-for (const [personaIdx, personaName, views] of [
-  [0, "Adhiambo (org admin, P-1)", ["org", "status", "reports"]],
-  [1, "Wanjiru (configurator, P-2)", ["status", "payments", "trace", "definition",
-    "sources", "reports"]],
-  [2, "Dr. Achieng (definition author, P-3)", ["definework", "definition"]],
-  [3, "Prof. Ndegwa (definition approver, P-3)", ["ratify", "definition"]],
-  [4, "Mutua (rate owner, F-1)", ["paysetup"]],
-  [5, "Njeri (payment mechanism owner, F-2)", ["paysetup"]],
-  [6, "Instance administrator (G-1)", ["instance", "status"]],
-  [7, "Otieno (registry custodian, G-4)", ["find", "dupes", "unclear", "recover", "review"]],
-  [8, "Naliaka (support agent, W-3)", ["cases", "supportfind", "supporttrace"]],
-  [9, "Funding oversight (V-4)", ["portfolio", "status"]],
+//
+// The J3 actors (orgadmin, configurator) navigate the reference's own three
+// rails and hold every J3 route — nothing is hidden by role (finding F1), so
+// both walk the same list.
+const J3_VIEWS = ["org", "people", "projects", "projects/new", "workers", "validation",
+  "intake", "definition", "paysetup", "sources", "status", "stp", "quality", "payments",
+  "trace", "reports", "finance", "support"];
+
+// Arrival, proven. The logged-OUT door also renders an .appbar, so asserting
+// one is not proof of a session: a broken login would have passed. What only
+// a signed-in console shows is the identity in the appbar and the logout
+// control, so those are what the walk waits for.
+async function signedInAs(page, who) {
+  await expect(page.locator(".appbar .who-label")).toContainText(who);
+  await expect(page.locator("#logout")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("Sign in to CREST Console");
+}
+
+for (const [personaIdx, personaName, who, views] of [
+  [0, "Peter Otieno (org admin, P-1)", "Peter Otieno", J3_VIEWS],
+  [1, "Dr. Alice Mutua (configurator, P-2)", "Dr. Alice Mutua", J3_VIEWS],
+  [2, "Amina Yusuf (definition author, P-3)", "Amina Yusuf", ["definework", "definition"]],
+  [3, "Prof. Ndegwa (definition approver, P-3)", "Prof. Ndegwa", ["ratify", "definition"]],
+  [4, "Mutua (rate owner, F-1)", "Mutua", ["paysetup"]],
+  [5, "Njeri (payment mechanism owner, F-2)", "Njeri", ["paysetup"]],
+  [6, "Instance administrator (G-1)", "Instance administrator", ["instance", "status"]],
+  [7, "Otieno (registry custodian, G-4)", "Otieno", ["find", "dupes", "unclear", "recover", "review"]],
+  [8, "Naliaka (support agent, W-3)", "Naliaka", ["cases", "supportfind", "supporttrace"]],
+  [9, "Funding oversight (V-4)", "Funding oversight", ["portfolio", "status"]],
 ]) {
   test(`console: ${personaName} walks every view`, async ({ page }) => {
     const errors = watch(page);
     await page.goto("/console/");
     await settle(page);
     await page.click(`[data-p="${personaIdx}"]`);
+    // First login mints a token and appends an identity binding — two round
+    // trips. Poll for arrival rather than sleeping.
+    await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
     await settle(page);
-    await expect(page.locator(".appbar")).toBeVisible();
+    await signedInAs(page, who);
     for (const v of views) {
       await page.evaluate(h => { location.hash = "#/" + h; }, v);
       await settle(page);
       await assertAlive(page, errors, `console #/` + v);
+      // Still signed in, and still on the route asked for: a guard that
+      // bounced us home would otherwise read as a passing walk.
+      await signedInAs(page, who);
+      expect(page.url(), `console #/${v} must not redirect away`).toContain("#/" + v);
       if (v === "instance") {
         // The instance view reads GET /v1/instance for real (#70); the local
         // stack's identity is CREST_INSTANCE_ID's compose default.
@@ -144,6 +168,75 @@ for (const [personaIdx, personaName, views] of [
     }
   });
 }
+
+// n1 — the console door. Our design (docs/design/j3-connective-tissue): one
+// door for every console role, and NO role selector, because a role is
+// granted in the registry and read back, never self-declared.
+test("console door: eSignet is the way in, and no role can be picked", async ({ page }) => {
+  const errors = watch(page);
+  await page.goto("/console/");
+  await settle(page);
+  await expect(page.locator("#signin-title")).toContainText("Sign in to CREST Console");
+  await expect(page.locator("#signin-esignet")).toBeVisible();
+  await expect(page.locator("body")).toContainText("CREST never sees a credential of yours");
+  // The rule this screen sets, verbatim from the design spec.
+  await expect(page.locator("body")).toContainText(
+    "It never asks which role you want, and never offers a role you do not hold.");
+  // No role selector of any kind: no select, no radio, nothing named "role".
+  await expect(page.locator("select")).toHaveCount(0);
+  await expect(page.locator('input[type="radio"]')).toHaveCount(0);
+  await expect(page.locator('[name*="role" i]')).toHaveCount(0);
+  // The demo block is instance-configured: this local stack has a mock
+  // issuer, so it renders — and each row names a role rather than offering
+  // to grant one.
+  await expect(page.locator('[data-panel="demo-personas"]')).toBeVisible();
+  await assertAlive(page, errors, "console door");
+});
+
+// n3/F1 — one rail, two actors. The five setup entries render identically for
+// the Org Admin and the Project Configurator, and no entry is removed by role.
+test("console: the J3 rail is the same five entries for both actors", async ({ page }) => {
+  const entries = ["Projects", "People & roles", "Work definitions", "Payment set up", "Workers"];
+  for (const persona of ["orgadmin", "configurator"]) {
+    await page.goto("/console/");
+    await settle(page);
+    await page.click(`[data-persona="${persona}"]`);
+    await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+    await settle(page);
+    const rail = await page.locator(".sidebar a").allInnerTexts();
+    expect(rail.map(t => t.trim()), `${persona} sees the reference's setup rail`).toEqual(entries);
+    // The dashboard section swaps the rail for the reference's other one —
+    // per section, not per role (the F1 correction).
+    await page.evaluate(() => { location.hash = "#/status"; });
+    await settle(page);
+    const dash = await page.locator(".sidebar a").allInnerTexts();
+    expect(dash.map(t => t.trim())).toEqual(["Work status", "Quality", "Payments", "Proof", "Reports"]);
+  }
+});
+
+// n5 — a rail entry you cannot act on stays visible and says who can. The
+// Configurator opens People & roles and gets the boundary, not a redirect and
+// not a missing entry.
+test("console: People & roles guards the configurator instead of hiding", async ({ page }) => {
+  const errors = watch(page);
+  await page.goto("/console/");
+  await settle(page);
+  await page.click('[data-persona="configurator"]');
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await expect(page.locator('.sidebar a[href*="people"]')).toHaveCount(1);
+  await page.evaluate(() => { location.hash = "#/people"; });
+  await settle(page);
+  expect(page.url()).toContain("#/people");
+  await expect(page.locator("body")).toContainText("People & roles is not yours to change");
+  await expect(page.locator("body")).toContainText("Who can do this");
+  // The guard's rule, verbatim from the design spec.
+  await expect(page.locator("body")).toContainText(
+    "A guard states the role you would need, names somebody who can grant it");
+  // No HTTP status code is shown to the user.
+  await expect(page.locator("body")).not.toContainText(/\b403\b/);
+  await assertAlive(page, errors, "console role guard");
+});
 
 // Author/approver separation: an approver ratifies and can never open the
 // authoring wizard — even a hand-typed #/definework bounces to their home.

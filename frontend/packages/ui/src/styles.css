@@ -118,6 +118,36 @@ button.card{text-align:left;width:100%}
 /* ————— open-note (unresolved question, amber) ————— */
 .open-note{background:var(--warning-bg);border:1px solid #F3CE94;border-left:3px solid var(--warning);border-radius:7px;padding:11px 13px;font:400 12.5px/1.55 Roboto;color:#7A4B00}
 
+/* ————— callouts (the reference's own two boxes, colours verbatim) ————— */
+.callout{border-radius:8px;padding:11px 13px}
+.callout .c-title{font:500 10px/1 Roboto;letter-spacing:.9px;text-transform:uppercase;margin-bottom:6px}
+.callout .c-body{font:400 12.5px/1.55 Roboto;color:var(--text-1)}
+.callout.teal{border:1px solid #0B4B6622;background:#F4F8FA}
+.callout.teal .c-title{color:var(--p2)}
+.callout.green{border:1px solid #00703C22;background:var(--success-bg)}
+.callout.green .c-title{color:var(--success)}
+.callout.grey{border:1px solid #78787822;background:var(--paper-2)}
+.callout.grey .c-title{color:var(--text-2)}
+.callout .guard{color:var(--p2)}
+
+/* ————— reference field (uppercase label, bordered value) ————— */
+.rfield{display:flex;flex-direction:column;gap:5px}
+.rfield .r-label{font:500 11px/1 Roboto;letter-spacing:.5px;text-transform:uppercase;color:var(--text-2)}
+.rfield .r-value{border:1px solid var(--divider);border-radius:6px;padding:10px 12px;font:400 13.3px/1.4 Roboto;color:var(--text-1);background:#fff}
+.rfield .r-hint{font:400 11.8px/1.5 Roboto;color:var(--text-2)}
+.rfield select,.rfield input{width:100%;border:1px solid var(--divider);border-radius:6px;padding:10px 12px;font:400 13.3px/1.4 Roboto}
+
+/* ————— option card (a composition choice) ————— */
+.optcard{display:block;width:100%;text-align:left;border:1px solid var(--divider);border-radius:9px;padding:12px 13px;background:#fff}
+.optcard.on{border-color:var(--p1);background:#FFFDFB}
+.optcard.na{background:var(--paper-2);border-style:dashed}
+.optcard .o-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.optcard .o-t{font:500 13.4px/1.35 Roboto;color:var(--text-1)}
+.optcard .o-na{font:500 11px/1.4 Roboto;color:var(--text-2);background:var(--generic-bg);border-radius:12px;padding:3px 9px}
+.optcard .o-s{font:400 12.2px/1.5 Roboto;color:var(--text-2);margin-top:4px}
+.optcard.na .o-s{color:var(--text-2)}
+.optcols{display:flex;flex-direction:column;gap:10px}
+
 /* ————— error banner ————— */
 .errbar{background:var(--error-bg);color:var(--error);border:1px solid #EDC0A6;border-radius:8px;padding:10px 13px;font:400 13px/1.5 Roboto}
 

@@ -35,6 +35,27 @@ an omission, so the implementation must **not** invent a role-scoped rail that
 hides entries. Role decides what an entry does, and an entry you cannot act on
 says who can (screen `n5`).
 
+**F1 is corrected — the rail is identical per _section_, not across all of
+J3.** Measured against `docs/journey-spec.json` while building the screens
+(Step 3): the 24 J3 frames carry **three** rails, not one.
+
+| Rail | Frames | Entries |
+|---|---|---|
+| setup | `p1_1`–`p1_3`, `p2_1`–`p2_7`, `p2_17`–`p2_21` | Projects · People & roles · Work definitions · Payment set up · Workers |
+| dashboard | `p2_11`–`p2_16` | Work status · Quality · Payments · Proof · Reports |
+| finance / support | `p2_8`–`p2_10` | Project · Work definitions · Finance · Support · Dashboard |
+
+The appbar identity changes with them: `p2_8`–`p2_16` are signed by
+Dr. Sarah Kimani, the rest of P-2 by Dr. Alice Mutua, for the same role.
+
+What F1 got right, and what the console implements, is the *rule*: within a
+section the rail is identical for both J3 actors, and no entry is ever removed
+because of a role. What F1 got wrong is the *count* — "every `p1_*` and `p2_*`
+frame carries the same five entries" is not true of the nine dashboard and
+finance frames. The console therefore follows the reference frame by frame
+(`frontend/apps/console/src/App.tsx`, `railFor`), and `n3` states the
+corrected rule on its own face rather than the original one.
+
 **F2 — the handover is an authority change with no acknowledgement.** `p1_3`
 ("Creating a project, and handing it over") names a Configurator and moves
 straight to `p2_1`. A named owner who never agreed leaves a project that looks
