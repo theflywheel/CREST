@@ -322,7 +322,7 @@ INSERT INTO certify.credential_config (
     'WorkEventCredential',
     gen_random_uuid()::VARCHAR(255),
     'active',
-    'ewogICJAY29udGV4dCI6IFsKICAgICJodHRwczovL3d3dy53My5vcmcvMjAxOC9jcmVkZW50aWFscy92MSIsCiAgICAiaHR0cHM6Ly9jcmVzdC50aGVmbHl3aGVlbC5pbi9jb250ZXh0cy93b3JrLWV2ZW50L3YxIgogIF0sCiAgImlzc3VlciI6ICIke19pc3N1ZXJ9IiwKICAidHlwZSI6IFsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCAiV29ya0V2ZW50Q3JlZGVudGlhbCJdLAogICJpc3N1YW5jZURhdGUiOiAiJHt2YWxpZEZyb219IiwKICAiZXhwaXJhdGlvbkRhdGUiOiAiJHt2YWxpZFVudGlsfSIsCiAgImNyZWRlbnRpYWxTdWJqZWN0IjogewogICAgImlkIjogIiR7X2hvbGRlcklkfSIsCiAgICAidW5pdElkIjogIiR7dW5pdElkfSIsCiAgICAiY2xhaW1JZCI6ICIke2NsYWltSWR9IiwKICAgICJhY3Rpdml0eSI6ICIke2FjdGl2aXR5fSIsCiAgICAiZGVmaW5pdGlvbiI6IHsKICAgICAgInJlZiI6ICIke2RlZmluaXRpb25SZWZ9IiwKICAgICAgInZlcnNpb24iOiAiJHtkZWZpbml0aW9uVmVyc2lvbn0iCiAgICB9LAogICAgInBlcmlvZCI6IHsKICAgICAgInN0YXJ0IjogIiR7cGVyaW9kU3RhcnR9IiwKICAgICAgImVuZCI6ICIke3BlcmlvZEVuZH0iCiAgICB9LAogICAgIm91dGNvbWUiOiB7CiAgICAgICJ2YWx1ZSI6ICR7b3V0Y29tZVZhbHVlfSwKICAgICAgInVuaXQiOiAiJHtvdXRjb21lVW5pdH0iCiAgICB9LAogICAgImNvbnRleHRSZWYiOiAiJHtjb250ZXh0UmVmfSIsCiAgICAiaXNzdWVyT3JnIjogIiR7aXNzdWVyT3JnfSIsCiAgICAicHJvdmVuYW5jZSI6IHsKICAgICAgInNvdXJjZUNsYXNzIjogIiR7c291cmNlQ2xhc3N9IiwKICAgICAgImNhcHR1cmVNZXRob2QiOiAiJHtjYXB0dXJlTWV0aG9kfSIsCiAgICAgICJhZGFwdGVyUmVmIjogIiR7YWRhcHRlclJlZn0iLAogICAgICAicmVjZWl2ZWRBdCI6ICIke3JlY2VpdmVkQXR9IiwKICAgICAgInNvdXJjZUV4cG9zdXJlIjogIiR7c291cmNlRXhwb3N1cmV9IgogICAgfQogIH0KfQ==',
+    'ewogICJAY29udGV4dCI6IFsKICAgICJodHRwczovL3d3dy53My5vcmcvMjAxOC9jcmVkZW50aWFscy92MSIsCiAgICAiaHR0cHM6Ly9jcmVzdC1hcHBzLXByb2R1Y3Rpb24udXAucmFpbHdheS5hcHAvY29udGV4dHMvd29yay1ldmVudC12MS5qc29uIgogIF0sCiAgImlzc3VlciI6ICIke19pc3N1ZXJ9IiwKICAidHlwZSI6IFsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCAiV29ya0V2ZW50Q3JlZGVudGlhbCJdLAogICJpc3N1YW5jZURhdGUiOiAiJHt2YWxpZEZyb219IiwKICAiZXhwaXJhdGlvbkRhdGUiOiAiJHt2YWxpZFVudGlsfSIsCiAgImNyZWRlbnRpYWxTdWJqZWN0IjogewogICAgImlkIjogIiR7X2hvbGRlcklkfSIsCiAgICAidW5pdElkIjogIiR7dW5pdElkfSIsCiAgICAiY2xhaW1JZCI6ICIke2NsYWltSWR9IiwKICAgICJhY3Rpdml0eSI6ICIke2FjdGl2aXR5fSIsCiAgICAiZGVmaW5pdGlvbiI6IHsKICAgICAgInJlZiI6ICIke2RlZmluaXRpb25SZWZ9IiwKICAgICAgInZlcnNpb24iOiAiJHtkZWZpbml0aW9uVmVyc2lvbn0iCiAgICB9LAogICAgInBlcmlvZCI6IHsKICAgICAgInN0YXJ0IjogIiR7cGVyaW9kU3RhcnR9IiwKICAgICAgImVuZCI6ICIke3BlcmlvZEVuZH0iCiAgICB9LAogICAgIm91dGNvbWUiOiB7CiAgICAgICJ2YWx1ZSI6ICR7b3V0Y29tZVZhbHVlfSwKICAgICAgInVuaXQiOiAiJHtvdXRjb21lVW5pdH0iCiAgICB9LAogICAgImNvbnRleHRSZWYiOiAiJHtjb250ZXh0UmVmfSIsCiAgICAiaXNzdWVyT3JnIjogIiR7aXNzdWVyT3JnfSIsCiAgICAicHJvdmVuYW5jZSI6IHsKICAgICAgInNvdXJjZUNsYXNzIjogIiR7c291cmNlQ2xhc3N9IiwKICAgICAgImNhcHR1cmVNZXRob2QiOiAiJHtjYXB0dXJlTWV0aG9kfSIsCiAgICAgICJhZGFwdGVyUmVmIjogIiR7YWRhcHRlclJlZn0iLAogICAgICAicmVjZWl2ZWRBdCI6ICIke3JlY2VpdmVkQXR9IiwKICAgICAgInNvdXJjZUV4cG9zdXJlIjogIiR7c291cmNlRXhwb3N1cmV9IgogICAgfQogIH0KfQ==',
     NULL,
     NULL,
     'https://www.w3.org/2018/credentials/v1',
@@ -340,11 +340,33 @@ INSERT INTO certify.credential_config (
     'CERTIFY_VC_SIGN_ED25519',
     'ED25519_SIGN',
     'EdDSA',
-    -- eddsa-jcs-2022: JCS canonicalises the JSON itself, so signing never has to
-    -- dereference @context over the network, and CREST's own signer already
-    -- emits this suite. §5 of the blueprint still names the JSON-LD suite as
-    -- the default — that disagreement is #60.
-    'eddsa-jcs-2022',
+    -- Ed25519Signature2020, not eddsa-jcs-2022, and the change is a recorded
+    -- design finding (#155 phase C): Inji Verify's vc-verifier implements the
+    -- 2018/2020 Ed25519 suites and no DataIntegrityProof suite, so a JCS
+    -- credential answers INVALID there — proven empirically against 0.16.0.
+    -- The wallet path is Inji end to end, so it signs with the suite Inji can
+    -- check; CREST's OWN credentials (payment path, printed card, offline
+    -- verification) keep eddsa-jcs-2022 per #60. The cost of this suite is
+    -- that canonicalisation dereferences @context at signing time — which is
+    -- why the template's second context is a URL this fleet actually serves
+    -- (apps/contexts/work-event-v1.json), with @vocab defined so that EVERY
+    -- credentialSubject field maps to a term. That is load-bearing, not
+    -- decoration: JSON-LD canonicalisation silently drops undefined terms,
+    -- and a dropped term is a field the signature no longer protects.
+    --
+    -- The context URL is the deployed apps door, which means wallet-path
+    -- issuance needs that origin reachable at signing time — an accepted,
+    -- stated dependency of this suite (an offline local stack can re-point
+    -- the template at its own apps container:
+    --   update certify.credential_config set vc_template = translate(encode(
+    --     convert_to(replace(convert_from(decode(vc_template,'base64'),'UTF8'),
+    --       'https://crest-apps-production.up.railway.app/', 'http://apps/'),
+    --     'UTF8'),'base64'), E'\n', '');
+    -- (translate strips the newlines postgres' encode inserts — a decoder
+    -- that refuses MIME base64 chokes on them silently otherwise.)
+    -- CREST's own credentials are untouched by this: eddsa-jcs-2022 never
+    -- dereferences a context, which is why the offline path lives there).
+    'Ed25519Signature2020',
     NULL,
     -- The logo is not decoration: Mimoto rejects an issuer whose credential
     -- display carries a null logo ("Invalid Wellknown from Issuer"), so a
@@ -353,7 +375,7 @@ INSERT INTO certify.credential_config (
     ARRAY['activity', 'period', 'outcome', 'provenance'],
     'crest_work_event_vc_ldp',
     ARRAY['did:jwk'],
-    ARRAY['eddsa-jcs-2022'],
+    ARRAY['Ed25519Signature2020'],
     -- The holder's proof-of-possession algorithms. Ed25519 is here because the
     -- wallet key that a credential is bound to should be the same shape as the
     -- issuer key; RS256 and ES256 stay for wallets that cannot mint one.

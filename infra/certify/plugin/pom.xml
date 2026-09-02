@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The CREST data-provider plugin for Inji Certify (#155 phase C).
+
+  This jar is what retires the CSV fixture (finding C16): Certify's issuance
+  asks CREST for the confirmed-work facts of the authenticated subject, live,
+  instead of reading a file somebody bound by hand.
+
+  Compiled against certify-integration-api 0.13.1 — the newest the MOSIP team
+  has published to Maven Central — and loaded into the 0.14.0 runtime. That is
+  deliberate rather than sloppy: the SPI this implements is one method,
+  `JSONObject fetchData(Map)` unchanged between the two (checked against the
+  v0.14.0 tag), and pinning to an unpublished version would make the build
+  irreproducible. If a future Certify bump changes the SPI, this pom is where
+  the compile breaks, loudly.
+
+  Every dependency is `provided`: the Certify runtime already carries Spring,
+  org.json and slf4j, and a plugin that shades its own copies is a plugin
+  that fights its host's classpath.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>in.theflywheel.crest</groupId>
+  <artifactId>certify-crest-plugin</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+  <name>certify-crest-plugin</name>
+  <description>Inji Certify DataProviderPlugin serving CREST's confirmed work events</description>
+
+  <properties>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.mosip.certify</groupId>
+      <artifactId>certify-integration-api</artifactId>
+      <version>0.13.1</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-autoconfigure</artifactId>
+      <version>3.2.3</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-context</artifactId>
+      <version>6.1.4</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.json</groupId>
+      <artifactId>json</artifactId>
+      <version>20240303</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>2.0.12</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.10.2</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

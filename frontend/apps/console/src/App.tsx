@@ -9,6 +9,7 @@ import { personas, useConsole, type PersonaKey } from "./state";
 import { Status, Payments, Trace, Definition, Sources, Reports } from "./views/Project";
 import { DefineWork, PaySetup, Org, Instance, Portfolio } from "./views/Admin";
 import { Find, Dupes, Unclear, Recoveries, Review, Cases, SupportTraceNote } from "./views/Custodian";
+import { OnboardApply, OnboardTerms, OnboardStatus } from "./views/Onboard";
 
 const NAV: Record<PersonaKey, NavGroup[]> = {
   org: [
@@ -86,6 +87,15 @@ function LoginPage() {
         provider and binds it through the real first-login path.
       </p>
       {s.err ? <ErrBar>{s.err}</ErrBar> : null}
+      <button
+        className="card hi"
+        id="onboard-org"
+        style={{ textAlign: "left", cursor: "pointer" }}
+        onClick={() => nav("/onboard")}
+      >
+        <div style={{ font: "500 14px/1.4 Roboto" }}>Onboard your organisation</div>
+        <div className="muted">Apply, accept the published terms, get approved — the real flow, no seeded party.</div>
+      </button>
       {personas.map((p, i) => (
         <button className="card" data-p={i} key={i} style={{ textAlign: "left", cursor: "pointer" }} onClick={() => pick(i)}>
           <div style={{ font: "500 14px/1.4 Roboto" }}>
@@ -130,6 +140,11 @@ export function App() {
   const s = useConsole();
   return (
     <Routes>
+      {/* Programme onboarding (#155 phase D): reachable with no persona —
+          applying is the open bootstrap by design (#20). */}
+      <Route path="/onboard" element={<OnboardApply />} />
+      <Route path="/onboard/terms" element={<OnboardTerms />} />
+      <Route path="/onboard/status" element={<OnboardStatus />} />
       <Route element={<Shell />}>
         <Route path="/status" element={<Status />} />
         <Route path="/payments" element={<Payments />} />

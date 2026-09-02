@@ -19,6 +19,7 @@ export type ServiceName =
 declare global {
   interface Window {
     CREST_SERVICES?: Partial<Record<ServiceName, string>>;
+    CREST_LINKS?: Partial<Record<LinkName, string>>;
   }
 }
 
@@ -56,4 +57,27 @@ export const services: Record<ServiceName, string> = Object.assign(
   {},
   isLocalStack ? localPorts : proxyPaths,
   window.CREST_SERVICES || {},
+);
+
+// External companions of this deployment — separate origins, not services
+// behind the /api proxy. The Inji browser wallet drives its own OpenID4VCI
+// flow (Mimoto → eSignet → Certify); the doors only ever link to it.
+// window.CREST_LINKS is the per-deployment override, same idea as
+// CREST_SERVICES.
+export type LinkName = "injiWeb" | "injiVerify";
+
+const localLinks: Record<LinkName, string> = {
+  injiWeb: `http://${host}:58093`,
+  injiVerify: `http://${host}:58092`,
+};
+
+const deployedLinks: Record<LinkName, string> = {
+  injiWeb: "https://crest-inji-web-production.up.railway.app",
+  injiVerify: "https://crest-verify-ui-production.up.railway.app",
+};
+
+export const links: Record<LinkName, string> = Object.assign(
+  {},
+  isLocalStack ? localLinks : deployedLinks,
+  window.CREST_LINKS || {},
 );

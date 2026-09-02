@@ -1,4 +1,5 @@
 import { Link, useParams } from "react-router-dom";
+import { links } from "@crest/api";
 import { Chip, DisLi, GridTable, KV, OpenNote, Sidecar } from "@crest/ui";
 import { useSession } from "../session";
 import { useLoad } from "../App";
@@ -58,14 +59,24 @@ export function Wallet() {
         </div>
       )}
       <div className="pane-narrow">
+        <div className="card" id="inji-import">
+          <h3 className="scr-sub">Keep it in your own wallet</h3>
+          <p className="body-2">
+            Long-term custody of your record belongs to <b>you</b>, in your Inji wallet — not to this site. In the
+            wallet, choose the <b>CREST</b> issuer and sign in with the same identity you used here; your newest
+            confirmed work event is issued straight into the wallet, signed by this deployment's issuer, checkable by
+            anyone without asking CREST.
+          </p>
+          <div className="btn-row">
+            <a className="btn" href={links.injiWeb} target="_blank" rel="noopener noreferrer">
+              Open the Inji wallet
+            </a>
+          </div>
+        </div>
         <Sidecar>
-          Long-term custody of these credentials belongs to your <b>Inji wallet</b> — the deployed browser wallet at{" "}
-          <a href="https://crest-inji-web-production.up.railway.app" target="_blank" rel="noopener noreferrer">
-            crest-inji-web-production.up.railway.app
-          </a>
-          . This page is the CREST-side view of the same credentials, not a second copy you must manage. One gap,
-          named: the demo fleet does not yet issue through Certify/OpenID4VCI, so the import path into Inji is not
-          wired (blueprint §5, docs/crest-inji-architecture.html).
+          This page is the CREST-side view of the same credentials, not a second copy you must manage. One limit,
+          named: the wallet is issued your <em>newest</em> confirmed work event; choosing an older one from the wallet
+          is not built yet (blueprint §5, docs/crest-inji-architecture.html).
         </Sidecar>
       </div>
       <p className="muted">
