@@ -63,14 +63,14 @@ def m(status, app="", route="", note=""):
 
 MAPPING = {
     # ---- G-1 Instance Administrator (console, persona: instance) ----
-    "g1_1": m("missing", note="Instance stand-up wizard: no deployment-creation surface; a stack is stood up by compose/Railway, not in the console"),
-    "g1_2": m("compressed", "console", "#/instance", "Read-only: GET /v1/instance shows the instance identity/issuer; naming and identity binding are deploy-time configuration, not console actions"),
-    "g1_3": m("illustrative", "console", "#/instance", "Consent floor is displayed; consent-policy editing has no endpoint (Admin.tsx Instance view labels it)"),
-    "g1_5": m("missing", note="Invitation naming a person: no invitation service exists"),
-    "g1_6": m("compressed", "console", "#/instance", "Service health sweep reads real /healthz of each member; the services-not-roles framing is shown read-only"),
-    "g4_1": m("illustrative", "console", "#/instance", "Admission queue rendered from the registration states; the review queue itself is labelled illustrative in Admin.tsx"),
-    "g4_2": m("illustrative", "console", "#/instance", "What-can-be-checked review detail: display only"),
-    "g4_3": m("compressed", "console", "#/onboard/status", "The approval decision exists as POST /v1/organisations/{id}/decision (unit-tested), but the console has no reviewer surface for it; the deployed model is REGISTRY_ORG_APPROVAL=on-terms-acceptance"),
+    "g1_1": m("implemented", "console", "#/instance/setup", "Honest stand-up front door: deployment read live from GET /v1/instance; stand-up is deploy-time (compose/Railway); no wizard write faked"),
+    "g1_2": m("implemented", "console", "#/instance/covers", "Read-only by design: published self-description live; the four unpublished reference fields named as deploy-time config, not invented"),
+    "g1_3": m("implemented", "console", "#/instance/consent", "Consent floor stated as enforced infrastructure facts; scripts/templates are deployment config (#59); officer appointment recordless, said so"),
+    "g1_5": m("compressed", "console", "#/instance/invite", "Reference's five fields, no Send: instance-level invitation has no primitive (#182 is project→org; entry decision open per g2_5) — design finding #185"),
+    "g1_6": m("implemented", "console", "#/instance/services", "Real six-service /healthz sweep in the reference frame; 'Done — awaiting the organisation' walks to the queue"),
+    "g4_1": m("implemented", "console", "#/admissions", "Real queue: GET /v1/registrations (new) + GET /v1/terms-requests; both reference callouts verbatim"),
+    "g4_2": m("implemented", "console", "#/admissions/:pid", "Registration read with declared name/attributes; 'what this does not prove' callout verbatim"),
+    "g4_3": m("implemented", "console", "#/admissions/:pid", "POST /v1/organisations/{id}/decision through the screen; decider is the authenticated caller (#89); reasonless rejection refused; 'issue the key' named unbuilt"),
     # ---- G-2 Onboarding Authorising Signatory (console, public onboarding) ----
     "g2_1": m("implemented", "console", "#/onboard", "The reference's six-field identity form (legal name, country, work email, contact person, kind, sector) as a desktop console frame — Registration · 1 of 4 with the Register/Terms/Certificates/Done rail; registration documents deliberately not asked, per the reference's own callout → POST /v1/organisations. Since #168 the whole form persists: country/kind/sector/contact person ride the Party's generic attributes map and are read back from GET /v1/organisations/{id}/registration — a registry round-trip, not browser state"),
     "g2_4": m("implemented", "console", "#/onboard/status", "GET /v1/organisations/{id}/registration: state, exact terms version, decider. Under REGISTRY_ORG_APPROVAL=manual (the local default) the terminal state waits on the operator's decision; on-terms-acceptance approves in the acceptance's transaction. 'On nobody's project' is true — no project membership exists"),

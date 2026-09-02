@@ -8,11 +8,11 @@ script's MAPPING and re-run. Assessment context: `docs/JOURNEY_GAP_ASSESSMENT.md
 
 | Status | Screens | Share |
 |---|---:|---:|
-| implemented | 37 | 25% |
-| compressed | 27 | 18% |
+| implemented | 44 | 30% |
+| compressed | 25 | 17% |
 | semantically-different | 8 | 5% |
-| illustrative | 16 | 11% |
-| missing | 55 | 38% |
+| illustrative | 13 | 9% |
+| missing | 53 | 37% |
 | **total** | **143** | |
 
 ## The fidelity gate
@@ -26,20 +26,20 @@ red, which is the check that stops this table claiming coverage the
 screens do not have. Nothing here is evidence that an asserted screen
 passed — only the gate run is that.
 
-In scope today (J3 — `p1_*`, `p2_*` — and G-2 — `g2_*` — plus the design screens `n1`–`n5`): **40** screens — **25** asserted, **0** quarantined, **15** skipped with a reason.
+In scope today (J3 — `p1_*`, `p2_*` — and G-2 — `g2_*` — plus the design screens `n1`–`n5`): **48** screens — **32** asserted, **0** quarantined, **16** skipped with a reason.
 
 ## G-1 — Instance Administrator (8 screens)
 
 | Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
 |---|---|---|---|---|---|---|
-| `g1_1` | Stand up | The first screen anyone ever sees | **missing** | — | — | Instance stand-up wizard: no deployment-creation surface; a stack is stood up by compose/Railway, not in the console |
-| `g1_2` | Instance | Naming the instance, and binding identity | **compressed** | console `#/instance` | — | Read-only: GET /v1/instance shows the instance identity/issuer; naming and identity binding are deploy-time configuration, not console actions |
-| `g1_3` | Consent | Consent rules come before the first worker | **illustrative** | console `#/instance` | — | Consent floor is displayed; consent-policy editing has no endpoint (Admin.tsx Instance view labels it) |
-| `g1_5` | Invite | The invitation names a person | **missing** | — | — | Invitation naming a person: no invitation service exists |
-| `g1_6` | Services | Services, not roles | **compressed** | console `#/instance` | — | Service health sweep reads real /healthz of each member; the services-not-roles framing is shown read-only |
-| `g4_1` | Queue | A queue of exceptions, not of everybody | **illustrative** | console `#/instance` | — | Admission queue rendered from the registration states; the review queue itself is labelled illustrative in Admin.tsx |
-| `g4_2` | Review | What can actually be checked, and what cannot | **illustrative** | console `#/instance` | — | What-can-be-checked review detail: display only |
-| `g4_3` | Approve | Approval is the whole decision | **compressed** | console `#/onboard/status` | — | The approval decision exists as POST /v1/organisations/{id}/decision (unit-tested), but the console has no reviewer surface for it; the deployed model is REGISTRY_ORG_APPROVAL=on-terms-acceptance |
+| `g1_1` | Stand up | The first screen anyone ever sees | **implemented** | console `#/instance/setup` | **asserted** | Honest stand-up front door: deployment read live from GET /v1/instance; stand-up is deploy-time (compose/Railway); no wizard write faked |
+| `g1_2` | Instance | Naming the instance, and binding identity | **implemented** | console `#/instance/covers` | **asserted** | Read-only by design: published self-description live; the four unpublished reference fields named as deploy-time config, not invented |
+| `g1_3` | Consent | Consent rules come before the first worker | **implemented** | console `#/instance/consent` | **asserted** | Consent floor stated as enforced infrastructure facts; scripts/templates are deployment config (#59); officer appointment recordless, said so |
+| `g1_5` | Invite | The invitation names a person | **compressed** | console `#/instance/invite` | skipped (compressed) | Reference's five fields, no Send: instance-level invitation has no primitive (#182 is project→org; entry decision open per g2_5) — design finding #185 |
+| `g1_6` | Services | Services, not roles | **implemented** | console `#/instance/services` | **asserted** | Real six-service /healthz sweep in the reference frame; 'Done — awaiting the organisation' walks to the queue |
+| `g4_1` | Queue | A queue of exceptions, not of everybody | **implemented** | console `#/admissions` | **asserted** | Real queue: GET /v1/registrations (new) + GET /v1/terms-requests; both reference callouts verbatim |
+| `g4_2` | Review | What can actually be checked, and what cannot | **implemented** | console `#/admissions/:pid` | **asserted** | Registration read with declared name/attributes; 'what this does not prove' callout verbatim |
+| `g4_3` | Approve | Approval is the whole decision | **implemented** | console `#/admissions/:pid` | **asserted** | POST /v1/organisations/{id}/decision through the screen; decider is the authenticated caller (#89); reasonless rejection refused; 'issue the key' named unbuilt |
 ## G-2 — Onboarding Authorising Signatory (11 screens)
 
 | Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
