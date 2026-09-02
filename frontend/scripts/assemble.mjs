@@ -16,9 +16,14 @@ mkdirSync(out, { recursive: true });
 // Rebuilt (Vite): one entry per ported door.
 // The field door keeps its /enrolment/ URL path — bookmarks and the proxy
 // allowlist both know it by that name.
-const built = { worker: "apps/worker/dist", verify: "apps/verify/dist", enrolment: "apps/field/dist" };
+const built = {
+  worker: "apps/worker/dist",
+  verify: "apps/verify/dist",
+  enrolment: "apps/field/dist",
+  console: "apps/console/dist",
+};
 // Not yet ported: served as-is from apps/ (with the legacy shared assets).
-const legacy = ["console", "shared"];
+const legacy = ["shared"];
 
 cpSync(join(repo, "apps/index.html"), join(out, "index.html"));
 for (const dir of legacy) cpSync(join(repo, "apps", dir), join(out, dir), { recursive: true });
