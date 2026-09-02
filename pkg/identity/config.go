@@ -2,6 +2,7 @@ package identity
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/theflywheel/crest/pkg/config"
@@ -47,6 +48,18 @@ type Config struct {
 	// unknown key id, which is what stops a stream of forged tokens becoming a
 	// stream of requests to the identity provider.
 	MinRefresh time.Duration
+
+	// Extra is any additional issuers this deployment accepts (#155): the
+	// migration shape where eSignet authenticates the doors while the dev
+	// issuer still serves the externally-shared PoC. Each entry keeps its own
+	// JWKS; audience, salt and cache posture are shared with the primary.
+	Extra []Provider
+}
+
+// Provider is one additional issuer/JWKS pair.
+type Provider struct {
+	Issuer  string
+	JWKSURL string
 }
 
 // LoadConfig reads the identity provider from the environment.
@@ -87,6 +100,18 @@ func LoadConfig() (Config, bool, error) {
 	}
 	if c.MinRefresh, err = config.Duration("CREST_OIDC_JWKS_MIN_REFRESH", time.Minute); err != nil {
 		return c, true, err
+	}
+	// "issuer|jwks_url" pairs, comma-separated. Malformed entries are refused,
+	// not skipped: a provider that silently is not there is a login outage
+	// diagnosed from the wrong end.
+	if extra := config.Str("CREST_OIDC_EXTRA_PROVIDERS", ""); extra != "" {
+		for _, pair := range strings.Split(extra, ",") {
+			iss, jwks, ok := strings.Cut(strings.TrimSpace(pair), "|")
+			if !ok || iss == "" || jwks == "" {
+				return c, true, fmt.Errorf("config: CREST_OIDC_EXTRA_PROVIDERS entry %q is not issuer|jwks_url", pair)
+			}
+			c.Extra = append(c.Extra, Provider{Issuer: iss, JWKSURL: jwks})
+		}
 	}
 	return c, true, nil
 }

@@ -60,7 +60,7 @@ type Forget func(subject string)
 
 // Middleware verifies bearer tokens and resolves callers. The returned Forget
 // invalidates one subject's cache entry; services that never bind ignore it.
-func Middleware(v *Verifier, binder Binder, clk clock.Clock, log *slog.Logger) (func(http.Handler) http.Handler, Forget) {
+func Middleware(v TokenVerifier, binder Binder, clk clock.Clock, log *slog.Logger) (func(http.Handler) http.Handler, Forget) {
 	cache := &bindingCache{ttl: time.Minute, clk: clk, entries: map[string]bindingEntry{}}
 	forget := func(subject string) {
 		cache.mu.Lock()

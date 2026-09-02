@@ -43,6 +43,11 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	// /v1/enrolments, which names its enroller. Revisit when org-admin
 	// identity lands (J1); #102 tracks the judgement.
 	mux.HandleFunc("POST /v1/parties", h.createParty)
+	// The eSignet login surface (#155): served only where a relying-party
+	// client is configured; the local stack's mock-oidc has no redirect flow.
+	if a := loadAuthConfig(d.Log); a != nil {
+		registerAuth(mux, d, a)
+	}
 	mux.HandleFunc("GET /v1/parties/{id}", h.getParty)
 	mux.HandleFunc("GET /v1/parties/{id}/assurance", h.getAssurance)
 	mux.HandleFunc("POST /v1/parties/{id}/roster-ids", h.addRosterID)

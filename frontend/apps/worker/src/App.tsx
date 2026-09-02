@@ -11,6 +11,7 @@ import { Work, Dispute, Declined } from "./screens/Work";
 import { Wallet, Cred, CredShow, Deferred, Share } from "./screens/Wallet";
 import { Pay, PayDetail } from "./screens/Pay";
 import { Profile, Consents, Checks, Messages, Recovery } from "./screens/Profile";
+import { AuthReturn } from "./screens/Auth";
 
 const ic = (d: ReactNode) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -102,6 +103,9 @@ function Shell() {
 export function App() {
   return (
     <Routes>
+      {/* The eSignet return leg renders outside the shell: it runs before
+          there is a session to gate on. */}
+      <Route path="/auth" element={<AuthReturn />} />
       <Route element={<Shell />}>
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="/home" element={<Home />} />

@@ -132,6 +132,73 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "500": { $ref: "#/components/responses/Internal" }
 
+  /v1/auth/login:
+    get:
+      operationId: authLogin
+      summary: Start an eSignet login
+      description: >
+        Sends the browser to eSignet's UI with a PKCE challenge (#155). Served
+        only where a relying-party client is configured (ESIGNET_URL et al.);
+        the local stack's mock issuer has no redirect flow. The `door`
+        parameter must be one of the deployment's configured door origins —
+        anything else is refused as an open redirect.
+      parameters:
+        - name: door
+          in: query
+          required: true
+          schema: { type: string }
+          description: The door origin to return to after login.
+      responses:
+        "302": { description: Redirect to eSignet's authorize page. }
+        "400":
+          description: The door is not one of this deployment's.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/auth/callback:
+    get:
+      operationId: authCallback
+      summary: eSignet's return leg
+      description: >
+        Exchanges the authorization code (private_key_jwt + PKCE verifier) and
+        bounces the browser back to the door's #/auth route with the access
+        token in the fragment — which never reaches a server log. The state
+        rides an HMAC-signed, ten-minute, HttpOnly cookie; the pairwise
+        derivation never reaches the browser, which is what retires the dev
+        issuer's /dev/pairwise from production.
+      parameters:
+        - { name: code, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+        - { name: error, in: query, schema: { type: string } }
+      responses:
+        "302": { description: Back to the door, with a token or an error. }
+        "400":
+          description: No login in flight, state mismatch, or an expired attempt.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
+  /v1/auth/me:
+    get:
+      operationId: authMe
+      summary: Who this deployment takes the caller to be
+      description: >
+        The pairwise subject reference and the party bound to it. An
+        authenticated stranger gets their subjectRef and an empty partyId —
+        the state self-registration (#155 phase B) acts on; being unknown here
+        is a fact, not an error.
+      responses:
+        "200":
+          description: The caller, as bound here.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subjectRef: { type: string }
+                  partyId: { type: string }
+                  issuer: { type: string }
+        "401":
+          description: No verified token accompanied the request.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+
   /v1/parties/{id}/identity-bindings:
     post:
       operationId: addIdentityBinding

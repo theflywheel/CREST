@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Sidecar } from "@crest/ui";
+import { isLocalStack, startEsignetLogin } from "@crest/api";
 import { useSession, describeError } from "../session";
 
 export const Ussd = () => (
@@ -23,32 +24,45 @@ export function Login() {
           Your money, explained.
         </h1>
         <p className="muted">
-          This is the dev login. It stands in for eSignet: in a real deployment you would tap "Continue with eSignet"
-          and prove who you are to the national identity system — CREST would only ever see a pairwise reference,
-          never your ID number. Here, you just pick the person.
+          You prove who you are to the identity system, not to CREST — CREST only ever sees a pairwise reference,
+          never your ID number.
         </p>
         {err ? <div className="errbar">{err}</div> : null}
         <div className="card hi">
-          <div className="person-name">Grace</div>
-          <p className="muted">Community health worker · bednet distribution, PRJ-118</p>
+          <p className="body-2">Sign in with your national identity through eSignet.</p>
           <div style={{ height: 10 }} />
-          <button
-            className="btn"
-            id="login-grace"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await s.login();
-              } catch (e) {
-                setErr(describeError(e));
-                setBusy(false);
-              }
-            }}
-          >
-            {busy ? "Signing in…" : "Continue as Grace"}
+          <button className="btn" id="login-esignet" onClick={() => startEsignetLogin()}>
+            Continue with eSignet
           </button>
+          <p className="muted" style={{ marginTop: 8 }}>
+            In this deployment eSignet authenticates against a test identity registry — a real national registry
+            arrives with a pilot (#53). The flow, and what CREST sees, is identical.
+          </p>
         </div>
+        {isLocalStack ? (
+          <div className="card">
+            <span className="eyebrow">Dev login — local stack only</span>
+            <div className="person-name">Grace</div>
+            <p className="muted">Community health worker · bednet distribution, PRJ-118</p>
+            <div style={{ height: 10 }} />
+            <button
+              className="btn secondary"
+              id="login-grace"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  await s.login();
+                } catch (e) {
+                  setErr(describeError(e));
+                  setBusy(false);
+                }
+              }}
+            >
+              {busy ? "Signing in…" : "Continue as Grace"}
+            </button>
+          </div>
+        ) : null}
         <Sidecar>
           Signing in never uploads anything about you. It only proves to CREST that the person holding this phone is
           the person the record is about.
