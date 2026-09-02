@@ -250,6 +250,15 @@ type Tokens struct {
 // (RS256 under the registration key, kid = client id) plus the PKCE verifier.
 func (c *Client) Exchange(ctx context.Context, code, redirectURI, verifier string) (Tokens, error) {
 	endpoint := c.BaseURL + "/v1/esignet/oauth/v2/token"
+	// The assertion's audience is the token endpoint as eSignet advertises it
+	// in its discovery document — built from the issuer (the UI host in this
+	// fleet), not from the host the POST actually goes to. Signing the API
+	// host's URL instead fails validation with a bare invalid_client, proven
+	// against the deployed fleet on 2026-09-02.
+	audience := endpoint
+	if c.UIBaseURL != "" {
+		audience = c.UIBaseURL + "/v1/esignet/oauth/v2/token"
+	}
 
 	signer, err := jose.NewSigner(
 		jose.SigningKey{Algorithm: jose.RS256, Key: c.Key},
@@ -266,7 +275,7 @@ func (c *Client) Exchange(ctx context.Context, code, redirectURI, verifier strin
 	assertion, err := jwt.Signed(signer).Claims(jwt.Claims{
 		Issuer:   c.ClientID,
 		Subject:  c.ClientID,
-		Audience: jwt.Audience{endpoint},
+		Audience: jwt.Audience{audience},
 		ID:       b64u(jti[:]),
 		Expiry:   jwt.NewNumericDate(now.Add(5 * time.Minute)),
 		IssuedAt: jwt.NewNumericDate(now),
