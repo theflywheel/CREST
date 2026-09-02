@@ -1,0 +1,37 @@
+{
+  "_note": [
+    "Content a screen must NOT show. This is the g2_1 class of bug: the",
+    "reference deliberately does not ask for registration documents on the",
+    "registration screen, and an implementation that helpfully adds the field",
+    "breaks the design while every positive assertion still passes.",
+    "",
+    "Design screens (n1-n5) carry their forbidden list in",
+    "tools/journey-trace/crest-design-screens.json, next to the design they",
+    "come from. This file is the allowlist for REFERENCE screens, where the",
+    "'deliberately not asked' rule lives in English prose that no parser can",
+    "turn into a selector. Every entry says why it is here.",
+    "",
+    "text: matched case-insensitively against the screen's visible text.",
+    "selector: matched as a DOM selector that must have zero matches."
+  ],
+  "screens": {
+    "g2_1": [
+      {
+        "selector": "#orgapplyform [name=\"orgreg\"]",
+        "why": "The reference's green callout on g2_1 says registration documents, certificates and letterheads are deliberately not asked here — they come later, and only once wider terms need them. A registration-number field on this screen is the bug this whole gate exists to catch. Also asserted directly in apps.spec.js; kept here so the rule survives if that test is rewritten."
+      }
+    ],
+    "p2_21": [
+      {
+        "text": "silently dropped",
+        "why": "p2_21's rule is that a mismatch is somebody named, not a status: no row may be described as dropped. The reference callout says none of this is a worker's fault and none of it reaches a worker's app."
+      }
+    ],
+    "p1_2": [
+      {
+        "text": "choose your own role",
+        "why": "p1_2 — a role is held, not just recorded. Authority is granted by somebody with the authority to grant it; a screen offering self-selection would make it self-declaration (same rule as design screen n1)."
+      }
+    ]
+  }
+}
