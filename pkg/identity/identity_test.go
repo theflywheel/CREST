@@ -109,6 +109,38 @@ func goodClaims(i *issuer, now time.Time) map[string]any {
 	}
 }
 
+// eSignet publishes self-signed x5c certificates whose serial numbers Go's
+// x509 refuses ("negative serial number"), and go-jose fails the whole key on
+// an unparseable chain. The chain is dropped before parsing — the configured
+// JWKS URL is the trust anchor, not the certificate — so a provider with a
+// broken x5c must still verify (this rejected every deployed eSignet login on
+// 2026-09-02).
+func TestAJWKSWithAnUnparseableCertChainStillServesItsKeys(t *testing.T) {
+	i := newIssuer(t)
+	// Re-serve the same key with a garbage x5c bolted on.
+	good := jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{
+		Key: i.key.Public(), KeyID: i.kid, Algorithm: string(jose.ES256), Use: "sig",
+	}}}
+	raw, _ := json.Marshal(good)
+	var m map[string][]map[string]any
+	_ = json.Unmarshal(raw, &m)
+	m["keys"][0]["x5c"] = []string{"bm90IGEgY2VydGlmaWNhdGU="} // "not a certificate"
+	poisoned, _ := json.Marshal(m)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(poisoned)
+	}))
+	t.Cleanup(srv.Close)
+
+	now := time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC)
+	cfg := i.config()
+	cfg.JWKSURL = srv.URL
+	v := newTestVerifier(cfg, clock.NewFake(now))
+	if _, err := v.Verify(context.Background(), i.mint(t, goodClaims(i, now))); err != nil {
+		t.Fatalf("a key with a broken cert chain must still verify: %v", err)
+	}
+}
+
 func TestAValidTokenEstablishesACaller(t *testing.T) {
 	i := newIssuer(t)
 	now := time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC)
