@@ -241,9 +241,9 @@ export function OnboardStatus() {
             ["Registration no.", ob.regNumber || "—"],
             ["Contact", ob.contactName || "—"],
             ["Applied", reg.appliedAt || "—"],
-            ["Terms accepted", reg.termsAcceptedAt ? `${reg.termsId} v${reg.termsVersion}` : "not yet"],
+            ["Terms accepted", reg.acceptedAt ? `${reg.termsId} v${reg.termsVersion}` : "not yet"],
             ["Decided by", reg.decidedBy || "—"],
-            ["Reason", reg.decisionReason || "—"],
+            ["Reason", reg.reason || "—"],
           ]}
         />
       ) : null}

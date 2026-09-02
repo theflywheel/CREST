@@ -126,7 +126,7 @@
    "status": "implemented",
    "app": "console",
    "route": "#/onboard/status",
-   "note": "GET /v1/organisations/{id}/registration: APPROVED with decider and terms version; 'on nobody's project' is true — no project membership exists"
+   "note": "GET /v1/organisations/{id}/registration: state, exact terms version, decider. Under REGISTRY_ORG_APPROVAL=manual (the local default) the terminal state waits on the operator's decision; on-terms-acceptance approves in the acceptance's transaction. 'On nobody's project' is true — no project membership exists"
   },
   {
    "id": "g2_5",

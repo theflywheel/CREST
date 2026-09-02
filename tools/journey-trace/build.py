@@ -72,7 +72,7 @@ MAPPING = {
     "g4_3": m("compressed", "console", "#/onboard/status", "The approval decision exists as POST /v1/organisations/{id}/decision (unit-tested), but the console has no reviewer surface for it; the deployed model is REGISTRY_ORG_APPROVAL=on-terms-acceptance"),
     # ---- G-2 Onboarding Authorising Signatory (console, public onboarding) ----
     "g2_1": m("implemented", "console", "#/onboard", "Six-field identity form (name, kind, sector, registration number, contact name, contact email) → POST /v1/organisations. Gap kept honest: the Party schema is closed (additionalProperties:false), so kind/sector/regNo/contact name are held client-side for the flow and do not persist server-side"),
-    "g2_4": m("implemented", "console", "#/onboard/status", "GET /v1/organisations/{id}/registration: APPROVED with decider and terms version; 'on nobody's project' is true — no project membership exists"),
+    "g2_4": m("implemented", "console", "#/onboard/status", "GET /v1/organisations/{id}/registration: state, exact terms version, decider. Under REGISTRY_ORG_APPROVAL=manual (the local default) the terminal state waits on the operator's decision; on-terms-acceptance approves in the acceptance's transaction. 'On nobody's project' is true — no project membership exists"),
     "g2_5": m("missing", note="Invitation-before-or-after ordering: no invitation service"),
     "g2_6": m("missing", note="Asking for wider terms later: only one terms listing exists (GET /v1/terms), no term-upgrade request"),
     "g2_7": m("missing", note="Qualification documents: no document upload on onboarding"),

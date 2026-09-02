@@ -33,7 +33,10 @@ export function Ratify() {
             rows={[
               ["Definition", <span className="mono">{def.id}</span>],
               ["Version", String(def.version ?? "—")],
-              ["Activity", def.activity || def.name || "—"],
+              [
+                "Activity",
+                def.activity?.label || def.activity?.code || def.name || def.title || "—",
+              ],
               ["Drafted by", "the work definition author (a separate session in this console)"],
             ]}
           />
