@@ -1,6 +1,7 @@
 package esignet
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -8,6 +9,8 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -68,6 +71,36 @@ func TestAuthorizeURLCarriesTheContract(t *testing.T) {
 		if q.Get(k) != want {
 			t.Fatalf("%s = %q, want %q", k, q.Get(k), want)
 		}
+	}
+}
+
+// The assertion's audience must be the token endpoint as eSignet advertises
+// it — built from the issuer (the UI host), not the API host the POST goes
+// to. eSignet rejects an API-host audience with a bare invalid_client; proven
+// against the deployed fleet on 2026-09-02.
+func TestExchangeSignsTheAdvertisedAudience(t *testing.T) {
+	var gotAssertion string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		gotAssertion = r.Form.Get("client_assertion")
+		_, _ = w.Write([]byte(`{"access_token":"tok"}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "https://ui.example", "crest", testKey(t))
+	if _, err := c.Exchange(context.Background(), "code", "https://door.example/cb", "verifier"); err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(gotAssertion, ".")
+	if len(parts) != 3 {
+		t.Fatalf("assertion is not a compact JWT: %q", gotAssertion)
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `"https://ui.example/v1/esignet/oauth/v2/token"`; !strings.Contains(string(payload), want) {
+		t.Fatalf("assertion audience must be the UI-host token endpoint, payload: %s", payload)
 	}
 }
 

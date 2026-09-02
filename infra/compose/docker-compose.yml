@@ -371,6 +371,14 @@ services:
       MOSIP_ESIGNET_HOST: localhost:${ESIGNET_PORT:-58088}
       redis.host: redis
       redis.port: "6379"
+      # Same FINDING (#4) as eSignet above: keymanager's aliases live in the
+      # database while the `local` profile's PKCS12 lives on the container
+      # filesystem. Without the volume, recreating this container strands the
+      # aliases and the service refuses to start with `No such alias` — which
+      # is exactly what took production down when Railway recycled it.
+      MOSIP_KERNEL_KEYMANAGER_HSM_CONFIG_PATH: /home/mosip/keys/mock_local.p12
+    volumes:
+      - mockidentitykeys:/home/mosip/keys
     depends_on:
       postgres:
         condition: service_healthy
@@ -502,5 +510,6 @@ volumes:
   certifykeys:
   certifydata:
   esignetkeys:
+  mockidentitykeys:
   objectdata:
   dedipgdata:
