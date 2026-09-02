@@ -18,7 +18,7 @@ docroot; `make apps-dev` runs their Vite dev servers.
 | `worker` *(moved to `frontend/apps/worker`)* | The worker's app: the wallet-not-a-dashboard — record, money **including why any of it is held**, credentials, who checked me, consents | J7 (W-1) |
 | `enrolment` | Field app: assisted registration, voice consent read aloud, duplicate holds, confirm-what-you-saw, close the roster. Offline-aware | J6 (W-2), J8 (W-4) |
 | `console` | One console, role-based views — project status/payments/trace, defining the work, payment set-up, organisation, instance, custodian queues, support, funder | J1–J5, J10, J11 |
-| `verify` | Account-free checking: yes plus facts, refusals shown as refusals, bounded batches, the external-institution panel | J9 (V-1/V-2), P-10 |
+| `verify` *(moved to `frontend/apps/verify`)* | Account-free checking: yes plus facts, refusals shown as refusals, bounded batches, the external-institution panel | J9 (V-1/V-2), P-10 |
 | `shared` | The design system (DIGIT palette tokens lifted verbatim from the reference), the API client, the real first-login path, fixture ids | — |
 | `web` | **The earlier single-page PoC, shared externally — do not touch.** Six faces in one page; superseded by the apps above but kept exactly as shared | — |
 
