@@ -1,4 +1,30 @@
 {
-  "_note": ["No quarantines today: every in-scope screen the ledger calls implemented is reachable. Kept as an empty file because the gate reads it, and because the next unreachable screen must land here with an issue number rather than as a silent skip."],
-  "screens": {}
+  "_note": [
+    "Screens the ledger calls implemented that the gate cannot judge today,",
+    "each with an issue. A quarantined screen's failures are printed and",
+    "recorded, never blocking — and one that starts passing every facet FAILS",
+    "the run, so a stale quarantine cannot survive the thing it was hiding",
+    "being fixed.",
+    "",
+    "The three G-2 entries share one root: the onboarding terms/status screens",
+    "read the in-session application from sessionStorage (written by the g2_1",
+    "register form), and the gate's arrival vocabulary can only cold-load a",
+    "route — it lands on the honest 'No application in progress' frame. The",
+    "screens are proven by apps.spec.js, which drives the whole flow; the gap",
+    "is the gate's, and #179 is where it closes."
+  ],
+  "screens": {
+    "g2_4": {
+      "issue": "#179",
+      "why": "Implemented at console #/onboard/status, but the screen shows the application the session started and the gate arrives with no session — it sees 'No application in progress', not the decided registration g2_4 draws (state, exact terms version, decider). Needs a scripted-flow arrival mode in the gate."
+    },
+    "g2_11": {
+      "issue": "#179",
+      "why": "Implemented at console #/onboard/terms, but the published-terms screen is scoped to the session's in-progress application (orgId from sessionStorage) and the gate arrives with no session — it sees 'No application in progress' instead of the terms list and 'Request these terms'. Needs a scripted-flow arrival mode in the gate."
+    },
+    "g2_13": {
+      "issue": "#179",
+      "why": "Implemented at console #/onboard/status (the approved terminal state of the same status screen as g2_4), and unreachable by cold-loading the route for the same reason — no in-session application, so the gate sees 'No application in progress'. Needs a scripted-flow arrival mode in the gate."
+    }
+  }
 }

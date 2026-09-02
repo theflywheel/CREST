@@ -12,9 +12,9 @@
     "such — the gate never silently passes a screen it did not visit."
   ],
   "scope": {
-    "journeys": ["p1", "p2"],
+    "journeys": ["p1", "p2", "g2"],
     "designScreens": ["n1", "n2", "n3", "n4", "n5"],
-    "why": "Phase 1 is scoped to J3 — setting up a project (P-1 Org Admin, P-2 Project Configurator) — plus the five connective-tissue screens our own design adds (docs/design/j3-connective-tissue/README.md)."
+    "why": "Phase 1 is scoped to J3 — setting up a project (P-1 Org Admin, P-2 Project Configurator) — plus the five connective-tissue screens our own design adds (docs/design/j3-connective-tissue/README.md). The G-2 wave adds the org onboarding journey (g2_1..g2_13; g2_2/g2_3 do not exist in the reference): the onboarding door is deliberately reachable with no persona (#20, #155 phase D), so every g2 arrival is anon. Screens the ledger does not call implemented skip with the ledger's own gap note; their entries carry a note naming the missing backend capability so the map stays honest and flips naturally when the capability lands."
   },
   "screens": {
     "p1_1": { "app": "console", "arrive": "console:orgadmin", "route": "#/org" },
@@ -42,6 +42,18 @@
     "p2_19": { "app": "console", "arrive": "console:configurator", "route": "#/intake" },
     "p2_20": { "app": "field", "arrive": "field", "route": "#/roster" },
     "p2_21": { "app": "console", "arrive": "console:custodian", "route": "#/unclear" },
+
+    "g2_1": { "app": "console", "arrive": "anon", "route": "#/onboard" },
+    "g2_4": { "app": "console", "arrive": "anon", "route": "#/onboard/status" },
+    "g2_5": { "app": "console", "arrive": "anon", "route": "", "note": "no surface: invitation-before-or-after ordering needs an invitation service, which does not exist — skips on ledger status until it lands" },
+    "g2_6": { "app": "console", "arrive": "anon", "route": "", "note": "no surface: asking for wider terms later needs a terms-upgrade request; only GET /v1/terms exists — skips on ledger status until it lands" },
+    "g2_7": { "app": "console", "arrive": "anon", "route": "", "note": "no surface: the qualification-documents screen needs document upload on onboarding, which does not exist — skips on ledger status until it lands" },
+    "g2_8": { "app": "console", "arrive": "anon", "route": "#/onboard/status", "note": "ledger status is compressed — the terminal screen exists but the 'what to watch for' guidance is partial; the gate skips a screen not statused implemented" },
+    "g2_9": { "app": "console", "arrive": "anon", "route": "", "note": "no surface: receiving an invitation/enablement needs an invitation service, which does not exist — skips on ledger status until it lands" },
+    "g2_10": { "app": "console", "arrive": "anon", "route": "", "note": "no surface: 'Live, and what to do first' post-enablement onboarding is not built (needs the invitation service's grant to exist first) — skips on ledger status until it lands" },
+    "g2_11": { "app": "console", "arrive": "anon", "route": "#/onboard/terms" },
+    "g2_12": { "app": "console", "arrive": "anon", "route": "", "note": "no surface: certificate checks have no verification backend; the onboarding rail names this step as 'not built' rather than faking it — skips on ledger status until it lands" },
+    "g2_13": { "app": "console", "arrive": "anon", "route": "#/onboard/status" },
 
     "n1": { "app": "console", "arrive": "anon", "route": "" },
     "n2": { "app": "console", "arrive": "console:orgadmin", "route": "#/where" },
