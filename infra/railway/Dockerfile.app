@@ -22,7 +22,6 @@ RUN mkdir -p /site \
 
 FROM nginx:1.27-alpine
 ARG APP
-COPY apps/shared /usr/share/nginx/html/shared
 COPY --from=webapps /site/${APP} /usr/share/nginx/html
 COPY infra/railway/nginx.apps.conf.template /etc/nginx/templates/default.conf.template
 # Railway injects PORT; the stock nginx entrypoint substitutes ${PORT}.
