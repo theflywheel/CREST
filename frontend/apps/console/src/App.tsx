@@ -25,7 +25,10 @@ import { Status, Stp, Quality, Payments, Trace, Reports } from "./views/Dashboar
 import { DefineWork, PaySetup, Instance, Portfolio } from "./views/Admin";
 import { Ratify } from "./views/Ratify";
 import { Find, Dupes, Unclear, Recoveries, Review, Cases, SupportTraceNote } from "./views/Custodian";
-import { OnboardApply, OnboardTerms, OnboardStatus } from "./views/Onboard";
+import { OnboardApply, OnboardTerms, OnboardStatus, OnboardChecks } from "./views/Onboard";
+import {
+  OnboardStandalone, OnboardWider, OnboardDocuments, OnboardReview, OnboardInvited, OnboardProject,
+} from "./views/OnboardOrg";
 import { SignIn } from "./views/SignIn";
 import {
   Projects as OrgHome, NewProject, People, Workers, Validation, Intake, Finance as FinanceConnect, Navigation,
@@ -211,7 +214,17 @@ export function App() {
           applying is the open bootstrap by design (#20). */}
       <Route path="/onboard" element={<OnboardApply />} />
       <Route path="/onboard/terms" element={<OnboardTerms />} />
+      <Route path="/onboard/checks" element={<OnboardChecks />} />
       <Route path="/onboard/status" element={<OnboardStatus />} />
+      {/* G-2 after registration: the organisation's standing view (g2_5–g2_10).
+          Same open door as /onboard — the session acts as the organisation the
+          flow registered, proven by the same first-login bind, not asserted. */}
+      <Route path="/onboard/standalone" element={<OnboardStandalone />} />
+      <Route path="/onboard/wider" element={<OnboardWider />} />
+      <Route path="/onboard/documents" element={<OnboardDocuments />} />
+      <Route path="/onboard/review" element={<OnboardReview />} />
+      <Route path="/onboard/invited" element={<OnboardInvited />} />
+      <Route path="/onboard/project" element={<OnboardProject />} />
       <Route element={<Shell />}>
         {/* J3 — setting up a project */}
         <Route path="/org" element={<OrgHome />} />

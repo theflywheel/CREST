@@ -8,6 +8,8 @@ const { test, expect } = require("@playwright/test");
 const FIX = {
   workerA: "did:crest:party:01JCREST00000000000000WRKA",
   org: "did:crest:party:01JCREST000000000000000RGN",
+  custodian: "did:crest:party:01JCREST00000000000000CSTD",
+  project: "crest:context:01JCREST00000000000000PRJC",
 };
 
 // Every page object carries its uncaught exceptions; .errbar is what the apps
@@ -585,4 +587,244 @@ test("console: the J3 handover is real, and so is everything after it", async ({
   await settle(page);
   await expect(page.locator("body")).toContainText("Bednet campaign " + stamp);
   await assertAlive(page, errors, "console J3 phase B walk");
+});
+
+// ── G-2: the whole onboarding journey, driven through the screens ───────────
+// register → standalone → invited → decline-with-reason → re-invite →
+// terms-as-request → checks → operator decision → accept → the project →
+// wider terms → documents → sent for review → withdraw → resubmit → recorded
+// checks → approved. Every assertion reads a value back from the registry
+// through a screen, and the walk asserts the signed-in identity (the appbar's
+// who-label), not just that an appbar exists.
+//
+// The acts that are NOT the organisation's — a project sending an invitation,
+// the operator deciding, a reviewer recording a check verdict — go through
+// the same service doors as bearer-authenticated API calls by the party who
+// holds that act (the fixture organisation owns the seeded project; the
+// custodian decides), exactly as the seeder and a real deployment would.
+const G2 = (() => {
+  const base = process.env.BASE_URL || "http://localhost:59110";
+  const local = new URL(base).port === "59110";
+  const host = new URL(base).hostname;
+  return {
+    parties: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-registry",
+    oidc: local ? `http://${host}:59103` : base.replace(/\/$/, "") + "/api/crest-mock-oidc",
+  };
+})();
+
+async function mintToken(request, partyId) {
+  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const r = await request.post(G2.oidc + "/token", {
+    data: { sub, aud: "crest", expiresIn: "1h" },
+  });
+  expect(r.ok(), "the dev issuer mints a token for " + partyId).toBeTruthy();
+  const d = await r.json();
+  return d.accessToken || d.access_token || d.token;
+}
+
+async function asParty(request, partyId, method, path, body) {
+  const token = await mintToken(request, partyId);
+  const r = await request.fetch(G2.parties + path, {
+    method,
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    data: body === undefined ? undefined : body,
+  });
+  return r;
+}
+
+test("console: the G-2 onboarding journey is real, screen by screen", async ({ page, request }) => {
+  test.setTimeout(180000);
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+  const contact = "Hon. Wangari Otieno";
+
+  // g2_1 — register. The application is anonymous by design (#20).
+  await page.goto("/console/#/onboard");
+  await settle(page);
+  await page.fill('[name="orgname"]', "Lakeside Health Trust " + stamp);
+  await page.selectOption('[name="country"]', "KE");
+  await page.fill('[name="workemail"]', `w.otieno+${stamp}@lakeside.example.org`);
+  await page.fill('[name="contactname"]', contact);
+  await page.click("#orgapplyform button.dominant");
+  await page.waitForURL(/#\/onboard\/terms/, { timeout: 20000 });
+  await settle(page);
+  const orgId = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem("crest.console.onboarding") || "{}").orgId);
+  expect(orgId, "the registry answered with the organisation's id").toMatch(/^did:crest:party:/);
+
+  // g2_5 — the registration stands alone: the screen signs the session in AS
+  // the organisation and reads its real (empty) invitation inbox.
+  await page.evaluate(() => { location.hash = "#/onboard/standalone"; });
+  await settle(page);
+  await expect(page.locator(".appbar .who-label")).toContainText(contact);
+  await expect(page.locator(".appbar .who-label")).toContainText("Onboarding Authorising Signatory");
+  await expect(page.locator("body")).toContainText("Sitting here uninvited is normal, not stalled");
+  await expect(page.locator("body")).toContainText("Still being decided:");
+  await assertAlive(page, errors, "g2_5 standalone");
+
+  // A project invites the new organisation — the fixture org owns the seeded
+  // project and sends the offer through the real endpoint.
+  const invite = () =>
+    asParty(request, FIX.org, "POST", `/v1/projects/${FIX.project}/invitations`, {
+      partyId: orgId,
+      functions: ["submit-work-evidence"],
+      period: { start: "2026-09-01T00:00:00Z", end: "2027-03-31T00:00:00Z" },
+      note: "Nakuru community health, wards 4 and 7",
+    });
+  let r = await invite();
+  expect(r.status(), "the project's offer is recorded").toBe(201);
+
+  // g2_9 — the inbox shows the offer; accepting BEFORE the registry decided
+  // is refused with "not yet", and the offer does not expire with the wait.
+  await page.evaluate(() => { location.hash = "#/onboard/invited"; });
+  await settle(page);
+  await expect(page.locator(".appbar .who-label")).toContainText(contact);
+  await expect(page.locator("body")).toContainText("One waiting. You did not apply for this and did not need to.");
+  await expect(page.locator("body")).toContainText("submit-work-evidence");
+  await page.click("#acceptinvitation");
+  await expect(page.locator("body")).toContainText(/Not yet, not no/i);
+  await expect(page.locator(".errbar")).toHaveCount(0);
+
+  // Declining requires a reason — first without one (refused on-screen), then
+  // with one (recorded by the service, shown back from the read).
+  await page.click("#declineinvitation");
+  await expect(page.locator(".errbar")).toContainText(/reason/i);
+  await page.fill('[name="declineinvreason"]', "outside our ward coverage " + stamp);
+  await page.click("#declineinvitation");
+  await expect(page.locator("body")).toContainText("declined — outside our ward coverage " + stamp, { timeout: 20000 });
+
+  // The project re-invites; the walk continues on the fresh offer.
+  r = await invite();
+  expect(r.status(), "a second offer after a decline").toBe(201);
+
+  // g2_11 — "Request these terms" records the acceptance and walks to the
+  // checks screen (g2_12), which is the Certificates step, honestly empty of
+  // verdicts (no automated checker exists; nothing pretends one ran).
+  await page.evaluate(() => { location.hash = "#/onboard/terms"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Request these terms");
+  await page.click("#requestterms");
+  await page.waitForURL(/#\/onboard\/checks/, { timeout: 20000 });
+  await settle(page);
+  await expect(page.locator("#stepcounter")).toContainText("Registration · 3 of 4");
+  await expect(page.locator("body")).toContainText("Read the third row");
+  await expect(page.locator("body")).toContainText(/No check verdict has been recorded yet/i);
+  await page.click("#submitchecks");
+  await page.waitForURL(/#\/onboard\/status/, { timeout: 20000 });
+  await settle(page);
+  await expect(page.locator("body")).toContainText(/TERMS_ACCEPTED|PENDING/);
+
+  // The operator decides — never the organisation itself. The custodian is
+  // this stack's named decider.
+  r = await asParty(request, FIX.custodian, "POST", `/v1/organisations/${orgId}/decision`, {
+    approve: true, decidedBy: FIX.custodian,
+  });
+  expect(r.status(), "the registration decision").toBe(200);
+
+  // g2_9 → g2_10 — the acceptance now stands, and creates the grant in the
+  // same transaction; the project screen reads it back.
+  await page.evaluate(() => { location.hash = "#/onboard/invited"; });
+  await settle(page);
+  await page.click("#acceptinvitation");
+  await page.waitForURL(/#\/onboard\/project/, { timeout: 20000 });
+  await settle(page);
+  await expect(page.locator(".appbar .who-label")).toContainText(contact);
+  await expect(page.locator("body")).toContainText("You are on crest:context:");
+  await expect(page.locator("body")).toContainText("crest:authorization:");
+  await expect(page.locator("body")).toContainText("To 31 March 2027");
+  await expect(page.locator("body")).toContainText("Three clocks, and only one of them runs out");
+  await assertAlive(page, errors, "g2_10 project");
+
+  // The operator publishes a wider terms set (the same open door the seeder
+  // uses); the organisation can now ask to move to it.
+  // Unique per run: a re-run against the same stack must not find its own
+  // earlier set already published (and possibly already accepted at
+  // registration, since the terms screen offers the newest published set).
+  const widerId = "crest:terms:01JCRESTG2WDERT" + stamp + "PAY00";
+  r = await request.post(G2.parties + "/v1/terms", {
+    data: {
+      id: widerId, version: 1, name: "Full delivery with payment",
+      permissions: ["submit-work-evidence", "specify-definition", "ratify-definition", "set-rates", "instruct-payment"],
+      publishedAt: "2026-09-01T00:00:00Z",
+    },
+  });
+  expect(r.status(), "the operator publishes the wider set").toBe(201);
+
+  // g2_6 — the wider set is a real published object, picked and requested.
+  await page.evaluate(() => { location.hash = "#/onboard/wider"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("You need wider terms to put your name to something");
+  await expect(page.locator("body")).toContainText("Full delivery with payment, version 1");
+  await page.click(`[data-terms="${widerId}@1"]`);
+  await page.click("#requestwider");
+  await page.waitForURL(/#\/onboard\/documents/, { timeout: 20000 });
+  await settle(page);
+
+  // g2_7 — documents are DECLARED references, never uploads: no file input
+  // exists on the screen, and the declaration round-trips through the draft.
+  await expect(page.locator("body")).toContainText("What we need to see");
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
+  await page.fill('[name="dockind0"]', "registration-certificate");
+  await page.fill('[name="docref0"]', "custody://lakeside/reg-cert-" + stamp);
+  await page.fill('[name="dochash0"]', "sha256:deadbeef" + stamp);
+  await page.click("#savedraft");
+  await expect(page.locator("body")).toContainText(/Draft saved — 1 document reference/i, { timeout: 20000 });
+  await page.click("#submitrequest");
+  await page.waitForURL(/#\/onboard\/review/, { timeout: 20000 });
+  await settle(page);
+
+  // g2_8 — sent for review, promoted from compressed: the real request state,
+  // and Withdraw is the organisation's own real act.
+  await expect(page.locator("body")).toContainText("Sent for review");
+  await expect(page.locator("body")).toContainText("What is not blocked");
+  await expect(page.locator(".stat .n", { hasText: "Open" })).toBeVisible();
+  await page.click("#withdrawrequest");
+  await expect(page.locator(".stat .n", { hasText: "WITHDRAWN" })).toBeVisible({ timeout: 20000 });
+
+  // Asking again is a new request — the old answer survives as its own record.
+  await page.evaluate(() => { location.hash = "#/onboard/wider"; });
+  await settle(page);
+  await page.click(`[data-terms="${widerId}@1"]`);
+  await page.click("#requestwider");
+  await page.waitForURL(/#\/onboard\/documents/, { timeout: 20000 });
+  await settle(page);
+  await page.fill('[name="dockind0"]', "registration-certificate");
+  await page.fill('[name="docref0"]', "custody://lakeside/reg-cert-" + stamp);
+  await page.click("#submitrequest");
+  await page.waitForURL(/#\/onboard\/review/, { timeout: 20000 });
+  await settle(page);
+  const requestId = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem("crest.console.onboarding") || "{}").requestId);
+  expect(requestId).toMatch(/^crest:terms-request:/);
+
+  // A check is a RECORDED VERDICT with a named owner — the reviewer records
+  // it through the real door, and the screen shows verdict and owner.
+  r = await asParty(request, FIX.custodian, "POST", `/v1/terms-requests/${requestId}/checks`, {
+    name: "business-register", outcome: "PASS", ownerKind: "party", recordedBy: FIX.custodian,
+    note: "confirmed against the Business Registration Service",
+  });
+  expect(r.status(), "the check verdict is recorded").toBe(201);
+  await page.evaluate(() => { location.hash = "#/onboard/review"; });
+  await page.reload();
+  await settle(page);
+  await expect(page.locator("body")).toContainText("business-register");
+  await expect(page.locator("body")).toContainText("PASS — " + FIX.custodian);
+
+  // The decision is a named person's, never the applicant's; approval moves
+  // the registration to the requested terms in the same transaction.
+  r = await asParty(request, FIX.custodian, "POST", `/v1/terms-requests/${requestId}/decision`, {
+    approve: true, decidedBy: FIX.custodian,
+  });
+  expect(r.status(), "the terms request decision").toBe(200);
+  await page.reload();
+  await settle(page);
+  await expect(page.locator(".stat .n", { hasText: "APPROVED" })).toBeVisible({ timeout: 20000 });
+  await expect(page.locator("body")).toContainText("Decided by " + FIX.custodian);
+
+  // The registration now shows the wider terms — read from the registry.
+  await page.evaluate(() => { location.hash = "#/onboard/status"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("APPROVED");
+  await expect(page.locator("body")).toContainText(widerId + " v1");
+  await assertAlive(page, errors, "G-2 whole journey");
 });

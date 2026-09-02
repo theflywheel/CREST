@@ -9,8 +9,8 @@
 // transaction. No seeded party, no persona, no hidden admin step.
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "@crest/api";
-import { Chip, ErrBar, KV, Sidecar } from "@crest/ui";
+import { api, loginAs } from "@crest/api";
+import { Callout, Chip, ErrBar, GridTable, KV, Sidecar } from "@crest/ui";
 
 const OKEY = "crest.console.onboarding";
 
@@ -36,20 +36,38 @@ function storeOnboarding(v: { orgId: string; name: string } & Partial<OrgProfile
     /* only costs the reload convenience */
   }
 }
+export function updateOnboarding(patch: Record<string, unknown>) {
+  const cur = readOnboarding();
+  if (cur) storeOnboarding({ ...cur, ...(patch as object) } as any);
+}
 
-/* The reference's four-step flow. Certificates (g2_12) has no surface yet —
-   it renders in the rail as the named gap it is, never as a fake step. */
+// The organisation's own session. The onboarding flow is anonymous until the
+// application exists; the screens after it (invitations, terms requests) act
+// IN the organisation's name, and the services rightly refuse an asserted
+// party id. So the flow authenticates the same way a first login does: mint a
+// token from the deployment's issuer and self-bind, which the never-yet-bound
+// organisation accepts as bootstrap (#102). Idempotent per orgId.
+let orgSessionFor: string | null = null;
+export async function ensureOrgSession(orgId: string): Promise<void> {
+  if (orgSessionFor === orgId) return;
+  await loginAs(orgId);
+  orgSessionFor = orgId;
+}
+
+/* The reference's four-step flow. Since the G-2 screens wave, every step has
+   a surface — Certificates is the pre-live checks screen (g2_12). */
 const STEPS: ReadonlyArray<{ key: string; label: string; gap?: boolean }> = [
   { key: "register", label: "Register" },
   { key: "terms", label: "Terms" },
-  { key: "certificates", label: "Certificates", gap: true },
+  { key: "certificates", label: "Certificates" },
   { key: "done", label: "Done" },
 ];
 
-function OnboardFrame(props: {
+export function OnboardFrame(props: {
   step: number; // 1-based position in STEPS
   title: string;
   who?: string;
+  counter?: boolean; // the reference omits the counter on some frames (g2_5)
   children: React.ReactNode;
 }) {
   const active = STEPS[props.step - 1];
@@ -59,7 +77,9 @@ function OnboardFrame(props: {
         <span className="mark" />
         <span className="t">CREST Console · Programme onboarding</span>
         <span className="who">
-          <span className="who-label">{props.who || "Onboarding Authorising Signatory"}</span>
+          <span className="who-label">
+            {props.who ? `${props.who} · Onboarding Authorising Signatory` : "Onboarding Authorising Signatory"}
+          </span>
         </span>
       </div>
       <div className="console-body">
@@ -70,10 +90,9 @@ function OnboardFrame(props: {
               key={s.key}
               className={s.key === active.key ? "active" : ""}
               disabled
-              style={{ cursor: "default", ...(s.gap ? { color: "var(--text-3)" } : null) }}
+              style={{ cursor: "default" }}
             >
               {i + 1} · {s.label}
-              {s.gap ? " — not built" : ""}
             </button>
           ))}
         </div>
@@ -82,9 +101,11 @@ function OnboardFrame(props: {
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
                 <span className="eyebrow">Onboarding an organisation · G-2</span>
-                <span className="eyebrow" id="stepcounter">
-                  Registration · {props.step} of {STEPS.length}
-                </span>
+                {props.counter === false ? null : (
+                  <span className="eyebrow" id="stepcounter">
+                    Registration · {props.step} of {STEPS.length}
+                  </span>
+                )}
               </div>
               <div style={{ height: 3, background: "var(--generic-bg)", borderRadius: 2, marginTop: 8 }}>
                 <div
@@ -294,8 +315,33 @@ export function OnboardTerms() {
       setBusy(false);
     }
   };
+  // g2_11's own primary: "Request these terms" carries the acceptance into
+  // the checks screen (g2_12). At registration time, accepting the published
+  // version IS the request — so this records the acceptance (idempotently
+  // tolerant of one already recorded) and walks on to what is checked.
+  const requestThese = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      try {
+        await api.post("parties", `/v1/organisations/${ob.orgId}/terms-acceptance`, {
+          termsId: t.id,
+          termsVersion: t.version,
+          acceptedBy: ob.orgId,
+        });
+      } catch (e: any) {
+        // An acceptance already on record is not a failure of this walk; a
+        // decided application refusing re-acceptance likewise. Anything else is.
+        if (!(e && (e.status === 409 || /already/i.test(String(e.message))))) throw e;
+      }
+      nav("/onboard/checks");
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+      setBusy(false);
+    }
+  };
   return (
-    <OnboardFrame step={2} title="The terms, by exact version" who={ob.contactName}>
+    <OnboardFrame step={2} title="Standard delivery terms" who={ob.contactName}>
       <div className="pane-cols">
         <div>
           <p className="body-2">
@@ -319,18 +365,162 @@ export function OnboardTerms() {
                 ]}
               />
               <div className="btn-row" style={{ marginTop: 10 }}>
-                <button className="btn" id="acceptterms" disabled={busy} onClick={accept}>
+                <button className="btn secondary" id="acceptterms" disabled={busy} onClick={accept}>
                   {busy ? "Recording acceptance…" : `Accept v${t.version} for ${ob.name}`}
+                </button>
+                <button className="btn dominant" id="requestterms" disabled={busy} onClick={requestThese}>
+                  Request these terms
                 </button>
               </div>
             </div>
           )}
+          {terms && terms.length > 1 ? (
+            <div style={{ marginTop: 12 }}>
+              <Callout kind="teal" title="Other sets you could ask for instead">
+                {terms.slice(1).map((o: any, i: number) => (
+                  <span key={o.id}>
+                    {i > 0 ? " · " : ""}
+                    <b>{o.name}</b> v{o.version} — {(o.permissions || []).join(", ")}
+                  </span>
+                ))}
+                {" — asking for a wider set later goes through a reviewed request, never a quiet swap."}
+              </Callout>
+            </div>
+          ) : null}
         </div>
-        <Sidecar>
-          Where this deployment configured approval-on-terms-acceptance, approval happens in the same transaction as
-          the acceptance and is recorded as a policy decision — a decider is always named, even when the decider is a
-          rule. Under the manual model, the instance operator decides.
-        </Sidecar>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Callout kind="teal" title="Why this cannot shift under you">
+            These terms are fixed. If they are revised, a new version is published and you would choose whether to
+            move — nobody changes the ones you are on underneath you.
+          </Callout>
+          <Callout kind="grey" title="The same object, two words">
+            What these screens call a <b>set of terms</b> is the object the PRD calls a <b>policy</b>. Terms is the
+            word an organisation reads; policy is the word the registry uses. One object, one version number, one
+            approval.
+          </Callout>
+          <Sidecar>
+            Where this deployment configured approval-on-terms-acceptance, approval happens in the same transaction as
+            the acceptance and is recorded as a policy decision — a decider is always named, even when the decider is a
+            rule. Under the manual model, the instance operator decides.
+          </Sidecar>
+        </div>
+      </div>
+    </OnboardFrame>
+  );
+}
+
+/* g2_12 — what is checked before this is live. The Certificates step of the
+   registration rail. There is no automated checker in this codebase and this
+   screen fakes none: a check is a RECORDED VERDICT with a named owner (a
+   party, or a named policy), read back from the registry. At registration
+   time under this deployment's approval model there may be no open
+   terms-request to hang verdicts on — the screen says which world it is in
+   rather than inventing rows. */
+export function OnboardChecks() {
+  const nav = useNavigate();
+  const ob = readOnboarding();
+  const [reg, setReg] = useState<any | null>(null);
+  const [request, setRequest] = useState<any | null>(null);
+  const [checks, setChecks] = useState<any[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const load = async () => {
+    if (!ob) return;
+    try {
+      await ensureOrgSession(ob.orgId);
+      const r = await api.get("parties", `/v1/organisations/${ob.orgId}/registration`);
+      setReg(r);
+      const list = await api.get("parties", `/v1/organisations/${ob.orgId}/terms-requests`);
+      const newest = (list.requests || [])[0] || null;
+      if (newest) {
+        const whole = await api.get("parties", `/v1/terms-requests/${newest.id}`);
+        setRequest(whole.request);
+        setChecks(whole.checks || []);
+      } else {
+        setRequest(null);
+        setChecks([]);
+      }
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+    }
+  };
+  useEffect(() => {
+    load();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!ob)
+    return (
+      <OnboardFrame step={3} title="No application in progress">
+        <p className="body-2">
+          <Link to="/onboard">Start one.</Link>
+        </p>
+      </OnboardFrame>
+    );
+  const submit = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      if (request && request.state === "DRAFT") {
+        await api.post("parties", `/v1/terms-requests/${request.id}/submit`);
+      }
+      // With no open request, the acceptance recorded on the terms screen IS
+      // the submitted registration request — nothing further to post; the
+      // status screen shows where it stands.
+      nav("/onboard/status");
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+      setBusy(false);
+    }
+  };
+  return (
+    <OnboardFrame step={3} title="What is checked before this is live" who={ob.contactName}>
+      <p className="body-2">
+        Requesting {reg?.termsId ? `terms ${reg.termsId} v${reg.termsVersion}` : "the published terms"} · {ob.name}
+      </p>
+      {err ? <ErrBar>{err}</ErrBar> : null}
+      <div className="pane-cols">
+        <div>
+          {checks === null ? (
+            <p className="muted">Reading the recorded verdicts…</p>
+          ) : checks.length ? (
+            <GridTable cols="1.2fr 2fr 0.8fr" head={["What", "Who answers for it", "Status"]}>
+              {checks.map((c: any) => (
+                <div className="g-row" key={c.id || c.name}>
+                  <span>{c.name}</span>
+                  <span>
+                    {c.ownerKind === "policy" ? "policy " : ""}
+                    <span className="mono">{c.owner}</span>
+                    {c.note ? ` — ${c.note}` : ""}
+                  </span>
+                  <span>
+                    <Chip sm kind={c.outcome === "PASS" ? "ok" : "err"}>
+                      {c.outcome}
+                    </Chip>
+                  </span>
+                </div>
+              ))}
+            </GridTable>
+          ) : (
+            <Sidecar>
+              No check verdict has been recorded yet. A check here is a recorded verdict with a named owner — a
+              person, or a named policy such as a business-register adapter — never a simulation; verdicts are
+              recorded while a request sits under review, and none exists on this application yet.
+              {request ? ` The open request is ${request.id} (${request.state}).` : ""}
+            </Sidecar>
+          )}
+        </div>
+        <Callout kind="teal" title="Read the third row">
+          The third row is the one organisations miss. You will hold names, phone numbers and identity numbers from
+          the first day a project accepts you — naming who answers for that data was deferred at registration, not
+          waived, and this is where it comes due.
+        </Callout>
+      </div>
+      <div className="btn-row" style={{ maxWidth: 480 }}>
+        <button className="btn secondary" onClick={() => nav("/onboard/terms")}>
+          Save and return
+        </button>
+        <button className="btn dominant" id="submitchecks" disabled={busy} onClick={submit}>
+          Submit the request
+        </button>
       </div>
     </OnboardFrame>
   );
@@ -338,6 +528,7 @@ export function OnboardTerms() {
 
 /* g2_4 / g2_13 — where the application stands */
 export function OnboardStatus() {
+  const nav = useNavigate();
   const ob = readOnboarding();
   const [reg, setReg] = useState<any | null>(null);
   const [err, setErr] = useState("");
@@ -390,14 +581,26 @@ export function OnboardStatus() {
           ) : (
             <Sidecar>
               An application that is not yet decided grants nothing. Where approval is manual, the instance operator
-              decides — never the organisation itself. The certificate check the rail names (g2_12) is not built;
-              nothing here pretends it ran.
+              decides — never the organisation itself. What is checked before this is live is on the Certificates
+              step: recorded verdicts with named owners, never a simulation.
             </Sidecar>
           )}
         </div>
       </div>
+      <div className="btn-row" style={{ maxWidth: 560 }}>
+        <button className="btn secondary" onClick={() => nav("/onboard/status")}>
+          View your listing
+        </button>
+        <button className="btn secondary" onClick={() => nav("/onboard/standalone")}>
+          Invite your people
+        </button>
+        <button className="btn dominant" id="onboard-done" onClick={() => nav("/onboard/standalone")}>
+          Done
+        </button>
+      </div>
       <p className="muted">
-        <Link to="/">To the console</Link>
+        Inviting people is a later journey — both middle buttons follow the reference to the organisation's standing
+        view. <Link to="/">To the console</Link>
       </p>
     </OnboardFrame>
   );
