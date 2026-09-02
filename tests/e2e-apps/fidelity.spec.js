@@ -74,6 +74,180 @@ function fold(s) {
 // ── Arrival ────────────────────────────────────────────────────────────────
 const DOORS = { console: "/console/", field: "/enrolment/", worker: "/worker/", verify: "/verify/" };
 
+// ── Scripted-flow arrivals (#179) ──────────────────────────────────────────
+// The G-2 onboarding screens hold mid-flow state per browser session
+// (sessionStorage `crest.console.onboarding`, written by the g2_1 register
+// form), so a cold-loaded route honestly says "No application in progress".
+// A `flow:` arrival drives the real flow first — real POSTs against the real
+// stack, a unique organisation per run — to the depth the screen needs, then
+// lands on the mapped route. The steps are the same ones apps.spec.js's G-2
+// walk proves end to end; this is arrival machinery, not a second proof.
+//
+// The acts that are NOT the organisation's — a project sending an invitation,
+// the operator deciding, an operator publishing a terms set — go through the
+// same service doors as bearer-authenticated API calls by the party who holds
+// that act, exactly as the walk, the seeder and a real deployment do.
+const FLOW_FIX = {
+  org: "did:crest:party:01JCREST000000000000000RGN",
+  custodian: "did:crest:party:01JCREST00000000000000CSTD",
+  project: "crest:context:01JCREST00000000000000PRJC",
+};
+
+const FLOW_API = (() => {
+  const base = process.env.BASE_URL || "http://localhost:59110";
+  const local = new URL(base).port === "59110";
+  const host = new URL(base).hostname;
+  return {
+    parties: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-registry",
+    oidc: local ? `http://${host}:59103` : base.replace(/\/$/, "") + "/api/crest-mock-oidc",
+  };
+})();
+
+async function flowMintToken(request, partyId) {
+  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const r = await request.post(FLOW_API.oidc + "/token", {
+    data: { sub, aud: "crest", expiresIn: "1h" },
+  });
+  if (!r.ok()) throw new Error(`the dev issuer refused a token for ${partyId} (${r.status()})`);
+  const d = await r.json();
+  return d.accessToken || d.access_token || d.token;
+}
+
+async function flowAsParty(request, partyId, method, path, body) {
+  const token = await flowMintToken(request, partyId);
+  return request.fetch(FLOW_API.parties + path, {
+    method,
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    data: body === undefined ? undefined : body,
+  });
+}
+
+// A run must be re-runnable on the same stack (the G-2 walk learned this):
+// every registration and every published terms set is unique per call.
+function flowStamp() {
+  return (Date.now() + Math.floor(Math.random() * 1000)).toString().slice(-6);
+}
+
+// The operator publishes a wider terms set through the same open door the
+// seeder uses; returns its id (26-char suffix, walk-shaped, unique per call).
+async function flowPublishWiderTerms(request) {
+  const id = "crest:terms:01JCRESTG2GATEX" + flowStamp() + "PAY00";
+  const r = await request.post(FLOW_API.parties + "/v1/terms", {
+    data: {
+      id, version: 1, name: "Full delivery with payment",
+      permissions: ["submit-work-evidence", "specify-definition", "ratify-definition", "set-rates", "instruct-payment"],
+      publishedAt: "2026-09-01T00:00:00Z",
+    },
+  });
+  if (r.status() !== 201) throw new Error(`publishing the wider terms set failed (${r.status()})`);
+  return id;
+}
+
+// The seeded project invites the organisation. The period's end is the date
+// the reference's g2_10 callout names ("This grant ends on 31 March 2027").
+async function flowInvite(request, orgId) {
+  const r = await flowAsParty(request, FLOW_FIX.org, "POST",
+    `/v1/projects/${FLOW_FIX.project}/invitations`, {
+      partyId: orgId,
+      functions: ["submit-work-evidence"],
+      period: { start: "2026-09-01T00:00:00Z", end: "2027-03-31T00:00:00Z" },
+      note: "Nakuru community health, wards 4 and 7",
+    });
+  if (r.status() !== 201) throw new Error(`the project's invitation was refused (${r.status()})`);
+}
+
+// Drives the onboarding flow to the named depth. Returns "" on success or a
+// note saying what actually happened, like every other arrival.
+async function flowArrive(page, request, mode) {
+  const stamp = flowStamp();
+
+  // g2_1 — register. Anonymous by design (#20); a unique organisation per
+  // arrival so the run is re-runnable and screens never read another run's
+  // state.
+  await page.goto("/console/#/onboard");
+  await settle(page);
+  await page.fill('[name="orgname"]', "Fidelity Gate Trust " + stamp);
+  await page.selectOption('[name="country"]', "KE");
+  await page.fill('[name="workemail"]', `gate+${stamp}@fidelity.example.org`);
+  await page.fill('[name="contactname"]', "Hon. Peter Okello");
+  await page.click("#orgapplyform button.dominant");
+  await page.waitForURL(/#\/onboard\/terms/, { timeout: 20000 });
+  await settle(page);
+  const orgId = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem("crest.console.onboarding") || "{}").orgId);
+  if (!/^did:crest:party:/.test(orgId || ""))
+    return "registration did not put an orgId in the session";
+
+  if (mode === "onboarding") return "";
+
+  if (mode === "onboarding-terms") {
+    // g2_11 lists "other sets you could ask for" only when more than one set
+    // is published; publish one, then remount the terms screen so it reads
+    // the full catalogue.
+    await flowPublishWiderTerms(request);
+    return "";
+  }
+
+  if (mode === "onboarding-invited") {
+    await flowInvite(request, orgId);
+    return "";
+  }
+
+  // Everything deeper walks Terms → Checks first (g2_11 → g2_12).
+  await page.click("#requestterms");
+  await page.waitForURL(/#\/onboard\/checks/, { timeout: 20000 });
+  await settle(page);
+  if (mode === "onboarding-terms-request") return "";
+
+  // …then submits and lets the operator decide (never the applicant).
+  await page.click("#submitchecks");
+  await page.waitForURL(/#\/onboard\/status/, { timeout: 20000 });
+  await settle(page);
+  let r = await flowAsParty(request, FLOW_FIX.custodian, "POST",
+    `/v1/organisations/${orgId}/decision`, { approve: true, decidedBy: FLOW_FIX.custodian });
+  if (r.status() !== 200) return `the registration decision was refused (${r.status()})`;
+  if (mode === "onboarding-approved") return "";
+
+  if (mode === "onboarding-project") {
+    // g2_10 — the accepted invitation and the grant it minted, read back.
+    await flowInvite(request, orgId);
+    await page.evaluate(() => { location.hash = "#/onboard/invited"; });
+    await settle(page);
+    await page.reload();
+    await settle(page);
+    await page.click("#acceptinvitation");
+    await page.waitForURL(/#\/onboard\/project/, { timeout: 20000 });
+    await settle(page);
+    return "";
+  }
+
+  if (mode === "onboarding-wider-request" || mode === "onboarding-wider-submitted") {
+    // g2_6 → g2_7 — a wider published set exists, is picked, and the request
+    // opens (the service refuses it before approval, which is why this depth
+    // sits after the decision).
+    const widerId = await flowPublishWiderTerms(request);
+    await page.evaluate(() => { location.hash = "#/onboard/wider"; });
+    await settle(page);
+    await page.reload();
+    await settle(page);
+    await page.click(`[data-terms="${widerId}@1"]`);
+    await page.click("#requestwider");
+    await page.waitForURL(/#\/onboard\/documents/, { timeout: 20000 });
+    await settle(page);
+    if (mode === "onboarding-wider-request") return "";
+
+    // g2_7 → g2_8 — declared {kind, ref, hash} references, then submit.
+    await page.fill('[name="dockind0"]', "registration-certificate");
+    await page.fill('[name="docref0"]', "custody://fidelity-gate/reg-cert-" + stamp);
+    await page.click("#submitrequest");
+    await page.waitForURL(/#\/onboard\/review/, { timeout: 20000 });
+    await settle(page);
+    return "";
+  }
+
+  return `unknown flow arrival "flow:${mode}"`;
+}
+
 async function settle(page) {
   await page.waitForLoadState("networkidle").catch(() => {});
   await page.waitForSelector(".screen", { state: "visible" }).catch(() => {});
@@ -82,7 +256,30 @@ async function settle(page) {
 
 // Every arrival returns a note saying what actually happened, so a screen the
 // gate could not reach says so instead of failing on a missing label.
-async function arrive(page, entry) {
+async function arrive(page, request, entry) {
+  if (entry.arrive.startsWith("flow:")) {
+    // A scripted-flow arrival drives the real flow before landing on the
+    // route; any step that breaks is reported as what it is — an arrival
+    // problem — never as a missing label on a screen the gate never reached.
+    let problem;
+    try {
+      problem = await flowArrive(page, request, entry.arrive.slice("flow:".length));
+    } catch (e) {
+      problem = String((e && e.message) || e);
+    }
+    if (problem) return problem;
+    if (entry.route) {
+      await page.evaluate((h) => { location.hash = h; }, entry.route);
+      await settle(page);
+      // Remount so the screen reads the registry's CURRENT state (the flow's
+      // later writes — a decision, an invitation — happened after some
+      // screens first mounted). sessionStorage survives the reload.
+      await page.reload();
+      await settle(page);
+      await page.waitForTimeout(200);
+    }
+    return "";
+  }
   const door = DOORS[entry.app];
   await page.goto(door);
   await settle(page);
@@ -231,7 +428,10 @@ for (const sid of inScope) {
   const led = STATUS[sid] || { status: "designed", note: "our design; not a reference screen" };
   const quarantine = QUARANTINE.screens[sid];
 
-  test(`${sid} · ${spec ? spec.stage : "?"} · ${led.status}`, async ({ page }) => {
+  test(`${sid} · ${spec ? spec.stage : "?"} · ${led.status}`, async ({ page, request }) => {
+    // A flow arrival is several real round trips (register, decide, invite);
+    // give it room rather than reading a slow stack as a broken screen.
+    if (entry.arrive.startsWith("flow:")) test.setTimeout(180000);
     if (led.status !== "implemented") {
       const why = `status ${led.status} — ${led.note || "no surface claimed"}`;
       record({ screen: sid, verdict: "skipped", status: led.status, why });
@@ -241,7 +441,7 @@ for (const sid of inScope) {
 
     const failures = [];
     const waived = [];
-    const problem = await arrive(page, entry);
+    const problem = await arrive(page, request, entry);
     if (problem) failures.push({ facet: "arrival", needle: entry.route || "/", what: problem });
     else await checkScreen(page, sid, spec, failures, waived);
 
