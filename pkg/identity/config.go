@@ -52,14 +52,18 @@ type Config struct {
 	// Extra is any additional issuers this deployment accepts (#155): the
 	// migration shape where eSignet authenticates the doors while the dev
 	// issuer still serves the externally-shared PoC. Each entry keeps its own
-	// JWKS; audience, salt and cache posture are shared with the primary.
+	// JWKS and may carry its own audience (eSignet targets tokens at the
+	// relying-party client id, not at whatever the dev issuer uses); salt and
+	// cache posture are shared with the primary.
 	Extra []Provider
 }
 
-// Provider is one additional issuer/JWKS pair.
+// Provider is one additional issuer/JWKS pair, with an optional audience of
+// its own (empty means the primary's audience applies).
 type Provider struct {
-	Issuer  string
-	JWKSURL string
+	Issuer   string
+	JWKSURL  string
+	Audience string
 }
 
 // LoadConfig reads the identity provider from the environment.
@@ -101,16 +105,19 @@ func LoadConfig() (Config, bool, error) {
 	if c.MinRefresh, err = config.Duration("CREST_OIDC_JWKS_MIN_REFRESH", time.Minute); err != nil {
 		return c, true, err
 	}
-	// "issuer|jwks_url" pairs, comma-separated. Malformed entries are refused,
-	// not skipped: a provider that silently is not there is a login outage
-	// diagnosed from the wrong end.
+	// "issuer|jwks_url" or "issuer|jwks_url|audience" entries, comma-separated
+	// (eSignet needs the third field: its access tokens carry the relying-party
+	// client id as `aud`). Malformed entries are refused, not skipped: a
+	// provider that silently is not there is a login outage diagnosed from the
+	// wrong end.
 	if extra := config.Str("CREST_OIDC_EXTRA_PROVIDERS", ""); extra != "" {
-		for _, pair := range strings.Split(extra, ",") {
-			iss, jwks, ok := strings.Cut(strings.TrimSpace(pair), "|")
+		for _, entry := range strings.Split(extra, ",") {
+			iss, rest, ok := strings.Cut(strings.TrimSpace(entry), "|")
+			jwks, aud, _ := strings.Cut(rest, "|")
 			if !ok || iss == "" || jwks == "" {
-				return c, true, fmt.Errorf("config: CREST_OIDC_EXTRA_PROVIDERS entry %q is not issuer|jwks_url", pair)
+				return c, true, fmt.Errorf("config: CREST_OIDC_EXTRA_PROVIDERS entry %q is not issuer|jwks_url[|audience]", entry)
 			}
-			c.Extra = append(c.Extra, Provider{Issuer: iss, JWKSURL: jwks})
+			c.Extra = append(c.Extra, Provider{Issuer: iss, JWKSURL: jwks, Audience: aud})
 		}
 	}
 	return c, true, nil

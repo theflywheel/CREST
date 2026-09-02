@@ -31,6 +31,27 @@ func TestMultiVerifierRoutesOnIssuerAndRefusesStrangers(t *testing.T) {
 	}
 }
 
+// An extra provider's own audience must reach its verifier, and one without
+// an audience must inherit the primary's — eSignet targets access tokens at
+// the relying-party client id, and validating them against the dev issuer's
+// audience rejected every deployed login (2026-09-02).
+func TestExtraProviderCarriesItsOwnAudience(t *testing.T) {
+	m := NewMultiVerifier(Config{
+		Issuer: "https://a.example", JWKSURL: "https://a.example/jwks",
+		Audience: "crest", Salt: []byte("s"),
+		Extra: []Provider{
+			{Issuer: "https://b.example", JWKSURL: "https://b.example/jwks", Audience: "crest-rp-core-abcd1234"},
+			{Issuer: "https://c.example", JWKSURL: "https://c.example/jwks"},
+		},
+	})
+	if got := m.byIssuer["https://b.example"].cfg.Audience; got != "crest-rp-core-abcd1234" {
+		t.Fatalf("extra provider audience = %q, want its own", got)
+	}
+	if got := m.byIssuer["https://c.example"].cfg.Audience; got != "crest" {
+		t.Fatalf("audience-less extra provider = %q, want the primary's", got)
+	}
+}
+
 func makeUnsigned(t *testing.T, payload string) string {
 	t.Helper()
 	b64 := func(s string) string {
