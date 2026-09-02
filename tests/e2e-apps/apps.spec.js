@@ -337,7 +337,13 @@ test("worker wallet: show-to-someone renders a QR, JSON behind a toggle", async 
   await page.evaluate(() => { location.hash = "#/wallet/0/show"; });
   await settle(page);
   // Either the QR image, or (for an oversized credential) the honest
-  // PixelPass gap note — never a silent failure.
+  // PixelPass gap note — never a silent failure. The QR is drawn
+  // asynchronously on the device, so wait for one of the two terminal states
+  // rather than reading the "Drawing the code…" moment as a missing QR: on a
+  // slow CI runner that race made this test fail for no product reason.
+  await page.waitForFunction(
+    () => !!document.querySelector("#cred-qr") || /PixelPass/i.test(document.body.innerText),
+    null, { timeout: 15000 });
   const qr = page.locator("#cred-qr");
   if (await qr.count()) {
     await expect(qr).toBeVisible();
