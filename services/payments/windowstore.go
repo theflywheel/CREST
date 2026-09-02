@@ -117,18 +117,10 @@ func unreleased(ctx context.Context, q store.Querier) ([]Window, error) {
 	return store.Collect(rows, scanWindow)
 }
 
-func markNotified(ctx context.Context, tx store.Querier, claimID string, at time.Time) error {
-	_, err := tx.Exec(ctx, `UPDATE windows SET notified_at = $2 WHERE claim_id = $1`, claimID, at)
-	return err
-}
-
-// recordReach stores whether the worker was actually told.
-func recordReach(ctx context.Context, tx store.Querier, claimID, reach, detail string) error {
-	_, err := tx.Exec(ctx,
-		`UPDATE windows SET reach = $2, reach_detail = $3 WHERE claim_id = $1`,
-		claimID, reach, detail)
-	return err
-}
+// markNotified and recordReach were the notification channel's writers.
+// #150 dropped the channel and left the columns (notified_at, reach,
+// reach_detail) dormant as the seam for a returning one; the writers went
+// with the channel — resurrect them from history when a channel returns.
 
 func markEscalated(ctx context.Context, tx store.Querier, claimID string, at time.Time) error {
 	_, err := tx.Exec(ctx, `UPDATE windows SET escalated_at = $2 WHERE claim_id = $1`, claimID, at)

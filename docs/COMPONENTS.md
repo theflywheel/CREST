@@ -76,7 +76,8 @@ services/      Six L1 services + notify (Go)
 pkg/           Shared Go libraries
 adapters/      Source-system adapters (Go)
 cmd/crestctl/  Operator + harness CLI
-apps/          Worker PWA, enrolment app, console (TypeScript)
+apps/          The static-era doors (shrinking as they move, #153)
+frontend/      pnpm workspace: rebuilt doors + @crest/ui, @crest/api (#153)
 harness/       E2E scenarios, fixtures, W1–W10 suite
 infra/compose/ Everything above, running
 tools/         Mocks, codegen, structure lint

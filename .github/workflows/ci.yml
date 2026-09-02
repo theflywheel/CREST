@@ -7,6 +7,10 @@ on:
 
 permissions:
   contents: read
+  # dorny/paths-filter reads the PR's changed files through the API; without
+  # this the gate job dies "Resource not accessible by integration" and every
+  # gated job skips — a red that looks like a green.
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
