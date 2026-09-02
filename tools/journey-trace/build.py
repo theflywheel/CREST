@@ -23,6 +23,7 @@ import html
 import json
 import os
 import re
+import sys
 from collections import Counter
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -221,6 +222,59 @@ for sid, topic in P3_READER.items():
         f"{topic}: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)")
 
 
+# The J3 connective-tissue screens n1–n5 are OUR design, not the reference's
+# (docs/design/j3-connective-tissue/README.md). They belong in the ledger —
+# a screen the fidelity gate asserts and the ledger does not carry is a screen
+# nobody counts — but they are never mixed into the reference's 143, and their
+# source is recorded on every row.
+DESIGN_SCREENS = [
+    {"id": "n1", "role": "P-1", "stage": "Sign in",
+     "title": "Sign in to CREST Console",
+     **m("missing", "console", "", "No console sign-in screen: every persona card is a dev-build session mint, and the roles-decide-what-you-see contract has no surface")},
+    {"id": "n2", "role": "P-1", "stage": "Scope",
+     "title": "Where do you want to work?",
+     **m("missing", "console", "", "No context chooser: the persona card jumps straight into a flow, so a person holding roles in two places has nowhere to choose between them")},
+    {"id": "n3", "role": "P-1", "stage": "Navigate",
+     "title": "One rail, two actors",
+     **m("missing", "console", "", "The console rail is role-derived per persona (JOURNEY_GAP_ASSESSMENT finding 1); the reference's single five-entry J3 rail, identical for both actors, does not exist")},
+    {"id": "n4", "role": "P-2", "stage": "Handover",
+     "title": "Ministry of Health handed you a project",
+     **m("missing", "console", "", "No receiving side of the p1_3 → p2_1 handover, and no accepted/declined ownership state to render it from (design finding F2)")},
+    {"id": "n5", "role": "P-2", "stage": "Guard",
+     "title": "People & roles is not yours to change",
+     **m("missing", "console", "", "No role guard screen: there are no per-role backend permits in the console yet, so there is nothing to be refused by")},
+]
+
+FIDELITY_MAP = os.path.join(ROOT, "tests", "e2e-apps", "fidelity-map.json")
+FIDELITY_QUARANTINE = os.path.join(ROOT, "tests", "e2e-apps", "fidelity-quarantine.json")
+
+
+def gate_verdicts(rows):
+    """What the fidelity gate does with each screen, as the gate's own scope
+    and the ledger's own statuses decide it.
+
+    Deterministic and stack-free: this says which screens the gate ASSERTS
+    and which it skips-with-reason. Whether an asserted screen actually holds
+    is the gate's verdict at run time — `make fidelity` fails on a screen
+    statused implemented whose assertions fail, which is the check that stops
+    this ledger telling a lie."""
+    fmap = json.load(open(FIDELITY_MAP, encoding="utf-8"))
+    quar = json.load(open(FIDELITY_QUARANTINE, encoding="utf-8"))["screens"]
+    scope = fmap["screens"]
+    out = {}
+    for r in rows:
+        sid = r["id"]
+        if sid not in scope:
+            out[sid] = "—"
+        elif sid in quar:
+            out[sid] = f"quarantined ({quar[sid]['issue']})"
+        elif r["status"] == "implemented":
+            out[sid] = "**asserted**"
+        else:
+            out[sid] = f"skipped ({r['status']})"
+    return out
+
+
 def extract():
     doc = open(REF, encoding="utf-8").read()
     parts = re.split(r'(?=<div class="role-step" data-step=")', doc)
@@ -246,8 +300,12 @@ def main():
 
     rows = []
     for s in screens:
-        rows.append({**s, "roleName": ROLE_NAMES.get(s["role"], s["role"]), **MAPPING[s["id"]]})
+        rows.append({**s, "source": "reference",
+                     "roleName": ROLE_NAMES.get(s["role"], s["role"]), **MAPPING[s["id"]]})
+    design = [{**d, "source": "crest-design",
+               "roleName": ROLE_NAMES.get(d["role"], d["role"])} for d in DESIGN_SCREENS]
     counts = Counter(r["status"] for r in rows)
+    gate = gate_verdicts(rows + design)
     doc = {
         "reference": "docs/reference/CREST — Actor Journeys_17Aug.html",
         "assessment": "docs/JOURNEY_GAP_ASSESSMENT.md",
@@ -262,10 +320,17 @@ def main():
             "missing": "no corresponding user flow",
         },
         "rows": rows,
+        "designRows": design,
+        "fidelityGate": {
+            "suite": "tests/e2e-apps/fidelity.spec.js",
+            "scope": "tests/e2e-apps/fidelity-map.json",
+            "verdicts": gate,
+            "note": "asserted = the gate drives the real stack to this screen and holds it to its journey-spec entry; skipped = the status is not implemented, reported with the reason; quarantined = claimed implemented but unjudgeable today, with an issue.",
+        },
     }
-    with open(OUT_JSON, "w", encoding="utf-8") as f:
-        json.dump(doc, f, indent=1, ensure_ascii=False)
-        f.write("\n")
+    for r in rows + design:
+        r["gate"] = gate[r["id"]]
+    out_json = json.dumps(doc, indent=1, ensure_ascii=False) + "\n"
 
     total = len(rows)
     lines = [
@@ -280,25 +345,95 @@ def main():
         "| Status | Screens | Share |",
         "|---|---:|---:|",
     ]
+    asserted = sum(1 for v in gate.values() if v == "**asserted**")
+    quarantined = sum(1 for v in gate.values() if v.startswith("quarantined"))
+    in_scope = sum(1 for v in gate.values() if v != "—")
     for k in ["implemented", "compressed", "semantically-different", "illustrative", "missing"]:
         n = counts.get(k, 0)
         lines.append(f"| {k} | {n} | {n * 100 // total}% |")
     lines += [f"| **total** | **{total}** | |", ""]
+
+    lines += [
+        "## The fidelity gate",
+        "",
+        "The **Gate** column below is generated from the gate's own scope",
+        "(`tests/e2e-apps/fidelity-map.json`) and this ledger's statuses, so the",
+        "two cannot drift apart. `make fidelity` drives the real stack to every",
+        "*asserted* screen and holds it to its `docs/journey-spec.json` entry;",
+        "a screen statused **implemented** whose assertions fail turns the gate",
+        "red, which is the check that stops this table claiming coverage the",
+        "screens do not have. Nothing here is evidence that an asserted screen",
+        "passed — only the gate run is that.",
+        "",
+        f"In scope today (J3 — `p1_*`, `p2_*`, plus the design screens `n1`–`n5`): "
+        f"**{in_scope}** screens — **{asserted}** asserted, "
+        f"**{quarantined}** quarantined, "
+        f"**{in_scope - asserted - quarantined}** skipped with a reason.",
+        "",
+    ]
+
     role = None
     for r in rows:
         if r["role"] != role:
             role = r["role"]
             n = sum(1 for x in rows if x["role"] == role)
             lines += [f"## {role} — {r['roleName']} ({n} screens)", "",
-                      "| Screen | Stage | Reference title | Status | Surface | Evidence / gap |",
-                      "|---|---|---|---|---|---|"]
+                      "| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |",
+                      "|---|---|---|---|---|---|---|"]
         surface = f"{r['app']} `{r['route']}`" if r["route"] else "—"
         lines.append(
-            f"| `{r['id']}` | {r['stage']} | {r['title']} | **{r['status']}** | {surface} | {r['note']} |")
+            f"| `{r['id']}` | {r['stage']} | {r['title']} | **{r['status']}** | {surface} | {r['gate']} | {r['note']} |")
+
+    lines += [
+        "",
+        "## CREST design — J3 connective tissue (5 screens)",
+        "",
+        "Not the reference's screens: the 17 Aug walkthrough does not draw how",
+        "anyone signs in, how a person holding roles in two places chooses",
+        "where to work, what the shared rail means, or the receiving side of the",
+        "`p1_3` → `p2_1` handover. These five are **our** design",
+        "(`docs/design/j3-connective-tissue/README.md`), carried in",
+        "`docs/journey-spec.json` with `source: \"crest-design\"` and asserted by",
+        "the same gate. They are counted separately and never folded into the",
+        "reference's 143.",
+        "",
+        "| Screen | Stage | Design title | Status | Gate | Evidence / gap |",
+        "|---|---|---|---|---|---|",
+    ]
+    for r in design:
+        lines.append(
+            f"| `{r['id']}` | {r['stage']} | {r['title']} | **{r['status']}** | {r['gate']} | {r['note']} |")
+    out_md = "\n".join(lines) + "\n"
+
+    # Same generate-and-diff contract as `make generate-check` and
+    # `make journey-spec-check`: a ledger behind its own inputs — the
+    # reference, the MAPPING, or the fidelity gate's scope — is a second,
+    # wrong answer to "what is covered?".
+    if "--check" in sys.argv[1:]:
+        stale = [
+            name for name, path, want in (
+                ("journey-traceability.json", OUT_JSON, out_json),
+                ("journey-traceability.md", OUT_MD, out_md),
+            )
+            if not os.path.exists(path)
+            or open(path, encoding="utf-8").read() != want
+        ]
+        if stale:
+            print("STALE: " + ", ".join(stale)
+                  + " — run `python3 tools/journey-trace/build.py` and commit the result",
+                  file=sys.stderr)
+            return 1
+        print(f"journey traceability: current ({total} reference screens, "
+              f"{len(design)} design screens)")
+        return 0
+
+    with open(OUT_JSON, "w", encoding="utf-8") as f:
+        f.write(out_json)
     with open(OUT_MD, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
+        f.write(out_md)
     print(f"{total} screens; coverage: {dict(sorted(counts.items()))}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

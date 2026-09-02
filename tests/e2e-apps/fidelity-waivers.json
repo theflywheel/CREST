@@ -1,0 +1,71 @@
+{
+  "_note": [
+    "Facets the gate does not hold a screen to, each with the reason why.",
+    "A waiver is fidelity DEBT, recorded where it can be counted — never a",
+    "quiet loosening of an assertion. Keys are a facet name ('callouts',",
+    "'rail', 'counter', 'fields', 'buttons', 'layout', 'appbar', 'title') or",
+    "'facet:needle' for one item — prefer per-item, so the rest of the facet",
+    "stays asserted.",
+    "",
+    "Every entry below was written from a measured run against a clean",
+    "story-seeded stack, not guessed. Two root causes account for all of them,",
+    "and both are recorded in docs/journey-traceability.md:",
+    "",
+    "  1. The reference's J3 rail. On p2_20/p2_21 the five-entry console rail",
+    "     (Projects · People & roles · Work definitions · Payment set up ·",
+    "     Workers) is absent entirely — those screens live in the field door and",
+    "     in the custodian's console. On p2_11/p2_14/p2_15 the project rail is",
+    "     the same rail renamed (Work status → Status, Proof → Trace) with no",
+    "     Quality entry, so those waivers are per-entry and Payments/Reports stay",
+    "     asserted. The console's rail is derived per persona",
+    "     (docs/JOURNEY_GAP_ASSESSMENT.md finding 1); the single shared J3 rail is",
+    "     what our design screen n3 specifies, and n3 is `missing`.",
+    "",
+    "  2. The reference's callout prose is walkthrough narration written over a",
+    "     fixture world ('the 96 workers…', 'WD-4471 v1.2', 'Accept 306, hold 6').",
+    "     The implementations state the same rule in their own line of copy.",
+    "     Asserting the reference's sentence verbatim would be asserting the",
+    "     fixture. The design screens n1–n5, whose copy IS ours, carry no callout",
+    "     waiver at all and must match word for word.",
+    "",
+    "Deleting a waiver is the unit of fidelity work. Nothing here loosens the",
+    "gate's rules — each entry is a named piece of unbuilt design or unwritten",
+    "copy, and `make fidelity` counts them every run."
+  ],
+  "screens": {
+    "p2_20": {
+      "appbar": "The reference frames evidence intake as a console screen for the Project Configurator; the implementation puts it in the FIELD door (docs/journey-traceability.md records the surface as field `#/roster`), whose appbar reads 'CREST · Field'. Cross-door placement is real fidelity debt — the row-by-row check itself is the part that is implemented.",
+      "rail": "Root cause 1 — the reference's five-entry J3 console rail does not exist, and this screen is not even in the console. The field door carries its own agent nav.",
+      "callouts": "Root cause 2 — the reference's callout names the fixture definition version ('WD-4471 v1.2') and its five specific checks as narration. The field screen states the rule in its own words ('The file is checked against the definition. A row that does not match becomes somebody named in the unclear queue — never a silent drop.'), which the forbidden-content rule for the sibling screen p2_21 holds to.",
+      "buttons:Accept 306, hold 6": "The label quotes the fixture's own counts. The implementation's action is 'Close the roster', which posts the real batch; the reference's per-file accept/hold verdict wording is unbuilt copy, not a missing capability.",
+      "buttons:Reject the whole file": "A whole-file rejection does not exist: the evidence service accepts a batch and holds the rows that fail. Named here as a MISSING ACTION rather than a copy difference — it needs an endpoint before it can need a button."
+    },
+    "p2_21": {
+      "rail": "Root cause 1 — the custodian console's rail is the custodian's own five views (Find a worker · Duplicates · Unclear rows · Recoveries · Overdue reviews), not the reference's J3 rail. Waiting on n3.",
+      "callouts": "Root cause 2 — the reference's two callouts narrate the fixture ('the last one is the failure mode that matters') and one of them describes a gap the implementation has no way to show. The screen carries its own statement of the rule, and the gate holds it to the 'never a silent drop' rule through fidelity-forbidden.json instead.",
+      "buttons:Open the first one": "The unclear queue is a table where every row is openable and each carries its own 'Attribute' action; the reference's single 'open the first one' affordance is a walkthrough device, not a control the screen is missing.",
+      "buttons:Back to the project": "There is no project view to go back to — p2_5 (payment posture) is `missing`. This waiver disappears with the J3 project surface, not with a copy change."
+    },
+    "p2_11": {
+      "rail:Work status": "The implementation's project rail is the same rail under two different words plus two extra entries: Status · Payments · Trace · Definition · Sources · Reports. 'Work status' is the entry called 'Status'. A rename is fidelity debt in copy, not a missing view — and it is real debt: the reference's word says what the funnel is about.",
+      "rail:Quality": "The implementation's project rail is the same rail under two different words plus two extra entries: Status · Payments · Trace · Definition · Sources · Reports. There is no Quality entry because the quality views (p2_12 straight-through, p2_13 tier mix) are metric contracts that do not exist (#31); both are statused illustrative. A rail entry pointing nowhere would be worse than its absence — but per n3's rule, the honest form is a visible entry that names what is missing, which is why this waiver stands rather than being closed by a rename.",
+      "rail:Proof": "The implementation's project rail is the same rail under two different words plus two extra entries: Status · Payments · Trace · Definition · Sources · Reports. 'Proof' is the entry called 'Trace'. Same rename debt as 'Work status'."
+    },
+    "p2_14": {
+      "rail:Work status": "See p2_11 — the same rail, renamed.",
+      "rail:Quality": "See p2_11 — no quality view exists (#31).",
+      "rail:Proof": "See p2_11 — 'Proof' is 'Trace'.",
+      "callouts": "Root cause 2 — both reference callouts narrate the fixture world ('the 96 workers with no valid payment details', a gamed confirmed-paid percentage guarded by ageing buckets). The screen carries its own statement of the rule this journey turns on — 'Money delayed and people waiting are different sentences. Every held payment carries a reason with an owner — the record itself refuses one without' — and the ageing/gaming guards the callout promises are unbuilt metric contracts (#31).",
+      "buttons:Quality": "Navigates to p2_13, which does not exist (#31 metric contracts). A button to nowhere is not fidelity.",
+      "buttons:Open the 17": "The label quotes the fixture's own count of held instructions. The implementation lists every held instruction with its reason and owner in the table below the tiles, which is the substance the affordance existed for.",
+      "buttons:Proof": "The action exists as the per-row 'Trace' link on every instruction, which is stronger than the reference's single footer button — but the reference's word is not on the screen, so the debt is recorded rather than argued away."
+    },
+    "p2_15": {
+      "rail:Work status": "See p2_11 — the same rail, renamed.",
+      "rail:Quality": "See p2_11 — no quality view exists (#31).",
+      "rail:Proof": "See p2_11 — 'Proof' is 'Trace'.",
+      "callouts": "Root cause 2 — the reference's callouts narrate a specific fixture worker ('the last row has been sitting sent-back for 29 days') and state a consent posture that depends on cross-project disclosure, which does not exist (w1_15/w1_19 are missing). The trace view states its own rule instead: 'Each fact comes from a different service, so a gap names the service responsible for it.'",
+      "buttons:Export the bundle": "There is no bundle export: no endpoint produces a portable proof bundle. A missing capability, named — not a copy difference."
+    }
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "_note": [
+    "The J3 connective-tissue screens n1-n5: OUR design, not the 17 Aug",
+    "reference's. Specified in docs/design/j3-connective-tissue/README.md and",
+    "transcribed here in the same shape as a reference frame, so the fidelity",
+    "gate can assert them identically. extract-spec.py merges this file into",
+    "docs/journey-spec.json with source=\"crest-design\"; reference-derived",
+    "screens carry source=\"reference\". Edit this file (not the generated",
+    "JSON) when the design changes, and keep it in step with the README —",
+    "that is a human obligation the staleness gate cannot check, because the",
+    "README's prose is not machine-derivable.",
+    "text_fingerprint is empty by construction: there is no reference frame to",
+    "fingerprint, so drift here is caught by review of this file's diff."
+  ],
+  "screens": {
+    "n1": {
+      "actor": "P-1",
+      "stage": "Sign in",
+      "title": "Sign in to CREST Console",
+      "level": "L1",
+      "layout": "desktop",
+      "frame": "console",
+      "appbar": "CREST Console Not signed in",
+      "step": { "counter": "", "rail": [] },
+      "fields": [
+        { "label": "Sign in with", "hint": "Your national identity provider. CREST never sees a credential of yours.", "kind": "static", "value": "" }
+      ],
+      "callouts": [
+        { "title": "Why this screen exists", "text": "One door, every console role. What you see after signing in is decided by the roles you hold — never by which link you opened." },
+        { "title": "What this screen never does", "text": "It never asks which role you want, and never offers a role you do not hold. A role is granted in the registry and read back here — picking your own would make authority a matter of self-declaration." }
+      ],
+      "buttons": [
+        { "label": "Continue with eSignet", "role": "primary", "nav": "n2" }
+      ],
+      "forbidden": [
+        { "text": "choose your role", "why": "n1 never asks which role you want — a self-declared role would make authority self-declaration" }
+      ]
+    },
+    "n2": {
+      "actor": "P-1",
+      "stage": "Scope",
+      "title": "Where do you want to work?",
+      "level": "L1",
+      "layout": "desktop",
+      "frame": "console",
+      "appbar": "CREST Console Peter Otieno · signed in",
+      "step": { "counter": "", "rail": [] },
+      "fields": [
+        { "label": "Organisation", "hint": "You hold: Org Admin", "kind": "static", "value": "Ministry of Health" },
+        { "label": "Project", "hint": "You hold: Project Configurator", "kind": "static", "value": "Malaria Bednet Campaign — 2026" }
+      ],
+      "callouts": [
+        { "title": "What this screen never does", "text": "It never lists a context you hold no role in, and never shows a project before somebody handed it to you. An empty list is a true answer: it means a role still has to be granted." }
+      ],
+      "buttons": [
+        { "label": "Open standing configuration", "role": "primary", "nav": "p1_1" },
+        { "label": "Open project setup", "role": "primary", "nav": "p2_1" }
+      ],
+      "forbidden": []
+    },
+    "n3": {
+      "actor": "P-1",
+      "stage": "Navigate",
+      "title": "One rail, two actors",
+      "level": "L1",
+      "layout": "desktop",
+      "frame": "console",
+      "appbar": "CREST Console Peter Otieno · Org Admin",
+      "step": {
+        "counter": "",
+        "rail": ["Projects", "People & roles", "Work definitions", "Payment set up", "Workers"]
+      },
+      "fields": [],
+      "callouts": [
+        { "title": "The rule this screen sets", "text": "An entry is never hidden because of your role. A row you cannot act on stays visible and names who can — a missing row reads as a feature that does not exist, which is a lie the console can avoid telling." },
+        { "title": "What the reference already decided", "text": "Every p1 and p2 frame carries the same five rail entries. The Org Admin and the Project Configurator see the same rail; only the appbar identity changes." }
+      ],
+      "buttons": [],
+      "forbidden": []
+    },
+    "n4": {
+      "actor": "P-2",
+      "stage": "Handover",
+      "title": "Ministry of Health handed you a project",
+      "level": "L2",
+      "layout": "desktop",
+      "frame": "console",
+      "appbar": "CREST Console Dr. Alice Mutua · Project Configurator",
+      "step": {
+        "counter": "",
+        "rail": ["Projects", "People & roles", "Work definitions", "Payment set up", "Workers"]
+      },
+      "fields": [
+        { "label": "What arrived, already decided", "hint": "", "kind": "static", "value": "" },
+        { "label": "What is still yours to answer", "hint": "", "kind": "static", "value": "" }
+      ],
+      "callouts": [
+        { "title": "Why handing it back is a real button", "text": "A named owner who never agreed is worse than no owner: the project looks staffed and is not. Declining records who declined and why, and returns the project to the Org Admin's queue rather than deleting anything." }
+      ],
+      "buttons": [
+        { "label": "Not mine — hand it back", "role": "secondary", "nav": "p1_1" },
+        { "label": "Continue to setup", "role": "primary", "nav": "p2_1" }
+      ],
+      "forbidden": []
+    },
+    "n5": {
+      "actor": "P-2",
+      "stage": "Guard",
+      "title": "People & roles is not yours to change",
+      "level": "L1",
+      "layout": "desktop",
+      "frame": "console",
+      "appbar": "CREST Console Dr. Alice Mutua · Project Configurator",
+      "step": {
+        "counter": "",
+        "rail": ["Projects", "People & roles", "Work definitions", "Payment set up", "Workers"]
+      },
+      "fields": [
+        { "label": "Who can do this", "hint": "", "kind": "static", "value": "" },
+        { "label": "What you can see here, read only", "hint": "", "kind": "static", "value": "" }
+      ],
+      "callouts": [
+        { "title": "The rule this screen sets", "text": "No blank refusal, and no vanished entry. A guard states the role you would need, names somebody who can grant it, and still shows whatever you are allowed to read." }
+      ],
+      "buttons": [
+        { "label": "Back to project setup", "role": "secondary", "nav": "p2_1" }
+      ],
+      "forbidden": [
+        { "text": "403", "why": "n5 states a boundary in words and names who can grant the role; an HTTP status code shown to a user is the blank refusal this screen exists to replace" },
+        { "text": "Forbidden", "why": "same rule as 403 — no raw status vocabulary on a guard screen" }
+      ]
+    }
+  }
+}

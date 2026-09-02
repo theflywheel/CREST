@@ -15,7 +15,7 @@ GO ?= go
         lint fmt structure substrate-up substrate-down harness-up harness-down \
         harness-logs verify-deploy web-up apps-build apps-dev apps-up e2e-apps clean todo poc poc-batch poc-dhis2 dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
         spike-dedi-deployed spike-esignet deploy-demo verify-deployed verify-registry hooks generate generate-check \
-        e2e-up e2e-run journey-spec journey-spec-check
+        e2e-up e2e-run journey-spec journey-spec-check fidelity fidelity-check fidelity-sheet
 
 help: ## Show available targets
 	@grep -E '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t26
@@ -139,7 +139,26 @@ apps-up: e2e-up apps-build ## Bring up the stack with the journey apps, story-se
 	@echo "open http://localhost:59110"
 
 e2e-apps: ## Walk every journey-app route with Playwright (needs apps-up; BASE_URL overrides)
-	@cd tests/e2e-apps && npm ci --no-audit --no-fund >/dev/null && npx playwright test
+	@cd tests/e2e-apps && npm ci --no-audit --no-fund >/dev/null && npx playwright test apps.spec.js
+
+# The fidelity gate: every in-scope screen held to its docs/journey-spec.json
+# entry on the real stack (needs apps-up; BASE_URL overrides). Two commands
+# because they answer different questions — this one is a verdict, the sheet
+# below is for a human's eye.
+fidelity: ## Assert every in-scope screen against the design reference (needs apps-up)
+	@rm -f tests/e2e-apps/fidelity-results.jsonl
+	@cd tests/e2e-apps && npm ci --no-audit --no-fund >/dev/null && npx playwright test fidelity.spec.js
+	@python3 tools/journey-trace/fidelity-ledger.py
+
+fidelity-check: ## Fail if the gate's scope/waivers/quarantine or the ledger are ill-formed or stale (CI, no stack)
+	@python3 tools/journey-trace/fidelity-ledger.py --static
+	@python3 tools/journey-trace/build.py --check
+
+fidelity-sheet: ## Reference frame beside built screen, as PNG pairs for review (needs apps-up)
+	@cd tests/e2e-apps && npm ci --no-audit --no-fund >/dev/null
+	@# Run from the suite's directory: the Playwright dependency lives there.
+	@cd tests/e2e-apps && node ../../tools/journey-trace/contact-sheet.mjs
+	@echo "open docs/.fidelity-sheet/index.html"
 
 test-e2e-sweep: ## Prove the auto-confirm sweep runs on its own, with nobody asking
 	@# Its own stack, because the sweeper has to be on and the rest of the
