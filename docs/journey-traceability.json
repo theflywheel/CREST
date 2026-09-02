@@ -133,7 +133,7 @@
    "app": "console",
    "route": "#/onboard",
    "note": "The reference's six-field identity form (legal name, country, work email, contact person, kind, sector) as a desktop console frame — Registration · 1 of 4 with the Register/Terms/Certificates/Done rail; registration documents deliberately not asked, per the reference's own callout → POST /v1/organisations. Since #168 the whole form persists: country/kind/sector/contact person ride the Party's generic attributes map and are read back from GET /v1/organisations/{id}/registration — a registry round-trip, not browser state",
-   "gate": "—"
+   "gate": "**asserted**"
   },
   {
    "id": "g2_4",
@@ -146,7 +146,7 @@
    "app": "console",
    "route": "#/onboard/status",
    "note": "GET /v1/organisations/{id}/registration: state, exact terms version, decider. Under REGISTRY_ORG_APPROVAL=manual (the local default) the terminal state waits on the operator's decision; on-terms-acceptance approves in the acceptance's transaction. 'On nobody's project' is true — no project membership exists",
-   "gate": "—"
+   "gate": "quarantined (#179)"
   },
   {
    "id": "g2_5",
@@ -159,7 +159,7 @@
    "app": "",
    "route": "",
    "note": "Invitation-before-or-after ordering: no invitation service",
-   "gate": "—"
+   "gate": "skipped (missing)"
   },
   {
    "id": "g2_6",
@@ -172,7 +172,7 @@
    "app": "",
    "route": "",
    "note": "Asking for wider terms later: only one terms listing exists (GET /v1/terms), no term-upgrade request",
-   "gate": "—"
+   "gate": "skipped (missing)"
   },
   {
    "id": "g2_7",
@@ -185,7 +185,7 @@
    "app": "",
    "route": "",
    "note": "Qualification documents: no document upload on onboarding",
-   "gate": "—"
+   "gate": "skipped (missing)"
   },
   {
    "id": "g2_8",
@@ -198,7 +198,7 @@
    "app": "console",
    "route": "#/onboard/status",
    "note": "Terminal screen says what was decided and by whom; 'what to watch for' guidance partially present",
-   "gate": "—"
+   "gate": "skipped (compressed)"
   },
   {
    "id": "g2_9",
@@ -211,7 +211,7 @@
    "app": "",
    "route": "",
    "note": "Receiving an invitation/enablement: no invitation service",
-   "gate": "—"
+   "gate": "skipped (missing)"
   },
   {
    "id": "g2_10",
@@ -224,7 +224,7 @@
    "app": "",
    "route": "",
    "note": "'Live, and what to do first' post-enablement onboarding: not built",
-   "gate": "—"
+   "gate": "skipped (missing)"
   },
   {
    "id": "g2_11",
@@ -237,7 +237,7 @@
    "app": "console",
    "route": "#/onboard/terms",
    "note": "GET /v1/terms lists published versions; acceptance names an exact version via POST /v1/organisations/{id}/terms-acceptance — 'never edited underneath you' is the backend's versioning rule",
-   "gate": "—"
+   "gate": "quarantined (#179)"
   },
   {
    "id": "g2_12",
@@ -250,7 +250,7 @@
    "app": "",
    "route": "",
    "note": "Certificate checks: no certificate verification exists",
-   "gate": "—"
+   "gate": "skipped (missing)"
   },
   {
    "id": "g2_13",
@@ -263,7 +263,7 @@
    "app": "console",
    "route": "#/onboard/status",
    "note": "Approval recorded with decider (policy or person); publication to the registry log happens in the approving transaction",
-   "gate": "—"
+   "gate": "quarantined (#179)"
   },
   {
    "id": "g4_4",
@@ -1957,17 +1957,17 @@
    "g4_1": "—",
    "g4_2": "—",
    "g4_3": "—",
-   "g2_1": "—",
-   "g2_4": "—",
-   "g2_5": "—",
-   "g2_6": "—",
-   "g2_7": "—",
-   "g2_8": "—",
-   "g2_9": "—",
-   "g2_10": "—",
-   "g2_11": "—",
-   "g2_12": "—",
-   "g2_13": "—",
+   "g2_1": "**asserted**",
+   "g2_4": "quarantined (#179)",
+   "g2_5": "skipped (missing)",
+   "g2_6": "skipped (missing)",
+   "g2_7": "skipped (missing)",
+   "g2_8": "skipped (compressed)",
+   "g2_9": "skipped (missing)",
+   "g2_10": "skipped (missing)",
+   "g2_11": "quarantined (#179)",
+   "g2_12": "skipped (missing)",
+   "g2_13": "quarantined (#179)",
    "g4_4": "—",
    "g4_5": "—",
    "g4_6": "—",

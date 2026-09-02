@@ -365,7 +365,7 @@ def main():
         "screens do not have. Nothing here is evidence that an asserted screen",
         "passed — only the gate run is that.",
         "",
-        f"In scope today (J3 — `p1_*`, `p2_*`, plus the design screens `n1`–`n5`): "
+        f"In scope today (J3 — `p1_*`, `p2_*` — and G-2 — `g2_*` — plus the design screens `n1`–`n5`): "
         f"**{in_scope}** screens — **{asserted}** asserted, "
         f"**{quarantined}** quarantined, "
         f"**{in_scope - asserted - quarantined}** skipped with a reason.",
