@@ -91,6 +91,8 @@ func (s *Source) overdue(now time.Time) bool {
 	return s.State == SourceSilent || (s.State == SourceNeverSeen && now.Sub(s.RegisteredAt) > s.expectedEvery)
 }
 
+// ErrBadCadence refuses a source registration whose declared cadence could
+// never fire — a zero or negative interval is a heartbeat nobody can miss.
 var ErrBadCadence = errors.New("expectedEvery must be a positive duration")
 
 // registerSource upserts and returns the row as it now stands.

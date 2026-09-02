@@ -109,6 +109,8 @@ type Recovery struct {
 	CompletedAt *time.Time `json:"completedAt,omitempty"`
 }
 
+// RecoveryConfirmation is one nominated contact's on-the-record vouch that
+// the person recovering a party is who they say they are.
 type RecoveryConfirmation struct {
 	ConfirmerPartyID string    `json:"confirmerPartyId"`
 	AuthorityPartyID string    `json:"authorityPartyId"`
