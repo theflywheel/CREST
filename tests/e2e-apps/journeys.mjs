@@ -288,21 +288,57 @@ const J2 = async (p, cap) => {
 
 /* ── J3 · Setting up a project (P-1 + P-2) ────────────────────────────── */
 const J3 = async (p, cap) => {
+  await go(p, C, 2000);
+  const out3 = p.locator("#logout");
+  if (await out3.isVisible().catch(() => false)) { await out3.click(); await pause(p, 800); }
+  await cap("J3 · One door, every console role (n1)",
+    "Sign-in offers no role selector — a role is granted in the registry and read back, never self-declared. This screen is our design; the reference never draws it.");
+  await pause(p, 4500);
   await consoleLogin(p, "orgadmin");
+  await hash(p, "#/where", 2200);
+  await cap("Where do you want to work? (n2)",
+    "Contexts come from granted roles read live from the registry. An empty list is a true answer.");
+  await pause(p, 4000);
   await hash(p, "#/org", 2200);
-  await cap("J3 · The Org Admin — standing configuration, not project work (p1_1)",
-    "The organisation's record, terms held, authorizations — read live. Role assignment and project creation are the named gaps (p1_2, p1_3).");
-  await pause(p, 5000);
+  await cap("The Org Admin — standing configuration, not project work (p1_1)",
+    "The organisation's record, terms held, authorizations — read live, including the declined-projects queue.");
+  await pause(p, 4500);
+  await hash(p, "#/projects/new", 2200);
+  await cap("Creating a project, and handing it over (p1_3)",
+    "POST /v1/projects names a Configurator; ownership starts PENDING. Creating is not configuring — acceptance is the Configurator's to give.");
+  await pause(p, 4500);
+  await hash(p, "#/owners", 2200);
+  await cap("Roles held, with grantor and date (p2_6)",
+    "A role is a record with an owner, not a checkbox — who granted it, when, and its state.");
+  await pause(p, 4000);
   await consoleLogin(p, "configurator");
-  await cap("The Project Configurator — a separate session, a separate flow",
-    "Composition's five choices (p2_1–p2_10) are missing; what runs is the operational side.");
+  await hash(p, "#/handover", 2200);
+  await cap("Ministry of Health handed you a project (n4)",
+    "The receiving side the reference never draws. Declining records who and why, and returns the project — it deletes nothing.");
+  await pause(p, 4500);
+  await hash(p, "#/compose", 2200);
+  await cap("Composition — a typed answer, no invented taxonomy (p2_1, p2_3, p2_5)",
+    "Each choice is stored with its decider and date. The five named vocabularies are L2 configuration this deployment does not declare.");
+  await pause(p, 4500);
+  await hash(p, "#/activate", 2200);
+  await cap("Activation — a refusal names what is missing (p2_7)",
+    "Infrastructure conditions and declared gates, each satisfiable; ACTIVE only when all are met. The read/write asymmetry is finding #176.");
+  await pause(p, 4500);
+  await hash(p, "#/partners", 2200);
+  await cap("Partners — approved orgs, time-bound grants (p2_17, p2_18)",
+    "A grant rides the partner's terms; an end date past the terms is refused (422), proven end to end.");
+  await pause(p, 4000);
+  await hash(p, "#/finance", 2200);
+  await cap("The finance-code link, and the support owner (p2_8, p2_10)",
+    "Stored verbatim against the project; the chart-of-accounts pull behind the reference's picker does not exist and the screen says so.");
   await pause(p, 4000);
   await hash(p, "#/status", 2200);
-  await cap("A funnel, not a set of totals (p2_11)", "Windows, exits, credentials, instructions — real queues. STP and tier-mix metric contracts are named as unbuilt (p2_12, p2_13).");
+  await cap("A funnel, not a set of totals (p2_11)",
+    "Windows, exits, credentials, instructions — real queues. STP and tier-mix metric contracts are named as unbuilt (p2_12, p2_13, #31).");
   await pause(p, 4500);
-  await hash(p, "#/sources", 2200);
-  await cap("Sources — the same integration pattern, a different registry (p2_9)",
-    "riverside-dhis2 is registered by the story, with its heartbeat and its finding (#117) on the face of it.");
+  await hash(p, "#/people", 2200);
+  await cap("People & roles is not yours to change (n5)",
+    "An entry is never hidden by role. The guard names who can grant, shows what is readable, and shows no status code.");
   await pause(p, 4500);
 };
 
