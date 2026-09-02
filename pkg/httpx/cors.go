@@ -35,7 +35,14 @@ func CORSFromOrigins(origins string) Middleware {
 				h.Set("Access-Control-Allow-Origin", origin)
 				h.Set("Vary", "Origin")
 				h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-CREST-On-Behalf-Of")
-				h.Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+				// PUT is here because the J3 configuration endpoints are PUTs
+				// by design (one record per key, idempotent): composition
+				// choices, activation gates, the finance link, the support
+				// owner. Without it the preflight fails and a door sees only
+				// "Failed to fetch" — an endpoint with no browser path to
+				// call it, which the service-level tests could not notice
+				// because they call the service directly.
+				h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 				h.Set("Access-Control-Max-Age", "600")
 				if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 					w.WriteHeader(http.StatusNoContent)

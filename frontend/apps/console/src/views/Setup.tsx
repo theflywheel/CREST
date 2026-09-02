@@ -10,8 +10,8 @@
 import { useState } from "react";
 import { api, FIX } from "@crest/api";
 import { Callout, Chip, OptionCard, RefField, OpenNote, StepCounter } from "@crest/ui";
-import { Card, CardTitled, KVR, Lede, LoadFrame, Mono, MonoShort, Stat, Title, useLoad, when } from "../ui";
-import { useConsole } from "../state";
+import { Card, CardTitled, KVR, Lede, LoadFrame, Mono, MonoShort, short, Stat, Tbl, Title, useLoad, when } from "../ui";
+import { errText, useConsole } from "../state";
 import { useNavigate } from "react-router-dom";
 
 // The reference's action row: secondary left, primary right.
@@ -35,17 +35,27 @@ function Actions(props: { back?: [string, () => void]; go?: [string, () => void]
 // ── p1_1 · Standing configuration, not project work ─────────────────────────
 export function Projects() {
   const nav = useNavigate();
+  const s = useConsole();
+  const me = s.me!.partyId;
   const r = useLoad(async () => {
-    const [org, reg, terms] = await Promise.all([
+    const [org, reg, projects, declined, orgRoles] = await Promise.all([
       api.get("parties", `/v1/parties/${encodeURIComponent(FIX.org)}`),
       api.get("parties", `/v1/organisations/${encodeURIComponent(FIX.org)}/registration`).catch(() => null),
-      api.get("parties", "/v1/terms").catch(() => ({ terms: [] })),
+      api.get("parties", `/v1/projects?ownerPartyId=${encodeURIComponent(me)}`).catch(() => ({ projects: [] })),
+      api.get("parties", `/v1/projects?ownerPartyId=${encodeURIComponent(me)}&ownership=DECLINED`).catch(() => ({ projects: [] })),
+      api.get("parties", `/v1/organisations/${encodeURIComponent(FIX.org)}/roles`).catch(() => ({ roles: [] })),
     ]);
-    return { org: org.party || org, reg, terms: terms.terms || [] };
-  });
+    return {
+      org: org.party || org,
+      reg,
+      projects: (projects.projects || []) as Array<{ id: string; name?: string; state?: string; ownership?: { state?: string; partyId?: string } }>,
+      declined: (declined.projects || []) as Array<{ id: string; name?: string; ownership?: { reason?: string; partyId?: string } }>,
+      roles: (orgRoles.roles || []) as Array<{ partyId?: string }>,
+    };
+  }, [me]);
   return (
     <LoadFrame r={r}>
-      {({ org, reg }) => (
+      {({ org, reg, projects, declined, roles }) => (
         <>
           <Title t={"Welcome to " + (org.displayName || "your organisation")} />
           <Lede>
@@ -71,11 +81,60 @@ export function Projects() {
                 <div style={{ height: 8 }} />
                 <KVR rows={[["custodian party", <MonoShort id={FIX.custodian} />]]} />
               </CardTitled>
+              <CardTitled t="Projects this organisation runs">
+                <Tbl
+                  heads={["Project", "State", "Handover", "Configurator", ""]}
+                  rows={projects.map((p) => [
+                    p.name || <MonoShort id={p.id} />,
+                    <Chip kind={p.state === "ACTIVE" ? "ok" : "plain"}>{p.state}</Chip>,
+                    p.ownership?.state ? (
+                      <Chip kind={p.ownership.state === "ACCEPTED" ? "ok" : p.ownership.state === "DECLINED" ? "err" : "warn"}>
+                        {p.ownership.state.toLowerCase()}
+                      </Chip>
+                    ) : (
+                      <Chip kind="plain">unhanded</Chip>
+                    ),
+                    p.ownership?.partyId ? <MonoShort id={p.ownership.partyId} /> : "nobody named",
+                    <button
+                      className="btn secondary"
+                      data-open-project={p.id}
+                      style={{ width: "auto", padding: "7px 12px" }}
+                      onClick={() => {
+                        s.setProjectId(p.id);
+                        nav("/handover");
+                      }}
+                    >
+                      Open the handover
+                    </button>,
+                  ])}
+                  empty="No project yet. Creating one names it and appoints who configures it — nothing about how it runs is decided here."
+                />
+              </CardTitled>
+              {declined.length ? (
+                <CardTitled t="Handed back to you" chip={<Chip kind="err">{declined.length}</Chip>}>
+                  <KVR
+                    rows={declined.map((p) => [
+                      p.name || short(p.id),
+                      <>
+                        {p.ownership?.partyId ? <MonoShort id={p.ownership.partyId} /> : "somebody"} declined it
+                        {p.ownership?.reason ? ": “" + p.ownership.reason + "”" : ""} — it is intact and yours to hand on
+                        again
+                      </>,
+                    ])}
+                  />
+                  <div style={{ height: 10 }} />
+                  <ReHand projects={declined.map((p) => p.id)} />
+                  <p className="muted" style={{ marginTop: 8 }}>
+                    Re-handing is the owning organisation's act, never the outgoing configurator's: somebody who agreed
+                    to configure a project has not thereby agreed to hand it on.
+                  </p>
+                </CardTitled>
+              ) : null}
             </div>
             <div>
               <div className="stats">
-                <Stat n={<span data-stat="projects">—</span>} label="Projects · ready to add your first" />
-                <Stat n={1} label="People in roles · you, as Org Admin" />
+                <Stat n={<span data-stat="projects">{projects.length}</span>} label={projects.length ? "Projects" : "Projects · ready to add your first"} />
+                <Stat n={roles.length} label="People in roles · granted by this organisation" />
               </div>
               <Callout kind="teal" title="What an Org Admin holds">
                 An Org Admin manages standing configuration across every project this organisation runs. It does not
@@ -83,15 +142,49 @@ export function Projects() {
               </Callout>
             </div>
           </div>
-          <OpenNote>
-            The project count reads “—” because this deployment has no project record to count yet: creating a project
-            (<span className="mono">p1_3</span>) and handing it to a Configurator is the J3 backend's work, and the
-            console will not invent a zero it cannot read. Everything else on this frame is a live registry read.
-          </OpenNote>
           <Actions back={["Assign people to roles", () => nav("/people")]} go={["Create a project", () => nav("/projects/new")]} />
         </>
       )}
     </LoadFrame>
+  );
+}
+
+// The Org Admin's answer to a decline: hand the project to somebody else.
+// POST /v1/projects/{id}/configurator always lands back at PENDING, because
+// a person who has not answered has not agreed.
+function ReHand(props: { projects: string[] }) {
+  const [to, setTo] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState("");
+  return (
+    <>
+      {err ? <div className="errbar">{err}</div> : null}
+      {done ? <Callout kind="green" title="Handed on">{done}</Callout> : null}
+      <form
+        id="rehandform"
+        style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}
+        onSubmit={async (ev) => {
+          ev.preventDefault();
+          setErr(null);
+          setDone("");
+          try {
+            for (const id of props.projects) {
+              await api.post("parties", `/v1/projects/${encodeURIComponent(id)}/configurator`, {
+                configuratorPartyId: to.trim(),
+              });
+            }
+            setDone("The handover is waiting on an answer again, and the decline that came before it is still on the record.");
+          } catch (e) {
+            setErr(errText(e));
+          }
+        }}
+      >
+        <RefField label="Hand it to" hint="A proposal: the project waits at PENDING until they answer">
+          <input name="rehandto" required value={to} onChange={(e) => setTo(e.target.value)} placeholder="did:crest:party:…" />
+        </RefField>
+        <button className="btn inline" id="rehand">Hand it over again</button>
+      </form>
+    </>
   );
 }
 
@@ -101,6 +194,27 @@ export function Projects() {
 // screen says so rather than collecting three answers into a browser tab.
 export function NewProject() {
   const nav = useNavigate();
+  const s = useConsole();
+  const [name, setName] = useState("");
+  const [coverage, setCoverage] = useState("");
+  const [configurator, setConfigurator] = useState(s.me!.partyId);
+  const [err, setErr] = useState<string | null>(null);
+  const create = async () => {
+    setErr(null);
+    try {
+      const out = await api.post("parties", "/v1/projects", {
+        name: name.trim(),
+        ownerPartyId: FIX.org,
+        configuration: coverage.trim() ? { coverage: coverage.trim() } : undefined,
+        configuratorPartyId: configurator.trim() || undefined,
+      });
+      const p = (out.project || out) as { id: string };
+      s.setProjectId(p.id);
+      nav("/handover");
+    } catch (e) {
+      setErr(errText(e));
+    }
+  };
   return (
     <>
       <Title t="Creating a project, and handing it over" />
@@ -108,30 +222,43 @@ export function NewProject() {
         The Org Admin names the project and appoints who configures it. What the project actually does is not decided
         here.
       </Lede>
-      <div className="form-grid">
+      {err ? <div className="errbar">{err}</div> : null}
+      <form
+        id="newprojectform"
+        className="form-grid"
+        onSubmit={(ev) => {
+          ev.preventDefault();
+          create();
+        }}
+      >
         <RefField label="Project name">
-          <input name="projectname" placeholder="the name workers and funders will see" />
+          <input name="projectname" required value={name} onChange={(e) => setName(e.target.value)} placeholder="the name workers and funders will see" />
         </RefField>
-        <RefField label="Coverage">
-          <input name="coverage" placeholder="wards, sub-counties, districts" />
+        <RefField label="Coverage" hint="Stored on the project as this deployment's own configuration; CREST never reads inside it">
+          <input name="coverage" value={coverage} onChange={(e) => setCoverage(e.target.value)} placeholder="wards, sub-counties, districts" />
         </RefField>
         <RefField
           label="Project Configurator (Project Configurator)"
-          hint="Also holds Work Definition Author on this project. In small organisations one person often holds both; the roles stay separate."
+          hint="Naming somebody is a proposal, not an assignment: the project waits at PENDING until they answer"
         >
-          <input name="configurator" placeholder="the person who will configure it" />
+          <input name="configurator" value={configurator} onChange={(e) => setConfigurator(e.target.value)} placeholder="did:crest:party:…" />
         </RefField>
-      </div>
+        <div style={{ display: "flex", alignItems: "flex-end" }}>
+          <button className="btn dominant" id="create-project">
+            Continue to setup
+          </button>
+        </div>
+      </form>
       <Callout kind="green" title="What is deliberately not on this screen">
         Nothing about registration, payment or validation is chosen on this screen. Those are compositability choices,
         and they belong to whoever configures the project, not to whoever creates it.
       </Callout>
-      <OpenNote>
-        This frame cannot be submitted on this deployment: there is no project record and no ownership handover to
-        write, so the form is shown as the reference draws it and nothing is saved. A named owner who never agreed is
-        exactly the failure the handover exists to prevent — inventing one here would be worse than the gap.
-      </OpenNote>
-      <Actions back={["Back", () => nav("/people")]} go={["Back to standing configuration", () => nav("/projects")]} />
+      <Callout kind="teal" title="What happens next">
+        The project is created DRAFT and the handover sits unanswered. The person you named sees what arrived and can
+        accept it or hand it back with a reason — and until they accept, they can read the project and change nothing
+        in it.
+      </Callout>
+      <Actions back={["Back", () => nav("/people")]} />
     </>
   );
 }
@@ -148,22 +275,25 @@ export function People() {
 // n5 — People & roles is not yours to change.
 function RoleGuard() {
   const nav = useNavigate();
+  const s = useConsole();
   const r = useLoad(async () => {
-    const q = new URLSearchParams({ partyId: FIX.org });
-    const [grants, org] = await Promise.all([
-      api.get("parties", "/v1/authorizations?" + q).catch(() => ({ authorizations: [] })),
-      api.get("parties", `/v1/parties/${encodeURIComponent(FIX.org)}`).catch(() => null),
-    ]);
+    const out = await api.get("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/roles`);
+    const grantableBy = out.grantableBy as string | undefined;
+    const org = grantableBy
+      ? await api.get("parties", `/v1/parties/${encodeURIComponent(grantableBy)}`).catch(() => null)
+      : null;
     return {
-      grants: (grants.authorizations || []) as Array<{
-        partyId?: string; functions?: string[]; authorityPartyId?: string; period?: { from?: string };
+      roles: (out.roles || []) as Array<{
+        partyId?: string; displayName?: string; functions?: string[]; grantedByPartyId?: string;
+        authorityPartyId?: string; grantedAt?: string; state?: string;
       }>,
+      grantableBy,
       org: org && (org.party || org),
     };
-  });
+  }, [s.projectId]);
   return (
     <LoadFrame r={r}>
-      {({ grants, org }) => (
+      {({ roles, grantableBy, org }) => (
         <>
           <Title t="People & roles is not yours to change" />
           <Lede>
@@ -174,7 +304,7 @@ function RoleGuard() {
             <KVR
               rows={[
                 ["the role you would need", "Org Admin"],
-                ["held at", org?.displayName ? String(org.displayName) : <MonoShort id={FIX.org} />],
+                ["granted by", org?.displayName ? String(org.displayName) : <MonoShort id={grantableBy || FIX.org} />],
                 [
                   "how to reach them",
                   (org?.contactRoutes || []).length
@@ -190,20 +320,17 @@ function RoleGuard() {
             </p>
           </CardTitled>
           <CardTitled t="What you can see here, read only">
-            <KVR
-              rows={grants.map((a) => [
-                <MonoShort id={a.partyId} />,
-                <>
-                  {(a.functions || []).join(", ")} · granted by <MonoShort id={a.authorityPartyId || ""} />
-                  {a.period?.from ? " · " + when(a.period.from) : ""}
-                </>,
+            <Tbl
+              heads={["Holder", "Functions", "Granted by", "Since", "State"]}
+              rows={roles.map((a) => [
+                a.displayName || <MonoShort id={a.partyId} />,
+                (a.functions || []).join(", "),
+                <MonoShort id={a.grantedByPartyId || a.authorityPartyId || ""} />,
+                when(a.grantedAt),
+                <Chip kind={a.state === "ACTIVE" ? "ok" : "warn"}>{a.state}</Chip>,
               ])}
+              empty="Nothing is readable here yet. An empty list is a true answer: it means a role still has to be granted."
             />
-            {grants.length ? null : (
-              <div className="muted">
-                Nothing is readable here yet. An empty list is a true answer: it means a role still has to be granted.
-              </div>
-            )}
           </CardTitled>
           <Callout kind="green" title="The rule this screen sets">
             No blank refusal, and no vanished entry. A guard states the role you would need, names somebody who can
@@ -216,42 +343,47 @@ function RoleGuard() {
   );
 }
 
-// p1_2 — a role is held, not just recorded.
+// p1_2 — a role is held, not just recorded. GET /v1/organisations/{id}/roles
+// is the question GET /v1/authorizations cannot answer: it keys on the party
+// who GAVE the grant, which is what a standing-configuration screen is about.
 function RoleHolders() {
   const nav = useNavigate();
   const r = useLoad(async () => {
-    const q = new URLSearchParams({ partyId: FIX.org });
-    const out = await api.get("parties", "/v1/authorizations?" + q).catch(() => ({ authorizations: [] }));
-    return (out.authorizations || []) as Array<{
-      partyId?: string;
-      functions?: string[];
-      grantedByPartyId?: string;
-      authorityPartyId?: string;
-      period?: { from?: string; reviewBy?: string };
-    }>;
+    const out = await api.get("parties", `/v1/organisations/${encodeURIComponent(FIX.org)}/roles`);
+    return {
+      roles: (out.roles || []) as Array<{
+        partyId?: string; displayName?: string; partyKind?: string; functions?: string[];
+        grantedByPartyId?: string; grantedAt?: string; until?: string; state?: string;
+      }>,
+      grantableBy: out.grantableBy as string | undefined,
+    };
   });
   return (
     <LoadFrame r={r}>
-      {(list) => (
+      {({ roles }) => (
         <>
           <Title t="Putting named people into roles" />
           <Lede>An invitation goes to a work email. The person holds the role only once they have accepted it.</Lede>
-          <CardTitled t="Grants standing in this organisation">
-            <KVR
-              rows={list.map((a) => [
-                <MonoShort id={a.partyId} />,
+          <CardTitled t="Who holds a role under this organisation">
+            <Tbl
+              heads={["Holder", "Functions", "Granted by", "Since", "Until", "State"]}
+              rows={roles.map((a) => [
                 <>
-                  {(a.functions || []).join(", ")} · granted by <MonoShort id={a.authorityPartyId || a.grantedByPartyId || ""} />
-                  {a.period?.from ? " · " + when(a.period.from) : ""}
+                  {a.displayName || <MonoShort id={a.partyId} />}
+                  {a.partyKind ? <span className="muted"> · {a.partyKind}</span> : null}
                 </>,
+                (a.functions || []).join(", "),
+                <MonoShort id={a.grantedByPartyId || ""} />,
+                when(a.grantedAt),
+                when(a.until),
+                <Chip kind={a.state === "ACTIVE" ? "ok" : a.state === "REVOKED" ? "err" : "warn"}>{a.state}</Chip>,
               ])}
+              empty="Nobody holds a role granted by this organisation. An empty list here is a true answer, not a blank screen: it means a role still has to be granted."
             />
-            {list.length ? null : (
-              <div className="muted">
-                No grant is readable for this organisation. An empty list here is a true answer, not a blank screen: it
-                means a role still has to be granted.
-              </div>
-            )}
+            <p className="muted" style={{ marginTop: 8 }}>
+              Revoked and expired grants stay listed with their state, because a console showing only live grants
+              cannot answer “who used to be able to do this, and who took it away”.
+            </p>
           </CardTitled>
           <Callout kind="green" title="Why acceptance is the thing that matters">
             A role assignment that took effect without the person ever appearing would let an organisation attribute a
@@ -259,11 +391,12 @@ function RoleHolders() {
             attached.
           </Callout>
           <OpenNote>
-            Read-only on this deployment: the invited/active distinction, the vacant-role line and the invitation itself
-            need a role-grant write path and a notification service. Nothing on this screen is invented — what you see
-            is every authorization the registry will report for this organisation.
+            Two halves of the reference's frame are still unbuilt, and neither is faked here: an invitation to a work
+            email (there is no notification service) and the invited-versus-active distinction that goes with it.
+            Project-scoped roles are granted on the project's own Owners screen, where the grant carries this
+            organisation as its authority.
           </OpenNote>
-          <Actions back={["Back", () => nav("/projects")]} go={["Create a project", () => nav("/projects/new")]} />
+          <Actions back={["Back", () => nav("/org")]} go={["Create a project", () => nav("/projects/new")]} />
         </>
       )}
     </LoadFrame>
@@ -490,31 +623,6 @@ export function Finance() {
   );
 }
 
-// ── p2_10 · Support belongs to the project, not the platform ────────────────
-export function Support() {
-  const nav = useNavigate();
-  return (
-    <>
-      <StepCounter>Project setup · 6 of 7</StepCounter>
-      <Title t="Who a worker reaches when something goes wrong" />
-      <Lede>
-        First line sits with the project, because the project is where the answer is. The instance keeps only genuine
-        platform faults.
-      </Lede>
-      <Callout kind="teal" title="What moved, and why">
-        This changed in this version. Support used to sit at instance level, which meant every worker question
-        travelled past the people best placed to answer it. First line is now project-scoped and staffed; the instance
-        keeps only genuine platform faults.
-      </Callout>
-      <OpenNote>
-        No support owner can be named on this deployment yet: there is nothing to write it to, and a support contact
-        this console invented would be worse than an empty field — a worker would be sent to nobody.
-      </OpenNote>
-      <Actions back={["Back", () => nav("/finance")]} go={["Continue", () => nav("/status")]} />
-    </>
-  );
-}
-
 // ── n3 · One rail, two actors ───────────────────────────────────────────────
 const CONTRACT: Array<[string, string, string]> = [
   ["Projects", "Create a project and hand it to a Configurator", "Open the project handed to them"],
@@ -556,9 +664,9 @@ export function Navigation() {
         same posture as a held payment carrying a reason with an owner.
       </Callout>
       <Callout kind="green" title="What the reference already decided">
-        Every p1_* and p2_* setup frame carries these same five entries: the Org Admin and the Project Configurator see
-        the same rail, and only the appbar identity changes. That is a reference decision, not an omission, so this
-        console does not invent a role-scoped rail.
+        The rail is identical for both J3 actors within a section, and the reference draws three sections: the
+        five-entry setup rail, a dashboard rail, and a finance and support rail. Only the appbar identity changes
+        between the two actors.
       </Callout>
       <Card>
         <p className="body-2">
