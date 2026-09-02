@@ -88,6 +88,12 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	// face over the primitive rather than a second store of the same thing.
 	registerProjectRoutes(mux, d)
 
+	// The G-2 onboarding journey's own surface (§15 J1): project→org
+	// invitations — the offer whose acceptance creates a partner grant — and
+	// terms-upgrade requests with the check verdicts recorded before a wider
+	// set goes live.
+	registerOnboardingJourneyRoutes(mux, d)
+
 	// Onboarding (#20). Organisations apply for themselves; workers are often
 	// enrolled by someone else, and the two paths are deliberately different
 	// shapes rather than one endpoint with a flag.
