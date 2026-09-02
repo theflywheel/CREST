@@ -1,5 +1,5 @@
 // Retheme Quartz (pinned v4.5.2) to the CREST journey apps' design system
-// (apps/shared/crest.css — DIGIT palette, Roboto/Roboto Mono). Ordered
+// (frontend/packages/ui/src/styles.css — DIGIT palette, Roboto/Roboto Mono). Ordered
 // first-occurrence replacement, because two defaults — tertiary "#84a59d"
 // and the rgba highlight — appear in BOTH mode blocks and need different
 // CREST values per mode; lightMode precedes darkMode in the config, so the

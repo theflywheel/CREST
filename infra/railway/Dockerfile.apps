@@ -27,7 +27,7 @@ RUN rm -rf content && mkdir content \
     && cat /tmp/fm content/index.md > /tmp/ix && mv /tmp/ix content/index.md \
     # The subpath in baseUrl is what makes Quartz emit /docs/-rooted links.
     && sed -i 's/pageTitle: "Quartz 4"/pageTitle: "CREST Design Docs"/; s#baseUrl: "quartz.jzhao.xyz"#baseUrl: "crest-apps-production.up.railway.app/docs"#' quartz.config.ts \
-    # Retheme to the CREST design system (apps/shared/crest.css); the script
+    # Retheme to the CREST design system (frontend/packages/ui/src/styles.css); the script
     # fails the build if the pinned Quartz defaults are not found verbatim.
     && node quartz-theme.mjs \
     && node ./quartz/bootstrap-cli.mjs build \
@@ -44,7 +44,7 @@ RUN pnpm install --frozen-lockfile && pnpm -r build
 
 FROM nginx:1.27-alpine
 COPY apps/index.html   /usr/share/nginx/html/index.html
-COPY apps/shared       /usr/share/nginx/html/shared
+COPY frontend/packages/ui/src/styles.css /usr/share/nginx/html/crest.css
 COPY --from=webapps /frontend/apps/worker/dist /usr/share/nginx/html/worker
 COPY --from=webapps /frontend/apps/verify/dist /usr/share/nginx/html/verify
 COPY --from=webapps /frontend/apps/field/dist /usr/share/nginx/html/enrolment

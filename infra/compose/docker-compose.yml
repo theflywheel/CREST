@@ -433,7 +433,7 @@ services:
       - ../../apps/web:/usr/share/nginx/html:ro
     ports: ["${WEB_PORT:-59100}:80"]
 
-  # The journey apps (apps/console, worker, enrolment, verify over apps/shared):
+  # The journey apps (frontend/ workspace, assembled by make apps-build):
   # the reference design rebuilt as separate products, one door. The docroot
   # is assembled by `make apps-build` (frontend/scripts/assemble.mjs): the
   # rebuilt doors from their Vite dist, the rest straight from apps/.
