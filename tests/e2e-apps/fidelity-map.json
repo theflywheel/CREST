@@ -1,0 +1,52 @@
+{
+  "_note": [
+    "How the fidelity gate ARRIVES at a screen. One entry per in-scope screen",
+    "id: which door, which route, and which login gets there. Extending the",
+    "gate to another journey is adding entries here — never editing the gate.",
+    "",
+    "arrive: 'anon' (no login), 'worker' (#login-grace), 'field' ([data-login]),",
+    "or 'console:<persona-key>' (the console's persona card, by data-persona).",
+    "route: the hash route inside the door, or '' for the door's entry screen.",
+    "",
+    "A screen with no entry here is out of the gate's scope and is reported as",
+    "such — the gate never silently passes a screen it did not visit."
+  ],
+  "scope": {
+    "journeys": ["p1", "p2"],
+    "designScreens": ["n1", "n2", "n3", "n4", "n5"],
+    "why": "Phase 1 is scoped to J3 — setting up a project (P-1 Org Admin, P-2 Project Configurator) — plus the five connective-tissue screens our own design adds (docs/design/j3-connective-tissue/README.md)."
+  },
+  "screens": {
+    "p1_1": { "app": "console", "arrive": "console:orgadmin", "route": "#/org" },
+    "p1_2": { "app": "console", "arrive": "console:orgadmin", "route": "#/org" },
+    "p1_3": { "app": "console", "arrive": "console:orgadmin", "route": "#/org" },
+
+    "p2_1": { "app": "console", "arrive": "console:configurator", "route": "#/status" },
+    "p2_2": { "app": "field", "arrive": "field", "route": "#/register" },
+    "p2_3": { "app": "console", "arrive": "console:configurator", "route": "#/definition" },
+    "p2_4": { "app": "console", "arrive": "console:custodian", "route": "#/unclear" },
+    "p2_5": { "app": "console", "arrive": "console:configurator", "route": "#/payments" },
+    "p2_6": { "app": "console", "arrive": "console:orgadmin", "route": "#/org" },
+    "p2_7": { "app": "console", "arrive": "console:configurator", "route": "#/status" },
+    "p2_8": { "app": "console", "arrive": "console:configurator", "route": "#/payments" },
+    "p2_9": { "app": "console", "arrive": "console:configurator", "route": "#/sources" },
+    "p2_10": { "app": "console", "arrive": "console:configurator", "route": "#/status" },
+    "p2_11": { "app": "console", "arrive": "console:configurator", "route": "#/status" },
+    "p2_12": { "app": "console", "arrive": "console:configurator", "route": "#/status" },
+    "p2_13": { "app": "console", "arrive": "console:configurator", "route": "#/status" },
+    "p2_14": { "app": "console", "arrive": "console:configurator", "route": "#/payments" },
+    "p2_15": { "app": "console", "arrive": "console:configurator", "route": "#/trace" },
+    "p2_16": { "app": "console", "arrive": "console:configurator", "route": "#/reports" },
+    "p2_17": { "app": "console", "arrive": "console:configurator", "route": "#/status" },
+    "p2_18": { "app": "console", "arrive": "console:configurator", "route": "#/status" },
+    "p2_19": { "app": "field", "arrive": "field", "route": "#/roster" },
+    "p2_20": { "app": "field", "arrive": "field", "route": "#/roster" },
+    "p2_21": { "app": "console", "arrive": "console:custodian", "route": "#/unclear" },
+
+    "n1": { "app": "console", "arrive": "anon", "route": "" },
+    "n2": { "app": "console", "arrive": "console:orgadmin", "route": "#/where" },
+    "n3": { "app": "console", "arrive": "console:orgadmin", "route": "#/projects" },
+    "n4": { "app": "console", "arrive": "console:configurator", "route": "#/handover" },
+    "n5": { "app": "console", "arrive": "console:configurator", "route": "#/people" }
+  }
+}

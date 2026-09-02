@@ -1,0 +1,4 @@
+{
+  "_note": ["No quarantines today: every in-scope screen the ledger calls implemented is reachable. Kept as an empty file because the gate reads it, and because the next unreachable screen must land here with an issue number rather than as a silent skip."],
+  "screens": {}
+}

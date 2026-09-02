@@ -15,218 +15,250 @@ script's MAPPING and re-run. Assessment context: `docs/JOURNEY_GAP_ASSESSMENT.md
 | missing | 72 | 50% |
 | **total** | **143** | |
 
+## The fidelity gate
+
+The **Gate** column below is generated from the gate's own scope
+(`tests/e2e-apps/fidelity-map.json`) and this ledger's statuses, so the
+two cannot drift apart. `make fidelity` drives the real stack to every
+*asserted* screen and holds it to its `docs/journey-spec.json` entry;
+a screen statused **implemented** whose assertions fail turns the gate
+red, which is the check that stops this table claiming coverage the
+screens do not have. Nothing here is evidence that an asserted screen
+passed — only the gate run is that.
+
+In scope today (J3 — `p1_*`, `p2_*`, plus the design screens `n1`–`n5`): **29** screens — **5** asserted, **0** quarantined, **24** skipped with a reason.
+
 ## G-1 — Instance Administrator (8 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `g1_1` | Stand up | The first screen anyone ever sees | **missing** | — | Instance stand-up wizard: no deployment-creation surface; a stack is stood up by compose/Railway, not in the console |
-| `g1_2` | Instance | Naming the instance, and binding identity | **compressed** | console `#/instance` | Read-only: GET /v1/instance shows the instance identity/issuer; naming and identity binding are deploy-time configuration, not console actions |
-| `g1_3` | Consent | Consent rules come before the first worker | **illustrative** | console `#/instance` | Consent floor is displayed; consent-policy editing has no endpoint (Admin.tsx Instance view labels it) |
-| `g1_5` | Invite | The invitation names a person | **missing** | — | Invitation naming a person: no invitation service exists |
-| `g1_6` | Services | Services, not roles | **compressed** | console `#/instance` | Service health sweep reads real /healthz of each member; the services-not-roles framing is shown read-only |
-| `g4_1` | Queue | A queue of exceptions, not of everybody | **illustrative** | console `#/instance` | Admission queue rendered from the registration states; the review queue itself is labelled illustrative in Admin.tsx |
-| `g4_2` | Review | What can actually be checked, and what cannot | **illustrative** | console `#/instance` | What-can-be-checked review detail: display only |
-| `g4_3` | Approve | Approval is the whole decision | **compressed** | console `#/onboard/status` | The approval decision exists as POST /v1/organisations/{id}/decision (unit-tested), but the console has no reviewer surface for it; the deployed model is REGISTRY_ORG_APPROVAL=on-terms-acceptance |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `g1_1` | Stand up | The first screen anyone ever sees | **missing** | — | — | Instance stand-up wizard: no deployment-creation surface; a stack is stood up by compose/Railway, not in the console |
+| `g1_2` | Instance | Naming the instance, and binding identity | **compressed** | console `#/instance` | — | Read-only: GET /v1/instance shows the instance identity/issuer; naming and identity binding are deploy-time configuration, not console actions |
+| `g1_3` | Consent | Consent rules come before the first worker | **illustrative** | console `#/instance` | — | Consent floor is displayed; consent-policy editing has no endpoint (Admin.tsx Instance view labels it) |
+| `g1_5` | Invite | The invitation names a person | **missing** | — | — | Invitation naming a person: no invitation service exists |
+| `g1_6` | Services | Services, not roles | **compressed** | console `#/instance` | — | Service health sweep reads real /healthz of each member; the services-not-roles framing is shown read-only |
+| `g4_1` | Queue | A queue of exceptions, not of everybody | **illustrative** | console `#/instance` | — | Admission queue rendered from the registration states; the review queue itself is labelled illustrative in Admin.tsx |
+| `g4_2` | Review | What can actually be checked, and what cannot | **illustrative** | console `#/instance` | — | What-can-be-checked review detail: display only |
+| `g4_3` | Approve | Approval is the whole decision | **compressed** | console `#/onboard/status` | — | The approval decision exists as POST /v1/organisations/{id}/decision (unit-tested), but the console has no reviewer surface for it; the deployed model is REGISTRY_ORG_APPROVAL=on-terms-acceptance |
 ## G-2 — Onboarding Authorising Signatory (11 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `g2_1` | Register | Six fields, and one of them decides everything after | **implemented** | console `#/onboard` | The reference's six-field identity form (legal name, country, work email, contact person, kind, sector) as a desktop console frame — Registration · 1 of 4 with the Register/Terms/Certificates/Done rail; registration documents deliberately not asked, per the reference's own callout → POST /v1/organisations. Since #168 the whole form persists: country/kind/sector/contact person ride the Party's generic attributes map and are read back from GET /v1/organisations/{id}/registration — a registry round-trip, not browser state |
-| `g2_4` | Done | Listed, approved, connected — and still on nobody’s project | **implemented** | console `#/onboard/status` | GET /v1/organisations/{id}/registration: state, exact terms version, decider. Under REGISTRY_ORG_APPROVAL=manual (the local default) the terminal state waits on the operator's decision; on-terms-acceptance approves in the acceptance's transaction. 'On nobody's project' is true — no project membership exists |
-| `g2_5` | Standalone | Before or after an invitation — either order works | **missing** | — | Invitation-before-or-after ordering: no invitation service |
-| `g2_6` | Status | Wider terms, asked for only when they are needed | **missing** | — | Asking for wider terms later: only one terms listing exists (GET /v1/terms), no term-upgrade request |
-| `g2_7` | Status | The documents that were not asked for at registration | **missing** | — | Qualification documents: no document upload on onboarding |
-| `g2_8` | Status | An ending that says what to watch for | **compressed** | console `#/onboard/status` | Terminal screen says what was decided and by whom; 'what to watch for' guidance partially present |
-| `g2_9` | Invitations | The enable step, seen from the side that receives it | **missing** | — | Receiving an invitation/enablement: no invitation service |
-| `g2_10` | Invitations | Live, and what to do first | **missing** | — | 'Live, and what to do first' post-enablement onboarding: not built |
-| `g2_11` | Terms | Published, named, and never edited underneath you | **implemented** | console `#/onboard/terms` | GET /v1/terms lists published versions; acceptance names an exact version via POST /v1/organisations/{id}/terms-acceptance — 'never edited underneath you' is the backend's versioning rule |
-| `g2_12` | Certificates | The check that mostly runs without a person | **missing** | — | Certificate checks: no certificate verification exists |
-| `g2_13` | Done | Approval is what makes the connection real | **implemented** | console `#/onboard/status` | Approval recorded with decider (policy or person); publication to the registry log happens in the approving transaction |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `g2_1` | Register | Six fields, and one of them decides everything after | **implemented** | console `#/onboard` | — | The reference's six-field identity form (legal name, country, work email, contact person, kind, sector) as a desktop console frame — Registration · 1 of 4 with the Register/Terms/Certificates/Done rail; registration documents deliberately not asked, per the reference's own callout → POST /v1/organisations. Since #168 the whole form persists: country/kind/sector/contact person ride the Party's generic attributes map and are read back from GET /v1/organisations/{id}/registration — a registry round-trip, not browser state |
+| `g2_4` | Done | Listed, approved, connected — and still on nobody’s project | **implemented** | console `#/onboard/status` | — | GET /v1/organisations/{id}/registration: state, exact terms version, decider. Under REGISTRY_ORG_APPROVAL=manual (the local default) the terminal state waits on the operator's decision; on-terms-acceptance approves in the acceptance's transaction. 'On nobody's project' is true — no project membership exists |
+| `g2_5` | Standalone | Before or after an invitation — either order works | **missing** | — | — | Invitation-before-or-after ordering: no invitation service |
+| `g2_6` | Status | Wider terms, asked for only when they are needed | **missing** | — | — | Asking for wider terms later: only one terms listing exists (GET /v1/terms), no term-upgrade request |
+| `g2_7` | Status | The documents that were not asked for at registration | **missing** | — | — | Qualification documents: no document upload on onboarding |
+| `g2_8` | Status | An ending that says what to watch for | **compressed** | console `#/onboard/status` | — | Terminal screen says what was decided and by whom; 'what to watch for' guidance partially present |
+| `g2_9` | Invitations | The enable step, seen from the side that receives it | **missing** | — | — | Receiving an invitation/enablement: no invitation service |
+| `g2_10` | Invitations | Live, and what to do first | **missing** | — | — | 'Live, and what to do first' post-enablement onboarding: not built |
+| `g2_11` | Terms | Published, named, and never edited underneath you | **implemented** | console `#/onboard/terms` | — | GET /v1/terms lists published versions; acceptance names an exact version via POST /v1/organisations/{id}/terms-acceptance — 'never edited underneath you' is the backend's versioning rule |
+| `g2_12` | Certificates | The check that mostly runs without a person | **missing** | — | — | Certificate checks: no certificate verification exists |
+| `g2_13` | Done | Approval is what makes the connection real | **implemented** | console `#/onboard/status` | — | Approval recorded with decider (policy or person); publication to the registry log happens in the approving transaction |
 ## G-4 — Worker Registry Custodian (4 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `g4_4` | Coverage | The headline is not how many are registered | **missing** | — | Coverage-by-place headline: no geography endpoint |
-| `g4_5` | Quality | A worklist, not a completeness chart | **missing** | — | Record-by-record quality worklist: not built (unclear rows are evidence-side, not registry quality) |
-| `g4_6` | Duplicates | A rate to drive down, and a confirmation rule that must hold | **implemented** | console `#/dupes` | GET /v1/holds + POST /v1/holds/{id}/resolve; merges_without_confirmation metric from GET /v1/holds/metrics; probable matches hold and never auto-merge |
-| `g4_7` | Reuse | The number that says whether this is infrastructure or storage | **missing** | — | Registry reuse / return-on-shared-registry metric: no endpoint |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `g4_4` | Coverage | The headline is not how many are registered | **missing** | — | — | Coverage-by-place headline: no geography endpoint |
+| `g4_5` | Quality | A worklist, not a completeness chart | **missing** | — | — | Record-by-record quality worklist: not built (unclear rows are evidence-side, not registry quality) |
+| `g4_6` | Duplicates | A rate to drive down, and a confirmation rule that must hold | **implemented** | console `#/dupes` | — | GET /v1/holds + POST /v1/holds/{id}/resolve; merges_without_confirmation metric from GET /v1/holds/metrics; probable matches hold and never auto-merge |
+| `g4_7` | Reuse | The number that says whether this is infrastructure or storage | **missing** | — | — | Registry reuse / return-on-shared-registry metric: no endpoint |
 ## P-1 — Org Admin (3 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `p1_1` | Home | Standing configuration, not project work | **compressed** | console `#/org` | Organisation view reads the party, terms and authorizations (GET /v1/parties/{id}, /v1/terms, /v1/authorizations); standing-configuration framing only |
-| `p1_2` | People | A role is held, not just recorded | **missing** | — | Role assignment ('a role is held, not just recorded'): no role-grant write surface |
-| `p1_3` | Project | Creating a project is not configuring one | **missing** | — | Project creation: no POST for projects; the fixture context is seeded |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `p1_1` | Home | Standing configuration, not project work | **compressed** | console `#/org` | skipped (compressed) | Organisation view reads the party, terms and authorizations (GET /v1/parties/{id}, /v1/terms, /v1/authorizations); standing-configuration framing only |
+| `p1_2` | People | A role is held, not just recorded | **missing** | — | skipped (missing) | Role assignment ('a role is held, not just recorded'): no role-grant write surface |
+| `p1_3` | Project | Creating a project is not configuring one | **missing** | — | skipped (missing) | Project creation: no POST for projects; the fixture context is seeded |
 ## P-2 — Project Configurator (21 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `p2_1` | Compose | Five choices, answered separately | **missing** | — | Five composition choices: no project-composition surface |
-| `p2_2` | Workers | Registration and import are not alternatives | **compressed** | field `#/register` | Worker registration exists in the field door (assisted) and worker door (self); the configurator's registration-vs-import choice screen does not |
-| `p2_3` | Work | Three origins, one ratification | **missing** | — | Definition origin choice (three origins, one ratification): not built |
-| `p2_19` | Intake | Two ways in, and there is no third | **compressed** | field `#/roster` | Evidence intake: roster CSV close posts real batches (POST /v1/evidence/batches); the two-ways-in configuration screen itself is absent |
-| `p2_20` | Intake | The file is checked against the definition, row by row | **implemented** | field `#/roster` | Row-by-row check against the definition: per-row accepted/unclear verdicts from the real evidence service |
-| `p2_21` | Mismatch | A mismatch is somebody named, not a status | **implemented** | console `#/unclear` | GET /v1/unclear; a mismatch is a named row in the custodian's queue, resolvable by attribution — never a silent drop |
-| `p2_4` | Validate | What happens when evidence does not clear | **compressed** | console `#/unclear` | What happens when evidence does not clear: the unclear queue shows it; the validation-posture configuration does not exist |
-| `p2_5` | Payment | Payment is a posture, not a feature flag | **missing** | — | Payment posture configuration: not built |
-| `p2_6` | Owners | Configuring a project is not staffing it | **missing** | — | Owner assignment: not built |
-| `p2_17` | Partners | A directory, which is what registration was for | **missing** | — | Partner directory browse: no directory view |
-| `p2_18` | Grant | The grant is narrower than the terms, and it ends | **missing** | — | Partner grants (narrower than terms, time-bound): no grant surface |
-| `p2_7` | Activate | What a project looks like before it runs | **missing** | — | Activation gate: no activation state on projects |
-| `p2_8` | Finance | CREST does not invent account codes | **missing** | — | Finance-code linking: not built |
-| `p2_9` | Connect | The same integration pattern, a different registry | **compressed** | console `#/sources` | Source registration is real (the story registers riverside-dhis2, heartbeat state shows); the connect-wizard framing is absent |
-| `p2_10` | Support | Support belongs to the project, not the platform | **missing** | — | Support ownership configuration: not built |
-| `p2_11` | Status | A funnel, not a set of totals | **implemented** | console `#/status` | The funnel reads real queues: windows, exits, credentials, instructions |
-| `p2_12` | STP | The headline, with the causes underneath it | **illustrative** | console `#/status` | STP headline with ranked causes: metric contract unbuilt (Project.tsx names it) |
-| `p2_13` | Tier | Two different problems that look identical in a pie chart | **illustrative** | console `#/status` | Tier mix (capped-by-source vs fell-short): metric contract unbuilt |
-| `p2_14` | Payments | Money delayed and people waiting are different sentences | **implemented** | console `#/payments` | GET /v1/instructions grouped by state and held reason; money-delayed vs people-waiting distinction shown with owners |
-| `p2_15` | Proof | One search, one trail, independently checkable | **implemented** | console `#/trace` | One claim id → windows, exits, credential, instruction — each hop a real GET |
-| `p2_16` | Reports | Two things a funder always wants, pre-built | **illustrative** | console `#/reports` | Pre-built funder reports: labelled not backed; no report endpoint |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `p2_1` | Compose | Five choices, answered separately | **missing** | — | skipped (missing) | Five composition choices: no project-composition surface |
+| `p2_2` | Workers | Registration and import are not alternatives | **compressed** | field `#/register` | skipped (compressed) | Worker registration exists in the field door (assisted) and worker door (self); the configurator's registration-vs-import choice screen does not |
+| `p2_3` | Work | Three origins, one ratification | **missing** | — | skipped (missing) | Definition origin choice (three origins, one ratification): not built |
+| `p2_19` | Intake | Two ways in, and there is no third | **compressed** | field `#/roster` | skipped (compressed) | Evidence intake: roster CSV close posts real batches (POST /v1/evidence/batches); the two-ways-in configuration screen itself is absent |
+| `p2_20` | Intake | The file is checked against the definition, row by row | **implemented** | field `#/roster` | **asserted** | Row-by-row check against the definition: per-row accepted/unclear verdicts from the real evidence service |
+| `p2_21` | Mismatch | A mismatch is somebody named, not a status | **implemented** | console `#/unclear` | **asserted** | GET /v1/unclear; a mismatch is a named row in the custodian's queue, resolvable by attribution — never a silent drop |
+| `p2_4` | Validate | What happens when evidence does not clear | **compressed** | console `#/unclear` | skipped (compressed) | What happens when evidence does not clear: the unclear queue shows it; the validation-posture configuration does not exist |
+| `p2_5` | Payment | Payment is a posture, not a feature flag | **missing** | — | skipped (missing) | Payment posture configuration: not built |
+| `p2_6` | Owners | Configuring a project is not staffing it | **missing** | — | skipped (missing) | Owner assignment: not built |
+| `p2_17` | Partners | A directory, which is what registration was for | **missing** | — | skipped (missing) | Partner directory browse: no directory view |
+| `p2_18` | Grant | The grant is narrower than the terms, and it ends | **missing** | — | skipped (missing) | Partner grants (narrower than terms, time-bound): no grant surface |
+| `p2_7` | Activate | What a project looks like before it runs | **missing** | — | skipped (missing) | Activation gate: no activation state on projects |
+| `p2_8` | Finance | CREST does not invent account codes | **missing** | — | skipped (missing) | Finance-code linking: not built |
+| `p2_9` | Connect | The same integration pattern, a different registry | **compressed** | console `#/sources` | skipped (compressed) | Source registration is real (the story registers riverside-dhis2, heartbeat state shows); the connect-wizard framing is absent |
+| `p2_10` | Support | Support belongs to the project, not the platform | **missing** | — | skipped (missing) | Support ownership configuration: not built |
+| `p2_11` | Status | A funnel, not a set of totals | **implemented** | console `#/status` | **asserted** | The funnel reads real queues: windows, exits, credentials, instructions |
+| `p2_12` | STP | The headline, with the causes underneath it | **illustrative** | console `#/status` | skipped (illustrative) | STP headline with ranked causes: metric contract unbuilt (Project.tsx names it) |
+| `p2_13` | Tier | Two different problems that look identical in a pie chart | **illustrative** | console `#/status` | skipped (illustrative) | Tier mix (capped-by-source vs fell-short): metric contract unbuilt |
+| `p2_14` | Payments | Money delayed and people waiting are different sentences | **implemented** | console `#/payments` | **asserted** | GET /v1/instructions grouped by state and held reason; money-delayed vs people-waiting distinction shown with owners |
+| `p2_15` | Proof | One search, one trail, independently checkable | **implemented** | console `#/trace` | **asserted** | One claim id → windows, exits, credential, instruction — each hop a real GET |
+| `p2_16` | Reports | Two things a funder always wants, pre-built | **illustrative** | console `#/reports` | skipped (illustrative) | Pre-built funder reports: labelled not backed; no report endpoint |
 ## P-3 — Work Definition Author (28 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `p3_1` | Start | The registry of work definitions | **compressed** | console `#/definework` | A registry of one: the seeded definition read via GET /v1/definitions/{id}; no list/registry endpoint |
-| `p3_2` | Scope | Sector first, because it scopes everything after it | **missing** | console `#/definework` | Scope/sector: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_3` | Scope | The counting basis fork — the most consequential question in the product | **missing** | console `#/definework` | Counting-basis fork: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_4` | Define | A category picker scoped to the sector, with two honest escapes | **missing** | console `#/definework` | Category picker: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_5` | Define | The unit of work — and the one field the rate will price | **missing** | console `#/definework` | Unit of work: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_21` | Define | A training cascade is a chain of linked definitions | **missing** | console `#/definework` | Training cascade: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_6` | Define | The time-based path — where the fork earns its keep | **missing** | console `#/definework` | Time-based path: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_7` | Define | The outcome path — proof at population level | **missing** | console `#/definework` | Outcome path: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_8` | Parties | Who does the work, who pays, and who sits between | **missing** | console `#/definework` | Parties: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_9` | Evidence | What proves it happened, tier by tier | **missing** | console `#/definework` | Evidence tiers: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_22` | Source | The choice that caps the trust tier | **missing** | console `#/definework` | Source class choice: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_23` | Template | A template the definition writes for you | **missing** | console `#/definework` | Template: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_24` | Adaptor | The adaptor library, and what is missing from it | **missing** | console `#/definework` | Adaptor library: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_25` | Mapping | Where an integration actually gets hard | **missing** | console `#/definework` | Adaptor mapping: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_26` | Connect | Connection details, and the credential CREST never sees | **missing** | console `#/definework` | Connection: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_27` | Test | A dry run, before anything is committed | **missing** | console `#/definework` | Dry run: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_28` | Live | Registered against one version, and only that one | **missing** | console `#/definework` | Version registration: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_10` | Validation | Who decides how validation runs — and it may not be you | **missing** | console `#/definework` | Validation posture: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_11` | Payment | One flow, two records, and a delegate for each half | **missing** | console `#/definework` | Payment split: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_20` | Roles | Four roles per project, invited separately | **missing** | console `#/definework` | Project roles: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_12` | Payment | Stacked pay, tranches, and a rate that varies by item | **missing** | console `#/definework` | Stacked pay/tranches: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_13` | Rules | Preconditions and deductions | **missing** | console `#/definework` | Preconditions/deductions: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_14` | Extend | Two kinds of extension, with very different costs | **missing** | console `#/definework` | Extensions: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_15` | Ratify | Ratifying with fields still pending | **missing** | — | Ratify with pending fields: no ratification endpoint; the approver persona surfaces this gap honestly at #/ratify |
-| `p3_16` | Ratify | Two records, one signature, one flow | **missing** | — | Two records, one signature: no signing flow |
-| `p3_pay` | Payment | Handing off what is not yours | **missing** | — | Payment handoff from author to rate owner: no handoff object |
-| `p3_19` | Schema | What the record actually is, underneath the form | **compressed** | console `#/definework` | The schema-under-the-form section renders the real stored definition JSON |
-| `p3_18` | Evidence | What is still undecided | **compressed** | console `#/definework` | 'What is still undecided' — the wizard's honest gaps section |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `p3_1` | Start | The registry of work definitions | **compressed** | console `#/definework` | — | A registry of one: the seeded definition read via GET /v1/definitions/{id}; no list/registry endpoint |
+| `p3_2` | Scope | Sector first, because it scopes everything after it | **missing** | console `#/definework` | — | Scope/sector: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_3` | Scope | The counting basis fork — the most consequential question in the product | **missing** | console `#/definework` | — | Counting-basis fork: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_4` | Define | A category picker scoped to the sector, with two honest escapes | **missing** | console `#/definework` | — | Category picker: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_5` | Define | The unit of work — and the one field the rate will price | **missing** | console `#/definework` | — | Unit of work: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_21` | Define | A training cascade is a chain of linked definitions | **missing** | console `#/definework` | — | Training cascade: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_6` | Define | The time-based path — where the fork earns its keep | **missing** | console `#/definework` | — | Time-based path: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_7` | Define | The outcome path — proof at population level | **missing** | console `#/definework` | — | Outcome path: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_8` | Parties | Who does the work, who pays, and who sits between | **missing** | console `#/definework` | — | Parties: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_9` | Evidence | What proves it happened, tier by tier | **missing** | console `#/definework` | — | Evidence tiers: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_22` | Source | The choice that caps the trust tier | **missing** | console `#/definework` | — | Source class choice: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_23` | Template | A template the definition writes for you | **missing** | console `#/definework` | — | Template: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_24` | Adaptor | The adaptor library, and what is missing from it | **missing** | console `#/definework` | — | Adaptor library: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_25` | Mapping | Where an integration actually gets hard | **missing** | console `#/definework` | — | Adaptor mapping: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_26` | Connect | Connection details, and the credential CREST never sees | **missing** | console `#/definework` | — | Connection: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_27` | Test | A dry run, before anything is committed | **missing** | console `#/definework` | — | Dry run: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_28` | Live | Registered against one version, and only that one | **missing** | console `#/definework` | — | Version registration: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_10` | Validation | Who decides how validation runs — and it may not be you | **missing** | console `#/definework` | — | Validation posture: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_11` | Payment | One flow, two records, and a delegate for each half | **missing** | console `#/definework` | — | Payment split: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_20` | Roles | Four roles per project, invited separately | **missing** | console `#/definework` | — | Project roles: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_12` | Payment | Stacked pay, tranches, and a rate that varies by item | **missing** | console `#/definework` | — | Stacked pay/tranches: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_13` | Rules | Preconditions and deductions | **missing** | console `#/definework` | — | Preconditions/deductions: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_14` | Extend | Two kinds of extension, with very different costs | **missing** | console `#/definework` | — | Extensions: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
+| `p3_15` | Ratify | Ratifying with fields still pending | **missing** | — | — | Ratify with pending fields: no ratification endpoint; the approver persona surfaces this gap honestly at #/ratify |
+| `p3_16` | Ratify | Two records, one signature, one flow | **missing** | — | — | Two records, one signature: no signing flow |
+| `p3_pay` | Payment | Handing off what is not yours | **missing** | — | — | Payment handoff from author to rate owner: no handoff object |
+| `p3_19` | Schema | What the record actually is, underneath the form | **compressed** | console `#/definework` | — | The schema-under-the-form section renders the real stored definition JSON |
+| `p3_18` | Evidence | What is still undecided | **compressed** | console `#/definework` | — | 'What is still undecided' — the wizard's honest gaps section |
 ## P-10 — External Evidence Contact (3 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `w6_1` | Evidence | A template out, a file back | **illustrative** | verify `#/w6_1` | Scoped request + template out: panel says no scoped-link endpoint exists |
-| `w6_2` | Evidence | Answered in a file, not in a form | **illustrative** | verify `#/w6_2` | File-back answer: display only; no upload endpoint |
-| `w6_3` | Evidence | What the project received, and where it sits | **missing** | — | Receipt and where the returned evidence sits: not built |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `w6_1` | Evidence | A template out, a file back | **illustrative** | verify `#/w6_1` | — | Scoped request + template out: panel says no scoped-link endpoint exists |
+| `w6_2` | Evidence | Answered in a file, not in a form | **illustrative** | verify `#/w6_2` | — | File-back answer: display only; no upload endpoint |
+| `w6_3` | Evidence | What the project received, and where it sits | **missing** | — | — | Receipt and where the returned evidence sits: not built |
 ## F-1 — Rate Owner (5 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `f1_1` | Arrive | Payment set up starts cold | **compressed** | console `#/paysetup` | Reads the existing linked rate (real GET); the cold-start arrive screen is absent |
-| `f1_2` | Assign | Anyone can ask. Only one person can assign. | **missing** | — | Rate-owner assignment: no assignment flow |
-| `f1_3` | Rate | Pricing a unit somebody else defined | **missing** | — | Rate authoring: no rate write endpoint in the console |
-| `f1_4` | Publish | A rate is terms, not a setting | **missing** | — | Rate publication as terms: not built |
-| `f1_5` | Handover | Half done is a real state | **missing** | — | Half-done handover state: not built |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `f1_1` | Arrive | Payment set up starts cold | **compressed** | console `#/paysetup` | — | Reads the existing linked rate (real GET); the cold-start arrive screen is absent |
+| `f1_2` | Assign | Anyone can ask. Only one person can assign. | **missing** | — | — | Rate-owner assignment: no assignment flow |
+| `f1_3` | Rate | Pricing a unit somebody else defined | **missing** | — | — | Rate authoring: no rate write endpoint in the console |
+| `f1_4` | Publish | A rate is terms, not a setting | **missing** | — | — | Rate publication as terms: not built |
+| `f1_5` | Handover | Half done is a real state | **missing** | — | — | Half-done handover state: not built |
 ## F-2 — Payment Mechanism Owner (10 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `f2_1` | Fork | Where CREST stops, not how it pays | **compressed** | console `#/paysetup` | The where-CREST-stops boundary is stated on the paysetup view |
-| `f2_2` | Rails | One project, several rails | **illustrative** | console `#/paysetup` | Rails: labelled illustrative/simulated in Admin.tsx; cannot connect a rail |
-| `f2_3` | Connect | Connecting is not the same as paying | **illustrative** | console `#/paysetup` | Connection: display only |
-| `f2_4` | Test | Proving the whole path, once | **missing** | — | Real payment test: not built |
-| `f2_5` | Reconcile | The file that makes a mismatch findable | **missing** | — | Reconciliation file contract: not built |
-| `f2_6` | Advisory | A statement, and an honest limit | **missing** | — | Advisory statement: not built |
-| `f2_7` | Timing | Batching is paid for by the worker | **missing** | — | Batching timing choice: not built |
-| `f2_8` | Activate | Configured is not the same as live | **missing** | — | Mechanism activation gate: not built |
-| `f2_9` | Qualify | The gate sits in front of disbursement, not in front of existing | **missing** | — | Qualification gate before disbursement: not built |
-| `f2_10` | Qualify | The last gate, and what it opened | **missing** | — | The last gate and what it opened: not built |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `f2_1` | Fork | Where CREST stops, not how it pays | **compressed** | console `#/paysetup` | — | The where-CREST-stops boundary is stated on the paysetup view |
+| `f2_2` | Rails | One project, several rails | **illustrative** | console `#/paysetup` | — | Rails: labelled illustrative/simulated in Admin.tsx; cannot connect a rail |
+| `f2_3` | Connect | Connecting is not the same as paying | **illustrative** | console `#/paysetup` | — | Connection: display only |
+| `f2_4` | Test | Proving the whole path, once | **missing** | — | — | Real payment test: not built |
+| `f2_5` | Reconcile | The file that makes a mismatch findable | **missing** | — | — | Reconciliation file contract: not built |
+| `f2_6` | Advisory | A statement, and an honest limit | **missing** | — | — | Advisory statement: not built |
+| `f2_7` | Timing | Batching is paid for by the worker | **missing** | — | — | Batching timing choice: not built |
+| `f2_8` | Activate | Configured is not the same as live | **missing** | — | — | Mechanism activation gate: not built |
+| `f2_9` | Qualify | The gate sits in front of disbursement, not in front of existing | **missing** | — | — | Qualification gate before disbursement: not built |
+| `f2_10` | Qualify | The last gate, and what it opened | **missing** | — | — | The last gate and what it opened: not built |
 ## W-1 — Worker (22 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `w1_1` | Enrol | Two enrollment pathways, neither a fallback | **implemented** | worker `#/` | The entry screen presents the two enrollment pathways as equals: self-enroll (identity via eSignet) and assisted enrollment (the field door), neither a fallback |
-| `w1_2` | Enrol | Phone number and OTP | **semantically-different** | worker `#/auth` | The reference's phone+OTP anchor is replaced by the eSignet OIDC leg — a national-identity anchor, not a phone anchor; phone is collected at signup as a contact route, unverified |
-| `w1_3` | Enrol | National ID, if there is one | **compressed** | worker `#/` | National ID is the eSignet path itself; CREST sees only the pairwise subject (never the ID number). The optional photograph-the-card route does not exist |
-| `w1_4` | Enrol | No document? A confidence check instead | **missing** | — | No-document confidence-check route: self path requires eSignet; the no-document worker's route is assisted enrollment (named on the entry screen) |
-| `w1_5` | Consent | Enrollment consent, captured once | **implemented** | worker `#/auth` | Enrollment consent is its own step BEFORE the record is created; acceptance is recorded via POST /v1/parties/{id}/consents (moment=enrolment, captureMethod=screen) immediately after party creation — the party post never fires without it |
-| `w1_6` | Consent | The Crest ID and the physical card | **compressed** | worker `#/auth` | The Crest ID (party did) is shown on completion; the physical card is the field door's (labelled illustrative there) |
-| `w1_7` | Recovery | Nominate three people, two must agree | **missing** | — | Recovery-contact nomination at enrolment: recoveries exist server-side (POST /v1/recoveries) but nomination has no worker-facing write |
-| `w1_8` | Work | The wallet, not a dashboard | **implemented** | worker `#/home` | The wallet-not-dashboard home: real credential and payment counts |
-| `w1_9` | Work | What will and will not count as evidence | **implemented** | worker `#/work` | Definition worker-face: what will and will not count, from GET /v1/definitions/{id} |
-| `w1_10` | Claim | A draft credential, and seven days to check it | **implemented** | worker `#/work` | Open windows with closes-at; confirm exits the window (POST confirm) — a draft credential and seven days to check it |
-| `w1_11` | Claim | Raising a dispute | **implemented** | worker `#/work/dispute/:claimId` | POST dispute; the dispute exit releases payment like every exit |
-| `w1_12` | Credential | The credential, with its tier on the face of it | **implemented** | worker `#/wallet` | Credential list; tier derived at read, never stored |
-| `w1_13` | Payment | Payment, where a payment component exists at all | **implemented** | worker `#/pay` | Instructions with state; every held payment names its reason and owner |
-| `w1_23` | Month | A month, not a job at a time | **compressed** | worker `#/pay` | Month view folded into the payment list |
-| `w1_24` | Waiting | Why money has not arrived, and whose problem it is | **implemented** | worker `#/pay/:idx` | Why money has not arrived and whose problem it is: held reason + owner |
-| `w1_14` | Work | Declining work | **illustrative** | worker `#/work/declined` | Declining work: labelled — no decline endpoint |
-| `w1_15` | Verify | Consent, per share, every time | **missing** | — | Per-share consent: no share/presentation flow exists |
-| `w1_16` | Qualify | Deferred at registration, due now | **illustrative** | worker `#/wallet/deferred` | Deferred qualification: labelled — no endpoint |
-| `w1_17` | Qualify | One action, and everything already earned changes state | **missing** | — | Qualification arrival changing earned state: not built |
-| `w1_18` | Wallet | What a scan gives away, before anything is asked | **implemented** | worker `#/wallet/:idx/show` | Offline presentation: the credential rendered as a QR (scannable without CREST), the what-a-scan-gives-away disclosure list, and the signed JSON behind a toggle |
-| `w1_19` | Consent | Who is asking, and why, before you decide | **missing** | — | Who-is-asking pre-consent: no presentation-request flow |
-| `w1_20` | Consent | The worker sees the same list the verifier does | **missing** | — | Worker sees the verifier's list: no presentation flow |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `w1_1` | Enrol | Two enrollment pathways, neither a fallback | **implemented** | worker `#/` | — | The entry screen presents the two enrollment pathways as equals: self-enroll (identity via eSignet) and assisted enrollment (the field door), neither a fallback |
+| `w1_2` | Enrol | Phone number and OTP | **semantically-different** | worker `#/auth` | — | The reference's phone+OTP anchor is replaced by the eSignet OIDC leg — a national-identity anchor, not a phone anchor; phone is collected at signup as a contact route, unverified |
+| `w1_3` | Enrol | National ID, if there is one | **compressed** | worker `#/` | — | National ID is the eSignet path itself; CREST sees only the pairwise subject (never the ID number). The optional photograph-the-card route does not exist |
+| `w1_4` | Enrol | No document? A confidence check instead | **missing** | — | — | No-document confidence-check route: self path requires eSignet; the no-document worker's route is assisted enrollment (named on the entry screen) |
+| `w1_5` | Consent | Enrollment consent, captured once | **implemented** | worker `#/auth` | — | Enrollment consent is its own step BEFORE the record is created; acceptance is recorded via POST /v1/parties/{id}/consents (moment=enrolment, captureMethod=screen) immediately after party creation — the party post never fires without it |
+| `w1_6` | Consent | The Crest ID and the physical card | **compressed** | worker `#/auth` | — | The Crest ID (party did) is shown on completion; the physical card is the field door's (labelled illustrative there) |
+| `w1_7` | Recovery | Nominate three people, two must agree | **missing** | — | — | Recovery-contact nomination at enrolment: recoveries exist server-side (POST /v1/recoveries) but nomination has no worker-facing write |
+| `w1_8` | Work | The wallet, not a dashboard | **implemented** | worker `#/home` | — | The wallet-not-dashboard home: real credential and payment counts |
+| `w1_9` | Work | What will and will not count as evidence | **implemented** | worker `#/work` | — | Definition worker-face: what will and will not count, from GET /v1/definitions/{id} |
+| `w1_10` | Claim | A draft credential, and seven days to check it | **implemented** | worker `#/work` | — | Open windows with closes-at; confirm exits the window (POST confirm) — a draft credential and seven days to check it |
+| `w1_11` | Claim | Raising a dispute | **implemented** | worker `#/work/dispute/:claimId` | — | POST dispute; the dispute exit releases payment like every exit |
+| `w1_12` | Credential | The credential, with its tier on the face of it | **implemented** | worker `#/wallet` | — | Credential list; tier derived at read, never stored |
+| `w1_13` | Payment | Payment, where a payment component exists at all | **implemented** | worker `#/pay` | — | Instructions with state; every held payment names its reason and owner |
+| `w1_23` | Month | A month, not a job at a time | **compressed** | worker `#/pay` | — | Month view folded into the payment list |
+| `w1_24` | Waiting | Why money has not arrived, and whose problem it is | **implemented** | worker `#/pay/:idx` | — | Why money has not arrived and whose problem it is: held reason + owner |
+| `w1_14` | Work | Declining work | **illustrative** | worker `#/work/declined` | — | Declining work: labelled — no decline endpoint |
+| `w1_15` | Verify | Consent, per share, every time | **missing** | — | — | Per-share consent: no share/presentation flow exists |
+| `w1_16` | Qualify | Deferred at registration, due now | **illustrative** | worker `#/wallet/deferred` | — | Deferred qualification: labelled — no endpoint |
+| `w1_17` | Qualify | One action, and everything already earned changes state | **missing** | — | — | Qualification arrival changing earned state: not built |
+| `w1_18` | Wallet | What a scan gives away, before anything is asked | **implemented** | worker `#/wallet/:idx/show` | — | Offline presentation: the credential rendered as a QR (scannable without CREST), the what-a-scan-gives-away disclosure list, and the signed JSON behind a toggle |
+| `w1_19` | Consent | Who is asking, and why, before you decide | **missing** | — | — | Who-is-asking pre-consent: no presentation-request flow |
+| `w1_20` | Consent | The worker sees the same list the verifier does | **missing** | — | — | Worker sees the verifier's list: no presentation flow |
 ## W-2 — Registering Agent (5 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `w2_1` | Assist | The Registering Agent’s day starts with a list | **compressed** | field `#/registrations` | The day's list: real registrations plus the on-device offline queue |
-| `w2_2` | Assist | Scan the ID, or enter it by hand | **compressed** | field `#/register` | Phone-or-roster enrollment via POST /v1/enrolments/assisted; ID scan does not exist and no raw ID is ever persisted (identity assertion labelled illustrative in Enrol.tsx) |
-| `w2_3` | Consent | Consent read aloud, recorded as voice | **semantically-different** | field `#/consent` | Consent script is read and recorded via POST consents, but the 'voice recording' posts a text sentence with audio/ogg content type — not captured audio (state.tsx:111-130) |
-| `w2_4` | Assist | A possible duplicate — and the Registering Agent cannot decide it | **implemented** | field `#/hold` | Duplicate hold: probable match holds for the custodian, never auto-merges |
-| `w2_5` | Assist | Card printed on the spot | **illustrative** | field `#/registered` | Card printing labelled illustrative; deferred until a first credential, unlike the reference's on-the-spot card |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `w2_1` | Assist | The Registering Agent’s day starts with a list | **compressed** | field `#/registrations` | — | The day's list: real registrations plus the on-device offline queue |
+| `w2_2` | Assist | Scan the ID, or enter it by hand | **compressed** | field `#/register` | — | Phone-or-roster enrollment via POST /v1/enrolments/assisted; ID scan does not exist and no raw ID is ever persisted (identity assertion labelled illustrative in Enrol.tsx) |
+| `w2_3` | Consent | Consent read aloud, recorded as voice | **semantically-different** | field `#/consent` | — | Consent script is read and recorded via POST consents, but the 'voice recording' posts a text sentence with audio/ogg content type — not captured audio (state.tsx:111-130) |
+| `w2_4` | Assist | A possible duplicate — and the Registering Agent cannot decide it | **implemented** | field `#/hold` | — | Duplicate hold: probable match holds for the custodian, never auto-merges |
+| `w2_5` | Assist | Card printed on the spot | **illustrative** | field `#/registered` | — | Card printing labelled illustrative; deferred until a first credential, unlike the reference's on-the-spot card |
 ## W-3 — Support Agent (3 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `w5_1` | Support | The queue of things that stalled | **compressed** | console `#/cases` | Synthesized queue from real stalled states; no case-management service (Custodian.tsx names it) |
-| `w5_2` | Support | Five ways to find a worker, in order of reliability | **implemented** | console `#/supportfind` | Worker lookup via GET /v1/resolve |
-| `w5_3` | Support | Tracing a payment the agent cannot fix | **implemented** | console `#/supporttrace` | Payment trace over the real chain |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `w5_1` | Support | The queue of things that stalled | **compressed** | console `#/cases` | — | Synthesized queue from real stalled states; no case-management service (Custodian.tsx names it) |
+| `w5_2` | Support | Five ways to find a worker, in order of reliability | **implemented** | console `#/supportfind` | — | Worker lookup via GET /v1/resolve |
+| `w5_3` | Support | Tracing a payment the agent cannot fix | **implemented** | console `#/supporttrace` | — | Payment trace over the real chain |
 ## W-4 — Supervisor (Attestor) (5 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `w3_1` | Attest | The worklist belongs to the delivery platform | **semantically-different** | field `#/toconfirm` | The reference worklist belongs to the delivery platform (source attestation). The field door's surface is assisted confirmation of CREST windows (GET /v1/unreached) — now labelled as exactly that, not as J8 source attestation |
-| `w3_2` | Attest | Confirming inside the system that recorded it | **semantically-different** | field `#/confirmsee/:claimId` | Assisted window exit (route:'assisted') — a valid W1/W4 exit that releases payment, but not confirmation inside the source system |
-| `w3_3` | Attest | A correction, made where the record lives | **semantically-different** | field `#/differ/:claimId` | Assisted dispute on the worker's behalf — not a correction of the source record |
-| `w3_4` | Attest | A roster closed in the delivery platform, not in CREST | **semantically-different** | field `#/roster` | The roster is closed in CREST's evidence intake (POST /v1/evidence/batches), not in the delivery platform; the boundary is stated on the screen |
-| `w3_5` | Handover | The confirmation reaches CREST as ingested evidence | **compressed** | field `#/handoff` | The ingestion handoff: accepted rows became claims, unclear rows went to the custodian — real queues, though the provenance-preserving source handoff is CREST-side only |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `w3_1` | Attest | The worklist belongs to the delivery platform | **semantically-different** | field `#/toconfirm` | — | The reference worklist belongs to the delivery platform (source attestation). The field door's surface is assisted confirmation of CREST windows (GET /v1/unreached) — now labelled as exactly that, not as J8 source attestation |
+| `w3_2` | Attest | Confirming inside the system that recorded it | **semantically-different** | field `#/confirmsee/:claimId` | — | Assisted window exit (route:'assisted') — a valid W1/W4 exit that releases payment, but not confirmation inside the source system |
+| `w3_3` | Attest | A correction, made where the record lives | **semantically-different** | field `#/differ/:claimId` | — | Assisted dispute on the worker's behalf — not a correction of the source record |
+| `w3_4` | Attest | A roster closed in the delivery platform, not in CREST | **semantically-different** | field `#/roster` | — | The roster is closed in CREST's evidence intake (POST /v1/evidence/batches), not in the delivery platform; the boundary is stated on the screen |
+| `w3_5` | Handover | The confirmation reaches CREST as ingested evidence | **compressed** | field `#/handoff` | — | The ingestion handoff: accepted rows became claims, unclear rows went to the custodian — real queues, though the provenance-preserving source handoff is CREST-side only |
 ## W-5 — Recovery Confirmer (3 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `w4_1` | Recover | A request arrives by SMS | **missing** | — | Confirmer SMS request: no confirmer-facing channel (recoveries administered from the custodian console only) |
-| `w4_2` | Recover | Two of three, and the old key dies | **missing** | — | Two-of-three quorum progress: POST /v1/recoveries/{id}/confirmations exists server-side; no confirmer UI |
-| `w4_3` | Recover | A refusal, and no defined path after it | **missing** | — | Refusal path: not built |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `w4_1` | Recover | A request arrives by SMS | **missing** | — | — | Confirmer SMS request: no confirmer-facing channel (recoveries administered from the custodian console only) |
+| `w4_2` | Recover | Two of three, and the old key dies | **missing** | — | — | Two-of-three quorum progress: POST /v1/recoveries/{id}/confirmations exists server-side; no confirmer UI |
+| `w4_3` | Recover | A refusal, and no defined path after it | **missing** | — | — | Refusal path: not built |
 ## V-1 — Verifier (3 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `v1_1` | Pass | Identified, but not onboarded | **illustrative** | verify `#/v1_1` | Verifier pass: no pass-issuance endpoint (V1.tsx names it) |
-| `v1_2` | Verify | The check itself, and the consent it needs | **semantically-different** | verify `#/v1_2` | The check is real (POST /v1/verify) but 'scan' is a JSON textarea or fixture lookup, not camera/QR/offline scanning |
-| `v1_3` | Result | Yes, plus four facts, and nothing that identifies anyone | **implemented** | verify `#/v1_2` | Yes-plus-four-facts result from the real verification chain; nothing identifying is shown |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `v1_1` | Pass | Identified, but not onboarded | **illustrative** | verify `#/v1_1` | — | Verifier pass: no pass-issuance endpoint (V1.tsx names it) |
+| `v1_2` | Verify | The check itself, and the consent it needs | **semantically-different** | verify `#/v1_2` | — | The check is real (POST /v1/verify) but 'scan' is a JSON textarea or fixture lookup, not camera/QR/offline scanning |
+| `v1_3` | Result | Yes, plus four facts, and nothing that identifies anyone | **implemented** | verify `#/v1_2` | — | Yes-plus-four-facts result from the real verification chain; nothing identifying is shown |
 ## V-2 — Institutional Verifier (3 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `v2_1` | Onboarded | The same credential, a wider window | **compressed** | verify `#/v2_1` | Wider window with an org session held only inside V-2; the accreditation ceiling cannot be read (V2.tsx names it) |
-| `v2_2` | Result | What the worker let through | **semantically-different** | verify `#/v2_2` | Shows presence/absence of fields; selective disclosure does not exist, so worker refusal cannot be represented |
-| `v2_3` | Batch | Where volume becomes a different question | **implemented** | verify `#/v2_3` | Bounded batch verification against the real endpoint |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `v2_1` | Onboarded | The same credential, a wider window | **compressed** | verify `#/v2_1` | — | Wider window with an org session held only inside V-2; the accreditation ceiling cannot be read (V2.tsx names it) |
+| `v2_2` | Result | What the worker let through | **semantically-different** | verify `#/v2_2` | — | Shows presence/absence of fields; selective disclosure does not exist, so worker refusal cannot be represented |
+| `v2_3` | Batch | Where volume becomes a different question | **implemented** | verify `#/v2_3` | — | Bounded batch verification against the real endpoint |
 ## V-4 — Funding Oversight Viewer (2 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
-|---|---|---|---|---|---|
-| `v4_1` | Portfolio | Allocated against paid, and the gap in between | **illustrative** | console `#/portfolio` | Allocated-vs-paid: no funding ledger (Admin.tsx names it); paid side reads real instructions |
-| `v4_2` | Trail | From an amount to a place, a service and a day | **compressed** | console `#/portfolio` | Trail-down reduced to opening the generic project status view; no place/service/day trace |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `v4_1` | Portfolio | Allocated against paid, and the gap in between | **illustrative** | console `#/portfolio` | — | Allocated-vs-paid: no funding ledger (Admin.tsx names it); paid side reads real instructions |
+| `v4_2` | Trail | From an amount to a place, a service and a day | **compressed** | console `#/portfolio` | — | Trail-down reduced to opening the generic project status view; no place/service/day trace |
 ## EXT — External systems (4 screens)
 
-| Screen | Stage | Reference title | Status | Surface | Evidence / gap |
+| Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
+|---|---|---|---|---|---|---|
+| `ext_1` | Identity | Where identity actually comes from | **missing** | — | — | External by design: identity comes from eSignet/MOSIP — the integration exists (the login IS it) but no walkthrough screen |
+| `ext_2` | Evidence | Where the strongest evidence is recorded | **missing** | — | — | External by design: source evidence platforms; the roster intake is the CREST side of the boundary |
+| `ext_3` | Payment | The boundary where CREST stops | **missing** | — | — | External by design: payment rail beyond the instruction boundary |
+| `ext_4` | Verify | Why the credential is worth anything | **missing** | — | — | External by design: next-employer verification — the verify door is the CREST side |
+
+## CREST design — J3 connective tissue (5 screens)
+
+Not the reference's screens: the 17 Aug walkthrough does not draw how
+anyone signs in, how a person holding roles in two places chooses
+where to work, what the shared rail means, or the receiving side of the
+`p1_3` → `p2_1` handover. These five are **our** design
+(`docs/design/j3-connective-tissue/README.md`), carried in
+`docs/journey-spec.json` with `source: "crest-design"` and asserted by
+the same gate. They are counted separately and never folded into the
+reference's 143.
+
+| Screen | Stage | Design title | Status | Gate | Evidence / gap |
 |---|---|---|---|---|---|
-| `ext_1` | Identity | Where identity actually comes from | **missing** | — | External by design: identity comes from eSignet/MOSIP — the integration exists (the login IS it) but no walkthrough screen |
-| `ext_2` | Evidence | Where the strongest evidence is recorded | **missing** | — | External by design: source evidence platforms; the roster intake is the CREST side of the boundary |
-| `ext_3` | Payment | The boundary where CREST stops | **missing** | — | External by design: payment rail beyond the instruction boundary |
-| `ext_4` | Verify | Why the credential is worth anything | **missing** | — | External by design: next-employer verification — the verify door is the CREST side |
+| `n1` | Sign in | Sign in to CREST Console | **missing** | skipped (missing) | No console sign-in screen: every persona card is a dev-build session mint, and the roles-decide-what-you-see contract has no surface |
+| `n2` | Scope | Where do you want to work? | **missing** | skipped (missing) | No context chooser: the persona card jumps straight into a flow, so a person holding roles in two places has nowhere to choose between them |
+| `n3` | Navigate | One rail, two actors | **missing** | skipped (missing) | The console rail is role-derived per persona (JOURNEY_GAP_ASSESSMENT finding 1); the reference's single five-entry J3 rail, identical for both actors, does not exist |
+| `n4` | Handover | Ministry of Health handed you a project | **missing** | skipped (missing) | No receiving side of the p1_3 → p2_1 handover, and no accepted/declined ownership state to render it from (design finding F2) |
+| `n5` | Guard | People & roles is not yours to change | **missing** | skipped (missing) | No role guard screen: there are no per-role backend permits in the console yet, so there is nothing to be refused by |

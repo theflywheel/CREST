@@ -29,6 +29,7 @@ jobs:
       stack: ${{ steps.filter.outputs.stack }}
       compose: ${{ steps.filter.outputs.compose }}
       docs: ${{ steps.filter.outputs.docs }}
+      apps: ${{ steps.filter.outputs.apps }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -54,6 +55,15 @@ jobs:
               - '.github/workflows/ci.yml'
             compose:
               - 'infra/compose/**'
+              - '.github/workflows/ci.yml'
+            apps:
+              - 'frontend/**'
+              - 'tests/e2e-apps/**'
+              - 'docs/journey-spec.json'
+              - 'tools/journey-trace/**'
+              - 'infra/compose/**'
+              - 'Makefile'
+              - '**/*.go'
               - '.github/workflows/ci.yml'
             docs:
               - 'docs/**'
@@ -118,6 +128,49 @@ jobs:
       - name: CSV in, verifiable credential out
         run: make test-e2e
 
+  # The journey doors, on the real stack: the route walk that already existed
+  # as a local-only command (`make e2e-apps`, never wired into CI until now)
+  # and the fidelity gate, which holds every screen the ledger calls
+  # implemented to its entry in the generated design spec.
+  #
+  # BLOCKING, deliberately. The gate is green today for the screens that are
+  # implemented — the J3 screens still to be built are reported as
+  # skipped-with-reason and turn on by themselves as they land — so making it
+  # informational would buy nothing and cost the ability to catch a real
+  # regression on the day it happens.
+  e2e-apps:
+    name: Journey doors — route walk + fidelity gate
+    runs-on: ubuntu-latest
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.apps == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: corepack enable
+
+      # Builds the doors, brings up the stack, seeds the story world.
+      - name: Stack up, story-seeded
+        run: make apps-up
+
+      - name: Playwright browser
+        run: cd tests/e2e-apps && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
+
+      - name: Every journey-app route stays alive
+        run: make e2e-apps
+
+      - name: Fidelity — every implemented screen matches the reference
+        run: make fidelity
+
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -f infra/compose/docker-compose.yml logs --tail=120
+
   # Config validation only. The images themselves are proven by the e2e job,
   # which builds every one of them and then runs the suite against them — the
   # standalone builds this job used to do were the same work done twice.
@@ -157,6 +210,15 @@ jobs:
       # generate-check for schemas/.
       - name: Journey spec is current
         run: make journey-spec-check
+
+      # The fidelity gate's scope file, its waivers and its quarantine are
+      # inputs to a generated column in journey-traceability.md. A waiver with
+      # no reason, a quarantine with no issue, or a scope entry for a screen
+      # the reference does not have would all be invisible until somebody ran
+      # the stack — so the shape is checked here, where no stack is needed.
+      # The gate's own verdicts need the stack and run in the E2E-apps job.
+      - name: Fidelity gate is well-formed and the ledger is current
+        run: make fidelity-check
 
       - name: Required docs present
         run: |
