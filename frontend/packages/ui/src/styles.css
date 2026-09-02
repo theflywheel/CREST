@@ -241,3 +241,10 @@ a.g-row:hover,button.g-row:hover{background:var(--paper-2)}
   .btn-row{flex-wrap:wrap}
   .grid-tbl .g-row{gap:10px}
 }
+
+/* ————— tables (verify door, ported from crest.css) ————— */
+.tblwrap{overflow-x:auto;border-radius:8px}
+.tbl{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--generic-bg);border-radius:8px;overflow:hidden}
+.tbl th{font:500 10.5px/1 var(--mono);letter-spacing:.9px;text-transform:uppercase;color:var(--text-2);text-align:left;padding:10px 13px;border-bottom:1px solid var(--generic-bg);background:var(--paper-2)}
+.tbl td{font:400 13px/1.45 Roboto;padding:10px 13px;border-bottom:1px solid var(--generic-bg)}
+.tbl tr:last-child td{border-bottom:none}

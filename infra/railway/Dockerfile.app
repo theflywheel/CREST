@@ -17,7 +17,7 @@ COPY apps /apps-src
 RUN mkdir -p /site \
     && cp -R /apps-src/enrolment /site/enrolment \
     && cp -R /apps-src/console   /site/console \
-    && cp -R /apps-src/verify    /site/verify \
+    && cp -R /frontend/apps/verify/dist /site/verify \
     && cp -R /frontend/apps/worker/dist /site/worker
 
 FROM nginx:1.27-alpine

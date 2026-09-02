@@ -14,9 +14,9 @@ rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
 // Rebuilt (Vite): one entry per ported door.
-const built = { worker: "apps/worker/dist" };
+const built = { worker: "apps/worker/dist", verify: "apps/verify/dist" };
 // Not yet ported: served as-is from apps/ (with the legacy shared assets).
-const legacy = ["enrolment", "console", "verify", "shared"];
+const legacy = ["enrolment", "console", "shared"];
 
 cpSync(join(repo, "apps/index.html"), join(out, "index.html"));
 for (const dir of legacy) cpSync(join(repo, "apps", dir), join(out, dir), { recursive: true });
