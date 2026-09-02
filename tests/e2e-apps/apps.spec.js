@@ -186,6 +186,38 @@ test("console: onboarding asks the six identity fields", async ({ page }) => {
   await assertAlive(page, errors, "console onboarding form");
 });
 
+// #166: the six-field profile round-trips through the registry — the status
+// view renders kind/sector/country/contact from GET .../registration, not
+// from anything this browser held. Proven by clearing sessionStorage of the
+// profile at submit time (the app no longer stores it) and asserting the
+// server-served marker.
+test("console: onboarding profile round-trips through the registry", async ({ page }) => {
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+  await page.goto("/console/#/onboard");
+  await settle(page);
+  await page.fill('[name="orgname"]', "Roundtrip Trust " + stamp);
+  await page.selectOption('[name="country"]', "UG");
+  await page.fill('[name="workemail"]', `rt+${stamp}@example.org`);
+  await page.fill('[name="contactname"]', "Round Tripper");
+  await page.selectOption('[name="orgkind"]', "verifying");
+  await page.selectOption('[name="orgsector"]', "education");
+  await page.click("#orgapplyform button.dominant");
+  await page.waitForSelector("#acceptterms", { timeout: 20000 });
+  // The browser no longer holds the profile — what the status screen shows
+  // can only have come back from the registry.
+  const held = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem("crest.console.onboarding") || "{}"));
+  expect(held.kind, "profile must not be browser-held").toBeUndefined();
+  expect(held.sector, "profile must not be browser-held").toBeUndefined();
+  await page.click("#acceptterms");
+  await page.waitForURL(/#\/onboard\/status/, { timeout: 20000 });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("UG · verifying · education (served by the registry)");
+  await expect(page.locator("body")).toContainText("Round Tripper");
+  await assertAlive(page, errors, "onboarding round-trip");
+});
+
 // W-1 entry: two equal enrollment pathways, neither a fallback (w1_1).
 test("worker entry presents both enrollment pathways", async ({ page }) => {
   const errors = watch(page);

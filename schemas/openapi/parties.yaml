@@ -862,6 +862,41 @@ paths:
           description: Neither an instant nor a duration, or a duration that does not parse.
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
 
+  /v1/organisations/{id}/registration:
+    get:
+      operationId: getRegistration
+      summary: Where an organisation's application stands
+      description: >
+        The applicant-facing read: state, exact terms version accepted, decider
+        and reason — plus the organisation's self-declared `attributes` (kind,
+        sector, country, contact person; #168). Attributes are bounded strings
+        from the Party's generic attributes map; the vocabulary is deployment
+        configuration, and they are never published to the public log.
+      parameters: [{ $ref: "#/components/parameters/PartyID" }]
+      responses:
+        "200":
+          description: The registration, with the organisation's attributes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  partyId: { type: string }
+                  state: { type: string }
+                  termsId: { type: string }
+                  termsVersion: { type: integer }
+                  acceptedAt: { type: string, format: date-time }
+                  decidedBy: { type: string }
+                  reason: { type: string }
+                  appliedAt: { type: string, format: date-time }
+                  attributes:
+                    type: object
+                    additionalProperties: { type: string }
+        "404":
+          description: No such organisation application.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
   /v1/organisations/{id}/decision:
     post:
       operationId: decideRegistration

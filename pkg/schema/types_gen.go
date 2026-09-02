@@ -559,6 +559,17 @@ type Outcome struct {
 // holds, not a type.
 type Party struct {
 
+	// Self-declared descriptive facts about the party — an
+	// organisation's kind, sector, country, contact person (#166). L1
+	// holds the map, never the vocabulary: which keys exist and what
+	// values are legal is deployment configuration (the layering test —
+	// two deployments can reasonably disagree about a sector taxonomy and
+	// both be CREST). Small bounded strings only: never identity data,
+	// never a national ID or biometric (W9), never provenance —
+	// bindings, consents and enrolments have their own typed records
+	// precisely so they cannot be smuggled in here as text.
+	Attributes map[string]any `json:"attributes,omitempty"`
+
 	// At least one, because W2 is unenforceable against a Party nobody can
 	// reach.
 	ContactRoutes []PartyContactRoutesItem `json:"contactRoutes"`

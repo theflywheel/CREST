@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Sidecar } from "@crest/ui";
+import { EntryShell } from "./Login";
 import { useSession, describeError } from "../session";
 
 export function AuthReturn() {
@@ -40,18 +41,18 @@ export function AuthReturn() {
 
   if (state === "working") {
     return (
-      <div className="login-shell">
-        <div className="login-card screen">
+      <EntryShell>
+        <div className="pane-narrow screen">
           <span className="eyebrow">CREST · Worker</span>
           <p className="body-2">Completing your sign-in…</p>
         </div>
-      </div>
+      </EntryShell>
     );
   }
   if (state === "failed") {
     return (
-      <div className="login-shell">
-        <div className="login-card screen">
+      <EntryShell>
+        <div className="pane-narrow screen">
           <span className="eyebrow">CREST · Worker</span>
           <h1 className="scr-title">That sign-in did not finish</h1>
           <div className="errbar">{detail}</div>
@@ -59,7 +60,7 @@ export function AuthReturn() {
             Try again
           </a>
         </div>
-      </div>
+      </EntryShell>
     );
   }
   return <SignUp />;
@@ -86,8 +87,8 @@ function SignUp() {
 
   if (!consented) {
     return (
-      <div className="login-shell">
-        <div className="login-card screen">
+      <EntryShell>
+        <div className="pane-narrow screen">
           <span className="eyebrow">CREST · Worker · Enrollment consent</span>
           <h1 className="scr-title">Before anything is created — do you agree?</h1>
           <p className="body-2">
@@ -125,7 +126,7 @@ function SignUp() {
             No — take me back
           </a>
         </div>
-      </div>
+      </EntryShell>
     );
   }
 
@@ -142,8 +143,8 @@ function SignUp() {
     }
   };
   return (
-    <div className="login-shell">
-      <div className="login-card screen">
+    <EntryShell>
+        <div className="pane-narrow screen">
         <span className="eyebrow">CREST · Worker</span>
         <h1 className="scr-title">You are signed in — create your record</h1>
         <p className="body-2">
@@ -174,6 +175,6 @@ function SignUp() {
           Back
         </a>
       </div>
-    </div>
+    </EntryShell>
   );
 }

@@ -120,12 +120,11 @@ const F = (props: { label: string; hint?: string; children: React.ReactNode }) =
    asked on this screen — the reference's own callout says so, and they come
    later, only once terms need them.
 
-   Honest gap, recorded rather than patched around (traceability g2_1): the
-   Party schema is closed (additionalProperties: false) and POST
-   /v1/organisations rejects unknown fields, so country/kind/sector/contact
-   person cannot be persisted server-side without an L1 schema change. They
-   are held client-side for the flow and shown on the status screen; the
-   server holds the legal name and the work email. */
+   Since #168 the whole form persists: country/kind/sector/contact person
+   ride the Party's generic attributes map (L1 holds the map, this console's
+   key/value choices are L2 vocabulary), and the status screen reads them
+   back from GET /v1/organisations/{id}/registration — the registry, never
+   this browser. */
 export function OnboardApply() {
   const nav = useNavigate();
   const whyRef = useRef<HTMLDivElement>(null);
@@ -146,13 +145,20 @@ export function OnboardApply() {
         displayName: name.trim(),
         kind: "organisation",
         contactRoutes: [{ kind: "email", value: email.trim() }],
+        // Registry facts since #168: the Party primitive carries a generic
+        // attributes map (L1); these key/value choices are this console's
+        // vocabulary (L2). The status screen reads them back from the
+        // registration endpoint — never from this browser.
+        attributes: {
+          kind,
+          sector,
+          country,
+          contactPerson: contactName.trim(),
+        },
       });
       storeOnboarding({
         orgId: out.party.id,
         name: out.party.displayName,
-        country,
-        kind,
-        sector,
         contactName: contactName.trim(),
       });
       nav("/onboard/terms");
@@ -239,10 +245,10 @@ export function OnboardApply() {
           </div>
           <div style={{ marginTop: 12 }}>
             <Sidecar>
-              What is stored where, honestly: the legal name and the work email persist in the registry. Country,
-              kind, sector and contact person are held in this browser for the flow — the registry's Party schema has
-              no profile field yet, and inventing one client-side would fake a record. The gap is recorded in
-              docs/journey-traceability.md (g2_1).
+              What is stored, honestly: everything on this screen persists in the registry — the legal name, the work
+              email, and the country/kind/sector/contact person as the organisation's self-declared attributes
+              (#168). They are applicant-facing facts on your registration, never published to the public log, and
+              never anything resembling an identity document.
             </Sidecar>
           </div>
         </div>
@@ -361,11 +367,11 @@ export function OnboardStatus() {
                 ["Organisation", <span className="mono">{ob.orgId}</span>],
                 [
                   "Country · kind · sector",
-                  ob.kind
-                    ? `${ob.country || "—"} · ${ob.kind} · ${ob.sector} (held in this browser — not yet a registry fact)`
+                  reg.attributes
+                    ? `${reg.attributes.country || "—"} · ${reg.attributes.kind || "—"} · ${reg.attributes.sector || "—"} (served by the registry)`
                     : "—",
                 ],
-                ["Contact", ob.contactName || "—"],
+                ["Contact", (reg.attributes && reg.attributes.contactPerson) || "—"],
                 ["Applied", reg.appliedAt || "—"],
                 ["Terms accepted", reg.acceptedAt ? `${reg.termsId} v${reg.termsVersion}` : "not yet"],
                 ["Decided by", reg.decidedBy || "—"],
