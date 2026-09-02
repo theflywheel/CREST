@@ -38,8 +38,13 @@ func NewMultiVerifier(cfg Config) *MultiVerifier {
 	}
 	add(cfg)
 	for _, p := range cfg.Extra {
-		c := cfg // extras share audience, salt and cache posture
+		c := cfg // extras share salt and cache posture
 		c.Issuer, c.JWKSURL, c.Extra = p.Issuer, p.JWKSURL, nil
+		if p.Audience != "" {
+			// eSignet targets its access tokens at the relying-party client
+			// id, so an extra provider may name its own audience.
+			c.Audience = p.Audience
+		}
 		add(c)
 	}
 	return m
