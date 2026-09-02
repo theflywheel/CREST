@@ -1765,6 +1765,482 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "500": { $ref: "#/components/responses/Internal" }
 
+  # ── The G-2 onboarding journey (§15 J1): invitations and wider terms ────
+
+  /v1/projects/{id}/invitations:
+    post:
+      operationId: sendInvitation
+      summary: Invite an organisation onto this project
+      description: >
+        Screens `g2_9`/`g2_10`. The invitation is the OFFER whose acceptance
+        creates the partner grant `POST .../partner-grants` writes — same
+        authority, same scope, same terms-as-ceiling rule, one transaction at
+        acceptance. It is not a new primitive: the standing fact is the
+        Authorization, and the invitation is the recorded offer-and-answer.
+
+
+        The invitee must be an organisation Party, but its registration need
+        not be decided yet — `g2_5`'s point is that registration stands alone,
+        so an offer may arrive before or after the registry's decision.
+        Acceptance, not sending, is where approval is checked. The offer must
+        carry an end date, because the grant it becomes must.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [partyId, functions, period]
+              properties:
+                partyId: { type: string }
+                functions:
+                  type: array
+                  items: { type: string }
+                  description: Opaque L2 strings; the core never reads the words.
+                period:
+                  type: object
+                  description: Must carry `end` — an offer of a grant that ends.
+                note: { type: string, maxLength: 2000 }
+      responses:
+        "201":
+          description: The offer, SENT.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Invitation" }
+        "403": { description: Not permitted to configure this project. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The named configurator has not accepted the handover. }
+        "422": { description: Not an organisation, no functions, or no end date. }
+    get:
+      operationId: listProjectInvitations
+      summary: The offers this project has made
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string, enum: [SENT, ACCEPTED, DECLINED] } }
+      responses:
+        "200":
+          description: This project's invitations.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invitations: { type: array, items: { $ref: "#/components/schemas/Invitation" } }
+                  count: { type: integer }
+        "403": { description: Not permitted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/organisations/{id}/invitations:
+    get:
+      operationId: listOrganisationInvitations
+      summary: The organisation's invitation inbox
+      description: >
+        `g2_9`'s source. Narrowed to the organisation and authorized against
+        it, for the same reason `GET /v1/projects` narrows — who is courting
+        whom is not a public listing.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/PartyID" }
+        - { name: state, in: query, schema: { type: string, enum: [SENT, ACCEPTED, DECLINED] } }
+      responses:
+        "200":
+          description: The invitations addressed to this organisation.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invitations: { type: array, items: { $ref: "#/components/schemas/Invitation" } }
+                  count: { type: integer }
+        "403": { description: Not this organisation, and not permitted to act for it. }
+
+  /v1/invitations/{id}:
+    get:
+      operationId: getInvitation
+      summary: One offer, with its whole trail
+      description: >
+        The offer plus every event there has been — the questions included,
+        because a question asked on the record is on the record. Readable by
+        the invited organisation (which may hold nothing on the project yet)
+        and by anybody the project's own view gate admits.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The invitation and its events.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invitation: { $ref: "#/components/schemas/Invitation" }
+                  events: { type: array, items: { $ref: "#/components/schemas/InvitationEvent" } }
+        "403": { description: Neither side of the offer. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/invitations/{id}/decision:
+    post:
+      operationId: decideInvitation
+      summary: Accept or decline an invitation
+      description: >
+        `g2_9`'s Accept and Decline. Declining records who and why and destroys
+        nothing — it contests the offer, not the organisation's standing.
+
+
+        Accepting is where the ordering gate lives (`g2_5`): the organisation
+        must by now be APPROVED and hold accepted terms, and the offered
+        functions must fit inside them — because acceptance creates the partner
+        grant in the same transaction, riding the organisation's own accepted
+        terms version, so there is no state in which the org said yes and holds
+        nothing (`g2_10`). An undecided registration answers 409 with "not
+        yet", never "no": the offer does not expire with the wait.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [accepted, declined] }
+                reason: { type: string, description: Required when declining. }
+      responses:
+        "200":
+          description: The answered invitation; `grantId` names the grant an acceptance created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Invitation" }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "403": { description: Not the invited organisation, and not permitted to act for it. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: >
+            Already answered, the registration is not yet APPROVED, or the
+            organisation has accepted no terms.
+        "422":
+          description: >
+            A decline with no reason, or an offer that outgrew the terms —
+            every uncovered function named.
+
+  /v1/invitations/{id}/questions:
+    post:
+      operationId: askInvitationQuestion
+      summary: Ask a question on an open offer
+      description: >
+        `g2_9`'s third button. Either side — the invited organisation, or the
+        project's owner or named configurator — may ask while the offer is
+        open. A question changes no state; it is conversation on the record,
+        appended to the trail. After the answer there is nobody holding the
+        offer, so the trail closes with it.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [askedBy, text]
+              properties:
+                askedBy: { type: string }
+                text: { type: string, maxLength: 2000 }
+      responses:
+        "201":
+          description: The recorded question.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InvitationEvent" }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "403": { description: The asker is neither side of this offer. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The offer has been answered. }
+
+  /v1/organisations/{id}/terms-requests:
+    post:
+      operationId: createTermsRequest
+      summary: Open a request for wider terms
+      description: >
+        Screens `g2_6`/`g2_7`/`g2_11`. An APPROVED organisation asks to move to
+        a wider *published* terms version — APPROVED only, deliberately:
+        registration-time terms go through `.../terms-acceptance` and the
+        registration decision, and this door is the one thing that path cannot
+        do, which is move an already-approved organisation with review in
+        between.
+
+
+        Qualification documents are DECLARED, never uploaded: `{kind, ref,
+        hash}` — the kind from the deployment's own taxonomy (L2, opaque
+        here), the ref into its own document custody, bounded and single-line
+        so nothing document-shaped can be smuggled in. This service has no
+        blob store and grows none.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/PartyID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [termsId, termsVersion]
+              properties:
+                termsId: { type: string }
+                termsVersion: { type: integer, minimum: 1 }
+                documents:
+                  type: array
+                  items: { $ref: "#/components/schemas/DeclaredDocument" }
+      responses:
+        "201":
+          description: The request, DRAFT.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TermsRequest" }
+        "403": { description: Not this organisation, or its registration is not APPROVED. }
+        "422": { description: No such published terms version, or an invalid document declaration. }
+    get:
+      operationId: listOrganisationTermsRequests
+      summary: This organisation's terms requests
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/PartyID" }
+        - { name: state, in: query, schema: { type: string, enum: [DRAFT, SUBMITTED, WITHDRAWN, APPROVED, DENIED] } }
+      responses:
+        "200":
+          description: The requests, newest state included.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests: { type: array, items: { $ref: "#/components/schemas/TermsRequest" } }
+                  count: { type: integer }
+        "403": { description: Not this organisation, and not permitted to act for it. }
+
+  /v1/terms-requests:
+    get:
+      operationId: listTermsRequestQueue
+      summary: The review queue
+      description: >
+        The queue `g2_8`'s "sent for review" lands in. Authenticated like the
+        partner directory: who reviews is L2 routing this service does not
+        encode. `state` defaults to SUBMITTED because the queue is the
+        question this read answers.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [DRAFT, SUBMITTED, WITHDRAWN, APPROVED, DENIED], default: SUBMITTED } }
+      responses:
+        "200":
+          description: The matching requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests: { type: array, items: { $ref: "#/components/schemas/TermsRequest" } }
+                  count: { type: integer }
+        "401": { description: No verified caller. }
+
+  /v1/terms-requests/{id}:
+    get:
+      operationId: getTermsRequest
+      summary: One request, whole
+      description: >
+        State, declared documents, the append-only trail and every check
+        verdict — `g2_8`'s status view and `g2_12`'s "what is checked" on one
+        read.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: The request, its events and its checks.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request: { $ref: "#/components/schemas/TermsRequest" }
+                  events: { type: array, items: { $ref: "#/components/schemas/TermsRequestEvent" } }
+                  checks: { type: array, items: { $ref: "#/components/schemas/CheckVerdict" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/terms-requests/{id}/documents:
+    put:
+      operationId: replaceRequestDocuments
+      summary: Save the draft's declared documents
+      description: >
+        `g2_7`'s "Save draft". DRAFT only — after submission the reviewer must
+        be looking at what was submitted.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                documents:
+                  type: array
+                  items: { $ref: "#/components/schemas/DeclaredDocument" }
+      responses:
+        "200":
+          description: The draft, with its new list.
+          content: { application/json: { schema: { $ref: "#/components/schemas/TermsRequest" } } }
+        "403": { description: Not this organisation. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Not a draft any more. }
+        "422": { description: An invalid document declaration. }
+
+  /v1/terms-requests/{id}/submit:
+    post:
+      operationId: submitTermsRequest
+      summary: Send the request for review
+      description: >
+        `g2_7`'s "Submit" → `g2_8`. The declared documents freeze and the
+        request enters the review queue. Whether they are ENOUGH is the
+        review's question, under L2 policy; whether the request is a
+        submittable thing is this endpoint's.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: SUBMITTED, with the submitter and time on it.
+          content: { application/json: { schema: { $ref: "#/components/schemas/TermsRequest" } } }
+        "403": { description: Not this organisation. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Already submitted, or already settled. }
+
+  /v1/terms-requests/{id}/withdraw:
+    post:
+      operationId: withdrawTermsRequest
+      summary: Withdraw a submitted request
+      description: >
+        `g2_8`'s "Withdraw". The organisation's own act, only while the request
+        waits; a decided request is somebody else's answer and withdrawal
+        cannot erase it. The reason is optional — withdrawing your own ask is
+        not a refusal — but the actor is recorded always.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200":
+          description: WITHDRAWN.
+          content: { application/json: { schema: { $ref: "#/components/schemas/TermsRequest" } } }
+        "403": { description: Not this organisation. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Not submitted, or already decided. }
+
+  /v1/terms-requests/{id}/checks:
+    post:
+      operationId: recordCheckVerdict
+      summary: Record one check's verdict
+      description: >
+        `g2_12`, honestly. The screen says this stage "mostly runs without a
+        person"; no automated checker exists in this codebase today, so a check
+        is a RECORDED VERDICT, never a simulation — a binary outcome with an
+        owner who answers for it: a `party`, or a named `policy` (the slot the
+        eventual business-register adapter fills, writing verdicts through this
+        same door under its policy name). The check NAMES are the deployment's
+        catalogue, L2 and opaque here. Verdicts are append-only and recordable
+        only while the request is SUBMITTED: a check on a draft examines a
+        moving target, and a check after the decision checked nothing the
+        decision used. The applicant may neither own nor record verdicts on its
+        own request.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, outcome, ownerKind, recordedBy]
+              properties:
+                name: { type: string }
+                outcome: { type: string, enum: [PASS, FAIL] }
+                ownerKind: { type: string, enum: [party, policy] }
+                owner:
+                  type: string
+                  description: Defaults to the proven recorder when ownerKind is `party`.
+                note: { type: string, maxLength: 2000 }
+                recordedBy: { type: string }
+      responses:
+        "201":
+          description: The recorded verdict.
+          content: { application/json: { schema: { $ref: "#/components/schemas/CheckVerdict" } } }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "403": { description: The recorder is not who they claim. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The request is not under review. }
+        "422": { description: An outcome that is neither PASS nor FAIL, an unowned verdict, or a self-check. }
+    get:
+      operationId: listCheckVerdicts
+      summary: The verdicts recorded on this request
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: Every verdict, in the order recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checks: { type: array, items: { $ref: "#/components/schemas/CheckVerdict" } }
+                  count: { type: integer }
+        "401": { description: No verified caller. }
+
+  /v1/terms-requests/{id}/decision:
+    post:
+      operationId: decideTermsRequest
+      summary: Approve or deny a terms request
+      description: >
+        The registration decision's posture, one stage later: the decider is
+        named and proven, is never the applicant, and a denial carries a
+        reason. A terms upgrade always requires a named decision, whatever
+        `REGISTRY_ORG_APPROVAL` says about first registration — wider terms are
+        the moment an organisation gains powers it did not have.
+
+
+        On approval the organisation's registration moves to the requested
+        terms in the same transaction, and the terms it held until that moment
+        are captured on the request (`previousTermsId`/`previousTermsVersion`)
+        — the registration row only ever shows the current answer. Whether the
+        recorded checks are sufficient is the decider's judgement under L2
+        policy; this endpoint does not count PASSes.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approve, decidedBy]
+              properties:
+                approve: { type: boolean }
+                decidedBy: { type: string }
+                reason: { type: string, description: Required when denying. }
+      responses:
+        "200":
+          description: The request, decided.
+          content: { application/json: { schema: { $ref: "#/components/schemas/TermsRequest" } } }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "403": { description: The decider is not who they claim. }
+        "404": { description: No such request, or the organisation's registration is no longer APPROVED. }
+        "409": { description: Self-decision, not submitted, or already decided. }
+        "422": { description: A denial with no reason. }
+
   /internal/identity/subjects/{subject}:
     get:
       operationId: partyForSubject
@@ -2104,6 +2580,104 @@ components:
       description: The party identifier.
 
   schemas:
+    # ── The G-2 onboarding journey (J1) ───────────────────────────────────
+    Invitation:
+      type: object
+      description: >
+        One recorded offer from a project to an organisation. Not a primitive:
+        the standing fact is the Authorization its acceptance creates, and
+        `grantId` is the walkable link to it.
+      properties:
+        id: { type: string }
+        contextId: { type: string }
+        partyId: { type: string }
+        functions: { type: array, items: { type: string } }
+        period: { type: object }
+        note: { type: string }
+        state: { type: string, enum: [SENT, ACCEPTED, DECLINED] }
+        invitedBy: { type: string }
+        invitedAt: { type: string, format: date-time }
+        decidedBy: { type: string }
+        decidedAt: { type: string, format: date-time }
+        reason: { type: string }
+        grantId: { type: string }
+
+    InvitationEvent:
+      type: object
+      description: One row of an invitation's append-only trail.
+      properties:
+        seq: { type: integer }
+        event: { type: string, enum: [SENT, QUESTION, ACCEPTED, DECLINED] }
+        actorPartyId: { type: string }
+        note: { type: string }
+        at: { type: string, format: date-time }
+
+    DeclaredDocument:
+      type: object
+      description: >
+        A qualification document, declared rather than uploaded: a reference
+        and optionally a hash, never the bytes. `kind` is the deployment's own
+        taxonomy, opaque here; `ref` is bounded and single-line so nothing
+        document-shaped — least of all an identity document — can be smuggled
+        into this store.
+      required: [kind, ref]
+      properties:
+        kind: { type: string, maxLength: 120 }
+        ref: { type: string, maxLength: 500 }
+        hash: { type: string, maxLength: 200 }
+        note: { type: string, maxLength: 2000 }
+
+    TermsRequest:
+      type: object
+      description: >
+        An organisation's request to move to a wider published terms version.
+        `previousTermsId`/`previousTermsVersion` are captured at approval —
+        the registration row only ever shows the current answer, and "which
+        terms did this organisation hold before the upgrade" must survive the
+        overwrite.
+      properties:
+        id: { type: string }
+        partyId: { type: string }
+        termsId: { type: string }
+        termsVersion: { type: integer }
+        documents: { type: array, items: { $ref: "#/components/schemas/DeclaredDocument" } }
+        state: { type: string, enum: [DRAFT, SUBMITTED, WITHDRAWN, APPROVED, DENIED] }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        submittedBy: { type: string }
+        submittedAt: { type: string, format: date-time }
+        decidedBy: { type: string }
+        decidedAt: { type: string, format: date-time }
+        reason: { type: string }
+        previousTermsId: { type: string }
+        previousTermsVersion: { type: integer }
+
+    TermsRequestEvent:
+      type: object
+      description: One row of a terms request's append-only trail.
+      properties:
+        seq: { type: integer }
+        event: { type: string, enum: [DRAFTED, SUBMITTED, WITHDRAWN, APPROVED, DENIED] }
+        actorPartyId: { type: string }
+        reason: { type: string }
+        at: { type: string, format: date-time }
+
+    CheckVerdict:
+      type: object
+      description: >
+        One recorded check on a submitted request: a binary outcome and who
+        answers for it — a party, or a named policy. A record of verdicts,
+        deliberately not a simulation of automation.
+      properties:
+        seq: { type: integer }
+        name: { type: string }
+        outcome: { type: string, enum: [PASS, FAIL] }
+        ownerKind: { type: string, enum: [party, policy] }
+        owner: { type: string }
+        note: { type: string }
+        recordedBy: { type: string }
+        at: { type: string, format: date-time }
+
     # ── Projects (J3) ─────────────────────────────────────────────────────
     ProjectView:
       description: >
