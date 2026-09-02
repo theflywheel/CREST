@@ -36,6 +36,9 @@ import {
 import {
   Where, Handover, Compose, Owners, Activate, FinanceCode, SupportOwner, Partners,
 } from "./views/J3";
+import {
+  G1Setup, G1Covers, G1Consent, G1Invite, G1Services, G1People, Admissions, AdmissionDetail,
+} from "./views/G1";
 
 // ── The reference's three J3 rails ─────────────────────────────────────────
 const SETUP_RAIL: NavItem[] = [
@@ -109,7 +112,19 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
   rateowner: [{ caption: "Rate owner · F-1", items: [{ to: "/paysetup", label: "The rate" }] }],
   payowner: [{ caption: "Payment mechanism · F-2", items: [{ to: "/paysetup", label: "Rail & mechanism" }] }],
   instance: [
-    { caption: "Instance admin · G-1", items: [{ to: "/instance", label: "The deployment" }] },
+    // The reference's own G-1 rail: Instance · Organisations · Consent & data ·
+    // Platform services · People & roles (g1_1–g1_6, g4_1–g4_3).
+    {
+      caption: "Instance admin · G-1",
+      items: [
+        { to: "/instance/covers", label: "Instance" },
+        { to: "/admissions", label: "Organisations" },
+        { to: "/instance/consent", label: "Consent & data" },
+        { to: "/instance/services", label: "Platform services" },
+        { to: "/instance/people", label: "People & roles" },
+      ],
+    },
+    { caption: "The deployment", items: [{ to: "/instance", label: "Self-description" }] },
     {
       caption: "Project view",
       items: [
@@ -156,8 +171,14 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
 
 const isJ3 = (key: PersonaKey) => key === "orgadmin" || key === "configurator";
 const homeOf = (key: PersonaKey) => (isJ3(key) ? "/org" : NAV[key][0].items[0].to);
+// The G-1 screens the rail does not name: the stand-up front door and the
+// invite frame are reached by the walk's own buttons, and an admission detail
+// is reached from the queue.
+const G1_EXTRA = ["/instance/setup", "/instance/invite"];
 const allowed = (key: PersonaKey, path: string) =>
-  (isJ3(key) && J3_ROUTES.includes(path)) || NAV[key].some((g) => g.items.some((i) => i.to === path));
+  (isJ3(key) && J3_ROUTES.includes(path)) ||
+  (key === "instance" && (G1_EXTRA.includes(path) || path.startsWith("/admissions/"))) ||
+  NAV[key].some((g) => g.items.some((i) => i.to === path));
 
 function Shell() {
   const s = useConsole();
@@ -257,6 +278,18 @@ export function App() {
         <Route path="/ratify" element={<Ratify />} />
         <Route path="/paysetup" element={<PaySetup />} />
         <Route path="/instance" element={<Instance />} />
+        {/* G-1 — setting up the instance (g1_1–g1_6): the reference's frames,
+            read against the deployment's real self-description. */}
+        <Route path="/instance/setup" element={<G1Setup />} />
+        <Route path="/instance/covers" element={<G1Covers />} />
+        <Route path="/instance/consent" element={<G1Consent />} />
+        <Route path="/instance/invite" element={<G1Invite />} />
+        <Route path="/instance/services" element={<G1Services />} />
+        <Route path="/instance/people" element={<G1People />} />
+        {/* G-4 admission review (g4_1–g4_3): the real queue and the real
+            decision — POST /v1/organisations/{id}/decision, decider checked. */}
+        <Route path="/admissions" element={<Admissions />} />
+        <Route path="/admissions/:pid" element={<AdmissionDetail />} />
         <Route path="/portfolio" element={<Portfolio />} />
         <Route path="/find" element={<Find />} />
         <Route path="/dupes" element={<Dupes />} />

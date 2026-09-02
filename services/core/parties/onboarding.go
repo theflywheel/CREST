@@ -2,6 +2,7 @@ package parties
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -174,6 +175,53 @@ func decide(ctx context.Context, tx store.Querier, partyID string, approve bool,
 		return Registration{}, err
 	}
 	return getRegistration(ctx, tx, partyID)
+}
+
+// RegistrationRow is one registration as the reviewer's queue sees it: the
+// registration itself plus the applicant's own public-enough facts — the
+// display name and the self-declared attributes that already ride the
+// applicant-facing registration read (#168). Nothing else of the Party
+// document leaves here: the queue needs a name to put on a row, not the
+// record.
+type RegistrationRow struct {
+	Registration
+	DisplayName string         `json:"displayName,omitempty"`
+	Attributes  map[string]any `json:"attributes,omitempty"`
+}
+
+// listRegistrations is the reviewer's read behind g4_1 — "requests a person
+// has to look at". state filters exactly; empty means every registration.
+// Undecided rows first (a queue reads by what still needs a person), then by
+// application time, so the oldest waiting applicant is at the top.
+func listRegistrations(ctx context.Context, q store.Querier, state string) ([]RegistrationRow, error) {
+	rows, err := q.Query(ctx, `
+		SELECT r.party_id, r.state, r.terms_id, r.terms_version, r.accepted_by, r.accepted_at,
+		       r.decided_by, r.decided_at, r.reason, r.applied_at, p.doc
+		FROM org_registrations r JOIN parties p ON p.id = r.party_id
+		WHERE ($1 = '' OR r.state = $1)
+		ORDER BY (r.state IN ('APPROVED','REJECTED')), r.applied_at, r.party_id`, state)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.Collect(rows, func(row store.Row) (RegistrationRow, error) {
+		var out RegistrationRow
+		var doc []byte
+		if err := row.Scan(&out.PartyID, &out.State, &out.TermsID, &out.TermsVersion,
+			&out.AcceptedBy, &out.AcceptedAt, &out.DecidedBy, &out.DecidedAt,
+			&out.Reason, &out.AppliedAt, &doc); err != nil {
+			return RegistrationRow{}, err
+		}
+		var p struct {
+			DisplayName string         `json:"displayName"`
+			Attributes  map[string]any `json:"attributes"`
+		}
+		if err := json.Unmarshal(doc, &p); err != nil {
+			return RegistrationRow{}, err
+		}
+		out.DisplayName, out.Attributes = p.DisplayName, p.Attributes
+		return out, nil
+	})
 }
 
 // Enrolment records that one party enrolled another.

@@ -140,7 +140,9 @@ for (const [personaIdx, personaName, who, views] of [
   [3, "Prof. Ndegwa (definition approver, P-3)", "Prof. Ndegwa", ["ratify", "definition"]],
   [4, "Mutua (rate owner, F-1)", "Mutua", ["paysetup"]],
   [5, "Njeri (payment mechanism owner, F-2)", "Njeri", ["paysetup"]],
-  [6, "Instance administrator (G-1)", "Instance administrator", ["instance", "status"]],
+  [6, "Instance administrator (G-1)", "Instance administrator",
+    ["instance", "instance/setup", "instance/covers", "instance/consent", "instance/invite",
+      "instance/services", "instance/people", "admissions", "status"]],
   [7, "Otieno (registry custodian, G-4)", "Otieno", ["find", "dupes", "unclear", "recover", "review"]],
   [8, "Naliaka (support agent, W-3)", "Naliaka", ["cases", "supportfind", "supporttrace"]],
   [9, "Funding oversight (V-4)", "Funding oversight", ["portfolio", "status"]],
@@ -163,6 +165,12 @@ for (const [personaIdx, personaName, who, views] of [
       // bounced us home would otherwise read as a passing walk.
       await signedInAs(page, who);
       expect(page.url(), `console #/${v} must not redirect away`).toContain("#/" + v);
+      if (v === "instance/covers") {
+        // g1_2 reads the deployment's real self-description, and says on its
+        // face that these values are deploy-time configuration.
+        await expect(page.locator("body")).toContainText("crest:instance:local");
+        await expect(page.locator("body")).toContainText(/deploy-time/i);
+      }
       if (v === "instance") {
         // The instance view reads GET /v1/instance for real (#70); the local
         // stack's identity is CREST_INSTANCE_ID's compose default.
@@ -827,4 +835,123 @@ test("console: the G-2 onboarding journey is real, screen by screen", async ({ p
   await expect(page.locator("body")).toContainText("APPROVED");
   await expect(page.locator("body")).toContainText(widerId + " v1");
   await assertAlive(page, errors, "G-2 whole journey");
+});
+
+// ── G-1: the instance walk, and the requests a person has to look at ────────
+// An organisation registers and accepts terms at the open door; the instance
+// administrator then walks the G-1 screens (every one an honest read of the
+// deployment, never a fake wizard write) and decides the registration through
+// the real reviewer surface (g4_1–g4_3). The decision path's invariant is
+// verification's generalisation of "every held payment has a reason with an
+// owner": every approval carries a decider — the authenticated caller, checked
+// by the service (#89), never a typed name — and every rejection a reason.
+test("console: G-1 walks the instance, and a person decides the admission", async ({ page }) => {
+  test.setTimeout(180000);
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+  const orgName = "Nyanza Care Collective " + stamp;
+
+  // The applicant's half: register and accept terms (manual approval model
+  // leaves the registration TERMS_ACCEPTED, waiting on a person).
+  await page.goto("/console/#/onboard");
+  await settle(page);
+  await page.fill('[name="orgname"]', orgName);
+  await page.selectOption('[name="country"]', "KE");
+  await page.fill('[name="workemail"]', `admissions+${stamp}@nyanza.example.org`);
+  await page.fill('[name="contactname"]', "Sister Achieng");
+  await page.click("#orgapplyform button.dominant");
+  await page.waitForSelector("#acceptterms", { timeout: 20000 });
+  await page.click("#acceptterms");
+  await page.waitForURL(/#\/onboard\/status/, { timeout: 20000 });
+  const orgId = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem("crest.console.onboarding") || "{}").orgId);
+  expect(orgId).toMatch(/^did:crest:party:/);
+
+  // The instance administrator signs in — a different party from the
+  // applicant, which is what lets the decision stand at all.
+  await page.goto("/console/");
+  await settle(page);
+  await page.click('[data-p="6"]');
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await signedInAs(page, "Instance administrator");
+
+  // g1_1 — the front door: what the deployment IS, and no fake wizard.
+  await page.evaluate(() => { location.hash = "#/instance/setup"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Let's set up CREST");
+  await expect(page.locator("body")).toContainText("crest:instance:local");
+  await expect(page.locator("body")).toContainText(/compose locally, Railway in the cloud/i);
+  await assertAlive(page, errors, "g1_1 setup front door");
+
+  // g1_2 — read-only coverage, walked by the frame's own Begin button.
+  await page.click("#g1-next");
+  await settle(page);
+  expect(page.url()).toContain("#/instance/covers");
+  await expect(page.locator("body")).toContainText("What this instance covers");
+  // No editable instance field exists: read-only by design, and said so.
+  await expect(page.locator('input[name="instancename"]')).toHaveCount(0);
+  await expect(page.locator("body")).toContainText("There is nothing to save");
+
+  // g1_3 — the consent floor, stated as the infrastructure facts it is.
+  await page.click("#g1-next");
+  await settle(page);
+  expect(page.url()).toContain("#/instance/consent");
+  await expect(page.locator("body")).toContainText("Consent rules, before the first worker");
+  await expect(page.locator("body")).toContainText(/never unwinds a payment already made/i);
+
+  // g1_5 — the invite frame refuses to fake a send, and names the finding.
+  await page.click("#g1-next");
+  await settle(page);
+  expect(page.url()).toContain("#/instance/invite");
+  await expect(page.locator("body")).toContainText("Inviting the first organisation");
+  await expect(page.locator("body")).toContainText(/No Send button, on purpose/i);
+  await expect(page.locator("body")).toContainText(/design finding/i);
+
+  // g1_6 — the live health sweep: six services, each really asked.
+  await page.click("#g1-next");
+  await settle(page);
+  expect(page.url()).toContain("#/instance/services");
+  await expect(page.locator("body")).toContainText("The services behind all of it");
+  await expect(page.locator(".stat", { hasText: "parties" })).toContainText("healthy");
+  await expect(page.locator(".stat")).toHaveCount(6);
+
+  // "Done — awaiting the organisation" lands on the queue (g4_1) — where the
+  // organisation that just applied is genuinely waiting.
+  await page.click("#g1-next");
+  await settle(page);
+  expect(page.url()).toContain("#/admissions");
+  await expect(page.locator("body")).toContainText("Requests a person has to look at");
+  // The reference's callouts, verbatim.
+  await expect(page.locator("body")).toContainText("Verifiers are not in this queue and never will be.");
+  await expect(page.locator("body")).toContainText(orgName);
+
+  // g4_2 — open this request: the declared facts and the honest limit.
+  await page.click(`[data-open="${orgId}"]`);
+  await settle(page);
+  expect(page.url()).toContain("#/admissions/");
+  await expect(page.locator("body")).toContainText(orgName);
+  await expect(page.locator("body")).toContainText("Sister Achieng");
+  await expect(page.locator("body")).toContainText(
+    "Neither it nor the domain check establishes that the person submitting this speaks for that body");
+
+  // g4_3 — a rejection with no reason is refused by the service, loudly.
+  await page.click("#reject-registration");
+  await expect(page.locator(".errbar")).toContainText(/reason/i, { timeout: 20000 });
+
+  // Approve. The decider is the session's own authenticated party — the
+  // service checks the bearer token against the name (#89).
+  await page.fill('[name="decidereason"]', "confirmed against the state register " + stamp);
+  await page.click("#approve-registration");
+  await expect(page.locator("body")).toContainText("APPROVED", { timeout: 20000 });
+  await expect(page.locator("body")).toContainText("decided by");
+  // The decider on the record is the instance persona's party, not the applicant.
+  await expect(page.locator("body")).toContainText("…" + FIX.org.slice(-6));
+
+  // The queue no longer holds it; the decided table does, with the decider.
+  await page.evaluate(() => { location.hash = "#/admissions"; });
+  await settle(page);
+  await expect(page.locator(`[data-open="${orgId}"]`)).toHaveCount(0);
+  await expect(page.locator("tr", { hasText: orgName })).toContainText("APPROVED");
+  await assertAlive(page, errors, "G-1 admission decided");
 });

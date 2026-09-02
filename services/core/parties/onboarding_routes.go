@@ -67,6 +67,32 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// listRegistrations is the reviewer's queue read (g4_1): every registration a
+// person may still have to look at, undecided first. Authenticated like the
+// terms-request queue — who reviews is L2 routing this service does not
+// encode, and nothing here is identity data: the row carries the applicant's
+// display name and self-declared attributes, the same facts the
+// applicant-facing registration read already serves (#168).
+func (h *handlers) listRegistrations(w http.ResponseWriter, r *http.Request) {
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
+	state := r.URL.Query().Get("state")
+	switch state {
+	case "", stateApplied, stateTermsAccepted, stateApproved, stateRejected:
+	default:
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_query",
+			"state must be APPLIED, TERMS_ACCEPTED, APPROVED or REJECTED, or absent for all")
+		return
+	}
+	list, err := listRegistrations(r.Context(), h.d.DB.Q(), state)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "list registrations", err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"registrations": list, "count": len(list)})
+}
+
 func (h *handlers) getRegistration(w http.ResponseWriter, r *http.Request) {
 	reg, err := getRegistration(r.Context(), h.d.DB.Q(), r.PathValue("id"))
 	if err != nil {
@@ -88,8 +114,13 @@ func (h *handlers) getRegistration(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.WriteJSON(w, http.StatusOK, struct {
 		Registration
-		Attributes map[string]any `json:"attributes,omitempty"`
-	}{reg, party.Attributes})
+		// The display name rides for the same reason the attributes do: it is
+		// the organisation's own self-declared public name, and both the
+		// applicant's status screen and the reviewer's detail need a name to
+		// put on the record they are reading.
+		DisplayName string         `json:"displayName,omitempty"`
+		Attributes  map[string]any `json:"attributes,omitempty"`
+	}{reg, party.DisplayName, party.Attributes})
 }
 
 // acceptTerms records agreement to a specific terms version.
