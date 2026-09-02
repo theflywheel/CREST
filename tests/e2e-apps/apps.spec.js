@@ -7,6 +7,7 @@ const { test, expect } = require("@playwright/test");
 
 const FIX = {
   workerA: "did:crest:party:01JCREST00000000000000WRKA",
+  org: "did:crest:party:01JCREST000000000000000RGN",
 };
 
 // Every page object carries its uncaught exceptions; .errbar is what the apps
@@ -440,4 +441,148 @@ test("mobile viewport: the worker door keeps its bottom nav", async ({ page }) =
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBe(0);
+});
+
+// ── J3 Phase B: the project backend, driven through the screens ────────────
+// One walk, because the facts are sequential: a project is created, handed
+// over, declined with a reason, re-handed, accepted, composed, staffed,
+// granted to a partner, financed, supported, gated and activated. Every
+// assertion below reads a value back from the service through a screen — a
+// pass means the record exists, not that a form submitted.
+//
+// This also closes the coverage the J3 backend PR marked partial: the project
+// role listing, the organisation role listing, the APPROVED-only partner
+// directory, the partner-grant listing, the partner-grant end-date refusal,
+// and the support-owner party check are each exercised here.
+test("console: the J3 handover is real, and so is everything after it", async ({ page }) => {
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+  await page.goto("/console/");
+  await settle(page);
+  await page.click('[data-persona="orgadmin"]');
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+
+  // The party this session acts as: the story's programme organisation, which
+  // is the party every org-side persona signs in as (state.tsx records why).
+  const me = "did:crest:party:01JCREST000000000000000RGN";
+
+  // p1_3 — create a project and name a configurator. Naming is a proposal.
+  await page.evaluate(() => { location.hash = "#/projects/new"; });
+  await settle(page);
+  await page.fill('[name="projectname"]', "Bednet campaign " + stamp);
+  await page.fill('[name="coverage"]', "Ward 4, Ward 7 · Kisumu County");
+  await page.fill('[name="configurator"]', me);
+  await page.click("#create-project");
+  await page.waitForURL(/#\/handover/, { timeout: 20000 });
+  await settle(page);
+  // n4 — what arrived, read from the record.
+  await expect(page.locator("body")).toContainText("Bednet campaign " + stamp);
+  await expect(page.locator("body")).toContainText("Ward 4, Ward 7");
+  await expect(page.locator("body")).toContainText(/waiting on an answer/i);
+
+  // n4's decline: a real outcome, with a reason and an actor, and nothing
+  // deleted. F2's whole point.
+  await page.fill('[name="declinereason"]', "not my programme area " + stamp);
+  await page.click("#decline-handover");
+  await settle(page);
+  await expect(page.locator("body")).toContainText(/declined/i);
+  await expect(page.locator("body")).toContainText("not my programme area " + stamp);
+  // The trail keeps both events, which is the reason the trail exists.
+  await expect(page.locator("body")).toContainText("NAMED");
+  await expect(page.locator("body")).toContainText("DECLINED");
+
+  // The Org Admin's queue: a declined project comes back rather than vanishing.
+  await page.evaluate(() => { location.hash = "#/org"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Handed back to you");
+  await expect(page.locator("body")).toContainText("not my programme area " + stamp);
+  // …and is handed on again, which returns it to PENDING.
+  await page.fill('[name="rehandto"]', me);
+  await page.click("#rehand");
+  await expect(page.locator("body")).toContainText(/waiting on an answer again/i, { timeout: 20000 });
+
+  // Accept it, and the write door opens.
+  await page.evaluate(() => { location.hash = "#/handover"; });
+  await settle(page);
+  await page.click("#accept-handover");
+  await page.waitForURL(/#\/compose/, { timeout: 20000 });
+  await settle(page);
+
+  // p2_1/p2_3/p2_5 — one composition choice, recorded with its decider.
+  await page.fill('[name="choice"]', "worker-sourcing");
+  await page.fill('[name="value"]', "register-and-import-" + stamp);
+  await page.locator("#composeform button").click();
+  await expect(page.locator("body")).toContainText("register-and-import-" + stamp, { timeout: 20000 });
+  await expect(page.locator("body")).toContainText("worker-sourcing");
+
+  // p2_6 — a role grant on this project, listed with its grantor and date.
+  await page.evaluate(() => { location.hash = "#/owners"; });
+  await settle(page);
+  await page.fill('[name="grantparty"]', me);
+  await page.fill('[name="grantfunctions"]', "submit-work-evidence");
+  await page.locator("#grantform button").click();
+  await expect(page.locator("body")).toContainText("submit-work-evidence", { timeout: 20000 });
+  await expect(page.locator("body")).toContainText("ACTIVE");
+
+  // p2_17 — the directory is a join over approvals somebody else made, so the
+  // approved programme organisation is in it.
+  await page.evaluate(() => { location.hash = "#/partners"; });
+  await settle(page);
+  await expect(page.locator(`[data-pick="${me}"]`)).toBeVisible();
+
+  // p2_18 — a grant with no end date is refused: "the grant lapses by itself"
+  // is the screen's whole subject, so an endless one is not a grant.
+  await page.fill('[name="grantpartner"]', me);
+  await page.fill('[name="grantfns"]', "submit-work-evidence");
+  await page.locator("#partnergrantform button").click();
+  await expect(page.locator(".errbar")).toContainText(/end date|422|until|period/i, { timeout: 20000 });
+  // With one, it stands — and rides the terms the partner actually accepted.
+  await page.fill('[name="grantuntil"]', "2027-03-31");
+  await page.locator("#partnergrantform button").click();
+  await expect(page.locator("body")).toContainText(/lapses on its own end date/i, { timeout: 20000 });
+  await expect(page.locator("body")).toContainText("Grants standing on this project");
+
+  // p2_10 — a support owner must resolve to a real party: a support owner
+  // nobody can name is the dead end that leaves a worker unexplained.
+  await page.evaluate(() => { location.hash = "#/support"; });
+  await settle(page);
+  await page.fill('[name="supportparty"]', "did:crest:party:01JNOSUCHPARTY0000000000");
+  await page.locator("#supportform button").click();
+  await expect(page.locator(".errbar")).toBeVisible({ timeout: 20000 });
+  await page.fill('[name="supportparty"]', me);
+  await page.fill('[name="supportvalue"]', "+254700000" + stamp.slice(-3));
+  await page.locator("#supportform button").click();
+  await expect(page.locator("body")).toContainText("+254700000" + stamp.slice(-3), { timeout: 20000 });
+
+  // p2_8 — the code is stored verbatim, with who linked it.
+  await page.evaluate(() => { location.hash = "#/finance"; });
+  await settle(page);
+  await page.fill('[name="financesystem"]', "IFMIS · Kenya Treasury");
+  await page.fill('[name="financecode"]', "4402-11-A" + stamp.slice(-2));
+  await page.locator("#financeform button").click();
+  await expect(page.locator("body")).toContainText("4402-11-A" + stamp.slice(-2), { timeout: 20000 });
+
+  // p2_7 — a gate is declared, refuses activation by name, then is satisfied.
+  await page.evaluate(() => { location.hash = "#/activate"; });
+  await settle(page);
+  await page.fill('[name="gatename"]', "rate-published");
+  await page.locator("#gateform button").click();
+  await expect(page.locator("body")).toContainText("rate-published", { timeout: 20000 });
+  await page.click("#activate-project");
+  // The refusal names what is missing rather than being a dead end.
+  await expect(page.locator(".errbar")).toContainText(/rate-published|unmet|condition|409/i, { timeout: 20000 });
+  await page.click('[data-satisfy="rate-published"]');
+  // Satisfied at the service's clock: the row now carries a date, which is
+  // the only proof that the gate was answered rather than re-declared.
+  await expect(page.locator('[data-satisfy="rate-published"]')).toHaveCount(0, { timeout: 20000 });
+  await page.click("#activate-project");
+  await expect(page.locator("body")).toContainText("ACTIVE", { timeout: 20000 });
+
+  // n2 — the context list is read from granted roles, and the project we just
+  // built is in it.
+  await page.evaluate(() => { location.hash = "#/where"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Bednet campaign " + stamp);
+  await assertAlive(page, errors, "console J3 phase B walk");
 });

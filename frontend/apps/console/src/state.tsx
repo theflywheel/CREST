@@ -112,6 +112,12 @@ type State = {
   setTraceClaim: (c: string) => void;
   wizStep: number;
   setWizStep: (n: number) => void;
+  // Which project this console is working on. Chosen on n2 from the projects
+  // the registry says you hold a role in — never a project id typed into a
+  // browser. The seeded programme project is the default so a fresh session
+  // has somewhere to land.
+  projectId: string;
+  setProjectId: (id: string) => void;
 };
 
 const Ctx = createContext<State>(null as unknown as State);
@@ -128,6 +134,7 @@ export function ConsoleProvider(props: { children: ReactNode }) {
   const [err, setErr] = useState<string | null>(null);
   const [traceClaim, setTraceClaim] = useState("");
   const [wizStep, setWizStep] = useState(0);
+  const [projectId, setProjectId] = useState<string>(FIX.project);
 
   const login = async (idx: number) => {
     const p = personas[idx];
@@ -157,6 +164,8 @@ export function ConsoleProvider(props: { children: ReactNode }) {
         setTraceClaim,
         wizStep,
         setWizStep,
+        projectId,
+        setProjectId,
       }}
     >
       {props.children}

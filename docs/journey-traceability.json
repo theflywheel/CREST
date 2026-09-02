@@ -4,10 +4,10 @@
  "generatedBy": "tools/journey-trace/build.py",
  "screens": 143,
  "coverage": {
-  "compressed": 23,
-  "illustrative": 18,
-  "implemented": 25,
-  "missing": 69,
+  "compressed": 28,
+  "illustrative": 16,
+  "implemented": 30,
+  "missing": 61,
   "semantically-different": 8
  },
  "statuses": {
@@ -340,7 +340,7 @@
    "status": "compressed",
    "app": "console",
    "route": "#/people",
-   "note": "The reference's frame at the rail's People & roles entry, listing every grant GET /v1/authorizations reports for the organisation with its grantor and grant date. Compressed: the invited/active distinction, the vacant-role line and the invitation itself need a role-grant write path and a notification service, and the screen says so rather than drawing states it cannot read",
+   "note": "The reference's frame at the rail's People & roles entry, over GET /v1/organisations/{id}/roles — the question GET /v1/authorizations cannot answer, because it keys on who GAVE the grant. Every holder lists with its functions, its grantor, its grant date and its state, revoked and expired included. Compressed rather than implemented: the invitation to a work email and the invited/active distinction that goes with it need a notification service, and the screen says so instead of drawing states it cannot read",
    "gate": "skipped (compressed)"
   },
   {
@@ -350,11 +350,11 @@
    "title": "Creating a project is not configuring one",
    "source": "reference",
    "roleName": "Org Admin",
-   "status": "illustrative",
+   "status": "implemented",
    "app": "console",
    "route": "#/projects/new",
-   "note": "The reference's three-field frame (project name, coverage, named Configurator) with its 'not decided here' callout verbatim, and nothing to submit to: creating a project and naming its Configurator has no write path from this door yet. Labelled on its face — a named owner who never agreed is the failure the handover exists to prevent, so no local state pretends one exists",
-   "gate": "skipped (illustrative)"
+   "note": "POST /v1/projects with the reference's three fields: the project is created DRAFT, coverage rides the opaque configuration object, and naming a Configurator leaves ownership PENDING because naming is a proposal (finding F2). Proven end to end by tests/e2e-apps/apps.spec.js 'the J3 handover is real': create, decline with a reason, re-hand, accept",
+   "gate": "**asserted**"
   },
   {
    "id": "p2_1",
@@ -363,11 +363,11 @@
    "title": "Five choices, answered separately",
    "source": "reference",
    "roleName": "Project Configurator",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Five composition choices: no project-composition surface",
-   "gate": "skipped (missing)"
+   "status": "compressed",
+   "app": "console",
+   "route": "#/compose",
+   "note": "PUT /v1/projects/{id}/composition/{choice} and GET .../composition: choices are answered separately, each carrying its decider and date, and answering one never overwrites another. Compressed because the reference's five NAMED choices are L2 vocabulary with no enum in CREST — the screen renders whatever the deployment declares on the project's configuration and takes a typed answer where it declares nothing, rather than inventing a taxonomy",
+   "gate": "skipped (compressed)"
   },
   {
    "id": "p2_2",
@@ -389,11 +389,11 @@
    "title": "Three origins, one ratification",
    "source": "reference",
    "roleName": "Project Configurator",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Definition origin choice (three origins, one ratification): not built",
-   "gate": "skipped (missing)"
+   "status": "compressed",
+   "app": "console",
+   "route": "#/compose",
+   "note": "Definition origin is one composition choice, recorded with its decider through the same PUT as the rest. Compressed: the three named origins and the ratification step that follows them are L2 vocabulary and an unbuilt authoring flow respectively",
+   "gate": "skipped (compressed)"
   },
   {
    "id": "p2_19",
@@ -454,11 +454,11 @@
    "title": "Payment is a posture, not a feature flag",
    "source": "reference",
    "roleName": "Project Configurator",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Payment posture configuration: not built",
-   "gate": "skipped (missing)"
+   "status": "compressed",
+   "app": "console",
+   "route": "#/compose",
+   "note": "Payment posture is one composition choice, recorded with its decider through the same PUT as the rest — a posture, not a feature flag, and never a rate. Compressed: the posture vocabulary is L2 and this deployment declares none",
+   "gate": "skipped (compressed)"
   },
   {
    "id": "p2_6",
@@ -467,11 +467,11 @@
    "title": "Configuring a project is not staffing it",
    "source": "reference",
    "roleName": "Project Configurator",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Owner assignment: not built",
-   "gate": "skipped (missing)"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/owners",
+   "note": "GET|POST /v1/projects/{id}/roles: every holder with its functions, its grantor, its grant date and its state — revoked and expired listed rather than filtered, because a console showing only live grants cannot say who used to be able to do this. Granting is the owning organisation's act and is refused to the named configurator. Proven by apps.spec.js 'the J3 handover is real'",
+   "gate": "**asserted**"
   },
   {
    "id": "p2_17",
@@ -480,11 +480,11 @@
    "title": "A directory, which is what registration was for",
    "source": "reference",
    "roleName": "Project Configurator",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Partner directory browse: no directory view",
-   "gate": "skipped (missing)"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/partners",
+   "note": "GET /v1/partners: the approved organisations, filterable by sector, country and what their accepted terms actually allow, so nobody appears who could not do the work. Nothing here re-examines an organisation and nothing here can change one — the reference's own callout, carried verbatim. Proven by the e2e walk, which finds the approved programme organisation in it",
+   "gate": "**asserted**"
   },
   {
    "id": "p2_18",
@@ -493,11 +493,11 @@
    "title": "The grant is narrower than the terms, and it ends",
    "source": "reference",
    "roleName": "Project Configurator",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Partner grants (narrower than terms, time-bound): no grant surface",
-   "gate": "skipped (missing)"
+   "status": "compressed",
+   "app": "console",
+   "route": "#/partners",
+   "note": "POST|GET /v1/projects/{id}/partner-grants on the same screen: the grant must carry an end date (the service answers 422 grant_must_end without one — proven in the e2e walk), rides the terms version the partner actually accepted, and cannot be passed on. Compressed: the reference also scopes a grant to named work definitions and a geography, which the grant record does not carry, and its next step is an invitation — there is no invitation service, and the screen says so rather than approximating one",
+   "gate": "skipped (compressed)"
   },
   {
    "id": "p2_7",
@@ -506,11 +506,11 @@
    "title": "What a project looks like before it runs",
    "source": "reference",
    "roleName": "Project Configurator",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Activation gate: no activation state on projects",
-   "gate": "skipped (missing)"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/activate",
+   "note": "GET|POST /v1/projects/{id}/activation with every condition shown, satisfied ones included: a refused activation names what is missing rather than being a dead end, and the e2e walk proves the refusal, the gate satisfaction at the service's clock, and the ACTIVE state that follows. Gate names are the deployment's and nothing is hardcoded",
+   "gate": "**asserted**"
   },
   {
    "id": "p2_8",
@@ -519,11 +519,11 @@
    "title": "CREST does not invent account codes",
    "source": "reference",
    "roleName": "Project Configurator",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Finance-code linking: not built",
-   "gate": "skipped (missing)"
+   "status": "compressed",
+   "app": "console",
+   "route": "#/finance",
+   "note": "PUT|GET /v1/projects/{id}/finance-link: the system and the code, stored verbatim with who linked it and when — CREST never generates, formats or validates a code. Compressed: the reference's frame also lists a fixture chart of accounts to pick from and labels its buttons with fixture codes, and no chart-of-accounts pull exists to populate one",
+   "gate": "skipped (compressed)"
   },
   {
    "id": "p2_9",
@@ -545,11 +545,11 @@
    "title": "Support belongs to the project, not the platform",
    "source": "reference",
    "roleName": "Project Configurator",
-   "status": "illustrative",
+   "status": "implemented",
    "app": "console",
    "route": "#/support",
-   "note": "The reference's frame and its 'what moved, and why' callout verbatim; no support owner can be named because there is nothing to write it to, and a support contact this console invented would send a worker to nobody",
-   "gate": "skipped (illustrative)"
+   "note": "PUT|GET /v1/projects/{id}/support-owner: a named party a worker's question reaches, with a contact route, and the service refuses an owner who is not a Party here — the e2e walk proves the refusal and then the record. Escalation's absence is rendered as unarranged rather than unnecessary, and the reference's 'what moved, and why' callout is carried verbatim",
+   "gate": "**asserted**"
   },
   {
    "id": "p2_11",
@@ -1887,7 +1887,7 @@
    "status": "implemented",
    "app": "console",
    "route": "#/",
-   "note": "The console door: eSignet as the primary way in (the same server-side flow the worker door uses), the instance-configured demo personas below a divider, and NO role selector anywhere — a role is granted in the registry and read back, never self-declared. The persona block probes the mock issuer's discovery document and is absent where no mock provider answers",
+   "note": "The console door: eSignet as the primary way in (the same server-side flow the worker door uses), the instance-configured demo personas below a divider, and NO role selector anywhere — a role is granted in the registry and read back, never self-declared. The persona block probes the mock issuer's discovery document and is absent where no mock provider answers. Carries one waived facet: the gate's desktop idiom expects a navigation rail, and this screen deliberately has none because nothing is scoped until somebody has signed in",
    "source": "crest-design",
    "roleName": "Org Admin",
    "gate": "**asserted**"
@@ -1897,13 +1897,13 @@
    "role": "P-1",
    "stage": "Scope",
    "title": "Where do you want to work?",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "",
-   "note": "No context chooser: the persona card jumps straight into a flow, so a person holding roles in two places has nowhere to choose between them",
+   "route": "#/where",
+   "note": "GET /v1/projects?ownerPartyId= and ?configuratorPartyId=: every context comes from a grant the registry reports, so an empty list is a true answer and names somebody who can grant a role. A project handed over but unanswered lands on n4 rather than on its setup. One deviation from our own design, recorded rather than hidden: the screen renders inside the console shell, so the rail is visible before a scope is chosen",
    "source": "crest-design",
    "roleName": "Org Admin",
-   "gate": "skipped (missing)"
+   "gate": "**asserted**"
   },
   {
    "id": "n3",
@@ -1923,26 +1923,26 @@
    "role": "P-2",
    "stage": "Handover",
    "title": "Ministry of Health handed you a project",
-   "status": "missing",
+   "status": "compressed",
    "app": "console",
-   "route": "",
-   "note": "No receiving side of the p1_3 → p2_1 handover, and no accepted/declined ownership state to render it from (design finding F2)",
+   "route": "#/handover",
+   "note": "The receiving side, on the real record: what arrived read from GET /v1/projects/{id}, the whole append-only trail from GET .../ownership, and a decline that requires a reason and returns the project to the Org Admin's queue (POST .../ownership-decision). Proven end to end in apps.spec.js. Compressed rather than implemented for one measured reason: the fixture world seeds no pending handover, so on a fresh stack this screen has nothing to accept and correctly says so — the accept/decline actions appear only for a project somebody has actually been handed",
    "source": "crest-design",
    "roleName": "Project Configurator",
-   "gate": "skipped (missing)"
+   "gate": "skipped (compressed)"
   },
   {
    "id": "n5",
    "role": "P-2",
    "stage": "Guard",
    "title": "People & roles is not yours to change",
-   "status": "compressed",
+   "status": "implemented",
    "app": "console",
    "route": "#/people",
-   "note": "The guard renders at the same rail entry the Org Admin uses: the Configurator sees the boundary stated, the organisation that can grant the role with its real contact route, and every grant with its grantor and date, read only. Compressed: the role a Configurator would need is named as 'Org Admin' in copy because role-to-function mapping is L2 and unbuilt, so nothing derives it from a permit",
+   "note": "The guard renders at the same rail entry the Org Admin uses — the entry is never hidden. GET /v1/projects/{id}/roles supplies grantableBy, which names the organisation that can grant, and every holder with its grantor and grant date, read only. No HTTP status code reaches the user. The one thing still in copy rather than derived: the role name a Configurator would need, because role-to-function mapping is L2 and unbuilt",
    "source": "crest-design",
    "roleName": "Project Configurator",
-   "gate": "skipped (compressed)"
+   "gate": "**asserted**"
   }
  ],
  "fidelityGate": {
@@ -1974,22 +1974,22 @@
    "g4_7": "—",
    "p1_1": "skipped (compressed)",
    "p1_2": "skipped (compressed)",
-   "p1_3": "skipped (illustrative)",
-   "p2_1": "skipped (missing)",
+   "p1_3": "**asserted**",
+   "p2_1": "skipped (compressed)",
    "p2_2": "skipped (compressed)",
-   "p2_3": "skipped (missing)",
+   "p2_3": "skipped (compressed)",
    "p2_19": "skipped (compressed)",
    "p2_20": "**asserted**",
    "p2_21": "**asserted**",
    "p2_4": "skipped (compressed)",
-   "p2_5": "skipped (missing)",
-   "p2_6": "skipped (missing)",
-   "p2_17": "skipped (missing)",
-   "p2_18": "skipped (missing)",
-   "p2_7": "skipped (missing)",
-   "p2_8": "skipped (missing)",
+   "p2_5": "skipped (compressed)",
+   "p2_6": "**asserted**",
+   "p2_17": "**asserted**",
+   "p2_18": "skipped (compressed)",
+   "p2_7": "**asserted**",
+   "p2_8": "skipped (compressed)",
    "p2_9": "skipped (illustrative)",
-   "p2_10": "skipped (illustrative)",
+   "p2_10": "**asserted**",
    "p2_11": "**asserted**",
    "p2_12": "skipped (illustrative)",
    "p2_13": "skipped (illustrative)",
@@ -2093,10 +2093,10 @@
    "ext_3": "—",
    "ext_4": "—",
    "n1": "**asserted**",
-   "n2": "skipped (missing)",
+   "n2": "**asserted**",
    "n3": "**asserted**",
-   "n4": "skipped (missing)",
-   "n5": "skipped (compressed)"
+   "n4": "skipped (compressed)",
+   "n5": "**asserted**"
   },
   "note": "asserted = the gate drives the real stack to this screen and holds it to its journey-spec entry; skipped = the status is not implemented, reported with the reason; quarantined = claimed implemented but unjudgeable today, with an issue."
  }

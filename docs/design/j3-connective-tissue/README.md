@@ -27,8 +27,9 @@ in the spec's `source` field and must survive into the traceability ledger.
 
 ## Two findings about the reference itself
 
-**F1 — the rail is identical for both J3 actors.** Every `p1_*` and `p2_*` frame
-carries the same five entries: Projects · People & roles · Work definitions ·
+**F1 — the rail is identical for both J3 actors.** *(As first written; corrected
+immediately below — the count was wrong, the rule was right.)* Every `p1_*` and
+`p2_*` frame carries the same five entries: Projects · People & roles · Work definitions ·
 Payment set up · Workers. The Org Admin and the Project Configurator see the
 same rail; only the appbar identity changes. This is a reference *decision*, not
 an omission, so the implementation must **not** invent a role-scoped rail that
@@ -66,6 +67,18 @@ anything.
 Both findings belong in the blueprint when this wave lands (§15 journey scope
 map), and F2 has a backend consequence: project ownership needs an accepted /
 declined state, not just a named owner.
+
+**Where the five screens stand after step 3.** `n1`, `n2`, `n3` and `n5` are
+built and asserted by the fidelity gate (`make fidelity`). `n4` is built on the
+real ownership record — what arrived, the whole append-only trail, and a
+decline that requires a reason — but stays statused `compressed` for one
+measured reason: the fixture world seeds no project that anybody has been
+handed, so on a fresh stack the screen correctly says there is nothing to
+accept, and the gate has no accept/decline state to hold it to. Two deviations
+from this document, recorded rather than quietly carried: `n2` renders inside
+the console shell, so its rail is visible before a scope is chosen; and `n1`
+has no rail at all, which the gate's coarse desktop idiom cannot express and
+which is therefore counted as a waived facet.
 
 ## The screens
 
@@ -146,7 +159,10 @@ The navigation contract, as a table of rail entry × actor:
   missing row reads as a feature that does not exist, which is a lie the console
   can avoid telling. This is the same posture as a held payment carrying a
   reason with an owner."
-- Callout (green) `WHAT THE REFERENCE ALREADY DECIDED`: finding F1.
+- Callout (green) `WHAT THE REFERENCE ALREADY DECIDED`: "The rail is identical
+  for both J3 actors within a section, and the reference draws three sections:
+  the five-entry setup rail, a dashboard rail, and a finance and support rail.
+  Only the appbar identity changes between the two actors." (F1, as corrected.)
 
 Assertions: the rail renders five entries for every J3 role; no entry is
 conditionally removed; the active entry carries the orange left border.

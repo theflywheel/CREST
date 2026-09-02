@@ -43,7 +43,15 @@ const WAIVERS = read(path.join(__dirname, "fidelity-waivers.json"));
 const QUARANTINE = read(path.join(__dirname, "fidelity-quarantine.json"));
 const RESULTS = path.join(__dirname, "fidelity-results.jsonl");
 
-const STATUS = Object.fromEntries(LEDGER.rows.map((r) => [r.id, r]));
+// Reference rows AND our own design rows (n1-n5). The design screens were
+// invisible to the gate while this read LEDGER.rows alone: whatever the
+// ledger said about n1-n5 they reported "skipped (designed)", so a design
+// screen could claim `implemented` with nothing holding it to its spec. Same
+// verdict rules either way — the source of a screen decides nothing about
+// whether it is judged.
+const STATUS = Object.fromEntries(
+  [...LEDGER.rows, ...(LEDGER.designRows || [])].map((r) => [r.id, r]),
+);
 
 // ── Text comparison ────────────────────────────────────────────────────────
 // The reference is typeset prose: curly quotes, em dashes, non-breaking

@@ -62,6 +62,9 @@
       "callouts:One row worth acting on": "The callout narrates one fixture row ('sitting sent-back for 29 days'). The trail shows every hop's real state instead; a screen that invented a stale row to have something to point at would be worse than the missing callout.",
       "callouts:The last row has been sitting sent-back for 29 days. She may not know. This is the single most common way a worker quietly loses money, and it appears on no other screen in the project.": "Fixture narration, same root as its title above.",
       "buttons:Export the bundle": "There is no bundle export: no endpoint produces a portable proof bundle. A missing capability, named — not a copy difference."
+    },
+    "n1": {
+      "layout": "The gate's desktop idiom requires an appbar AND a navigation rail. n1 is the door: nothing is scoped until somebody has signed in, so it deliberately renders the appbar alone — the design spec says so in as many words (docs/design/j3-connective-tissue/README.md: 'appbar only (no rail — nothing is scoped yet)'). The debt is in the gate's idiom vocabulary, which cannot express 'appbar only', not in the screen; a rail added here to pass this facet would be a rail over nothing."
     }
   }
 }
