@@ -2122,7 +2122,7 @@
           "title": "The rule this screen sets"
         },
         {
-          "text": "Every p1 and p2 frame carries the same five rail entries. The Org Admin and the Project Configurator see the same rail; only the appbar identity changes.",
+          "text": "The rail is identical for both J3 actors within a section, and the reference draws three sections: the five-entry setup rail, a dashboard rail, and a finance and support rail. Only the appbar identity changes between the two actors.",
           "title": "What the reference already decided"
         }
       ],

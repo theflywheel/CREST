@@ -58,6 +58,9 @@ async function call(
 export const api = {
   get: (svc: ServiceName, path: string) => call(svc, "GET", path),
   post: (svc: ServiceName, path: string, body?: unknown) => call(svc, "POST", path, body),
+  // The J3 configuration endpoints are PUTs by design: one record per key,
+  // idempotent, re-answering replaces the answer rather than appending one.
+  put: (svc: ServiceName, path: string, body?: unknown) => call(svc, "PUT", path, body),
   postRaw: (svc: ServiceName, path: string, body: unknown, ct: string) => call(svc, "POST", path, body, ct),
   del: (svc: ServiceName, path: string) => call(svc, "DELETE", path),
 };

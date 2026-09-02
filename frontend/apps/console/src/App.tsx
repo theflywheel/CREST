@@ -28,8 +28,11 @@ import { Find, Dupes, Unclear, Recoveries, Review, Cases, SupportTraceNote } fro
 import { OnboardApply, OnboardTerms, OnboardStatus } from "./views/Onboard";
 import { SignIn } from "./views/SignIn";
 import {
-  Projects as OrgHome, NewProject, People, Workers, Validation, Intake, Finance, Support, Navigation,
+  Projects as OrgHome, NewProject, People, Workers, Validation, Intake, Finance as FinanceConnect, Navigation,
 } from "./views/Setup";
+import {
+  Where, Handover, Compose, Owners, Activate, FinanceCode, SupportOwner, Partners,
+} from "./views/J3";
 
 // ── The reference's three J3 rails ─────────────────────────────────────────
 const SETUP_RAIL: NavItem[] = [
@@ -55,14 +58,15 @@ const FINANCE_RAIL: NavItem[] = [
 ];
 
 const DASHBOARD_ROUTES = ["/status", "/quality", "/stp", "/payments", "/trace", "/reports"];
-const FINANCE_ROUTES = ["/finance", "/support"];
+const FINANCE_ROUTES = ["/finance", "/finance/connect", "/support"];
 
 // Every route a J3 actor may open. The rail shows five entries per section;
 // this is the whole surface behind them, including the screens reached by a
 // frame's own buttons rather than by the rail.
 const J3_ROUTES = [
   "/org", "/people", "/projects", "/projects/new", "/definition", "/paysetup", "/workers",
-  "/validation", "/intake", "/sources", ...DASHBOARD_ROUTES, ...FINANCE_ROUTES,
+  "/validation", "/intake", "/sources", "/where", "/handover", "/compose", "/owners",
+  "/activate", "/partners", ...DASHBOARD_ROUTES, ...FINANCE_ROUTES,
 ];
 
 function railFor(pathname: string): NavGroup[] {
@@ -217,8 +221,16 @@ export function App() {
         <Route path="/workers" element={<Workers />} />
         <Route path="/validation" element={<Validation />} />
         <Route path="/intake" element={<Intake />} />
-        <Route path="/finance" element={<Finance />} />
-        <Route path="/support" element={<Support />} />
+        <Route path="/finance" element={<FinanceCode />} />
+        <Route path="/finance/connect" element={<FinanceConnect />} />
+        <Route path="/support" element={<SupportOwner />} />
+        {/* J3 Phase B — the screens the project backend unblocked */}
+        <Route path="/where" element={<Where />} />
+        <Route path="/handover" element={<Handover />} />
+        <Route path="/compose" element={<Compose />} />
+        <Route path="/owners" element={<Owners />} />
+        <Route path="/activate" element={<Activate />} />
+        <Route path="/partners" element={<Partners />} />
         {/* J3 — the project's own dashboard wave */}
         <Route path="/status" element={<Status />} />
         <Route path="/stp" element={<Stp />} />

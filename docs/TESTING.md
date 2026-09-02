@@ -19,6 +19,28 @@ CREST's failure modes are not ordinary bugs. A miscomputed total is a defect; a 
 
 **The rule that keeps this honest:** if a test needs a hand-written setup step described in prose, it is not done. The command must be enough.
 
+### The local-stack trap that has now cost two agents a morning
+
+`make apps-up` re-runs the story seeder. Re-seeding a **live** volume rewrites
+the programme organisation's identity binding to the fixture world's own
+`subjectRef`, which this stack's mock issuer cannot derive — so every
+console persona then fails to sign in with
+`403 subject_not_enrolled`, and every screen behind a login looks broken.
+
+The stack is fine; the binding is stale. Before believing a sign-in failure:
+
+```sh
+docker compose -f infra/compose/docker-compose.yml down -v && make apps-up
+```
+
+Do that once, then run `make e2e-apps` and `make fidelity` **without**
+re-running `apps-up` in between. This is what issue
+[#171](https://github.com/theflywheel/CREST/issues/171) actually was — it was
+filed as a permissions bug and closed as a measurement error, and the
+measurement error is reproducible enough to deserve writing down. The real fix
+is for the seeder to leave an existing binding alone; until then, this
+paragraph is the fix.
+
 ## The harness
 
 `make test-e2e` must do all of this itself, from a clean checkout, with no human in the loop:
