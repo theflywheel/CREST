@@ -259,10 +259,168 @@ paths:
                         subjectRef: { type: string }
                         requestedByPartyId: { type: string }
                         purpose: { type: string }
-                        scope: { type: string, enum: [bare, scoped] }
-                        outcome: { type: string, enum: [valid, withdrawn, signature-failed, not-valid] }
+                        scope: { type: string, enum: [bare, scoped, consented] }
+                        outcome: { type: string, enum: [valid, withdrawn, signature-failed, not-valid, listed, shared] }
                         tier: { type: integer }
                         createdAt: { type: string, format: date-time }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/presentation-requests:
+    post:
+      operationId: createPresentationRequest
+      summary: A verifier asks to see a worker's credentials
+      description: >
+        §9's disclosure consent as a flow (w1_19): anything beyond the bare QR
+        payload requires an explicit, scoped, recorded grant naming who asked
+        and why. The requester is the proven caller; the purpose is 10–200
+        characters because the worker reads it. `credentialIds` narrows the
+        ask; absent, the whole chain is on the table — either way the worker
+        decides against the resolved list, never the raw ask.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectPartyId, requestedByPartyId, purpose]
+              properties:
+                subjectPartyId: { type: string }
+                requestedByPartyId: { type: string }
+                purpose: { type: string, minLength: 10, maxLength: 200 }
+                credentialIds:
+                  type: array
+                  items: { type: string }
+      responses:
+        "201":
+          description: Requested, with the resolved disclosure list both faces will see.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ShareRequestView" } } }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "422":
+          description: A worker does not petition themselves.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+    get:
+      operationId: listPresentationRequests
+      summary: One party's share requests
+      description: >
+        Name `subjectPartyId` (the worker's pending and past requests) or
+        `requestedByPartyId` (the verifier's own asks). Answered to that party
+        alone — share negotiations are never browsed.
+      parameters:
+        - { name: subjectPartyId, in: query, schema: { type: string } }
+        - { name: requestedByPartyId, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: The requests, oldest first, each with its disclosure list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: array
+                    items: { $ref: "#/components/schemas/ShareRequestView" }
+                  count: { type: integer }
+        "400":
+          description: Neither party named.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/presentation-requests/{id}:
+    get:
+      operationId: getPresentationRequest
+      summary: Both faces of one share request
+      description: >
+        Served to the request's subject or requester, from one record and one
+        resolved disclosure list (w1_20) — the worker sees the same list the
+        verifier does, structurally, because one function computes it for both.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The request, its derived state, and the disclosure list.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ShareRequestView" } } }
+        "403":
+          description: The caller is a stranger to this share.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: No such request.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/presentation-requests/{id}/decision:
+    post:
+      operationId: decidePresentationRequest
+      summary: The worker's answer — per share, every time
+      description: >
+        w1_15. An approval names the credentials it approves, and only from
+        the disclosure list the worker was shown; approving nothing is
+        declining, and a decline records its reason. A settled answer stays
+        settled; an expired request is answered by asking again.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approve]
+              properties:
+                approve: { type: boolean }
+                approvedCredentialIds:
+                  type: array
+                  items: { type: string }
+                reason: { type: string }
+      responses:
+        "200":
+          description: Decided.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ShareRequestView" } } }
+        "400":
+          description: >
+            No reason on a refusal, no list on an approval, or a credential
+            not on the disclosure list.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: No such request.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: Already answered, or expired.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/presentation-requests/{id}/collect:
+    post:
+      operationId: collectPresentationRequest
+      summary: The verifier collects exactly what was approved, once
+      description: >
+        Only the requester the worker consented to, only while approved and in
+        time, and only once — fulfilment consumes the approval (w1_15). The
+        documents served are re-read from the approved list on the record, so
+        the response and the approval cannot disagree (w1_20). Every shared
+        credential writes its own presentation entry: "who checked me" reads a
+        consented share like any other check (§9, W8).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The approved credentials, and the fulfilled request.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request: { type: object }
+                  credentials:
+                    type: array
+                    items: { $ref: "urn:crest:schema:credentials:work-event-credential:1" }
+                  count: { type: integer }
+        "404":
+          description: No such request.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: Not approved, already collected, or expired.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "500": { $ref: "#/components/responses/Internal" }
 
   # Every CREST service carries these two, added by pkg/httpx.Server.
@@ -478,6 +636,42 @@ paths:
 components:
 
   schemas:
+    ShareRequestView:
+      type: object
+      description: >
+        One share request with its derived state and resolved disclosure list —
+        the single shape the worker's face and the verifier's face both read.
+        EXPIRED is derived from expiresAt at read time, never stored.
+      properties:
+        request:
+          type: object
+          properties:
+            id: { type: string }
+            subjectPartyId: { type: string }
+            requestedByPartyId: { type: string }
+            purpose: { type: string }
+            requestedCredentialIds: { type: array, items: { type: string } }
+            state: { type: string, enum: [REQUESTED, APPROVED, DECLINED, FULFILLED] }
+            approvedCredentialIds: { type: array, items: { type: string } }
+            declineReason: { type: string }
+            createdAt: { type: string, format: date-time }
+            expiresAt: { type: string, format: date-time }
+            decidedAt: { type: string, format: date-time }
+            fulfilledAt: { type: string, format: date-time }
+        state:
+          type: string
+          enum: [REQUESTED, APPROVED, DECLINED, FULFILLED, EXPIRED]
+        disclosureList:
+          type: array
+          items:
+            type: object
+            properties:
+              credentialId: { type: string }
+              issuedAt: { type: string, format: date-time }
+              revoked: { type: boolean }
+        disclosureListError:
+          type: string
+          description: Present when the list could not be resolved; never served empty instead.
     Error:
       type: object
       description: >

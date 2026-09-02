@@ -2383,6 +2383,22 @@ paths:
         never silent.
       parameters:
         - { name: overdue, in: query, schema: { type: string, enum: ["true"] } }
+        - name: refused
+          in: query
+          schema: { type: string, enum: ["true"] }
+          description: >
+            w4_3's attention queue: undecided recoveries somebody said "no" to.
+            The opener on each record is the person who owes it a next step —
+            a refusal is never a silent dead end.
+        - name: confirmerPartyId
+          in: query
+          schema: { type: string }
+          description: >
+            The confirmer's own view (w4_1, w4_2): open recoveries of workers
+            who nominated this party as a recovery contact. Answered to that
+            party alone — who trusts you with their recovery is not for
+            browsing. This is the pull half of "a request arrives"; SMS
+            delivery is a channel adapter this deployment does not have (#150).
       responses:
         "200":
           description: Recoveries, oldest first.
@@ -2457,6 +2473,118 @@ paths:
           description: >
             This confirmer — or another from the same authority — already
             confirmed. One org, one voice.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/recoveries/{id}/refusals:
+    post:
+      operationId: refuseRecovery
+      summary: A contacted person's "no", on the record
+      description: >
+        The refusal path w4_3's reference screen leaves undefined, defined: a
+        permanent record owned by the refuser, with a required reason. The
+        recovery stays OPEN — a refusal is one voice, and any two other vouched
+        voices may still carry it — and every undecided recovery carrying
+        refusals surfaces on `GET /v1/recoveries?refused=true`, where the
+        opener owes it a next step. The same posture as a held payment.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refuserPartyId, reason]
+              properties:
+                refuserPartyId: { type: string }
+                reason: { type: string }
+      responses:
+        "200":
+          description: Recorded; the recovery is unchanged in state.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Recovery" } } }
+        "400":
+          description: No reason, no owner, or the worker refusing their own recovery.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: No such recovery.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: Not collecting answers any more, or this person already refused.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/parties/{id}/recovery-contacts:
+    post:
+      operationId: nominateRecoveryContact
+      summary: Nominate a person the worker trusts to vouch for them
+      description: >
+        w1_7's write. A nomination is ROUTING, not eligibility: it answers who
+        should be asked when this worker loses their device, and feeds the
+        confirmer's pending view — it never widens who may confirm, which
+        stays the 2-of-3 rule with its distinct-authority constraint. The
+        contact is a party, never a phone number: numbers are re-issued and
+        lost with the handset, the exact failure recovery exists for.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contactPartyId]
+              properties:
+                contactPartyId: { type: string }
+      responses:
+        "201":
+          description: Nominated.
+          content: { application/json: { schema: { $ref: "#/components/schemas/RecoveryContact" } } }
+        "400":
+          description: Nobody named, or the worker nominating themselves.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404":
+          description: No such party, or the nominated contact is not enrolled.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: Already a live recovery contact for this worker.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+    get:
+      operationId: listRecoveryContacts
+      summary: Who this worker nominated, revocations included
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The nominations, history and all, with a live count.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  partyId: { type: string }
+                  contacts:
+                    type: array
+                    items: { $ref: "#/components/schemas/RecoveryContact" }
+                  liveCount: { type: integer }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/parties/{id}/recovery-contacts/{contactId}/revoke:
+    post:
+      operationId: revokeRecoveryContact
+      summary: End a nomination without erasing it
+      description: >
+        Marks the nomination revoked; the row stays. Who a worker trusted, and
+        when they stopped, is what a later dispute about a recovery is
+        answered from.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: contactId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Revoked. }
+        "404":
+          description: No live nomination of that contact for this worker.
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "500": { $ref: "#/components/responses/Internal" }
 
@@ -2812,11 +2940,32 @@ components:
               confirmerPartyId: { type: string }
               authorityPartyId: { type: string }
               confirmedAt: { type: string, format: date-time }
+        refusals:
+          type: array
+          description: >
+            On-the-record "no" answers (w4_3). A refusal never closes the
+            recovery — other vouched voices may still confirm — and is never
+            silent: it rides the record with its owner and reason.
+          items:
+            type: object
+            properties:
+              refuserPartyId: { type: string }
+              reason: { type: string }
+              refusedAt: { type: string, format: date-time }
         overrideByPartyId: { type: string }
         overrideReason: { type: string }
         overrideAt: { type: string, format: date-time }
         reviewBy: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }
+    RecoveryContact:
+      type: object
+      description: One nomination — a party the worker trusts, never a phone number.
+      properties:
+        partyId: { type: string }
+        contactPartyId: { type: string }
+        nominatedByPartyId: { type: string }
+        nominatedAt: { type: string, format: date-time }
+        revokedAt: { type: string, format: date-time }
     Consent:
       type: object
       description: >
