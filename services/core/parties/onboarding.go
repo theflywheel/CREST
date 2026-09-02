@@ -30,9 +30,12 @@ var (
 	// rejected organisation clear its own decision by applying again.
 	ErrAlreadyApplied = errors.New("this organisation already has an application")
 
-	ErrSelfApproved     = errors.New("an organisation may not approve its own application")
+	// ErrSelfApproved keeps the decision outside the applicant's own hands.
+	ErrSelfApproved = errors.New("an organisation may not approve its own application")
+	// ErrTermsNotAccepted holds approval until the applicant has accepted terms.
 	ErrTermsNotAccepted = errors.New("an organisation must accept terms before it can be approved")
-	ErrAlreadyDecided   = errors.New("this application has already been decided")
+	// ErrAlreadyDecided keeps a settled application settled.
+	ErrAlreadyDecided = errors.New("this application has already been decided")
 )
 
 // approvalModel is configuration, not infrastructure.

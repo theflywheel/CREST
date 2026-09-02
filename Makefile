@@ -13,7 +13,7 @@ GO ?= go
 
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
-        harness-logs verify-deploy web-up apps-up e2e-apps clean todo poc poc-batch poc-dhis2 dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
+        harness-logs verify-deploy web-up apps-build apps-dev apps-up e2e-apps clean todo poc poc-batch poc-dhis2 dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
         spike-dedi-deployed spike-esignet deploy-demo verify-deployed verify-registry hooks generate generate-check \
         e2e-up e2e-run
 
@@ -118,7 +118,13 @@ web-up: e2e-up ## Bring up the stack with the web app, seeded and ready to click
 	@$(GO) run ./tools/seed
 	@echo "open http://localhost:59100"
 
-apps-up: e2e-up ## Bring up the stack with the journey apps, story-seeded
+apps-build: ## Build the rebuilt doors (frontend/ pnpm workspace) and assemble the compose docroot
+	@cd frontend && pnpm install --frozen-lockfile && pnpm -r build && node scripts/assemble.mjs
+
+apps-dev: ## Vite dev servers for the rebuilt doors (services on their compose ports)
+	@cd frontend && pnpm install --frozen-lockfile && pnpm dev
+
+apps-up: e2e-up apps-build ## Bring up the stack with the journey apps, story-seeded
 	@$(COMPOSE) up -d --wait apps
 	@SEED_STORY=true $(GO) run ./tools/seed
 	@echo "open http://localhost:59110"
