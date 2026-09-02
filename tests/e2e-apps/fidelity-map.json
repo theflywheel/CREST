@@ -16,16 +16,21 @@
     "flow:onboarding-approved (submitted + the operator's real decision),",
     "flow:onboarding-project (approved + invitation accepted, grant minted),",
     "flow:onboarding-wider-request (approved + wider set published + request",
-    "opened), flow:onboarding-wider-submitted (documents declared + submitted).",
+    "opened), flow:onboarding-wider-submitted (documents declared + submitted),",
+    "flow:admissions-queue (registered, then signed in as the instance",
+    "administrator — the operator's side of the same registration),",
+    "flow:admissions-review (as admissions-queue, landing on the registered",
+    "organisation's own #/admissions/:pid detail; the route is per-run, so the",
+    "map's route stays '' and the flow lands the page itself).",
     "route: the hash route inside the door, or '' for the door's entry screen.",
     "",
     "A screen with no entry here is out of the gate's scope and is reported as",
     "such — the gate never silently passes a screen it did not visit."
   ],
   "scope": {
-    "journeys": ["p1", "p2", "g2"],
+    "journeys": ["p1", "p2", "g2", "g1"],
     "designScreens": ["n1", "n2", "n3", "n4", "n5"],
-    "why": "Phase 1 is scoped to J3 — setting up a project (P-1 Org Admin, P-2 Project Configurator) — plus the five connective-tissue screens our own design adds (docs/design/j3-connective-tissue/README.md). The G-2 wave adds the org onboarding journey (g2_1..g2_13; g2_2/g2_3 do not exist in the reference): the onboarding door is deliberately reachable with no persona (#20, #155 phase D) — g2_1 arrives anon, and every screen past it arrives by a flow: mode (#179), because the flow's state is session-scoped by design and only driving the real flow can honestly put a screen in the state its spec draws. Screens the ledger does not call implemented skip with the ledger's own gap note."
+    "why": "Phase 1 is scoped to J3 — setting up a project (P-1 Org Admin, P-2 Project Configurator) — plus the five connective-tissue screens our own design adds (docs/design/j3-connective-tissue/README.md). The G-2 wave adds the org onboarding journey (g2_1..g2_13; g2_2/g2_3 do not exist in the reference): the onboarding door is deliberately reachable with no persona (#20, #155 phase D) — g2_1 arrives anon, and every screen past it arrives by a flow: mode (#179), because the flow's state is session-scoped by design and only driving the real flow can honestly put a screen in the state its spec draws. The G-1 wave (#187) adds the instance walk (g1_1..g1_6, console:instance — the screens read instance state, so a cold load is honest) and the operator's admission review (g4_1..g4_3, flow:admissions-* — the queue needs a real pending registration, so the arrival registers one first). The rest of the g4 journey (g4_4..g4_7) stays out of the declared scope: g4_6 is a custodian-console screen an earlier wave built to its own rail, and holding it to the reference's G-4 rail is its own piece of work, not this close-out's. Screens the ledger does not call implemented skip with the ledger's own gap note."
   },
   "screens": {
     "p1_1": { "app": "console", "arrive": "console:orgadmin", "route": "#/org" },
@@ -53,6 +58,16 @@
     "p2_19": { "app": "console", "arrive": "console:configurator", "route": "#/intake" },
     "p2_20": { "app": "field", "arrive": "field", "route": "#/roster" },
     "p2_21": { "app": "console", "arrive": "console:custodian", "route": "#/unclear" },
+
+    "g1_1": { "app": "console", "arrive": "console:instance", "route": "#/instance/setup", "note": "the stand-up front door reads GET /v1/instance — deployment state, no session, so a cold load is the honest arrival" },
+    "g1_2": { "app": "console", "arrive": "console:instance", "route": "#/instance/covers" },
+    "g1_3": { "app": "console", "arrive": "console:instance", "route": "#/instance/consent" },
+    "g1_5": { "app": "console", "arrive": "console:instance", "route": "#/instance/invite", "note": "ledger says compressed (design finding #185: no instance-level invitation primitive), so the gate skips with that note" },
+    "g1_6": { "app": "console", "arrive": "console:instance", "route": "#/instance/services" },
+
+    "g4_1": { "app": "console", "arrive": "flow:admissions-queue", "route": "", "note": "#/admissions — the queue must have a real pending row, so the arrival registers an organisation first, signs in as the instance administrator, and lands the page itself (the console token is in-memory, so the gate's post-flow reload would sign the reviewer out)" },
+    "g4_2": { "app": "console", "arrive": "flow:admissions-review", "route": "", "note": "#/admissions/:pid — the pid is the arrival's own registration, so the flow lands the page itself" },
+    "g4_3": { "app": "console", "arrive": "flow:admissions-review", "route": "", "note": "same detail screen as g4_2: the approve step is the pending registration's decision card" },
 
     "g2_1": { "app": "console", "arrive": "anon", "route": "#/onboard" },
     "g2_4": { "app": "console", "arrive": "flow:onboarding-approved", "route": "#/onboard/status", "note": "the decided registration, read back: state, exact terms version, decider" },
