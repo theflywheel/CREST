@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Sidecar } from "@crest/ui";
-import { isLocalStack, startEsignetLogin } from "@crest/api";
+import { FIX, isLocalStack, startEsignetLogin } from "@crest/api";
 import { useSession, describeError } from "../session";
 
 export const Ussd = () => (
@@ -29,6 +29,47 @@ export function EntryShell(props: { who?: string; children: ReactNode }) {
         </main>
       </div>
     </div>
+  );
+}
+
+/* Dev-only: sign in as any fixture party by id — how a freshly enrolled
+   worker (w1_4's confidence-check route) first opens their own door on the
+   local stack, and how tests hold identities the persona buttons do not name.
+   The mock issuer mints the token; the first-login self-bind is the same real
+   path Grace's button uses. */
+function DevPartyLogin(props: {
+  busy: boolean;
+  setBusy: (b: boolean) => void;
+  setErr: (e: string | null) => void;
+}) {
+  const s = useSession();
+  const [pid, setPid] = useState("");
+  return (
+    <form
+      style={{ marginTop: 10, display: "flex", gap: 8 }}
+      onSubmit={async (ev) => {
+        ev.preventDefault();
+        if (!pid.trim()) return;
+        props.setBusy(true);
+        try {
+          await s.login(pid.trim(), "Signed in by party id (dev)");
+        } catch (e) {
+          props.setErr(describeError(e));
+          props.setBusy(false);
+        }
+      }}
+    >
+      <input
+        id="login-partyid"
+        placeholder="did:crest:party:… (dev)"
+        value={pid}
+        onChange={(e) => setPid(e.target.value)}
+        style={{ flex: 1 }}
+      />
+      <button className="btn secondary" id="login-party-go" disabled={props.busy} type="submit">
+        Sign in
+      </button>
+    </form>
   );
 }
 
@@ -89,7 +130,7 @@ export function Login() {
               onClick={async () => {
                 setBusy(true);
                 try {
-                  await s.login();
+                  await s.login(FIX.workerA, "Grace · community health worker");
                 } catch (e) {
                   setErr(describeError(e));
                   setBusy(false);
@@ -98,6 +139,30 @@ export function Login() {
             >
               {busy ? "Signing in…" : "Continue as Grace"}
             </button>
+            <div style={{ height: 12 }} />
+            <p className="muted">
+              This door holds whoever signs in — a recovery confirmer is by definition somebody other than the worker
+              being recovered, so other fixture people can carry it too.
+            </p>
+            <div className="btn-row" style={{ marginTop: 6 }}>
+              <button
+                className="btn secondary"
+                id="login-supervisor"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await s.login(FIX.supervisor, "District Supervisor · recovery confirmer");
+                  } catch (e) {
+                    setErr(describeError(e));
+                    setBusy(false);
+                  }
+                }}
+              >
+                District Supervisor
+              </button>
+            </div>
+            <DevPartyLogin busy={busy} setBusy={setBusy} setErr={setErr} />
           </div>
         ) : <span />}
         <div>

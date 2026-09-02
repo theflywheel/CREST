@@ -65,7 +65,8 @@ test("worker app: every route, on real data", async ({ page }) => {
 
   const routes = ["#/work", "#/work/declined", "#/wallet", "#/wallet/share",
     "#/wallet/deferred", "#/pay", "#/profile", "#/profile/consents",
-    "#/profile/checks", "#/profile/messages", "#/profile/recovery", "#/home"];
+    "#/profile/checks", "#/profile/messages", "#/profile/recovery",
+    "#/shares", "#/vouch", "#/added", "#/home"];
   for (const r of routes) {
     await page.evaluate(h => { location.hash = h; }, r);
     await settle(page);
@@ -99,8 +100,8 @@ test("enrolment app: every route", async ({ page }) => {
   await settle(page);
   await page.click("[data-login]");
   await settle(page);
-  const routes = ["#/registrations", "#/register", "#/consent", "#/roster",
-    "#/toconfirm", "#/handoff"];
+  const routes = ["#/registrations", "#/register", "#/confidence", "#/consent",
+    "#/roster", "#/toconfirm", "#/handoff"];
   for (const r of routes) {
     await page.evaluate(h => { location.hash = h; }, r);
     await settle(page);
@@ -954,4 +955,403 @@ test("console: G-1 walks the instance, and a person decides the admission", asyn
   await expect(page.locator(`[data-open="${orgId}"]`)).toHaveCount(0);
   await expect(page.locator("tr", { hasText: orgName })).toContainText("APPROVED");
   await assertAlive(page, errors, "G-1 admission decided");
+});
+
+// ── The workers wave: consent per share, recovery, and the no-document route ─
+// (reference w1_19, w1_15, w1_20, w1_7, w4_1–w4_3, w1_4, w1_17; PR #189's
+// backend, driven end to end through the doors.)
+//
+// Invariants these walks hold:
+//  - consent: nothing is shared before the worker's per-share approval — a
+//    collect on an undecided request is asserted to be REFUSED; an approval
+//    releases exactly the approved subset, once.
+//  - derived-not-stored strength: the anchor test asserts the verifier's
+//    weakest-assurance caveat disappears on re-check with nothing rewritten.
+//  - no raw identifiers: every pick and nomination is a party id; no screen
+//    here takes a national ID or a phone number as an identity.
+
+const SVC = (() => {
+  const base = process.env.BASE_URL || "http://localhost:59110";
+  const local = new URL(base).port === "59110";
+  const host = new URL(base).hostname;
+  return {
+    verification: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-verification",
+  };
+})();
+
+// asParty against an arbitrary service base (asParty above is parties-only).
+async function asPartyOn(request, svcBase, partyId, method, path, body) {
+  const token = await mintToken(request, partyId);
+  return request.fetch(svcBase + path, {
+    method,
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    data: body === undefined ? undefined : body,
+  });
+}
+
+// First-login self-bind for a party the story never bound — the exact append
+// the browser's dev login performs, done from the test for parties that act
+// only through the API here.
+async function bindParty(request, partyId) {
+  const token = await mintToken(request, partyId);
+  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const pw = await request
+    .get(G2.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub))
+    .then(r => r.json());
+  return request.post(G2.parties + `/v1/parties/${encodeURIComponent(partyId)}/identity-bindings`, {
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    data: { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject },
+  });
+}
+
+const SPVR = "did:crest:party:01JCREST00000000000000SPVR";
+const CHANDRA = "did:crest:party:01JCREST00000000000000WRKC";
+const TERM = "crest:terms:01JCREST00000000000000TERM";
+const ULID32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const fakeUlid = () =>
+  "01" + Array.from({ length: 24 }, () => ULID32[Math.floor(Math.random() * 32)]).join("");
+
+test("per-share consent: the presentation loop on both faces, and the decline path", async ({ page, request }) => {
+  test.setTimeout(240000);
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+
+  // The verifier asks, from the verify door's institutional surface. The org
+  // session is established on entering the route.
+  await page.goto("/verify/#/requests");
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Ask to see more");
+  await page.fill('[name="sharepurpose"]', "Hiring for a private clinic " + stamp);
+  await page.click("#share-create");
+  const card = page.locator("[data-vshare]", { hasText: stamp }).first();
+  await expect(card).toContainText("REQUESTED", { timeout: 20000 });
+  const reqId = await card.getAttribute("data-vshare");
+
+  // CONSENT, structurally: collecting before the worker decides is refused —
+  // by the service, shown loudly, never smoothed over.
+  await card.locator("[data-collect]").click();
+  await expect(page.locator(".errbar")).toContainText(/not approved|nothing to collect|409/i, { timeout: 20000 });
+
+  // The worker: who is asking and why, BEFORE any disclosure list.
+  await page.goto("/worker/");
+  await settle(page);
+  await page.click("#login-grace");
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await expect(page.locator(".appbar .who-label")).toContainText("Grace");
+  await page.evaluate(() => { location.hash = "#/shares"; });
+  await settle(page);
+  const inbox = page.locator(`[data-share="${reqId}"]`);
+  await expect(inbox).toContainText("Hiring for a private clinic " + stamp);
+  await expect(inbox).toContainText("wants to see more");
+  // The arrival names requester and purpose only — no credential ids yet.
+  expect(await inbox.innerText()).not.toMatch(/crest:credential:/);
+
+  // The decision: per-line consent against the resolved list, the reference's
+  // callouts, and an approval of a strict subset.
+  await inbox.locator("[data-open-share]").click();
+  await settle(page);
+  await expect(page.locator("body")).toContainText("What they already have");
+  await expect(page.locator("body")).toContainText("Either way, it is on your record");
+  const boxes = page.locator("[data-dis] input[type=checkbox]");
+  const total = await boxes.count();
+  expect(total, "the story gives Grace more than one credential to decide over").toBeGreaterThan(1);
+  await boxes.first().uncheck();
+  await expect(page.locator("body")).toContainText(/you have unticked this/i);
+  await page.click("#share-approve");
+  await settle(page);
+
+  // w1_20 — sent: what they got and what you kept, from the shared record.
+  await expect(page.locator("body")).toContainText("Sent");
+  await expect(page.locator("body")).toContainText("What they got");
+  await expect(page.locator("body")).toContainText("What you kept");
+  await expect(page.locator("body")).toContainText("you unticked this — shown to them as refused");
+  await expect(page.locator("body")).toContainText("very list the verifier sees");
+
+  // The verifier collects exactly the approved subset — once.
+  await page.goto("/verify/#/requests");
+  await settle(page);
+  const vcard = page.locator(`[data-vshare="${reqId}"]`);
+  await expect(vcard).toContainText("APPROVED", { timeout: 20000 });
+  await expect(vcard).toContainText(`${total - 1} approved`);
+  await vcard.locator("[data-collect]").click();
+  await expect(page.locator(`[data-collected="${reqId}"]`)).toContainText(
+    `${total - 1} credential`, { timeout: 20000 });
+  await expect(page.locator(`[data-collected="${reqId}"]`)).toContainText("exactly the approved list");
+  // A second collect is refused: the approval was for one share.
+  const again = await asPartyOn(request, SVC.verification, FIX.org, "POST",
+    `/v1/presentation-requests/${reqId}/collect`);
+  expect(again.status(), "consent is per share — a second collect must be refused").toBe(409);
+
+  // The worker's own read agrees: FULFILLED, and the share is on the trail.
+  await page.goto("/worker/");
+  await settle(page);
+  await page.evaluate(id => { location.hash = `#/shares/${id}/sent`; }, reqId);
+  await settle(page);
+  await expect(page.locator("body")).toContainText("FULFILLED");
+  await page.evaluate(() => { location.hash = "#/profile/checks"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText(/shared/i);
+
+  // The decline path: a second ask, refused with a reason on the record.
+  const c = await asPartyOn(request, SVC.verification, FIX.org, "POST", "/v1/presentation-requests", {
+    subjectPartyId: FIX.workerA, requestedByPartyId: FIX.org,
+    purpose: "Background check we never discussed " + stamp,
+  });
+  expect(c.status()).toBe(201);
+  const decId = (await c.json()).request.id;
+  await page.evaluate(() => { location.hash = "#/shares"; });
+  await settle(page);
+  await page.locator(`[data-share="${decId}"] [data-open-share]`).click();
+  await settle(page);
+  await page.click("#share-refuse");
+  await page.fill('[name="sharereason"]', "I do not know this requester " + stamp);
+  await page.click("#share-refuse-confirm");
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Refused");
+  await expect(page.locator("body")).toContainText("I do not know this requester " + stamp);
+  // Nothing to collect on a declined share.
+  const r3 = await asPartyOn(request, SVC.verification, FIX.org, "POST",
+    `/v1/presentation-requests/${decId}/collect`);
+  expect(r3.status()).toBe(409);
+  await assertAlive(page, errors, "presentation loop");
+});
+
+test("recovery: nomination routes, a refusal is owned, and two authorities confirm", async ({ page, request }) => {
+  test.setTimeout(300000);
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+
+  // Reset nominations from an earlier run of this suite (204 or 404, both fine).
+  for (const cid of [SPVR, FIX.custodian]) {
+    await asParty(request, FIX.workerA, "POST",
+      `/v1/parties/${FIX.workerA}/recovery-contacts/${cid}/revoke`);
+  }
+
+  // w1_7 — the worker nominates: party-linked picks, revocation kept.
+  await page.goto("/worker/");
+  await settle(page);
+  await page.click("#login-grace");
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await page.evaluate(() => { location.hash = "#/profile/recovery"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Who can confirm it is you?");
+  await expect(page.locator("body")).toContainText("They can never see your work history or your payments");
+  // A nomination is a party, never a phone number: no tel input exists here,
+  // and the pick field asks for a registry id.
+  await expect(page.locator('.screen input[type="tel"]')).toHaveCount(0);
+  await expect(page.locator('[name="contactpartyid"]')).toHaveAttribute("placeholder", /party/i);
+  await page.fill('[name="contactpartyid"]', SPVR);
+  await page.click("#nominate");
+  await expect(page.locator(`[data-contact="${SPVR}"]`)).toBeVisible({ timeout: 20000 });
+  await page.fill('[name="contactpartyid"]', FIX.custodian);
+  await page.click("#nominate");
+  await expect(page.locator(`[data-contact="${FIX.custodian}"]`)).toBeVisible({ timeout: 20000 });
+  // Revoke keeps the row — who you trusted, and when you stopped.
+  await page.click(`[data-revoke="${FIX.custodian}"]`);
+  await expect(page.locator("body")).toContainText("No longer nominated", { timeout: 20000 });
+  await page.fill('[name="contactpartyid"]', FIX.custodian);
+  await page.click("#nominate");
+  await expect(page.locator(`[data-contact="${FIX.custodian}"]`)).toBeVisible({ timeout: 20000 });
+  // Self-nomination is refused by the service, loudly.
+  await page.fill('[name="contactpartyid"]', FIX.workerA);
+  await page.click("#nominate");
+  await expect(page.locator(".errbar")).toContainText(/someone else/i, { timeout: 20000 });
+
+  // A recovery opens — the custodian's act; the worker cannot authenticate,
+  // which is the premise. A leftover OPEN one from a failed run is reused.
+  let recId;
+  const opened = await asParty(request, FIX.custodian, "POST", "/v1/recoveries", {
+    partyId: FIX.workerA, openedByPartyId: FIX.custodian, reason: "lost phone " + stamp,
+  });
+  if (opened.status() === 201) {
+    recId = (await opened.json()).id;
+  } else {
+    expect(opened.status()).toBe(409);
+    const list = await asParty(request, SPVR, "GET", `/v1/recoveries?confirmerPartyId=${SPVR}`);
+    recId = (await list.json()).recoveries.find(x => x.partyId === FIX.workerA).id;
+  }
+
+  // w4_1 — the confirmer's inbox, the SMS gap said honestly.
+  await page.click("#logout");
+  await settle(page);
+  await page.click("#login-supervisor");
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await expect(page.locator(".appbar .who-label")).toContainText("District Supervisor");
+  await page.evaluate(() => { location.hash = "#/vouch"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("no SMS channel");
+  const rcard = page.locator(`[data-recovery="${recId}"]`);
+  await expect(rcard).toContainText("asking to recover");
+  await expect(rcard).toContainText("Reply YES");
+
+  // w4_3 — the refusal: reason required, recovery held OPEN, owner named.
+  await rcard.locator("#vouch-no").click();
+  await rcard.locator("#vouch-no-confirm").click(); // no reason yet
+  await expect(page.locator(".errbar")).toContainText(/reason/i, { timeout: 20000 });
+  await rcard.locator('[name="refusereason"]').fill("the voice on the phone was not theirs " + stamp);
+  await rcard.locator("#vouch-no-confirm").click();
+  await settle(page);
+  await expect(page.locator("body")).toContainText("What if two never agree?");
+  await expect(page.locator("body")).toContainText("the voice on the phone was not theirs " + stamp);
+  await expect(page.locator("body")).toContainText("OPEN");
+  await expect(page.locator("body")).toContainText("who opened this recovery");
+
+  // One NO never closes it: the same person's YES still counts (the refusal
+  // stays on the record beside it).
+  await page.click("#vouch-back");
+  await settle(page);
+  await page.locator(`[data-recovery="${recId}"] #vouch-yes`).click();
+  await page.locator(`[data-recovery="${recId}"] #vouch-yes-confirm`).click();
+  await settle(page);
+  await expect(page.locator("body")).toContainText("your YES is recorded");
+  await expect(page.locator("body")).toContainText("1 of 2 needed");
+
+  // The second voice must come from a DIFFERENT authority: a second approved
+  // organisation vouches for the custodian, through the real open doors.
+  const orgR = await request.post(G2.parties + "/v1/organisations", {
+    data: {
+      displayName: "Ward 7 Health Office " + stamp, kind: "organisation",
+      contactRoutes: [{ kind: "email", value: `w7+${stamp}@example.org` }],
+    },
+  });
+  expect(orgR.status()).toBe(201);
+  const org2 = (await orgR.json()).party.id;
+  await bindParty(request, org2);
+  let r = await asParty(request, org2, "POST", `/v1/organisations/${org2}/terms-acceptance`,
+    { termsId: TERM, termsVersion: 1, acceptedBy: org2 });
+  expect(r.status()).toBe(200);
+  r = await asParty(request, FIX.custodian, "POST", `/v1/organisations/${org2}/decision`,
+    { approve: true, decidedBy: FIX.custodian });
+  expect(r.status()).toBe(200);
+  r = await asParty(request, org2, "POST", "/v1/authorizations", {
+    id: "crest:authorization:" + fakeUlid(),
+    partyId: FIX.custodian,
+    terms: { id: TERM, version: 1 },
+    scope: { kind: "context", contextId: FIX.project },
+    functions: ["submit-work-evidence"],
+    period: { start: "2026-01-01T00:00:00Z", end: "2027-12-31T00:00:00Z" },
+    authorityPartyId: org2, approvedByPartyId: org2,
+    approvedAt: "2026-09-01T00:00:00Z", state: "ACTIVE",
+  });
+  expect(r.status(), "the second authority's grant").toBe(201);
+
+  // w4_2 — the custodian (also nominated) replies YES under the new authority,
+  // and the quorum closes: 2 of 2 distinct authorities, CONFIRMED.
+  await page.click("#logout");
+  await settle(page);
+  await page.fill("#login-partyid", FIX.custodian);
+  await page.click("#login-party-go");
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await page.evaluate(() => { location.hash = "#/vouch"; });
+  await settle(page);
+  const ccard = page.locator(`[data-recovery="${recId}"]`);
+  await ccard.locator("#vouch-yes").click();
+  await ccard.locator('[name="authority"]').fill(org2);
+  await ccard.locator("#vouch-yes-confirm").click();
+  await settle(page);
+  await expect(page.locator("body")).toContainText("2 of 2 needed");
+  await expect(page.locator("body")).toContainText("CONFIRMED");
+  await expect(page.locator("body")).toContainText("the record is theirs again");
+  await expect(page.locator("body")).toContainText("no longer speaks for the record");
+
+  // Completion appends the new binding — the old ones stay — and frees the
+  // one-live-recovery slot for the next run of this suite.
+  const done = await asParty(request, FIX.custodian, "POST",
+    `/v1/recoveries/${recId}/complete`, { subjectRef: "e2e-recovered-" + stamp });
+  expect(done.status()).toBe(200);
+  await assertAlive(page, errors, "recovery loop");
+});
+
+test("assisted enrolment: the confidence check records a method, never a tier", async ({ page, request }) => {
+  test.setTimeout(120000);
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+  await page.goto("/enrolment/");
+  await settle(page);
+  await page.click("[data-login]");
+  await settle(page);
+  // The route is reachable from the register screen's own frame.
+  await page.evaluate(() => { location.hash = "#/register"; });
+  await settle(page);
+  await page.click("#to-confidence");
+  await settle(page);
+  expect(page.url()).toContain("#/confidence");
+  await expect(page.locator("body")).toContainText("We can still register you");
+  await expect(page.locator("body")).toContainText("without a document");
+  // Honest about strength: IA-0 until a route is verified or an anchor binds,
+  // and derived — never stored.
+  await expect(page.locator("body")).toContainText("IA-0");
+  await expect(page.locator("body")).toContainText(/never stored|never as a stored level/i);
+  await page.fill('[name="name"]', "Halima Noor " + stamp);
+  await page.fill('[name="rosterId"]', "CHW-CONF-" + stamp);
+  await page.click('#confidenceform button[type="submit"]');
+  await expect(page.locator("[data-confidence-done]")).toBeVisible({ timeout: 20000 });
+  const pid = await page.locator("[data-confidence-done]").getAttribute("data-confidence-done");
+  expect(pid).toMatch(/^did:crest:party:/);
+  // The reference's secondary button works: a recovery contact, nominated now,
+  // party-linked (the field prefills the supervisor's party id).
+  await page.click("#confidence-nominate");
+  await expect(page.locator("[data-nominated]")).toBeVisible({ timeout: 20000 });
+  // Continue lands on the consent script — consent is not skipped for the
+  // no-document route.
+  await page.click("#confidence-continue");
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Read this to Halima");
+  // The record carries the METHOD as provenance — read back from the registry.
+  const e = await asParty(request, FIX.custodian, "GET", `/v1/parties/${pid}/enrolment`);
+  expect(e.status()).toBe(200);
+  expect((await e.json()).method).toBe("confidence-check");
+  await assertAlive(page, errors, "confidence-check enrolment");
+});
+
+test("qualification arrival: the anchor lands and earned strength re-derives", async ({ page, request }) => {
+  test.setTimeout(120000);
+  const errors = watch(page);
+
+  // Before: Chandra was enrolled with no binding (IA-0). On a clean stack the
+  // verifier says so — the tier is computed at the weakest assurance. On a
+  // re-run she is already anchored (this very test anchored her), so the
+  // before-state is asserted only when it is genuinely there to see.
+  const credsR = await request.get(SVC.verification + `/v1/parties/${CHANDRA}/credentials`);
+  const creds = (await credsR.json()).credentials || [];
+  expect(creds.length, "the story gives Chandra a credential").toBeGreaterThan(0);
+  const v1 = await request.post(SVC.verification + "/v1/verify", { data: { credential: creds[0] } });
+  const before = JSON.stringify(await v1.json());
+  const wasUnanchored = /weakest assurance/.test(before);
+
+  // The anchor lands: Chandra's first sign-in APPENDS an identity binding —
+  // the same first-login path an eSignet anchor takes. Nothing is rewritten.
+  await page.goto("/worker/");
+  await settle(page);
+  await page.fill("#login-partyid", CHANDRA);
+  await page.click("#login-party-go");
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await page.evaluate(() => { location.hash = "#/added"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Added");
+  await expect(page.locator("body")).toContainText("Your eight months just became portable");
+  await expect(page.locator("body")).toContainText("derived right now");
+  await expect(page.locator("body")).toContainText("IA-3");
+  await expect(page.locator("body")).toContainText(/never stored/i);
+  // Everything already earned is still there — same count, no re-issue.
+  await expect(page.locator(".stat .n").first()).toContainText(String(creds.length));
+
+  // After: the live re-check derives the strength fresh, and the
+  // weakest-assurance caveat is gone — with the credential untouched.
+  await page.click("#recheck");
+  await expect(page.locator("#recheck-out")).toBeVisible({ timeout: 20000 });
+  const out = await page.locator("#recheck-out").innerText();
+  expect(out).toMatch(/derived at this check, stored nowhere/);
+  expect(out).not.toMatch(/weakest assurance/i);
+  if (wasUnanchored) {
+    // The flip itself was observed end to end on this run: weakest-assurance
+    // before the anchor, gone after, and nothing about the credential changed.
+    expect(before).toContain("weakest assurance");
+  }
+  await assertAlive(page, errors, "qualification arrival");
 });

@@ -11,6 +11,9 @@ import { Work, Dispute, Declined } from "./screens/Work";
 import { Wallet, Cred, CredShow, Deferred, Share } from "./screens/Wallet";
 import { Pay, PayDetail } from "./screens/Pay";
 import { Profile, Consents, Checks, Messages, Recovery } from "./screens/Profile";
+import { SharesInbox, ShareDecide, ShareSent } from "./screens/Shares";
+import { VouchInbox, VouchProgress, VouchRefused } from "./screens/Vouch";
+import { Added } from "./screens/Added";
 import { AuthReturn } from "./screens/Auth";
 
 const ic = (d: ReactNode) => (
@@ -50,6 +53,17 @@ const ICONS = {
       <path d="M5 20c.8-3.4 3.6-5 7-5s6.2 1.6 7 5" />
     </>,
   ),
+  shares: ic(
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M8.5 12h7M12 8.5v7" />
+    </>,
+  ),
+  vouch: ic(
+    <>
+      <path d="M4 12.5 9 18 20 6" />
+    </>,
+  ),
 };
 
 const NAV: NavGroup[] = [
@@ -62,7 +76,14 @@ const NAV: NavGroup[] = [
       { to: "/pay", label: "My money", icon: ICONS.pay, end: true },
     ],
   },
-  { caption: "Me", items: [{ to: "/profile", label: "Profile", icon: ICONS.profile, end: true }] },
+  {
+    caption: "Me",
+    items: [
+      { to: "/profile", label: "Profile", icon: ICONS.profile, end: true },
+      { to: "/shares", label: "Requests to me", icon: ICONS.shares, end: true },
+      { to: "/vouch", label: "Vouch for someone", icon: ICONS.vouch, end: true },
+    ],
+  },
 ];
 
 const BOTTOM: NavItem[] = [
@@ -83,7 +104,7 @@ function Shell() {
       appName="CREST · Worker"
       who={
         <>
-          <span className="who-label">Grace · community health worker</span>
+          <span className="who-label">{s.meLabel || "Signed in"}</span>
           <button onClick={s.logout} id="logout">
             Sign out
           </button>
@@ -124,14 +145,23 @@ export function App() {
         <Route path="/profile/checks" element={<Checks />} />
         <Route path="/profile/messages" element={<Messages />} />
         <Route path="/profile/recovery" element={<Recovery />} />
+        <Route path="/shares" element={<SharesInbox />} />
+        <Route path="/shares/:id" element={<ShareDecide />} />
+        <Route path="/shares/:id/sent" element={<ShareSent />} />
+        <Route path="/vouch" element={<VouchInbox />} />
+        <Route path="/vouch/:id" element={<VouchProgress />} />
+        <Route path="/vouch/:id/refused" element={<VouchRefused />} />
+        <Route path="/added" element={<Added />} />
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Route>
     </Routes>
   );
 }
 
-// Tiny loader hook: soft data fetch, remounts per screen.
-export function useLoad<T>(fn: () => Promise<T>): T | undefined {
+// Tiny loader hook: soft data fetch, remounts per screen. Optional deps
+// re-run the fetch when an input the fn closes over becomes known later —
+// e.g. a party name looked up from a record that itself loads async.
+export function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []): T | undefined {
   const [data, setData] = useState<T>();
   useEffect(() => {
     let live = true;
@@ -139,6 +169,6 @@ export function useLoad<T>(fn: () => Promise<T>): T | undefined {
     return () => {
       live = false;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
   return data;
 }

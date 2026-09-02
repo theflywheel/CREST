@@ -2,8 +2,8 @@
 // ported 1:1 from apps/enrolment.
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, ApiError } from "@crest/api";
-import { Chip, Sidecar, OpenNote, NextBlock } from "@crest/ui";
+import { actingFor, api, ApiError, FIX } from "@crest/api";
+import { Chip, KV, Sidecar, OpenNote, NextBlock } from "@crest/ui";
 import { useField } from "../state";
 import { queue, setQueue, pushDone, useQueue, useDone, useOnline } from "../queue";
 
@@ -159,7 +159,16 @@ export function Register() {
       <Sidecar>
         No national ID? We can still register them — the record is marked with how identity was established rather than
         being refused. Nothing on this form takes a raw ID number: CREST holds a pairwise reference and a salted hash,
-        nothing else.
+        nothing else.{" "}
+        <button
+          type="button"
+          id="to-confidence"
+          className="btn secondary"
+          style={{ marginTop: 6 }}
+          onClick={() => nav("/confidence")}
+        >
+          No document? A confidence check instead
+        </button>
       </Sidecar>
       <OpenNote>
         The assertion-reference field is illustrative — the L1 enrolment endpoint takes contact routes and a roster id
@@ -276,6 +285,155 @@ export function Registered() {
           Next worker
         </button>
       </div>
+    </>
+  );
+}
+
+/* w1_4 — "We can still register you": the no-document confidence check.
+   The agent establishes who the person is by structured questioning and
+   community knowledge; what is RECORDED is the method — a provenance fact on
+   the enrolment (method=confidence-check) — never a stored tier or level.
+   Assurance stays derived from identity bindings, so this worker reads IA-0
+   until a route is verified or an anchor is bound, and upgrades later with
+   nothing rewritten. */
+export function Confidence() {
+  const s = useField();
+  const nav = useNavigate();
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [rosterId, setRosterId] = useState("");
+  const [partyId, setPartyId] = useState<string | null>(null);
+  const [contact, setContact] = useState<string>(FIX.supervisor);
+  const [nominated, setNominated] = useState<string | null>(null);
+
+  const submit = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    const reg: import("../queue").Reg = {
+      name: name.trim(), phone: phone.trim(), rosterId: rosterId.trim(),
+      at: Date.now(), method: "confidence-check",
+    };
+    if (!reg.phone && !reg.rosterId) {
+      s.fail(new Error("give the pathway you have — a phone or a roster id; neither is a fallback for the other"));
+      return;
+    }
+    try {
+      reg.partyId = await s.submitRegistration(reg);
+      pushDone(reg);
+      s.setReg(reg);
+      setPartyId(reg.partyId);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        nav("/hold");
+        return;
+      }
+      s.fail(e);
+    }
+  };
+
+  // w1_4's secondary button. The agent writes the worker's STATED choice —
+  // acting for the party, exactly as consent capture does. Party-linked,
+  // never a phone number.
+  const nominate = async () => {
+    if (!partyId) return;
+    try {
+      actingFor(partyId);
+      await api.post("parties", `/v1/parties/${encodeURIComponent(partyId)}/recovery-contacts`, {
+        contactPartyId: contact.trim(),
+      });
+      setNominated(contact.trim());
+    } catch (e) {
+      s.fail(e);
+    } finally {
+      actingFor(null);
+    }
+  };
+
+  return (
+    <>
+      <span className="eyebrow">Step 2 of 5 · assisted enrolment</span>
+      <div className="scr-title m">We can still register you</div>
+      <p className="body-2">
+        Their name, a reachable route and your structured questioning together give enough confidence to create the
+        record. No document is seen, and none is required.
+      </p>
+      {!partyId ? (
+        <div className="card">
+          <form id="confidenceform" onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <label className="body-2">
+              Name, as the community knows them
+              <input name="name" required value={name} onChange={(e) => setName(e.target.value)} style={{ width: "100%", marginTop: 4 }} />
+            </label>
+            <label className="body-2">
+              Phone (if they have one — recorded as an unverified route)
+              <input name="phone" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} style={{ width: "100%", marginTop: 4 }} />
+            </label>
+            <label className="body-2">
+              Roster id (this programme's roster)
+              <input name="rosterId" value={rosterId} onChange={(e) => setRosterId(e.target.value)} style={{ width: "100%", marginTop: 4 }} />
+            </label>
+            <button className="btn" type="submit">
+              Register with a confidence check
+            </button>
+          </form>
+        </div>
+      ) : (
+        <div className="card hi" data-confidence-done={partyId}>
+          <Chip kind="ok">registered · method: confidence-check</Chip>
+          <span className="mono" style={{ wordBreak: "break-all", display: "block", marginTop: 8 }}>{partyId}</span>
+        </div>
+      )}
+      <KV
+        rows={[
+          ["Name match", partyId ? "taken as given, by you — recorded with your agent identity" : "what you establish by questioning"],
+          ["Phone number", phone ? "a route on the record — unverified until an OTP or a call proves it" : "not provided"],
+          ["Face match", "not provided — no biometric is taken, ever"],
+          ["Confidence", "sufficient to register — your judgement, recorded as the enrolment method, never as a stored level"],
+        ]}
+      />
+      <Sidecar>
+        Their record will show that identity was established without a document. This does not limit what work they can
+        do or be paid for.
+      </Sidecar>
+      <OpenNote>
+        Honest about strength: with no document and no verified route, this worker's identity assurance derives to{" "}
+        <b>IA-0</b> — derived from their identity bindings at every read, never stored. The moment a route is verified
+        or an anchor is bound, everything already earned re-derives stronger, with nothing rewritten.
+      </OpenNote>
+      {partyId && !nominated ? (
+        <div className="card">
+          <span className="eyebrow">Add a recovery contact now</span>
+          <p className="muted">
+            The worker names a person they trust — you write their stated choice, acting for them. A person on the
+            registry, never a phone number.
+          </p>
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            <input name="recoverycontact" value={contact} onChange={(e) => setContact(e.target.value)} style={{ flex: 1 }} />
+            <button className="btn secondary" id="confidence-nominate" onClick={nominate}>
+              Nominate
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {nominated ? (
+        <div className="card quiet" data-nominated={nominated}>
+          <Chip sm kind="ok">recovery contact nominated</Chip>{" "}
+          <span className="mono">{nominated}</span>
+        </div>
+      ) : null}
+      <div className="btn-row">
+        <button className="btn secondary" id="confidence-recovery" disabled={!partyId} onClick={() => {
+          const el = document.querySelector('[name="recoverycontact"]') as HTMLInputElement | null;
+          el?.focus();
+        }}>
+          Add a recovery contact now
+        </button>
+        <button className="btn" id="confidence-continue" disabled={!partyId} onClick={() => nav("/consent")}>
+          Continue
+        </button>
+      </div>
+      {!partyId ? (
+        <p className="muted">Both buttons open after the registration exists — nothing is nominated or consented for a record that is not there yet.</p>
+      ) : null}
     </>
   );
 }
