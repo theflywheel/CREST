@@ -110,6 +110,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	registerIdentityRoutes(mux, d)
 	registerMergeRoutes(mux, d)
 	registerRecoveryRoutes(mux, d)
+	registerRecoveryContactRoutes(mux, d)
 
 	// Where a public fact landed on the registry substrate (§3).
 	mux.HandleFunc("GET /v1/publications/{kind}/{id}", h.publication)

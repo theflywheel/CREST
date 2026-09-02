@@ -224,6 +224,27 @@ func listRegistrations(ctx context.Context, q store.Querier, state string) ([]Re
 	})
 }
 
+// validEnrolmentMethod is how the worker's identity was taken at an assisted
+// enrolment — a provenance fact about the enrolment, never a stored judgement.
+//
+// confidence-check is w1_4's no-document route (§4): the enrolment agent
+// establishes who the person is by structured questioning and community
+// knowledge — no document seen, no anchor bound. It is deliberately a METHOD
+// here and not a new identity-binding class or captureMethod: what the agent
+// established is provenance of the enrolment record, and the worker's
+// assurance stays derived from their own identityBindings, exactly as the
+// handler's comment promises — a confidence-checked worker is IA-0 until a
+// route is verified or an anchor is bound, and upgrades later with nothing
+// rewritten. Which questions make a confidence check is programme policy (L2);
+// that the method is named on the record is L1.
+func validEnrolmentMethod(m string) bool {
+	switch m {
+	case "supervisor-attested", "roster-import", "field-visit", "confidence-check":
+		return true
+	}
+	return false
+}
+
 // Enrolment records that one party enrolled another.
 type Enrolment struct {
 	PartyID    string    `json:"partyId"`
