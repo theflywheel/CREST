@@ -26,7 +26,7 @@ red, which is the check that stops this table claiming coverage the
 screens do not have. Nothing here is evidence that an asserted screen
 passed — only the gate run is that.
 
-In scope today (J3 — `p1_*`, `p2_*`, plus the design screens `n1`–`n5`): **29** screens — **14** asserted, **0** quarantined, **15** skipped with a reason.
+In scope today (J3 — `p1_*`, `p2_*` — and G-2 — `g2_*` — plus the design screens `n1`–`n5`): **40** screens — **15** asserted, **3** quarantined, **22** skipped with a reason.
 
 ## G-1 — Instance Administrator (8 screens)
 
@@ -44,17 +44,17 @@ In scope today (J3 — `p1_*`, `p2_*`, plus the design screens `n1`–`n5`): **2
 
 | Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
 |---|---|---|---|---|---|---|
-| `g2_1` | Register | Six fields, and one of them decides everything after | **implemented** | console `#/onboard` | — | The reference's six-field identity form (legal name, country, work email, contact person, kind, sector) as a desktop console frame — Registration · 1 of 4 with the Register/Terms/Certificates/Done rail; registration documents deliberately not asked, per the reference's own callout → POST /v1/organisations. Since #168 the whole form persists: country/kind/sector/contact person ride the Party's generic attributes map and are read back from GET /v1/organisations/{id}/registration — a registry round-trip, not browser state |
-| `g2_4` | Done | Listed, approved, connected — and still on nobody’s project | **implemented** | console `#/onboard/status` | — | GET /v1/organisations/{id}/registration: state, exact terms version, decider. Under REGISTRY_ORG_APPROVAL=manual (the local default) the terminal state waits on the operator's decision; on-terms-acceptance approves in the acceptance's transaction. 'On nobody's project' is true — no project membership exists |
-| `g2_5` | Standalone | Before or after an invitation — either order works | **missing** | — | — | Invitation-before-or-after ordering: no invitation service |
-| `g2_6` | Status | Wider terms, asked for only when they are needed | **missing** | — | — | Asking for wider terms later: only one terms listing exists (GET /v1/terms), no term-upgrade request |
-| `g2_7` | Status | The documents that were not asked for at registration | **missing** | — | — | Qualification documents: no document upload on onboarding |
-| `g2_8` | Status | An ending that says what to watch for | **compressed** | console `#/onboard/status` | — | Terminal screen says what was decided and by whom; 'what to watch for' guidance partially present |
-| `g2_9` | Invitations | The enable step, seen from the side that receives it | **missing** | — | — | Receiving an invitation/enablement: no invitation service |
-| `g2_10` | Invitations | Live, and what to do first | **missing** | — | — | 'Live, and what to do first' post-enablement onboarding: not built |
-| `g2_11` | Terms | Published, named, and never edited underneath you | **implemented** | console `#/onboard/terms` | — | GET /v1/terms lists published versions; acceptance names an exact version via POST /v1/organisations/{id}/terms-acceptance — 'never edited underneath you' is the backend's versioning rule |
-| `g2_12` | Certificates | The check that mostly runs without a person | **missing** | — | — | Certificate checks: no certificate verification exists |
-| `g2_13` | Done | Approval is what makes the connection real | **implemented** | console `#/onboard/status` | — | Approval recorded with decider (policy or person); publication to the registry log happens in the approving transaction |
+| `g2_1` | Register | Six fields, and one of them decides everything after | **implemented** | console `#/onboard` | **asserted** | The reference's six-field identity form (legal name, country, work email, contact person, kind, sector) as a desktop console frame — Registration · 1 of 4 with the Register/Terms/Certificates/Done rail; registration documents deliberately not asked, per the reference's own callout → POST /v1/organisations. Since #168 the whole form persists: country/kind/sector/contact person ride the Party's generic attributes map and are read back from GET /v1/organisations/{id}/registration — a registry round-trip, not browser state |
+| `g2_4` | Done | Listed, approved, connected — and still on nobody’s project | **implemented** | console `#/onboard/status` | quarantined (#179) | GET /v1/organisations/{id}/registration: state, exact terms version, decider. Under REGISTRY_ORG_APPROVAL=manual (the local default) the terminal state waits on the operator's decision; on-terms-acceptance approves in the acceptance's transaction. 'On nobody's project' is true — no project membership exists |
+| `g2_5` | Standalone | Before or after an invitation — either order works | **missing** | — | skipped (missing) | Invitation-before-or-after ordering: no invitation service |
+| `g2_6` | Status | Wider terms, asked for only when they are needed | **missing** | — | skipped (missing) | Asking for wider terms later: only one terms listing exists (GET /v1/terms), no term-upgrade request |
+| `g2_7` | Status | The documents that were not asked for at registration | **missing** | — | skipped (missing) | Qualification documents: no document upload on onboarding |
+| `g2_8` | Status | An ending that says what to watch for | **compressed** | console `#/onboard/status` | skipped (compressed) | Terminal screen says what was decided and by whom; 'what to watch for' guidance partially present |
+| `g2_9` | Invitations | The enable step, seen from the side that receives it | **missing** | — | skipped (missing) | Receiving an invitation/enablement: no invitation service |
+| `g2_10` | Invitations | Live, and what to do first | **missing** | — | skipped (missing) | 'Live, and what to do first' post-enablement onboarding: not built |
+| `g2_11` | Terms | Published, named, and never edited underneath you | **implemented** | console `#/onboard/terms` | quarantined (#179) | GET /v1/terms lists published versions; acceptance names an exact version via POST /v1/organisations/{id}/terms-acceptance — 'never edited underneath you' is the backend's versioning rule |
+| `g2_12` | Certificates | The check that mostly runs without a person | **missing** | — | skipped (missing) | Certificate checks: no certificate verification exists |
+| `g2_13` | Done | Approval is what makes the connection real | **implemented** | console `#/onboard/status` | quarantined (#179) | Approval recorded with decider (policy or person); publication to the registry log happens in the approving transaction |
 ## G-4 — Worker Registry Custodian (4 screens)
 
 | Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
