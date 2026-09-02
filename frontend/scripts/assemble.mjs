@@ -23,9 +23,11 @@ const built = {
   console: "apps/console/dist",
 };
 // Not yet ported: served as-is from apps/ (with the legacy shared assets).
-const legacy = ["shared"];
+const legacy = [];
 
 cpSync(join(repo, "apps/index.html"), join(out, "index.html"));
+// The landing page styles itself from the design system, served as /crest.css.
+cpSync(join(root, "packages/ui/src/styles.css"), join(out, "crest.css"));
 for (const dir of legacy) cpSync(join(repo, "apps", dir), join(out, dir), { recursive: true });
 for (const [name, dist] of Object.entries(built)) cpSync(join(root, dist), join(out, name), { recursive: true });
 
