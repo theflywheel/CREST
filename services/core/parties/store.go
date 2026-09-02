@@ -349,10 +349,24 @@ func insertContext(ctx context.Context, tx store.Querier, c schema.Context) erro
 	if err != nil {
 		return err
 	}
+	// The index columns are derived from the document on every write rather
+	// than passed in beside it, so there is one place a context is stored and
+	// no path that writes a doc whose owner disagrees with its column.
+	var configurator, ownershipState *string
+	if c.Ownership != nil {
+		configurator = &c.Ownership.ConfiguratorPartyID
+		s := string(c.Ownership.State)
+		ownershipState = &s
+	}
 	_, err = tx.Exec(ctx,
-		`INSERT INTO contexts (id, kind, state, doc) VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, doc = EXCLUDED.doc`,
-		c.ID, c.Kind, string(c.State), doc)
+		`INSERT INTO contexts (id, kind, state, doc, owner_party_id, configurator_party_id, ownership_state)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 ON CONFLICT (id) DO UPDATE SET
+		     state = EXCLUDED.state, doc = EXCLUDED.doc,
+		     owner_party_id = EXCLUDED.owner_party_id,
+		     configurator_party_id = EXCLUDED.configurator_party_id,
+		     ownership_state = EXCLUDED.ownership_state`,
+		c.ID, c.Kind, string(c.State), doc, c.OwnerPartyID, configurator, ownershipState)
 	return err
 }
 

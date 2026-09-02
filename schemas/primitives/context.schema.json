@@ -10,6 +10,31 @@
     "name": { "type": "string", "minLength": 1 },
     "parentId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
     "ownerPartyId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" },
+    "ownership": {
+      "type": "object",
+      "description": "Who was named to configure this context, by whom, and whether they agreed. A named owner who never agreed leaves a context that looks staffed and is not, so naming is a proposal and acknowledgement is a separate recorded act (design finding F2, §15). Declining records who declined and why and leaves the context intact — nothing here deletes anything. Absent on a context nobody was handed.",
+      "properties": {
+        "configuratorPartyId": {
+          "$ref": "urn:crest:schema:primitives:common:1#/$defs/did",
+          "description": "The party named to configure this context. Stays named after a decline, so 'who declined' is readable."
+        },
+        "namedByPartyId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" },
+        "namedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" },
+        "state": {
+          "type": "string",
+          "enum": ["PENDING", "ACCEPTED", "DECLINED"],
+          "description": "PENDING until the named party answers. Not a tier and not derived: this is a person's recorded answer, which nothing else can compute."
+        },
+        "decidedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Why it was declined. Required of a decline for the same reason a held payment carries a reason with an owner: a refusal nobody explained is a dead end."
+        }
+      },
+      "required": ["configuratorPartyId", "namedByPartyId", "namedAt", "state"],
+      "additionalProperties": false
+    },
     "period": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/period" },
     "configuration": { "type": "object", "description": "L2 data. The core stores and returns it and never reads inside it." },
     "activationGates": {

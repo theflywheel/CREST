@@ -1,6 +1,8 @@
 package contract
 
 import (
+	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -25,6 +27,24 @@ import (
 // fact about a bank, not about a worker's choice.
 var declineWords = regexp.MustCompile(`(?i)\b(decline|declines|declined|declining|refusal_to_work|turned_down)\b`)
 
+// exemptPaths are the places the word legitimately means something other than
+// a worker's choice, by JSON pointer into the schema.
+//
+// One entry, and it earned it. Context.ownership is the handover
+// acknowledgement (design finding F2): an Org Admin names a Project
+// Configurator, and the named party accepts or declines. That decline is an
+// organisation's authority act with a reason attached — the opposite of the
+// conduct record §16 refuses, which is a worker's day-to-day answer to offered
+// work following them between programmes. Nothing about a worker is recorded
+// here and nothing in the payment path reads it.
+//
+// The exemption is a path rather than a whole schema on purpose. A future
+// field on Context that DID record a worker declining work would still fail
+// this test, which is what the guard is for.
+var exemptPaths = map[string]string{
+	"urn:crest:schema:primitives:context:1": "/properties/ownership",
+}
+
 // §16: a worker declining offered work is never recorded.
 //
 // CREST records work that happened. A decline history is a conduct record, and
@@ -48,6 +68,12 @@ func TestDecliningWorkIsRecordedNowhere(t *testing.T) {
 		if strings.Contains(id, "payment") || strings.Contains(id, "rail") {
 			continue
 		}
+		if path, exempt := exemptPaths[id]; exempt {
+			var err error
+			if source, err = withoutSubtree(source, path); err != nil {
+				t.Fatalf("%s: removing the exempt subtree %s: %v", id, path, err)
+			}
+		}
 		if match := declineWords.FindString(source); match != "" {
 			t.Errorf("%s mentions %q.\n\n"+
 				"A worker declining offered work is recorded nowhere (Blueprint §16). "+
@@ -57,4 +83,34 @@ func TestDecliningWorkIsRecordedNowhere(t *testing.T) {
 				"is downstream of it, not a rule of its own.", id, match)
 		}
 	}
+}
+
+// withoutSubtree re-serialises a schema with one subtree removed, so an
+// exemption is a named path rather than a whole file nobody checks any more.
+//
+// It deletes rather than blanks the subtree, and it fails loudly if the path
+// is not there: an exemption pointing at a property that has been renamed
+// would otherwise quietly stop exempting anything, or quietly stop checking
+// everything, and it is not obvious from the outside which.
+func withoutSubtree(source, pointer string) (string, error) {
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(source), &doc); err != nil {
+		return "", err
+	}
+	segments := strings.Split(strings.TrimPrefix(pointer, "/"), "/")
+	cursor := doc
+	for _, seg := range segments[:len(segments)-1] {
+		next, ok := cursor[seg].(map[string]any)
+		if !ok {
+			return "", fmt.Errorf("no object at %q", seg)
+		}
+		cursor = next
+	}
+	last := segments[len(segments)-1]
+	if _, there := cursor[last]; !there {
+		return "", fmt.Errorf("nothing to exempt at %q; has it been renamed?", last)
+	}
+	delete(cursor, last)
+	out, err := json.Marshal(doc)
+	return string(out), err
 }

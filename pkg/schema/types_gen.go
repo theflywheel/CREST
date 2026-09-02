@@ -338,18 +338,61 @@ type Context struct {
 
 	// Profile vocabulary: project, campaign, cohort. The core does not
 	// interpret it.
-	Kind         string       `json:"kind"`
-	Name         string       `json:"name"`
-	OwnerPartyID string       `json:"ownerPartyId"`
-	ParentID     *string      `json:"parentId,omitempty"`
-	Period       Period       `json:"period"`
-	State        ContextState `json:"state"`
+	Kind         string `json:"kind"`
+	Name         string `json:"name"`
+	OwnerPartyID string `json:"ownerPartyId"`
+
+	// Who was named to configure this context, by whom, and whether they
+	// agreed. A named owner who never agreed leaves a context that looks
+	// staffed and is not, so naming is a proposal and acknowledgement is a
+	// separate recorded act (design finding F2, §15). Declining records
+	// who declined and why and leaves the context intact — nothing here
+	// deletes anything. Absent on a context nobody was handed.
+	Ownership *ContextOwnership `json:"ownership,omitempty"`
+	ParentID  *string           `json:"parentId,omitempty"`
+	Period    Period            `json:"period"`
+	State     ContextState      `json:"state"`
 }
 
 type ContextActivationGatesItem struct {
 	Name        string     `json:"name"`
 	SatisfiedAt *time.Time `json:"satisfiedAt,omitempty"`
 }
+
+// Who was named to configure this context, by whom, and whether they
+// agreed. A named owner who never agreed leaves a context that looks
+// staffed and is not, so naming is a proposal and acknowledgement is a
+// separate recorded act (design finding F2, §15). Declining records who
+// declined and why and leaves the context intact — nothing here deletes
+// anything. Absent on a context nobody was handed.
+type ContextOwnership struct {
+
+	// The party named to configure this context. Stays named after a
+	// decline, so 'who declined' is readable.
+	ConfiguratorPartyID string     `json:"configuratorPartyId"`
+	DecidedAt           *time.Time `json:"decidedAt,omitempty"`
+	NamedAt             time.Time  `json:"namedAt"`
+	NamedByPartyID      string     `json:"namedByPartyId"`
+
+	// Why it was declined. Required of a decline for the same reason a
+	// held payment carries a reason with an owner: a refusal nobody
+	// explained is a dead end.
+	Reason *string `json:"reason,omitempty"`
+
+	// PENDING until the named party answers. Not a tier and not derived:
+	// this is a person's recorded answer, which nothing else can compute.
+	State ContextOwnershipState `json:"state"`
+}
+
+// PENDING until the named party answers. Not a tier and not derived: this
+// is a person's recorded answer, which nothing else can compute.
+type ContextOwnershipState string
+
+const (
+	ContextOwnershipStatePENDING  ContextOwnershipState = "PENDING"
+	ContextOwnershipStateACCEPTED ContextOwnershipState = "ACCEPTED"
+	ContextOwnershipStateDECLINED ContextOwnershipState = "DECLINED"
+)
 
 type ContextState string
 
