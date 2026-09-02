@@ -57,6 +57,7 @@ jobs:
               - '.github/workflows/ci.yml'
             docs:
               - 'docs/**'
+              - 'tools/journey-trace/**'
               - 'CLAUDE.md'
               - '.github/workflows/ci.yml'
 
@@ -149,6 +150,13 @@ jobs:
             grep -q "id=\"s$n\"" docs/crest-infrastructure-blueprint.html || { echo "missing blueprint section s$n"; missing=1; }
           done
           exit $missing
+
+      # The 17 Aug journeys reference is the design of record for every
+      # screen; journey-spec.json is a generated projection of it. A stale
+      # spec is a second, wrong definition of a screen — same contract as
+      # generate-check for schemas/.
+      - name: Journey spec is current
+        run: make journey-spec-check
 
       - name: Required docs present
         run: |

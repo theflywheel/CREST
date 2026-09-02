@@ -15,7 +15,7 @@ GO ?= go
         lint fmt structure substrate-up substrate-down harness-up harness-down \
         harness-logs verify-deploy web-up apps-build apps-dev apps-up e2e-apps clean todo poc poc-batch poc-dhis2 dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
         spike-dedi-deployed spike-esignet deploy-demo verify-deployed verify-registry hooks generate generate-check \
-        e2e-up e2e-run
+        e2e-up e2e-run journey-spec journey-spec-check
 
 help: ## Show available targets
 	@grep -E '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t26
@@ -47,6 +47,15 @@ generate: ## Regenerate Go types from schemas/
 
 generate-check: ## Fail if the generated types are behind schemas/ (CI)
 	@$(GO) run ./tools/codegen -check
+
+# The 17 Aug actor-journeys reference is the design of record for every
+# screen; docs/journey-spec.json is one projection of it, per screen id.
+# Same generate/generate-check contract: regenerate here, diff in CI.
+journey-spec: ## Regenerate docs/journey-spec.json from the design reference
+	@python3 tools/journey-trace/extract-spec.py
+
+journey-spec-check: ## Fail if journey-spec.json is behind the reference (CI)
+	@python3 tools/journey-trace/extract-spec.py --check
 
 # ── Tests ───────────────────────────────────────────────────────────────────
 
