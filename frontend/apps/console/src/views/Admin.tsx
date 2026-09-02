@@ -395,12 +395,12 @@ export function Instance() {
               </div>
             </CardTitled>
             <CardTitled t="Admission queue (g4_1–g4_3)">
-              <div style={{ marginBottom: 10 }}>{ILLUSTRATIVE}</div>
-              <Tbl heads={["Organisation", "Requested", "Decision"]} rows={[["Riverside Community Health NGO", "example row", <Chip kind="plain">no queue service exists</Chip>]]} />
-              <OpenNote>
-                Organisation admission (POST /v1/organisations/{"{id}"}/decision) exists as a decision record, but there
-                is no pending-admissions queue endpoint to read — this screen is illustrative until one exists.
-              </OpenNote>
+              <p className="body-2">
+                The queue is real now: <span className="mono">GET /v1/registrations</span> lists every application a
+                person still has to look at, and the decision goes through{" "}
+                <span className="mono">POST /v1/organisations/{"{id}"}/decision</span> with the authenticated caller
+                as decider. Open <span className="mono">#/admissions</span> under the G-1 rail's Organisations entry.
+              </p>
             </CardTitled>
           </>
         );

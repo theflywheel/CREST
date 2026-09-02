@@ -99,6 +99,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	// shapes rather than one endpoint with a flag.
 	mux.HandleFunc("POST /v1/organisations", h.registerOrganisation)
 	mux.HandleFunc("GET /v1/organisations/{id}/registration", h.getRegistration)
+	mux.HandleFunc("GET /v1/registrations", h.listRegistrations)
 	mux.HandleFunc("POST /v1/organisations/{id}/terms-acceptance", h.acceptTerms)
 	mux.HandleFunc("POST /v1/organisations/{id}/decision", h.decideRegistration)
 	mux.HandleFunc("POST /v1/enrolments", h.assistedEnrolment)
