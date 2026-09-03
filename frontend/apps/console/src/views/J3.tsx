@@ -251,25 +251,6 @@ export function Handover() {
                   />
                 </CardTitled>
               </div>
-              <div>
-                <CardTitled t="What is still yours to answer">
-                  <KVR
-                    rows={(project.activationConditions || []).map((c) => [
-                      c.name,
-                      <>
-                        {c.satisfied ? <Chip kind="ok">done</Chip> : <Chip kind="warn">open</Chip>}{" "}
-                        {c.because || ""}
-                      </>,
-                    ])}
-                  />
-                  {(project.activationConditions || []).length ? null : (
-                    <div className="muted">
-                      This deployment declared no readiness conditions on this project, which is not the same as a
-                      project that is ready.
-                    </div>
-                  )}
-                </CardTitled>
-              </div>
             </div>
             {err ? <WriteRefusal err={err} owner={project.ownerPartyId} /> : null}
             {o?.state === "PENDING" ? (
