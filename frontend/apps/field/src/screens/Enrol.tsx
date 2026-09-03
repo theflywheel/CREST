@@ -337,9 +337,13 @@ export function Confidence() {
     if (!partyId) return;
     try {
       actingFor(partyId);
-      await api.post("parties", `/v1/parties/${encodeURIComponent(partyId)}/recovery-contacts`, {
-        contactPartyId: contact.trim(),
-      });
+      // contextId names the programme this assisted act happens under — the
+      // agent's act-for-party grant is context-scoped, exactly like consent.
+      await api.post(
+        "parties",
+        `/v1/parties/${encodeURIComponent(partyId)}/recovery-contacts?contextId=${encodeURIComponent(FIX.project)}`,
+        { contactPartyId: contact.trim() },
+      );
       setNominated(contact.trim());
     } catch (e) {
       s.fail(e);
