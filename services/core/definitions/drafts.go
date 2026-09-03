@@ -20,6 +20,27 @@ import (
 
 type draftHandlers struct{ d service.Deps }
 
+// previewDefinitionID stands in for the identifier a draft has not got yet, on
+// the two endpoints that compile a draft without writing one: validate and
+// dry-run. A draft that has never been submitted has no definition id, and
+// neither endpoint may mint one — minting is submit's job, inside submit's
+// transaction.
+//
+// It has to be a **schema-valid** id, and that is not cosmetic. `validate`
+// schema-checks the compiled preview and reports each violation as an open
+// question, so a placeholder that fails the id pattern appears on the review
+// screen as a problem naming a section no author can go back to and fix —
+// there is no form field for it. Worse, `submit` mints a real id and so never
+// sees the violation, which means validate would refuse what submit accepts.
+// The one property this design rests on is that validate and submit run the
+// same compile and cannot disagree; an invalid placeholder quietly broke it
+// for every new draft, and the fix belongs here rather than in an exception
+// on the review screen.
+//
+// 22 zeros then DRFT: 26 characters from the id alphabet (which excludes I, L,
+// O and U), so it satisfies the pattern while reading as what it is.
+const previewDefinitionID = "crest:definition:0000000000000000000000DRFT"
+
 // createDraft starts a draft — empty (p3_2, "Define new work") or cloned
 // from an existing definition version (p3_1, "Clone a version").
 //
@@ -164,7 +185,7 @@ func (h *draftHandlers) validate(w http.ResponseWriter, r *http.Request) {
 	}
 	defID := draft.DefinitionID
 	if defID == "" {
-		defID = "crest:definition:PREVIEW"
+		defID = previewDefinitionID
 	}
 	compiled, problems := compile(draft.Doc, defID, draft.BaseVersion+1, draft.CreatedBy, h.d.Clock.Now())
 	if len(problems) == 0 {
