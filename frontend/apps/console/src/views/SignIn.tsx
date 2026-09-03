@@ -4,14 +4,13 @@
 //
 // The one rule this screen enforces: there is NO role selector. A role is
 // granted in the registry and read back here; picking your own would make
-// authority a matter of self-declaration. The demo persona block is
-// instance-configured — it renders only where a mock identity provider
-// answers, and never where a real one does.
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Callout, ErrBar } from "@crest/ui";
-import { isLocalStack, services, startEsignetLogin } from "@crest/api";
-import { personas, useConsole } from "../state";
+// authority a matter of self-declaration. eSignet is the only door — the
+// demo-persona rows this screen used to offer on local stacks are gone, and
+// the e2e suite signs in programmatically through the same mint-and-bind path
+// they performed.
+import { ErrBar } from "@crest/ui";
+import { startEsignetLogin } from "@crest/api";
+import { useConsole } from "../state";
 
 function AppbarOnly(props: { children: React.ReactNode }) {
   return (
@@ -32,33 +31,13 @@ function AppbarOnly(props: { children: React.ReactNode }) {
   );
 }
 
-export function SignIn(props: { onSignedIn: (idx: number) => Promise<void> }) {
+export function SignIn() {
   const s = useConsole();
-  const nav = useNavigate();
-  // Is there a mock identity provider on this instance? isLocalStack is the
-  // build-time guess; the discovery probe is the answer. A deployment with a
-  // real provider shows no persona rows at all.
-  const [demo, setDemo] = useState<boolean | null>(isLocalStack ? null : false);
-  useEffect(() => {
-    if (!isLocalStack) return;
-    let live = true;
-    fetch(services.oidc + "/.well-known/openid-configuration")
-      .then((r) => live && setDemo(r.ok))
-      .catch(() => live && setDemo(false));
-    return () => {
-      live = false;
-    };
-  }, []);
-
   return (
     <AppbarOnly>
       <h1 className="scr-title" id="signin-title">
         Sign in to CREST Console
       </h1>
-      <p className="muted" style={{ maxWidth: 700 }}>
-        One door, every console role. What you see after signing in is decided by the roles you hold — never by which
-        link you opened.
-      </p>
       {s.err ? <ErrBar>{s.err}</ErrBar> : null}
 
       <div className="card" style={{ maxWidth: 700 }} data-panel="signin-with">
@@ -67,71 +46,71 @@ export function SignIn(props: { onSignedIn: (idx: number) => Promise<void> }) {
         <button className="btn" id="signin-esignet" onClick={() => startEsignetLogin()}>
           Continue with eSignet
         </button>
-        <p className="muted" style={{ marginTop: 8 }}>
-          Your national identity provider. CREST never sees a credential of yours.
-        </p>
       </div>
+    </AppbarOnly>
+  );
+}
 
-      {demo === null ? <p className="muted">Checking what this instance offers…</p> : null}
-      {demo ? (
-        <div style={{ maxWidth: 700, display: "flex", flexDirection: "column", gap: 10 }} data-panel="demo-personas">
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ flex: 1, height: 1, background: "var(--divider)" }} />
-            <span className="eyebrow">Or, on a demo instance</span>
-            <span style={{ flex: 1, height: 1, background: "var(--divider)" }} />
-          </div>
-          {personas.map((p, i) => (
-            <button
-              className="card"
-              data-p={i}
-              data-persona={p.key}
-              key={p.key}
-              style={{ textAlign: "left", cursor: "pointer" }}
-              onClick={() => props.onSignedIn(i)}
-            >
-              <div style={{ font: "500 14px/1.4 Roboto" }}>
-                {p.who} <span className="muted">· {p.role} · {p.ref}</span>
-              </div>
-              <div className="muted">{p.what}</div>
-            </button>
-          ))}
-          <p className="muted">
-            Each row signs in as a person the registry already knows, and mints its token from this stack's own
-            identity provider — the same first-login path a real sign-in takes. The row names the role that person
-            holds; it does not grant one.
-          </p>
-        </div>
-      ) : null}
-      {demo === false ? (
-        <p className="muted" style={{ maxWidth: 700 }}>
-          This instance has no mock identity provider, so there are no demo personas to offer. eSignet is the only door.
-        </p>
-      ) : null}
+// The eSignet return leg (#155): the callback bounced back to #/auth with a
+// token or an error in the route's query. A token that verifies but binds to
+// no party is an honest refusal — the console has no self-registration; an
+// organisation gets here by being onboarded.
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
-      <button
-        className="card hi"
-        id="onboard-org"
-        style={{ textAlign: "left", cursor: "pointer", maxWidth: 700 }}
-        onClick={() => nav("/onboard")}
-      >
-        <div style={{ font: "500 14px/1.4 Roboto" }}>Onboard your organisation</div>
-        <div className="muted">
-          Apply, accept the published terms, get approved — the real flow, no seeded party. Applying is deliberately
-          open: an organisation that is not on the platform yet has no role to sign in with.
-        </div>
-      </button>
+export function AuthReturn() {
+  const s = useConsole();
+  const nav = useNavigate();
+  const [params] = useSearchParams();
+  const [state, setState] = useState<"working" | "stranger" | "failed">("working");
+  const [detail, setDetail] = useState<string>("");
 
-      <div style={{ maxWidth: 700, display: "flex", flexDirection: "column", gap: 10 }}>
-        <Callout kind="teal" title="Why this screen exists">
-          Every J3 frame in the design reference opens with somebody already inside their console, already holding a
-          role, already looking at the right organisation. This door is the step the reference never draws, and it is
-          where the console's whole authority story starts.
-        </Callout>
-        <Callout kind="green" title="What this screen never does">
-          It never asks which role you want, and never offers a role you do not hold. A role is granted in the registry
-          and read back here — picking your own would make authority a matter of self-declaration.
-        </Callout>
-      </div>
+  useEffect(() => {
+    const err = params.get("error");
+    const token = params.get("token");
+    if (err) {
+      setState("failed");
+      setDetail(err);
+      return;
+    }
+    if (!token) {
+      setState("failed");
+      setDetail("the login returned neither a token nor an error");
+      return;
+    }
+    s.completeEsignet(token)
+      .then((outcome) => {
+        if (outcome === "enrolled") nav("/", { replace: true });
+        else setState("stranger");
+      })
+      .catch((e) => {
+        setState("failed");
+        setDetail(String((e as Error)?.message || e));
+      });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (state === "working")
+    return (
+      <AppbarOnly>
+        <p className="body-2">Completing your sign-in…</p>
+      </AppbarOnly>
+    );
+  if (state === "failed")
+    return (
+      <AppbarOnly>
+        <h1 className="scr-title">That sign-in did not finish</h1>
+        <div className="errbar">{detail}</div>
+        <a className="btn" href="#/">Try again</a>
+      </AppbarOnly>
+    );
+  return (
+    <AppbarOnly>
+      <h1 className="scr-title">You are signed in, but hold no role here</h1>
+      <p className="muted" style={{ maxWidth: 700 }}>
+        Your identity checked out, and no party in this deployment is bound to it. The console has no
+        self-registration — an organisation reaches it by being onboarded and granted a role.
+      </p>
+      <a className="btn" href="#/">Back</a>
     </AppbarOnly>
   );
 }

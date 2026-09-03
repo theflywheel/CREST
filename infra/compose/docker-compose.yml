@@ -110,6 +110,9 @@ x-service: &crest-service
     # ESIGNET_URL unset means the surface is not served and the doors show
     # the dev login. Set all four to run the real surface against the local
     # substrate (the key comes from `go run ./tools/esignet`).
+    # The logo the OIDC clients register; eSignet's login screen renders it.
+    # The door serves it at /logo.png (frontend/static).
+    CREST_LOGO_URL: "${CREST_LOGO_URL:-}"
     ESIGNET_URL: "${ESIGNET_URL:-}"
     ESIGNET_UI_URL: "${ESIGNET_UI_URL:-}"
     ESIGNET_CLIENT_KEY: "${ESIGNET_CLIENT_KEY:-}"
@@ -333,11 +336,87 @@ services:
     depends_on: [inji-verify-service]
     profiles: ["substrate", "full"]
 
+  # The wallet's backend-for-frontend. Its OIDC client key is registered with
+  # eSignet by tools/certify/mimoto-onboard.py and arrives as a secret
+  # (MIMOTO_OIDC_P12_B64); the keystore then lives on a volume because the key
+  # manager generates its ROOT key into the same p12 on first start and records
+  # the alias in the database — a fresh keystore against an old database dies
+  # with `No such alias` (p0 finding C14). Database inji_mimoto must exist:
+  #   docker exec -i crest-postgres-1 psql -U crest -d postgres < infra/mimoto/init.sql
+  mimoto:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.mimoto
+    ports: ["${MIMOTO_PORT:-58094}:8099"]
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/inji_mimoto?currentSchema=mimoto
+      POSTGRES_USER: ${POSTGRES_USER:-crest}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crest}
+      MIMOTO_REDIS_HOST: redis
+      MIMOTO_PUBLIC_URL: http://localhost:${MIMOTO_PORT:-58094}
+      MIMOTO_ESIGNET_HOST: http://esignet:8088
+      MOSIP_INJI_WEB_URL: http://localhost:${INJI_WEB_PORT:-58093}
+      oidc_p12_password: ${MIMOTO_P12_PASSWORD:-}
+      MIMOTO_OIDC_P12_B64: ${MIMOTO_OIDC_P12_B64:-}
+      MIMOTO_OIDC_CLIENT_ID: ${MIMOTO_OIDC_CLIENT_ID:-}
+      # Placeholders Spring resolves eagerly for MOSIP features this
+      # deployment does not use (resident wallet binding, Google sign-in).
+      # Dummy values, same as the Railway service sets.
+      WALLET_BINDING_PARTNER_API_KEY: unused
+      IDP_PARTNER_ENCRYPTION_KEY: unused
+      GOOGLE_OAUTH_CLIENT_ID: unused
+      GOOGLE_OAUTH_CLIENT_SECRET: unused
+    volumes:
+      - mimotocerts:/home/mosip/certs
+      # Staged, not mounted over the baked file: the start script seds the
+      # client id in place, and sed -i cannot rename over a single-file bind
+      # mount. The script copies this into place when present (local only).
+      - ../mimoto/config/mimoto-issuers-config.local.json:/home/mosip/local/mimoto-issuers-config.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    profiles: ["full"]
+
+  # Mimoto learns eSignet's address from Certify's well-known, which advertises
+  # the BROWSER-facing URL (http://localhost:58088) — and then fetches the
+  # authorization server's well-known from it server-side. Inside the container
+  # localhost:58088 is nothing. Railway never sees this because one public URL
+  # serves both sides. This sidecar shares Mimoto's network namespace and
+  # forwards 127.0.0.1:58088 to the compose eSignet, so the browser URL means
+  # the same thing inside the container as outside it.
+  mimoto-localhost-esignet:
+    image: ${SOCAT_IMAGE:-alpine/socat:1.8.0.0}
+    network_mode: "service:mimoto"
+    command: TCP-LISTEN:58088,fork,bind=127.0.0.1,reuseaddr TCP:esignet-ui:3000
+    depends_on: [mimoto]
+    profiles: ["full"]
+
   # The browser wallet. #1 needs somewhere to hold a credential, and the mobile
-  # wallet ships through app stores rather than as an image.
+  # wallet ships through app stores rather than as an image. Built from
+  # Dockerfile.inji-web (vendored nginx + the issuer/verifier config documents
+  # Mimoto itself reads); the local nginx.conf points the /v1/mimoto/ upstream
+  # at the compose-network Mimoto instead of the Railway hostname.
   inji-web:
-    image: ${INJI_WEB_IMAGE:-mosipid/inji-web:0.15.0}
-    ports: ["${INJI_WEB_PORT:-58093}:3000"]
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.inji-web
+    ports: ["${INJI_WEB_PORT:-58093}:3004"]
+    environment:
+      MIMOTO_OIDC_CLIENT_ID: ${MIMOTO_OIDC_CLIENT_ID:-}
+      # Written into env.config.js by the stock entrypoint; the wallet frontend
+      # calls Mimoto here. Same-origin through this server's own /v1/mimoto/
+      # proxy, so no CORS and one hostname for the browser to trust.
+      MIMOTO_URL: http://localhost:${INJI_WEB_PORT:-58093}/v1/mimoto
+      DEFAULT_TITLE: Inji Wallet
+      DEFAULT_FAVICON: favicon.ico
+      DEFAULT_LANG: en
+      IGNORED_ISSUER_IDS: MockMdl
+    volumes:
+      - ../injiweb/nginx.local.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../mimoto/config/mimoto-issuers-config.local.json:/home/mosip/local/mimoto-issuers-config.json:ro
+    depends_on: [mimoto]
     profiles: ["full"]
 
   # Both eSignet images are rebuilt with our own entrypoint. The stock one runs
@@ -349,7 +428,10 @@ services:
       dockerfile: infra/compose/Dockerfile.esignet
       args:
         ESIGNET_IMAGE: ${ESIGNET_IMAGE:-mosipid/esignet-with-plugins:1.8.0}
-    ports: ["${ESIGNET_PORT:-58088}:8088"]
+    # The raw API moved off 58088: locally, as on Railway, eSignet's public
+    # hostname is its UI (see esignet-ui below), which fronts the API and maps
+    # the root well-known URLs the API itself does not serve (p0 finding C12).
+    ports: ["${ESIGNET_API_PORT:-58089}:8088"]
     environment:
       # Not SPRING_PROFILES_ACTIVE: the image passes this one to the JVM itself.
       active_profile_env: default,local
@@ -387,6 +469,25 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    profiles: ["substrate", "full"]
+
+  # eSignet's public hostname, locally as on Railway: the login screen plus the
+  # proxy that serves the root well-known documents and /authorize, which the
+  # API service does not (p0 finding C12). It owns 58088 so that every URL the
+  # stack advertises for eSignet resolves for both the browser and any service
+  # that follows it.
+  esignet-ui:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.esignet-ui
+      args:
+        ESIGNET_UI_IMAGE: ${ESIGNET_UI_IMAGE:-mosipid/oidc-ui:1.8.0}
+    ports: ["${ESIGNET_PORT:-58088}:3000"]
+    volumes:
+      # Same vendored nginx with one change: the upstream is the compose
+      # service instead of the Railway private hostname.
+      - ../esignet-ui/nginx.local.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [esignet]
     profiles: ["substrate", "full"]
 
   esignet-mock-identity:
@@ -475,6 +576,10 @@ services:
     image: nginx:1.27-alpine
     volumes:
       - ../../frontend/dist-site:/usr/share/nginx/html:ro
+      # The Railway door's route policy, with compose upstreams: the /internal/
+      # fence, the /api/crest-* allowlist — and the /api/crest-registry proxy
+      # the eSignet login callback returns through.
+      - ./nginx.apps.local.conf:/etc/nginx/conf.d/default.conf:ro
     ports: ["${APPS_PORT:-59110}:80"]
 
   # ── CREST services: ours ─────────────────────────────────────────────────
@@ -547,3 +652,4 @@ volumes:
   mockidentitykeys:
   objectdata:
   dedipgdata:
+  mimotocerts:

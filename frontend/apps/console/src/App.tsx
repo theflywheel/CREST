@@ -34,7 +34,7 @@ import { OnboardApply, OnboardTerms, OnboardStatus, OnboardChecks } from "./view
 import {
   OnboardStandalone, OnboardWider, OnboardDocuments, OnboardReview, OnboardInvited, OnboardProject,
 } from "./views/OnboardOrg";
-import { SignIn } from "./views/SignIn";
+import { SignIn, AuthReturn } from "./views/SignIn";
 import {
   Projects as OrgHome, NewProject, People, Workers, Validation, Intake, Finance as FinanceConnect, Navigation,
 } from "./views/Setup";
@@ -252,22 +252,11 @@ const allowed = (key: PersonaKey, path: string) =>
 function Shell() {
   const s = useConsole();
   const loc = useLocation();
-  const nav = useNavigate();
   useEffect(() => s.clearErr(), [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!s.me || !s.persona)
-    return (
-      <SignIn
-        onSignedIn={async (i) => {
-          s.clearErr();
-          try {
-            const key = await s.login(i);
-            nav(homeOf(key));
-          } catch (e) {
-            s.fail(e);
-          }
-        }}
-      />
-    );
+  // The eSignet return leg must render before the signed-out gate: the
+  // callback bounces here with the token still in the route's query.
+  if (loc.pathname === "/auth") return <AuthReturn />;
+  if (!s.me || !s.persona) return <SignIn />;
   // The role boundary: a view outside this persona's flow is not rendered —
   // an approver who types #/definework lands back on their own home. For the
   // J3 actors nothing is hidden: both hold every route, and a screen they

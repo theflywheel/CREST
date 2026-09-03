@@ -127,21 +127,63 @@ const hash = async (p, h, ms = 1800) => {
   await pause(p, ms);
 };
 
+// Console personas (mirrors frontend/apps/console/src/state.tsx). The console
+// door offers only eSignet now, so the recorder signs in underneath — the same
+// mint-and-bind the persona cards performed.
+const CONSOLE_PERSONAS = {
+  orgadmin: [FIXORG, "Peter Otieno", "Org Admin"],
+  configurator: [FIXORG, "Dr. Alice Mutua", "Project Configurator"],
+  author: [FIXORG, "Amina Yusuf", "Work Definition Author"],
+  approver: [FIXORG, "Prof. Ndegwa", "Work Definition Approver"],
+  rateowner: [FIXORG, "Mutua", "Rate Owner"],
+  payowner: [FIXORG, "Njeri", "Payment Mechanism Owner"],
+  instance: [FIXORG, "Instance administrator", "Instance Admin"],
+  custodian: [FIXCSTD, "Otieno", "Registry Custodian"],
+  support: [FIXCSTD, "Naliaka", "Support Agent"],
+  funder: [FIXORG, "Funding oversight", "Funding Viewer"],
+};
+
 async function consoleLogin(p, persona) {
+  const [partyId, who, role] = CONSOLE_PERSONAS[persona];
+  const token = await mintToken(partyId);
+  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const pw = await (await fetch(OIDCBASE + "/dev/pairwise?sub=" + encodeURIComponent(sub))).json();
+  await fetch(SVCBASE + "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify({ provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject }),
+  });
   await go(p, C);
-  const out = p.locator("#logout");
-  if (await out.isVisible().catch(() => false)) {
-    await out.click();
-    await pause(p, 800);
-  }
-  await p.click(`[data-persona="${persona}"]`);
+  await p.evaluate(
+    ([t, pid, w, r, k]) => sessionStorage.setItem("crest.console.session",
+      JSON.stringify({ token: t, me: { partyId: pid, who: w, role: r }, persona: k })),
+    [token, partyId, who, role, persona]);
+  await p.reload();
   await pause(p, 2000);
 }
 
-async function workerLogin(p) {
+// The worker door's login screen shows only the real pathways; the recorder
+// signs in underneath the way the dev card used to — mock-issuer token, the
+// same idempotent identity-binding append, session handed to the door.
+async function workerSignIn(p, partyId, label) {
+  const token = await mintToken(partyId);
+  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const pw = await (await fetch(OIDCBASE + "/dev/pairwise?sub=" + encodeURIComponent(sub))).json();
+  await fetch(SVCBASE + "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify({ provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject }),
+  });
   await go(p, W);
-  await p.click("#login-grace");
+  await p.evaluate(
+    ([t, me, lb]) => sessionStorage.setItem("crest.worker.session", JSON.stringify({ token: t, me, label: lb })),
+    [token, partyId, label]);
+  await p.reload();
   await pause(p, 2200);
+}
+
+async function workerLogin(p) {
+  await workerSignIn(p, FIXWORKER, "Grace \u00b7 community health worker");
 }
 
 async function fieldLogin(p) {
@@ -536,8 +578,7 @@ const J10 = async (p, cap) => {
   await go(p, W, 1500);
   const out10 = p.locator("#logout");
   if (await out10.isVisible().catch(() => false)) { await out10.click(); await pause(p, 800); }
-  await p.click("#login-supervisor");
-  await pause(p, 2200);
+  await workerSignIn(p, FIXSPVR, "District Supervisor \u00b7 recovery confirmer");
   await hash(p, "#/vouch", 2200);
   await cap("The Recovery Confirmer's request, delivered honestly (w4_1)",
     "The reference draws an SMS; this deployment has no SMS channel (#150, §16) and says so on-screen. The request itself — GET /v1/recoveries?confirmerPartyId= — is what any returning channel would deliver from.");

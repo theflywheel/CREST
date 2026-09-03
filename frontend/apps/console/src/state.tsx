@@ -13,7 +13,7 @@
 // the custodian party. Per-role backend permits are L1 work the traceability
 // manifest records as missing (p1_2 role assignment).
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { ApiError, loginAs, setSession, FIX } from "@crest/api";
+import { ApiError, loginAs, setSession, whoAmI, FIX } from "@crest/api";
 
 export const personas = [
   {
@@ -113,6 +113,7 @@ type State = {
   fail: (e: unknown) => void;
   clearErr: () => void;
   login: (idx: number) => Promise<PersonaKey>;
+  completeEsignet: (token: string) => Promise<"enrolled" | "stranger">;
   logout: () => void;
   traceClaim: string;
   setTraceClaim: (c: string) => void;
@@ -134,9 +135,33 @@ export const errText = (e: unknown) =>
     ? `${e.status} ${e.code || ""} — ${e.message}`
     : String((e as Error)?.message || e);
 
+// The session survives a reload via sessionStorage — with eSignet as the only
+// door, a refresh must not cost a whole redirect round-trip. The e2e suite
+// writes this same key to sign in programmatically (the sign-in screen offers
+// no personas any more).
+const SKEY = "crest.console.session";
+type Stored = { token: string; me: NonNullable<State["me"]>; persona: PersonaKey };
+function readStored(): Stored | null {
+  try {
+    const raw = sessionStorage.getItem(SKEY);
+    return raw ? (JSON.parse(raw) as Stored) : null;
+  } catch {
+    return null;
+  }
+}
+function store(v: Stored | null) {
+  try {
+    v ? sessionStorage.setItem(SKEY, JSON.stringify(v)) : sessionStorage.removeItem(SKEY);
+  } catch {
+    /* a blocked sessionStorage only costs the reload convenience */
+  }
+}
+
 export function ConsoleProvider(props: { children: ReactNode }) {
-  const [me, setMe] = useState<State["me"]>(null);
-  const [persona, setPersona] = useState<PersonaKey | null>(null);
+  const stored = readStored();
+  if (stored) setSession(stored.token);
+  const [me, setMe] = useState<State["me"]>(stored ? stored.me : null);
+  const [persona, setPersona] = useState<PersonaKey | null>(stored ? stored.persona : null);
   const [err, setErr] = useState<string | null>(null);
   const [traceClaim, setTraceClaim] = useState("");
   const [wizStep, setWizStep] = useState(0);
@@ -144,13 +169,34 @@ export function ConsoleProvider(props: { children: ReactNode }) {
 
   const login = async (idx: number) => {
     const p = personas[idx];
-    await loginAs(p.id);
-    setMe({ partyId: p.id, who: p.who, role: p.role });
+    const token = await loginAs(p.id);
+    const who = { partyId: p.id, who: p.who, role: p.role };
+    setMe(who);
     setPersona(p.key);
+    store({ token, me: who, persona: p.key });
     return p.key;
+  };
+  // The eSignet return leg: the callback handed the door a verified token;
+  // ask the registry who that makes us. Honest limit, restated from the
+  // header: per-party role permits are L1 work the traceability manifest
+  // records as missing (p1_2 role assignment), so a real sign-in lands on the
+  // Org Admin view rather than a registry-derived one.
+  const completeEsignet = async (token: string) => {
+    setSession(token);
+    const w = await whoAmI();
+    if (!w.partyId) {
+      setSession(null);
+      return "stranger" as const;
+    }
+    const who = { partyId: w.partyId, who: "Signed in via eSignet", role: "Org Admin" };
+    setMe(who);
+    setPersona("orgadmin");
+    store({ token, me: who, persona: "orgadmin" });
+    return "enrolled" as const;
   };
   const logout = () => {
     setSession(null);
+    store(null);
     setMe(null);
     setPersona(null);
     setErr(null);
@@ -165,6 +211,7 @@ export function ConsoleProvider(props: { children: ReactNode }) {
         fail: (e) => setErr(errText(e)),
         clearErr: () => setErr(null),
         login,
+        completeEsignet,
         logout,
         traceClaim,
         setTraceClaim,

@@ -58,6 +58,12 @@ type Client struct {
 	ClientID string
 
 	HTTP *http.Client
+
+	// LogoURI is the logo eSignet shows for this client on its login screen.
+	// Optional; empty falls back to a placeholder the deployment should
+	// override (CREST_LOGO_URL on the registry), because eSignet renders a
+	// broken image for a URL that does not serve one.
+	LogoURI string
 }
 
 // New derives the client id from the key (C9) and prepares an HTTP client
@@ -159,7 +165,7 @@ func (c *Client) Register(ctx context.Context, redirectURIs []string) error {
 			"relyingPartyId":    c.RelyingPartyID,
 			"userClaims":        []string{"name", "phone_number"},
 			"authContextRefs":   []string{"mosip:idp:acr:generated-code", "mosip:idp:acr:static-code"},
-			"logoUri":           "https://crest.example/logo.png",
+			"logoUri":           c.logoURI(),
 			"redirectUris":      redirectURIs,
 			"grantTypes":        []string{"authorization_code"},
 			"clientAuthMethods": []string{"private_key_jwt"},
@@ -191,6 +197,13 @@ func (c *Client) Register(ctx context.Context, redirectURIs []string) error {
 		return fmt.Errorf("esignet: client registration failed: %v", env.Errors)
 	}
 	return nil
+}
+
+func (c *Client) logoURI() string {
+	if c.LogoURI != "" {
+		return c.LogoURI
+	}
+	return "https://crest.example/logo.png"
 }
 
 // PKCE is one login attempt's verifier/challenge pair plus the state that

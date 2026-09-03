@@ -77,7 +77,7 @@ def register(key, client_id):
             "relyingPartyId": RELYING_PARTY,
             "userClaims": ["name", "phone_number"],
             "authContextRefs": ["mosip:idp:acr:generated-code", "mosip:idp:acr:static-code"],
-            "logoUri": "https://crest.theflywheel.in/logo.png",
+            "logoUri": os.environ.get("CREST_LOGO_URL", "https://crest.theflywheel.in/logo.png"),
             # Both: the wallet redirects a browser back to Inji Web, and the
             # spike's loopback URI keeps a scripted flow possible against the
             # same client rather than needing a second one.

@@ -9,6 +9,7 @@ const FIX = {
   workerA: "did:crest:party:01JCREST00000000000000WRKA",
   org: "did:crest:party:01JCREST000000000000000RGN",
   custodian: "did:crest:party:01JCREST00000000000000CSTD",
+  supervisor: "did:crest:party:01JCREST00000000000000SPVR",
   project: "crest:context:01JCREST00000000000000PRJC",
 };
 
@@ -47,11 +48,9 @@ test("landing names the four apps", async ({ page }) => {
   await assertAlive(page, errors, "landing");
 });
 
-test("worker app: every route, on real data", async ({ page }) => {
+test("worker app: every route, on real data", async ({ page, request }) => {
   const errors = watch(page);
-  await page.goto("/worker/");
-  await settle(page);
-  await page.click("#login-grace");
+  await workerSignIn(page, request, FIX.workerA, "Grace \u00b7 community health worker");
   await settle(page);
   // The worker door is a desktop console now: appbar + sidebar on wide
   // viewports; the bottom nav exists but shows only under 720px.
@@ -80,11 +79,9 @@ test("worker app: every route, on real data", async ({ page }) => {
   expect(payText).toMatch(/KES|held|instruction|settled|released/i);
 });
 
-test("worker app: the held payment names its owner", async ({ page }) => {
+test("worker app: the held payment names its owner", async ({ page, request }) => {
   const errors = watch(page);
-  await page.goto("/worker/");
-  await settle(page);
-  await page.click("#login-grace");
+  await workerSignIn(page, request, FIX.workerA, "Grace \u00b7 community health worker");
   await settle(page);
   await page.evaluate(() => { location.hash = "#/pay"; });
   await settle(page);
@@ -94,7 +91,7 @@ test("worker app: the held payment names its owner", async ({ page }) => {
   await assertAlive(page, errors, "worker held view");
 });
 
-test("enrolment app: every route", async ({ page }) => {
+test("enrolment app: every route", async ({ page, request }) => {
   const errors = watch(page);
   await page.goto("/enrolment/");
   await settle(page);
@@ -168,9 +165,7 @@ for (const [personaIdx, personaName, who, views] of [
     const errors = watch(page);
     await page.goto("/console/");
     await settle(page);
-    await page.click(`[data-p="${personaIdx}"]`);
-    // First login mints a token and appends an identity binding — two round
-    // trips. Poll for arrival rather than sleeping.
+    await consoleSignIn(page, request, CONSOLE_PERSONA_ORDER[personaIdx]);
     await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
     await settle(page);
     await signedInAs(page, who);
@@ -214,21 +209,21 @@ test("console door: eSignet is the way in, and no role can be picked", async ({ 
   await expect(page.locator("select")).toHaveCount(0);
   await expect(page.locator('input[type="radio"]')).toHaveCount(0);
   await expect(page.locator('[name*="role" i]')).toHaveCount(0);
-  // The demo block is instance-configured: this local stack has a mock
-  // issuer, so it renders — and each row names a role rather than offering
-  // to grant one.
-  await expect(page.locator('[data-panel="demo-personas"]')).toBeVisible();
+  // The demo persona rows are gone: eSignet is the only door, on every
+  // instance. Only the sign-in panel renders.
+  await expect(page.locator('[data-panel="signin-with"]')).toBeVisible();
+  await expect(page.locator('[data-panel="demo-personas"]')).toHaveCount(0);
   await assertAlive(page, errors, "console door");
 });
 
 // n3/F1 — one rail, two actors. The five setup entries render identically for
 // the Org Admin and the Project Configurator, and no entry is removed by role.
-test("console: the J3 rail is the same five entries for both actors", async ({ page }) => {
+test("console: the J3 rail is the same five entries for both actors", async ({ page, request }) => {
   const entries = ["Projects", "People & roles", "Work definitions", "Payment set up", "Workers"];
   for (const persona of ["orgadmin", "configurator"]) {
     await page.goto("/console/");
     await settle(page);
-    await page.click(`[data-persona="${persona}"]`);
+    await consoleSignIn(page, request, persona);
     await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
     await settle(page);
     const rail = await page.locator(".sidebar a").allInnerTexts();
@@ -245,11 +240,11 @@ test("console: the J3 rail is the same five entries for both actors", async ({ p
 // n5 — a rail entry you cannot act on stays visible and says who can. The
 // Configurator opens People & roles and gets the boundary, not a redirect and
 // not a missing entry.
-test("console: People & roles guards the configurator instead of hiding", async ({ page }) => {
+test("console: People & roles guards the configurator instead of hiding", async ({ page, request }) => {
   const errors = watch(page);
   await page.goto("/console/");
   await settle(page);
-  await page.click('[data-persona="configurator"]');
+  await consoleSignIn(page, request, "configurator");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await expect(page.locator('.sidebar a[href*="people"]')).toHaveCount(1);
@@ -268,12 +263,11 @@ test("console: People & roles guards the configurator instead of hiding", async 
 
 // Author/approver separation: an approver ratifies and can never open the
 // authoring wizard — even a hand-typed #/definework bounces to their home.
-test("console: the approver cannot reach the author's wizard", async ({ page }) => {
+test("console: the approver cannot reach the author's wizard", async ({ page, request }) => {
   const errors = watch(page);
   await page.goto("/console/");
   await settle(page);
-  await page.click('[data-persona="approver"]');
-  await settle(page);
+  await consoleSignIn(page, request, "approver");
   // Their own flow renders.
   await expect(page.locator("body")).toContainText(/Ratify/i);
   // The sidebar carries no wizard entry…
@@ -387,11 +381,9 @@ test("worker entry presents both enrollment pathways", async ({ page }) => {
 
 // w1_18: the show screen presents a QR (offline presentation), JSON behind a
 // toggle — no raw JSON dump as the primary face.
-test("worker wallet: show-to-someone renders a QR, JSON behind a toggle", async ({ page }) => {
+test("worker wallet: show-to-someone renders a QR, JSON behind a toggle", async ({ page, request }) => {
   const errors = watch(page);
-  await page.goto("/worker/");
-  await settle(page);
-  await page.click("#login-grace");
+  await workerSignIn(page, request, FIX.workerA, "Grace \u00b7 community health worker");
   await settle(page);
   await page.evaluate(() => { location.hash = "#/wallet/0/show"; });
   await settle(page);
@@ -415,15 +407,11 @@ test("worker wallet: show-to-someone renders a QR, JSON behind a toggle", async 
   await assertAlive(page, errors, "worker wallet QR show");
 });
 
-test("console: the story shows through", async ({ page }) => {
+test("console: the story shows through", async ({ page, request }) => {
   const errors = watch(page);
   await page.goto("/console/");
   await settle(page);
-  await page.click('[data-p="1"]');
-  await settle(page);
-  // The switch ends with its own navigate(homeOf) — wait for it to land
-  // before setting a hash, or the two writes race and homeOf wins.
-  await page.waitForFunction(() => location.hash.length > 2);
+  await consoleSignIn(page, request, "configurator");
   // Sources: the story registered riverside-dhis2, and #117 is named on it.
   await page.evaluate(() => { location.hash = "#/sources"; });
   await page.waitForFunction(() => location.hash === "#/sources");
@@ -468,7 +456,7 @@ test("verify app: a real check, refusals shown, batch bounded", async ({ page })
   await expect(page.locator("body")).toContainText(/credential/i);
 });
 
-test("mobile viewport: no horizontal overflow, console nav becomes a chip rail", async ({ page }) => {
+test("mobile viewport: no horizontal overflow, console nav becomes a chip rail", async ({ page, request }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const path of ["/worker/", "/enrolment/", "/console/", "/verify/"]) {
     await page.goto(path);
@@ -481,8 +469,7 @@ test("mobile viewport: no horizontal overflow, console nav becomes a chip rail",
   // (row direction), and the pane must still render without sideways scroll.
   await page.goto("/console/");
   await settle(page);
-  await page.click('[data-p="0"]');
-  await settle(page);
+  await consoleSignIn(page, request, "orgadmin");
   const dir = await page.locator(".sidebar").evaluate(el => getComputedStyle(el).flexDirection);
   expect(dir).toBe("row");
   const overflow = await page.evaluate(
@@ -490,11 +477,9 @@ test("mobile viewport: no horizontal overflow, console nav becomes a chip rail",
   expect(overflow).toBe(0);
 });
 
-test("mobile viewport: the worker door keeps its bottom nav", async ({ page }) => {
+test("mobile viewport: the worker door keeps its bottom nav", async ({ page, request }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/worker/");
-  await settle(page);
-  await page.click("#login-grace");
+  await workerSignIn(page, request, FIX.workerA, "Grace \u00b7 community health worker");
   await settle(page);
   // Under 720px the worker's sidebar chip rail yields to the phone-style
   // bottom nav — the phone experience survives the desktop rebuild.
@@ -516,12 +501,12 @@ test("mobile viewport: the worker door keeps its bottom nav", async ({ page }) =
 // role listing, the organisation role listing, the APPROVED-only partner
 // directory, the partner-grant listing, the partner-grant end-date refusal,
 // and the support-owner party check are each exercised here.
-test("console: the J3 handover is real, and so is everything after it", async ({ page }) => {
+test("console: the J3 handover is real, and so is everything after it", async ({ page, request }) => {
   const errors = watch(page);
   const stamp = Date.now().toString().slice(-6);
   await page.goto("/console/");
   await settle(page);
-  await page.click('[data-persona="orgadmin"]');
+  await consoleSignIn(page, request, "orgadmin");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
 
@@ -680,6 +665,67 @@ async function mintToken(request, partyId) {
   expect(r.ok(), "the dev issuer mints a token for " + partyId).toBeTruthy();
   const d = await r.json();
   return d.accessToken || d.access_token || d.token;
+}
+
+// The console door offers only eSignet now — no persona cards — so tests sign
+// in the way those cards worked underneath: mint a token, append the same
+// idempotent identity binding, hand the session to the app via the key its
+// provider restores from. Persona keys mirror frontend/apps/console/src/state.tsx.
+const CONSOLE_PERSONAS = {
+  orgadmin: ["org", "Peter Otieno", "Org Admin"],
+  configurator: ["org", "Dr. Alice Mutua", "Project Configurator"],
+  author: ["org", "Amina Yusuf", "Work Definition Author"],
+  approver: ["org", "Prof. Ndegwa", "Work Definition Approver"],
+  rateowner: ["org", "Mutua", "Rate Owner"],
+  payowner: ["org", "Njeri", "Payment Mechanism Owner"],
+  instance: ["org", "Instance administrator", "Instance Admin"],
+  custodian: ["custodian", "Otieno", "Registry Custodian"],
+  support: ["custodian", "Naliaka", "Support Agent"],
+  funder: ["org", "Funding oversight", "Funding Viewer"],
+};
+const CONSOLE_PERSONA_ORDER = Object.keys(CONSOLE_PERSONAS);
+async function consoleSignIn(page, request, personaKey) {
+  const [fixKey, who, role] = CONSOLE_PERSONAS[personaKey];
+  const partyId = FIX[fixKey];
+  const token = await mintToken(request, partyId);
+  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const pw = await (await request.get(G2.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub))).json();
+  const bind = await request.post(
+    G2.parties + "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      data: { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject },
+    });
+  expect(bind.ok(), "the self-bind is accepted for " + partyId).toBeTruthy();
+  await page.goto("/console/");
+  await page.evaluate(
+    ([t, pid, w, r, k]) => sessionStorage.setItem("crest.console.session",
+      JSON.stringify({ token: t, me: { partyId: pid, who: w, role: r }, persona: k })),
+    [token, partyId, who, role, personaKey]);
+  await page.reload();
+  await settle(page);
+}
+
+// The dev-login card is gone from the worker door (the login screen shows only
+// the real pathways), so tests sign in the way the card used to: mint a token
+// from the mock issuer, append the same idempotent identity binding through
+// the real endpoint, and hand the session to the app the way a reload would
+// find it. Same acts, no test-only UI.
+async function workerSignIn(page, request, partyId, label) {
+  const token = await mintToken(request, partyId);
+  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const pw = await (await request.get(G2.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub))).json();
+  const bind = await request.post(
+    G2.parties + "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      data: { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject },
+    });
+  expect(bind.ok(), "the self-bind is accepted for " + partyId).toBeTruthy();
+  await page.goto("/worker/");
+  await page.evaluate(
+    ([t, me, lb]) => sessionStorage.setItem("crest.worker.session", JSON.stringify({ token: t, me, label: lb })),
+    [token, partyId, label]);
+  await page.reload();
+  await settle(page);
 }
 
 async function asParty(request, partyId, method, path, body) {
@@ -897,7 +943,7 @@ test("console: the G-2 onboarding journey is real, screen by screen", async ({ p
 // verification's generalisation of "every held payment has a reason with an
 // owner": every approval carries a decider — the authenticated caller, checked
 // by the service (#89), never a typed name — and every rejection a reason.
-test("console: G-1 walks the instance, and a person decides the admission", async ({ page }) => {
+test("console: G-1 walks the instance, and a person decides the admission", async ({ page, request }) => {
   test.setTimeout(180000);
   const errors = watch(page);
   const stamp = Date.now().toString().slice(-6);
@@ -923,7 +969,7 @@ test("console: G-1 walks the instance, and a person decides the admission", asyn
   // applicant, which is what lets the decision stand at all.
   await page.goto("/console/");
   await settle(page);
-  await page.click('[data-p="6"]');
+  await consoleSignIn(page, request, "instance");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await signedInAs(page, "Instance administrator");
@@ -1084,9 +1130,7 @@ test("per-share consent: the presentation loop on both faces, and the decline pa
   await expect(page.locator(".errbar")).toContainText(/not approved|nothing to collect|409/i, { timeout: 20000 });
 
   // The worker: who is asking and why, BEFORE any disclosure list.
-  await page.goto("/worker/");
-  await settle(page);
-  await page.click("#login-grace");
+  await workerSignIn(page, request, FIX.workerA, "Grace \u00b7 community health worker");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await expect(page.locator(".appbar .who-label")).toContainText("Grace");
@@ -1180,9 +1224,7 @@ test("recovery: nomination routes, a refusal is owned, and two authorities confi
   }
 
   // w1_7 — the worker nominates: party-linked picks, revocation kept.
-  await page.goto("/worker/");
-  await settle(page);
-  await page.click("#login-grace");
+  await workerSignIn(page, request, FIX.workerA, "Grace \u00b7 community health worker");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await page.evaluate(() => { location.hash = "#/profile/recovery"; });
@@ -1227,7 +1269,7 @@ test("recovery: nomination routes, a refusal is owned, and two authorities confi
   // w4_1 — the confirmer's inbox, the SMS gap said honestly.
   await page.click("#logout");
   await settle(page);
-  await page.click("#login-supervisor");
+  await workerSignIn(page, request, FIX.supervisor, "District Supervisor \u00b7 recovery confirmer");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await expect(page.locator(".appbar .who-label")).toContainText("District Supervisor");
@@ -1293,8 +1335,7 @@ test("recovery: nomination routes, a refusal is owned, and two authorities confi
   // and the quorum closes: 2 of 2 distinct authorities, CONFIRMED.
   await page.click("#logout");
   await settle(page);
-  await page.fill("#login-partyid", FIX.custodian);
-  await page.click("#login-party-go");
+  await workerSignIn(page, request, FIX.custodian, "Signed in by party id (dev)");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await page.evaluate(() => { location.hash = "#/vouch"; });
@@ -1384,8 +1425,7 @@ test("qualification arrival: the anchor lands and earned strength re-derives", a
   // the same first-login path an eSignet anchor takes. Nothing is rewritten.
   await page.goto("/worker/");
   await settle(page);
-  await page.fill("#login-partyid", CHANDRA);
-  await page.click("#login-party-go");
+  await workerSignIn(page, request, CHANDRA, "Signed in by party id (dev)");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await page.evaluate(() => { location.hash = "#/added"; });
