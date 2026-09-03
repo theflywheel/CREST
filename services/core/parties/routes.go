@@ -74,6 +74,10 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	// Closing a hold, not only listing it (§4, W7). See holds.go.
 	mux.HandleFunc("POST /v1/holds/{id}/resolve", h.resolveHold)
 	mux.HandleFunc("GET /v1/holds/metrics", h.mergeMetrics)
+	// g4_4: coverage-by-place. See coverage.go.
+	mux.HandleFunc("GET /v1/coverage", h.coverage)
+	// g4_5: the registry quality worklist. See worklist.go.
+	mux.HandleFunc("GET /v1/quality-worklist", h.qualityWorklist)
 	mux.HandleFunc("POST /v1/terms", h.createTerms)
 	mux.HandleFunc("GET /v1/terms", h.listTerms)
 	mux.HandleFunc("POST /v1/authorizations", h.createAuthorization)
