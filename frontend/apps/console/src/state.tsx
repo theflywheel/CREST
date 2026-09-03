@@ -213,6 +213,15 @@ export function ConsoleProvider(props: { children: ReactNode }) {
     }
     let live = true;
     (async () => {
+      // A restored session may hold an expired token (eSignet's are short).
+      // Verify it before reading the world: a dead token means signed out,
+      // not a page of invalid_token error bars.
+      try {
+        await whoAmI();
+      } catch (e) {
+        if (live && e instanceof ApiError && e.status === 401) logout();
+        if (e instanceof ApiError && e.status === 401) return;
+      }
       const owned = await api
         .get("parties", "/v1/projects?ownerPartyId=" + encodeURIComponent(me.partyId))
         .catch(() => null);
