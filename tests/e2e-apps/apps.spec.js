@@ -137,8 +137,20 @@ async function signedInAs(page, who) {
 for (const [personaIdx, personaName, who, views] of [
   [0, "Peter Otieno (org admin, P-1)", "Peter Otieno", J3_VIEWS],
   [1, "Dr. Alice Mutua (configurator, P-2)", "Dr. Alice Mutua", J3_VIEWS],
-  [2, "Amina Yusuf (definition author, P-3)", "Amina Yusuf", ["definework", "definition"]],
-  [3, "Prof. Ndegwa (definition approver, P-3)", "Prof. Ndegwa", ["ratify", "definition"]],
+  // P-3, the author: the whole wizard. Walked with no draft open, so each
+  // screen renders its "no draft is open" state — which is itself worth
+  // asserting alive, because it is what an author sees before they start and
+  // the one state that must not look like a broken form. The wizard driven
+  // against a real draft is its own test below.
+  [2, "Amina Yusuf (definition author, P-3)", "Amina Yusuf",
+    ["definework", "definition", "define/sector", "define/counting", "define/category",
+      "define/unit", "define/cascade", "define/period", "define/outcome", "define/parties",
+      "define/evidence", "define/source", "define/template", "define/adaptors", "define/mapping",
+      "define/connect", "define/dryrun", "define/live", "define/validation", "define/payment",
+      "define/roles", "define/tranches", "define/rules", "define/extend", "define/open",
+      "define/anatomy", "handoff"]],
+  [3, "Prof. Ndegwa (definition approver, P-3)", "Prof. Ndegwa",
+    ["ratify", "definition", "define/anatomy", "ratified"]],
   [4, "Nadia Okoth (rate owner, F-1)", "Nadia Okoth",
     ["paysetup", "rateowner", "rate", "ratepublish", "ratestanding"]],
   [5, "Daniel Mwangi (payment mechanism owner, F-2)", "Daniel Mwangi",
@@ -269,8 +281,39 @@ test("console: the approver cannot reach the author's wizard", async ({ page }) 
   await page.evaluate(() => { location.hash = "#/definework"; });
   await settle(page);
   expect(page.url()).not.toContain("definework");
-  await expect(page.locator("body")).toContainText(/reads everything, drafts nothing/i);
+  await expect(page.locator("body")).toContainText(/Review and sign/i);
+  // Every wizard section, not just its front door: an approver who could
+  // reach one PUT could reach them all.
+  for (const wiz of ["define/sector", "define/counting", "define/unit", "define/evidence",
+    "define/dryrun", "define/payment", "define/extend"]) {
+    await page.evaluate(h => { location.hash = "#/" + h; }, wiz);
+    await settle(page);
+    expect(page.url(), `approver must not reach #/${wiz}`).not.toContain(wiz);
+  }
+  // And the pricing handoff is the author's act, not the approver's.
+  await page.evaluate(() => { location.hash = "#/handoff"; });
+  await settle(page);
+  expect(page.url()).not.toContain("handoff");
+  await expect(page.locator("body")).toContainText(/There is no authoring screen in this navigation/i);
   await assertAlive(page, errors, "console approver boundary");
+});
+
+// The mirror of the boundary above: the author drafts and cannot ratify. Not
+// only because the navigation lacks the entry — the definitions service
+// refuses a version whose ratifier is its author, and the two personas are
+// two parties so that the refusal is real rather than assumed.
+test("console: the author cannot reach the approver's signature", async ({ page }) => {
+  const errors = watch(page);
+  await page.goto("/console/");
+  await settle(page);
+  await page.click('[data-persona="author"]');
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await expect(page.locator('.sidebar a[href*="ratify"]')).toHaveCount(0);
+  await page.evaluate(() => { location.hash = "#/ratify"; });
+  await settle(page);
+  expect(page.url()).not.toContain("ratify");
+  await assertAlive(page, errors, "console author boundary");
 });
 
 // G-2 onboarding opens with the reference's six identity fields (g2_1).
@@ -1685,4 +1728,498 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   expect(after.held).toBeFalsy();
   expect(after.amountMinor).toBe(52500);
   await assertAlive(page, errors, "the funders walk");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// P-3 — the definition-authoring wizard (reference p3_1–p3_28, p3_pay).
+//
+// One walk, because the thing being proven is a sequence: a definition is
+// written section by section against a real draft, its open questions are the
+// compiler's own list, a dry run derives tiers from real rows and commits
+// nothing, submit appends an immutable version, an approver who is a different
+// party signs it naming what stays pending, pricing is handed to a rate owner,
+// and the event log accounts for every act with its actor.
+//
+// The invariant under all of it: definitions sit beneath evidence and
+// payments, and **trust strength is derived, never stored**. The dry-run step
+// proves that directly — the same rows, judged twice with different
+// provenance, come back with different tiers, which is only possible if no
+// tier was ever written down.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const P3 = {
+  // The fixture world records the SPEC party as the seeded definition's
+  // author and the organisation as its ratifier. The console's two P-3
+  // personas sign in as those two parties, so separation of duties is a fact
+  // about the data rather than a claim about the navigation.
+  author: "did:crest:party:01JCREST00000000000000SPEC",
+  approver: "did:crest:party:01JCREST000000000000000RGN",
+};
+const FIX_DEFINITION = "crest:definition:01JCREST00000000000000DEFN";
+
+// The definitions service, reached the way the doors reach it.
+const DEFSVC = (() => {
+  const base = process.env.BASE_URL || "http://localhost:59110";
+  const url = new URL(base);
+  return url.port === "59110"
+    ? `http://${url.hostname}:59000`
+    : base.replace(/\/$/, "") + "/api/crest-definitions";
+})();
+
+const fill = (page, name, value) => page.locator(`[name="${name}"]`).fill(value);
+const choose = (page, name, value) => page.locator(`[name="${name}"]`).selectOption(value);
+const press = (page, label) => page.click(`[data-btn="${label}"]`);
+
+// A wizard step: press the frame's own button, wait for the route it names.
+async function step(page, label, route) {
+  await press(page, label);
+  await page.waitForURL(new RegExp("#/" + route.replace(/\//g, "\\/")), { timeout: 25000 });
+  await settle(page);
+}
+
+async function signInAs(page, persona, who) {
+  await page.goto("/console/");
+  await settle(page);
+  await page.click(`[data-persona="${persona}"]`);
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 25000 });
+  await settle(page);
+  await signedInAs(page, who);
+}
+
+// Switch persona inside the same tab, so sessionStorage — which is where the
+// draft id lives — survives. That is deliberate: the approver reads the very
+// draft the author just submitted, and the console holds nothing else.
+async function switchTo(page, persona, who) {
+  await page.click("#logout");
+  await settle(page);
+  await page.click(`[data-persona="${persona}"]`);
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 25000 });
+  await settle(page);
+  await signedInAs(page, who);
+}
+
+test("console: the authoring wizard writes a definition, proves it dry, and has it ratified with its gaps named", async ({ page }) => {
+  const errors = watch(page);
+  test.setTimeout(240000);
+
+  // ── p3_1 · the registry. "Define new work" is a real POST; a draft exists
+  //    on the server before the first screen renders. ──
+  await signInAs(page, "author", "Amina Yusuf");
+  await page.evaluate(() => { location.hash = "#/definework"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Work definitions");
+  await expect(page.locator("body")).toContainText(/POST-only registry/i);
+  await step(page, "Define new work", "define/sector");
+  // The draft is real and this session is authoring it.
+  await page.evaluate(() => { location.hash = "#/definework"; });
+  await settle(page);
+  await expect(page.locator("[data-authoring]")).toContainText("definition-draft");
+  await page.evaluate(() => { location.hash = "#/define/sector"; });
+  await settle(page);
+
+  // ── p3_2 · sector. The deployment declares no vocabulary, and the screen
+  //    says so rather than offering a list CREST invented. ──
+  await expect(page.locator("#stepcounter")).toContainText("Sector · 1 of 9");
+  await expect(page.locator("body")).toContainText("This deployment declares none");
+  await fill(page, "sector", "health");
+  await step(page, "Continue", "define/counting");
+
+  // ── p3_18, early · the open questions are the compiler's own list, and a
+  //    barely-started draft has many. ──
+  await page.evaluate(() => { location.hash = "#/define/open"; });
+  await settle(page);
+  const openEarly = await page.locator("[data-problem]").count();
+  expect(openEarly, "a one-section draft has real open questions").toBeGreaterThan(4);
+  await expect(page.locator("body")).toContainText(/produced by the same function the submit runs/i);
+  // Submitting now is refused by name, and the screen says so before you try.
+  await expect(page.locator("body")).toContainText(/Submitting now will be refused, by name/i);
+  await page.evaluate(() => { location.hash = "#/define/counting"; });
+  await settle(page);
+
+  // ── p3_3 · the fork. Three branches, all reachable, and the button writes
+  //    the basis before it navigates. ──
+  await expect(page.locator("#stepcounter")).toContainText("Counting basis · 2 of 9");
+  await expect(page.locator(".optcard")).toHaveCount(3);
+  await expect(page.locator("body")).toContainText("counting.basis = outcome");
+  // The two branch screens the fork offers, visited and then left — the draft
+  // records whichever branch the walk continues on.
+  await step(page, "Time-based instead", "define/period");
+  await expect(page.locator("#stepcounter")).toContainText("Period · 3 of 7");
+  await step(page, "Outcome-based", "define/outcome");
+  await expect(page.locator("#stepcounter")).toContainText("Outcome · 3 of 7");
+  await expect(page.locator("body")).toContainText(/evidence about a district, not about a person/i);
+  await step(page, "Back", "define/counting");
+  await step(page, "Continue as event", "define/category");
+
+  // ── p3_4 · the category, scoped to the sector. ──
+  await expect(page.locator("#stepcounter")).toContainText("Category · 3 of 9");
+  await expect(page.locator("body")).toContainText("health");
+  await fill(page, "category", "community-outreach");
+  await step(page, "Continue", "define/unit");
+
+  // ── p3_5 · the unit, and the one field the rate will price. ──
+  await expect(page.locator("#stepcounter")).toContainText("Unit · 4 of 9");
+  await fill(page, "outcomeUnit", "bednets-distributed");
+  await fill(page, "activityCode", "bednet-distribution");
+  await fill(page, "activityLabel", "Bednet distribution");
+  await fill(page, "frequency", "Per campaign day");
+  await fill(page, "countingModel", "Individually countable — one record per unit");
+  await page.click('.optcard:has-text("Per individual event")');
+  await expect(page.locator("body")).toContainText("The field the rate will price");
+  await expect(page.locator('[data-callout="teal"]:has-text("The field the rate will price")'))
+    .toContainText("bednets-distributed");
+  await step(page, "Continue", "define/cascade");
+
+  // ── p3_21 · the cascade, as a linked definition rather than a field. ──
+  await expect(page.locator("body")).toContainText("linked-definition");
+  await fill(page, "roleLevel", "2");
+  await fill(page, "trainedBy", FIX_DEFINITION);
+  await fill(page, "trainedByVersion", "1");
+  // On an event-based draft Continue goes to the parties screen, and the
+  // screen says why it departs from the reference's own next step.
+  await expect(page.locator("body")).toContainText(/the counting basis is/i);
+  await step(page, "Continue", "define/parties");
+
+  // ── p3_8 · parties: who works, who pays, who sits between. ──
+  await expect(page.locator("#stepcounter")).toContainText("Parties · 5 of 9");
+  await fill(page, "performerRole", "Community health worker");
+  await choose(page, "partyType", "Individual");
+  await fill(page, "attesterFunctions", "submit-work-evidence");
+  await expect(page.locator("body")).toContainText(/A unit and a claim are separable/i);
+  await step(page, "Continue", "define/evidence");
+
+  // ── p3_9 · the evidence-to-tier map. Provenance rules and a ceiling; no
+  //    tier is written onto anything. ──
+  await expect(page.locator("#stepcounter")).toContainText("Evidence · 6 of 9");
+  await expect(page.locator("body")).toContainText("the floor — no requirements");
+  await expect(page.locator("body")).toContainText(/reference's tier numbering runs the other way/i);
+  await choose(page, "tierCeiling", "3");
+  await fill(page, "checkIntensity", "Sample — 1 in 10");
+  await fill(page, "workerSummary", "You handed out bednets and recorded each household you visited.");
+  await fill(page, "evidencePlain",
+    "The programme's own system has your visit recorded.\nYour supervisor confirmed the day's round.");
+  // Tier 2 requires the household id; tier 3 requires both. This is what the
+  // dry run will judge rows against.
+  await page.locator('[data-requires="3"]').fill("household_id, beneficiary_count");
+  await page.locator('[data-requires="2"]').fill("household_id");
+  await expect(page.locator('[data-callout="green"]')).toContainText(/A stored tier would freeze a judgement/i);
+  await step(page, "Continue", "define/source");
+
+  // ── p3_22 · the source-class choice that CAPS the tier, shown as the
+  //    derived consequence it is. ──
+  await expect(page.locator("#stepcounter")).toContainText("Source · 7 of 9");
+  await fill(page, "sourceSystems", "dhis2-riverside, csv-batch");
+  await fill(page, "requiredFields", "household_id, beneficiary_count");
+  await choose(page, "sourceClass", "programme-system");
+  await choose(page, "captureMethod", "digital-capture");
+  await expect(page.locator("body")).toContainText("derived, not stored");
+  await expect(page.locator("body")).toContainText(/recalculated every time anyone asks/i);
+  // A programme system's digital capture cannot reach tier 3 under these
+  // rules, and the screen derives that rather than being told it.
+  await expect(page.locator(".kv")).toContainText("Tier 2");
+  // The reference's own callout, on the screen that sets the ceiling.
+  await expect(page.locator("body"))
+    .toContainText("The source decides the highest tier that is structurally possible");
+  await step(page, "Connect a system", "define/adaptors");
+
+  // ── p3_24 · the adaptor library, told honestly: one implemented class, the
+  //    rest named as absent because that is what the service returns. ──
+  await expect(page.locator("#stepcounter")).toContainText("Connection · 1 of 5");
+  await expect(page.locator("body")).toContainText("csv-batch@1");
+  await expect(page.locator(".optcard.na")).not.toHaveCount(0);
+  await expect(page.locator("body")).toContainText("not-implemented");
+  // The reference's primary button names a class CREST does not have, so it
+  // carries the gap instead of pretending.
+  await expect(page.locator(".open-note")).toContainText(/DIGIT HCM is not an implemented adaptor class/i);
+  await page.click('.optcard:has-text("csv-batch@1")');
+  await page.waitForTimeout(400);
+  await step(page, "Start a new one", "define/mapping");
+
+  // ── p3_25 · mapping their vocabulary onto ours. ──
+  await expect(page.locator("#stepcounter")).toContainText("Connection · 2 of 5");
+  // The definition's required fields are unmapped, and the screen computes
+  // that against the real draft rather than illustrating it.
+  await expect(page.locator("body")).toContainText("Unmapped, and required");
+  await expect(page.locator('[data-callout="teal"]:has-text("Unmapped, and required")'))
+    .toContainText("household_id");
+  await page.locator('[data-map="household_id"]').last().fill("household_id");
+  await page.locator('[data-map="beneficiary_count"]').last().fill("beneficiary_count");
+  await expect(page.locator("body")).toContainText("Matched, but wrong");
+  await step(page, "Continue", "define/connect");
+
+  // ── p3_26 · connection details, credentialRef only. ──
+  await expect(page.locator("#stepcounter")).toContainText("Connection · 3 of 5");
+  // Nothing on this screen may be a secret: no password input anywhere.
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
+  await expect(page.locator("body")).toContainText("Nothing on this screen is a secret");
+  await fill(page, "systemRef", "dhis2-riverside");
+  await fill(page, "endpoint", "https://dhis2.example.org/api");
+  await fill(page, "credentialRef", "vault:crest/sources/dhis2-riverside#token");
+  // REFUSAL · a secret-shaped setting key. The service refuses it by name,
+  // in the same words it would use at submit, because validate runs the same
+  // compile the submission does.
+  await fill(page, "settingkey", "apiKey");
+  await fill(page, "settingvalue", "not-a-real-token");
+  await page.click("#settingform button[type=submit]");
+  await press(page, "Continue");
+  await expect(page.locator("[data-secret-refusal]")).toBeVisible({ timeout: 20000 });
+  await expect(page.locator("[data-secret-refusal]"))
+    .toContainText(/CREST stores a credentialRef naming where the platform team keeps it, never the value/i);
+  expect(page.url(), "a refused connection does not advance the wizard").toContain("define/connect");
+  // Corrected, not worked around: the refused key is removed and the screen
+  // proceeds. A refusal with no way back would be a dead end.
+  await page.click('[data-unset="apiKey"]');
+  await fill(page, "settingkey", "orgUnitLevel");
+  await fill(page, "settingvalue", "4");
+  await page.click("#settingform button[type=submit]");
+  await step(page, "Continue", "define/dryrun");
+
+  // ── p3_27 · the dry run. Real adaptor, real strength function, nothing
+  //    written — and the tier is DERIVED, which the walk proves by asking the
+  //    same rows twice under different provenance. ──
+  await expect(page.locator("#stepcounter")).toContainText("Connection · 4 of 5");
+  await press(page, "Run the sample");
+  await expect(page.locator("[data-dryrow]").first()).toBeVisible({ timeout: 25000 });
+  await expect(page.locator("body")).toContainText("committed: false");
+  await expect(page.locator("[data-dryrun-note]")).toContainText(/nothing was written/i);
+  await expect(page.locator("[data-dryrun-note]")).toContainText(/no unit, no source, no queue entry/i);
+  const strongRow = page.locator('[data-dryrow="row 2"]');
+  await expect(strongRow).toContainText("Tier 2");
+  // A tier with no reason attached would be a number a verifier has to take on
+  // trust; the strength function says which rule awarded it and why.
+  await expect(strongRow, "the verdict carries its reasons")
+    .toContainText(/awards tier 2 for programme-system evidence captured as digital-capture/i);
+  // The same rows, weaker provenance: a self-reported source cannot reach the
+  // tier a programme system did. Nothing about the rows changed, so the tier
+  // cannot have been stored on them.
+  await choose(page, "drySourceClass", "self-reported");
+  await press(page, "Run the sample");
+  await expect(page.locator('[data-dryrow="row 2"]')).toContainText("Tier 1", { timeout: 25000 });
+  await choose(page, "drySourceClass", "programme-system");
+  await press(page, "Run the sample");
+  await expect(page.locator('[data-dryrow="row 2"]')).toContainText("Tier 2", { timeout: 25000 });
+  await expect(page.locator("body")).toContainText(/Unresolved workers are not a mapping fault/i);
+  await step(page, "Go live", "define/live");
+
+  // ── p3_28 · registered against one version only. ──
+  await expect(page.locator("#stepcounter")).toContainText("Connection · 5 of 5");
+  await expect(page.locator("body")).toContainText("will bind to v1");
+  await expect(page.locator("body")).toContainText("Publishing v2 unbinds the adaptor");
+  await expect(page.locator("body")).toContainText(/nothing yet tells the source owner it has happened/i);
+  await step(page, "Continue to validation", "define/validation");
+
+  // ── p3_10 · validation posture: one policy field and one infrastructure
+  //    field on the same screen, each labelled as what it is. ──
+  await expect(page.locator("#stepcounter")).toContainText("Validation · 8 of 9");
+  await fill(page, "posture", "District health office");
+  await fill(page, "delayDays", "30");
+  await fill(page, "issuers", "did:crest:issuer:local");
+  await expect(page.locator("body")).toContainText(/refuses a credential from an issuer this list does not name/i);
+  await step(page, "Continue", "define/payment");
+
+  // ── p3_11 · the payment split. No amount anywhere on it. ──
+  await expect(page.locator("#stepcounter")).toContainText("Payment · 9 of 9");
+  await choose(page, "rateSetter", "Someone else will — invite sent");
+  await choose(page, "mechanismSetter", "I'll set this");
+  await expect(page.locator('[data-callout="green"]')).toContainText(/There is no currency field on this screen/i);
+  await step(page, "Continue", "define/roles");
+
+  // ── p3_20 · the four project roles. ──
+  await page.locator('[data-role="rateSetter"]').fill(P3.approver);
+  await page.locator('[data-role="mechanismSetter"]').fill(P3.approver);
+  await page.locator('[data-role="validator"]').fill("District health office");
+  await page.locator('[data-role="approver"]').fill(P3.approver);
+  await expect(page.locator("body")).toContainText(/Naming somebody here does not grant them anything/i);
+  await step(page, "Continue", "define/tranches");
+
+  // ── p3_12 · stacked pay. Shares of a rate nobody has published yet. ──
+  await fill(page, "tranchelabel", "On completion");
+  await fill(page, "trancheshare", "70%");
+  await fill(page, "tranchecondition", "The confirmation window exits");
+  await page.click("#trancheform button[type=submit]");
+  await expect(page.locator("body")).toContainText("On completion");
+  await step(page, "Continue", "define/rules");
+
+  // ── p3_13 · the two kinds of rule, kept apart. ──
+  await fill(page, "preconditions", "The worker completed the level-1 training definition.");
+  await fill(page, "deductionlabel", "Equipment advance");
+  await fill(page, "deductionrule", "10% of each cycle until the advance is cleared");
+  await page.click("#deductionform button[type=submit]");
+  await expect(page.locator("body")).toContainText("Equipment advance");
+  await step(page, "Continue", "define/extend");
+
+  // ── p3_14 · the two kinds of extension, and only one of them is a form. ──
+  await fill(page, "extkey", "mgnrega.contractorRef");
+  await fill(page, "extlabel", "Contractor reference");
+  await choose(page, "exttype", "string");
+  await fill(page, "extvalue", "MGN/2026/WD/0841");
+  await page.click("#extensionform button[type=submit]");
+  await expect(page.locator("body")).toContainText(/it is a design finding/i);
+  await step(page, "Continue", "define/open");
+
+  // ── p3_18 · nothing left undecided, and the submit that follows from it. ──
+  await expect(page.locator("body")).toContainText("ready to submit");
+  await expect(page.locator("[data-problem]")).toHaveCount(0);
+  await expect(page.locator("body")).toContainText(/awaiting a ratifier who is not you/i);
+  await step(page, "Submit for ratification", "define/anatomy");
+
+  // ── p3_19 · the schema under the form, read from the stored version. ──
+  await expect(page.locator("body")).toContainText("v1, as stored");
+  const baseJson = await page.locator("[data-anatomy-base]").innerText();
+  expect(baseJson, "the stored version, not the draft").toContain('"version": 1');
+  expect(baseJson).toContain("bednets-distributed");
+  expect(baseJson).toContain('"state": "DRAFT"');
+  expect(baseJson, "the author is on the record").toContain(P3.author);
+  expect(baseJson, "the extension layer is shown separately").not.toContain("mgnrega");
+  await expect(page.locator("[data-anatomy-ext]")).toContainText("mgnrega.contractorRef");
+  await expect(page.locator("body")).toContainText(/versioned separately/i);
+
+  // ── REFUSAL · editing after submit. The version is immutable and the draft
+  //    is its provenance, so the service refuses a section write on it. ──
+  await page.evaluate(() => { location.hash = "#/define/sector"; });
+  await settle(page);
+  await expect(page.locator(".open-note")).toContainText(/its sections refuse writes/i);
+  await expect(page.locator(".open-note")).toContainText("draft_closed");
+  await expect(page.locator(".open-note")).toContainText(/that version is immutable/i);
+  await press(page, "Continue");
+  await expect(page.locator(".errbar")).toContainText(/no longer open|draft_closed/i, { timeout: 20000 });
+  expect(page.url(), "a refused write does not advance").toContain("define/sector");
+
+  // ── p3_23 · the template, now that a version exists to derive it from. ──
+  await page.evaluate(() => { location.hash = "#/define/template"; });
+  await settle(page);
+  const header = await page.locator("[data-template-header]").innerText();
+  for (const col of ["activity", "worker_id", "period_start", "outcome_value", "outcome_unit",
+    "household_id", "beneficiary_count"]) {
+    expect(header, `template column ${col}`).toContain(col);
+  }
+  await expect(page.locator("body")).toContainText("The template is tied to this version");
+
+  // ── p3_15 · the approver signs, and names what stays pending. A DIFFERENT
+  //    party: the service refuses a self-ratified version, and these two
+  //    personas are two parties so that refusal is load-bearing. ──
+  await switchTo(page, "approver", "Prof. Ndegwa");
+  await page.evaluate(() => { location.hash = "#/ratify"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Review and sign");
+  await expect(page.locator("body")).toContainText("awaiting ratification");
+  await expect(page.locator("#ratify-read")).toContainText("bednets-distributed");
+  await expect(page.locator("#ratify-read")).toContainText(/01JCREST00000000000000SPEC|SPEC/);
+  // The ratifier names what is still open. Nothing prices this unit yet, and
+  // that is a real pending field derived from the real record.
+  await page.locator('[data-pending="ratePerOutcomeUnit"]').check();
+  await fill(page, "pendingextra", "the district office has not confirmed the sampling rate");
+  await press(page, "Sign and publish");
+  await page.waitForURL(/#\/ratified/, { timeout: 25000 });
+  await settle(page);
+
+  // ── p3_16 · two records, one signature. The event log is the second one. ──
+  await expect(page.locator("[data-ratified-title]")).toContainText("v1 is active");
+  await expect(page.locator("[data-event='RATIFIED']")).toBeVisible();
+  await expect(page.locator("[data-event='ACTIVATED']")).toBeVisible();
+  await expect(page.locator("[data-event='SUBMITTED']")).toBeVisible();
+  // Every act names its actor, and the two names are different parties.
+  const trail = await page.locator(".grid-tbl").first().innerText();
+  expect(trail, "the submission is the author's act").toMatch(/SPEC/);
+  expect(trail, "the signature is the approver's act").toMatch(/RGN/);
+  // Ratified WITH pending fields — a real recorded state, named by the
+  // ratifier and not by the author.
+  await expect(page.locator("[data-pendingfield]").first()).toBeVisible();
+  await expect(page.locator("body")).toContainText(/The ratifier named these, not the author/i);
+  await expect(page.locator("body")).toContainText("the district office has not confirmed the sampling rate");
+
+  // ── p3_pay · pricing handed to the rate owner. The author's act, not the
+  //    approver's, and a record rather than an authority. ──
+  await switchTo(page, "author", "Amina Yusuf");
+  await page.evaluate(() => { location.hash = "#/handoff"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("The definition is signed. Nothing prices it yet.");
+  await expect(page.locator("body")).toContainText("unpriced");
+  await fill(page, "invited", P3.approver);
+  await fill(page, "handoffnote", "Priced per bednet distributed; campaign starts 1 March.");
+  await press(page, "Send the invitation");
+  await expect(page.locator("[data-handoff]").first()).toBeVisible({ timeout: 25000 });
+  await expect(page.locator("body")).toContainText("handed off, awaiting a rate");
+  await expect(page.locator(".next")).toContainText(/rate owner/i);
+  await expect(page.locator(".open-note")).toContainText(/does not substitute for it/i);
+  // The handoff is in the append-only log too, with the inviter's name.
+  await page.evaluate(() => { location.hash = "#/ratified"; });
+  await settle(page);
+  await expect(page.locator("[data-event='PAYMENT_HANDOFF']")).toBeVisible();
+
+  await assertAlive(page, errors, "the P-3 authoring walk");
+});
+
+// The other half of the ratification contract: signing with NOTHING pending
+// is its own recorded state, distinguishable afterwards from a ratification
+// that named fields. Driven through "Clone a version", which also proves that
+// submitting a clone APPENDS v2 and leaves v1 exactly as ratified — the
+// property that protects every credential already pinned to v1.
+test("console: a clone submits as the next version, and ratifying names nothing pending", async ({ page }) => {
+  const errors = watch(page);
+  test.setTimeout(180000);
+
+  await signInAs(page, "author", "Amina Yusuf");
+  await page.evaluate(() => { location.hash = "#/definework"; });
+  await settle(page);
+  await step(page, "Clone a version", "define/sector");
+  // A clone carries the seeded version's answers; what that version does not
+  // record stays open rather than being guessed at.
+  await page.evaluate(() => { location.hash = "#/define/anatomy"; });
+  await settle(page);
+  const cloned = await page.locator("[data-anatomy-base]").innerText();
+  const basedOn = Number(/"version":\s*(\d+)/.exec(cloned)[1]);
+  expect(basedOn, "the clone is pinned to the version it came from").toBeGreaterThan(0);
+  expect(cloned).toContain(FIX_DEFINITION);
+  await expect(page.locator("body")).toContainText(`v${basedOn}, as stored`);
+
+  // The two things the seeded version does not carry, filled in by hand.
+  await page.evaluate(() => { location.hash = "#/define/sector"; });
+  await settle(page);
+  await fill(page, "sector", "health");
+  await step(page, "Continue", "define/counting");
+  await step(page, "Continue as event", "define/category");
+  await page.evaluate(() => { location.hash = "#/define/open"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("ready to submit");
+  await step(page, "Submit for ratification", "define/anatomy");
+  // APPENDED, not rewritten: the clone became the NEXT version of the same
+  // definition. The number is read off the page rather than hardcoded — this
+  // suite is expected to run twice against one stack, so the second run
+  // appends again, and a test that insisted on v2 would be asserting that
+  // nothing had ever happened before it.
+  const v2 = await page.locator("[data-anatomy-base]").innerText();
+  const appended = Number(/"version":\s*(\d+)/.exec(v2)[1]);
+  expect(appended, "a clone submits as a later version, never over its base").toBe(basedOn + 1);
+  expect(v2).toContain(FIX_DEFINITION);
+  await expect(page.locator("body")).toContainText(`v${appended}, as stored`);
+
+  // v1 is untouched by any of it — the read a credential pinned to v1 still
+  // resolves against.
+  const v1 = await page.evaluate(async ({ svc, id }) => {
+    const r = await fetch(`${svc}/v1/definitions/${encodeURIComponent(id)}?version=1`);
+    return r.json();
+  }, { svc: DEFSVC, id: FIX_DEFINITION });
+  expect(v1.version, "v1 still answers as v1").toBe(1);
+  expect(v1.state, "and is still the active, ratified version it was").toBe("ACTIVE");
+  expect(v1.classification, "v1 never gained the clone's sector").toBeFalsy();
+
+  // ── Ratified with nothing pending: the approver declares no open fields,
+  //    and that is a different record from a list that happens to be empty. ──
+  await switchTo(page, "approver", "Prof. Ndegwa");
+  await page.evaluate(() => { location.hash = "#/ratify"; });
+  await settle(page);
+  await expect(page.locator("#ratify-read")).toContainText(`v${appended}`);
+  await expect(page.locator("[data-pending]").first()).toBeVisible();
+  // Nothing is checked and nothing is typed: the signature names no gaps.
+  await press(page, "Sign and publish");
+  await page.waitForURL(/#\/ratified/, { timeout: 25000 });
+  await settle(page);
+  await expect(page.locator("[data-ratified-title]")).toContainText(`v${appended} is active`);
+  await expect(page.locator("[data-nothing-pending]")).toBeVisible();
+  await expect(page.locator("[data-pendingfield]")).toHaveCount(0);
+  await expect(page.locator("body")).toContainText(/absence of a declaration is not a declaration of nothing/i);
+  await expect(page.locator("[data-event='RATIFIED']")).toBeVisible();
+
+  await assertAlive(page, errors, "the clone-and-ratify walk");
 });
