@@ -388,7 +388,14 @@ export function Compose() {
         // A capability is on until a recorded answer narrows it: turning one
         // off narrows what the project does, and an unanswered choice is the
         // absence of a record, not a no.
-        const answered = new Map(choices.map((c) => [c.kind, c.payload]));
+        // Records come back with the storage prefix on the kind and the value
+        // inside the payload envelope the write path wraps it in.
+        const answered = new Map(
+          choices.map((c) => [
+            (c.kind || "").replace(/^composition:/, ""),
+            (c.payload as { value?: unknown } | undefined)?.value,
+          ]),
+        );
         return (
           <>
             <Title t="What this project needs from CREST" extra={ownershipChip(project.ownership)} />
