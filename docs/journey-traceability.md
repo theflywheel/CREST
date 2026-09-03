@@ -8,11 +8,11 @@ script's MAPPING and re-run. Assessment context: `docs/JOURNEY_GAP_ASSESSMENT.md
 
 | Status | Screens | Share |
 |---|---:|---:|
-| implemented | 53 | 37% |
+| implemented | 64 | 44% |
 | compressed | 25 | 17% |
 | semantically-different | 8 | 5% |
 | illustrative | 13 | 9% |
-| missing | 44 | 30% |
+| missing | 33 | 23% |
 | **total** | **143** | |
 
 ## The fidelity gate
@@ -26,7 +26,7 @@ red, which is the check that stops this table claiming coverage the
 screens do not have. Nothing here is evidence that an asserted screen
 passed — only the gate run is that.
 
-In scope today (J3 — `p1_*`, `p2_*` — G-2 — `g2_*` — G-1 — `g1_*`, `g4_1`–`g4_3` — the workers wave — `w1_4/7/15/17/19/20`, `w4_1`–`w4_3` — plus the design screens `n1`–`n5`): **57** screens — **41** asserted, **0** quarantined, **16** skipped with a reason.
+In scope today (J3 — `p1_*`, `p2_*` — G-2 — `g2_*` — G-1 — `g1_*`, `g4_1`–`g4_3` — the workers wave — `w1_4/7/15/17/19/20`, `w4_1`–`w4_3` — plus the design screens `n1`–`n5`): **68** screens — **52** asserted, **0** quarantined, **16** skipped with a reason.
 
 ## G-1 — Instance Administrator (8 screens)
 
@@ -139,10 +139,10 @@ In scope today (J3 — `p1_*`, `p2_*` — G-2 — `g2_*` — G-1 — `g1_*`, `g4
 | Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
 |---|---|---|---|---|---|---|
 | `f1_1` | Arrive | Payment set up starts cold | **compressed** | console `#/paysetup` | — | Reads the existing linked rate (real GET); the cold-start arrive screen is absent |
-| `f1_2` | Assign | Anyone can ask. Only one person can assign. | **missing** | — | — | Rate-owner assignment: no assignment flow |
-| `f1_3` | Rate | Pricing a unit somebody else defined | **missing** | — | — | Rate authoring: no rate write endpoint in the console |
-| `f1_4` | Publish | A rate is terms, not a setting | **missing** | — | — | Rate publication as terms: not built |
-| `f1_5` | Handover | Half done is a real state | **missing** | — | — | Half-done handover state: not built |
+| `f1_2` | Assign | Anyone can ask. Only one person can assign. | **implemented** | console `#/rateowner` | **asserted** | Rate-owner assignment: one current owner, every assignment kept as history; the Org Admin assigns |
+| `f1_3` | Rate | Pricing a unit somebody else defined | **implemented** | console `#/rate` | **asserted** | Authoring: the assigned owner prices a unit somebody else defined — the unit is read-only by construction |
+| `f1_4` | Publish | A rate is terms, not a setting | **implemented** | console `#/ratepublish` | **asserted** | Publication as a new version naming what it supersedes. No edit affordance exists, and the walk asserts its absence |
+| `f1_5` | Handover | Half done is a real state | **implemented** | console `#/ratestanding` | **asserted** | The derived standing — not-configured / configured-not-live / live — as a real screen state, never stored |
 ## F-2 — Payment Mechanism Owner (10 screens)
 
 | Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
@@ -150,13 +150,13 @@ In scope today (J3 — `p1_*`, `p2_*` — G-2 — `g2_*` — G-1 — `g1_*`, `g4
 | `f2_1` | Fork | Where CREST stops, not how it pays | **compressed** | console `#/paysetup` | — | The where-CREST-stops boundary is stated on the paysetup view |
 | `f2_2` | Rails | One project, several rails | **illustrative** | console `#/paysetup` | — | Rails: labelled illustrative/simulated in Admin.tsx; cannot connect a rail |
 | `f2_3` | Connect | Connecting is not the same as paying | **illustrative** | console `#/paysetup` | — | Connection: display only |
-| `f2_4` | Test | Proving the whole path, once | **missing** | — | — | Real payment test: not built |
-| `f2_5` | Reconcile | The file that makes a mismatch findable | **missing** | — | — | Reconciliation file contract: not built |
-| `f2_6` | Advisory | A statement, and an honest limit | **missing** | — | — | Advisory statement: not built |
-| `f2_7` | Timing | Batching is paid for by the worker | **missing** | — | — | Batching timing choice: not built |
-| `f2_8` | Activate | Configured is not the same as live | **missing** | — | — | Mechanism activation gate: not built |
-| `f2_9` | Qualify | The gate sits in front of disbursement, not in front of existing | **missing** | — | — | Qualification gate before disbursement: not built |
-| `f2_10` | Qualify | The last gate, and what it opened | **missing** | — | — | The last gate and what it opened: not built |
+| `f2_4` | Test | Proving the whole path, once | **implemented** | console `#/mech/test` | **asserted** | Mechanism configuration (owner named) + one real test disbursement through the mock rail, recorded either way; a failure renders reason + owner |
+| `f2_5` | Reconcile | The file that makes a mismatch findable | **implemented** | console `#/mech/recon` | **asserted** | The live crest-recon-csv-v1 export, every line tied back by instruction id; agreement recorded |
+| `f2_6` | Advisory | A statement, and an honest limit | **implemented** | console `#/mech/statement` | **asserted** | The advisory statement with its limits rendered on itself |
+| `f2_7` | Timing | Batching is paid for by the worker | **implemented** | console `#/mech/batching` | **asserted** | The batching choice: who chose, when, and the trade-off in a sentence — refused loudly when unstated. The reference field 'Hold payment if a dispute is open' is answered honestly as Never, contradicting the reference's own Yes — a dispute contests the record, never the money (W4) — design finding filed |
+| `f2_8` | Activate | Configured is not the same as live | **implemented** | console `#/mech/activate` | **asserted** | The four activation conditions, each satisfied only by a recorded act; refusal renders the readable list, never a bare 409 |
+| `f2_9` | Qualify | The gate sits in front of disbursement, not in front of existing | **implemented** | console `#/mech/qualify` | **asserted** | The invariant screen: held instructions carrying mechanism_not_live with the owner named, and the boundary stated — all four exits released; only disbursement waits |
+| `f2_10` | Qualify | The last gate, and what it opened | **implemented** | console `#/mech/live` | **asserted** | Verification recorded, activation flipping ACTIVE, and what the last gate opened — the held instructions re-priced and released |
 ## W-1 — Worker (22 screens)
 
 | Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |

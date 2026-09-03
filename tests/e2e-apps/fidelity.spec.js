@@ -104,8 +104,227 @@ const FLOW_API = (() => {
     parties: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-registry",
     verification: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-verification",
     oidc: local ? `http://${host}:59103` : base.replace(/\/$/, "") + "/api/crest-mock-oidc",
+    payments: local ? `http://${host}:59006` : base.replace(/\/$/, "") + "/api/crest-payments",
+    evidence: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-evidence",
   };
 })();
+
+// The funders wave's own fixtures (apps.spec.js's "the funders walk"), reused
+// here as arrival machinery: a real assignment, a real rate, a real
+// mechanism, a real held instruction, a real activation — never a second
+// proof, the same acts the walk already drives end to end.
+const FUNDERS_DEFN = "crest:definition:01JCREST00000000000000DEFN";
+
+async function flowSignedInAs(page, who) {
+  await page
+    .locator(".appbar")
+    .filter({ hasText: who })
+    .first()
+    .waitFor({ state: "visible", timeout: 20000 });
+}
+
+async function flowConsolePersona(page, persona) {
+  await page.goto("/console/");
+  await settle(page);
+  const card = page.locator(`[data-persona="${persona}"]`);
+  if (!(await card.count())) return `no console persona card [data-persona="${persona}"]`;
+  await card.click();
+  const ok = await page
+    .locator("#logout")
+    .waitFor({ state: "visible", timeout: 20000 })
+    .then(() => true, () => false);
+  if (!ok) return `persona ${persona} could not sign in within 20s`;
+  await settle(page);
+  return "";
+}
+
+async function flowFundersArrive(page, request, mode, route) {
+  const me = FLOW_FIX.org;
+  const stamp = flowStamp();
+
+  // f1_2/f1_3/f1_4/f1_5 — the F-1 rate-owner half, exactly as the funders
+  // walk drives it. Nothing here is a second proof; it is arrival machinery
+  // reusing the walk's own acts so the screen lands with real state on it.
+  if (mode === "funders-rate" || mode === "funders-rate-published") {
+    let p = await flowConsolePersona(page, "orgadmin");
+    if (p) return p;
+    await flowSignedInAs(page, "Peter Otieno");
+    await flowLand(page, "#/rateowner");
+    await page.fill('[name="rateownerparty"]', me);
+    await page.click("#assign-owner");
+    const assigned = await page.locator("body").filter({ hasText: /owner assigned/i })
+      .first().waitFor({ state: "visible", timeout: 20000 }).then(() => true, () => false);
+    if (!assigned) return "the owner assignment did not confirm within 20s";
+    await page.click("#logout");
+    await settle(page);
+
+    p = await flowConsolePersona(page, "rateowner");
+    if (p) return p;
+    await flowSignedInAs(page, "Nadia Okoth");
+
+    if (mode === "funders-rate") {
+      await flowLand(page, "#/rate");
+      return "";
+    }
+
+    // funders-rate-published — price the unit and publish, landing on
+    // whichever of ratepublish/ratestanding the caller asked for.
+    await flowLand(page, "#/rate");
+    await page.fill('[name="rateamount"]', "175.00");
+    await page.click("#rate-continue");
+    const onPublish = await page.waitForURL(/#\/ratepublish/, { timeout: 20000 }).then(() => true, () => false);
+    if (!onPublish) return "authoring did not reach #/ratepublish within 20s";
+    await settle(page);
+    if (route === "#/ratestanding") {
+      await page.click("#publish-rate");
+      const onStanding = await page.waitForURL(/#\/ratestanding/, { timeout: 20000 }).then(() => true, () => false);
+      if (!onStanding) return "publishing did not reach #/ratestanding within 20s";
+      await settle(page);
+    }
+    return "";
+  }
+
+  // f2_4..f2_10 — the F-2 mechanism half. A fresh project keeps every run
+  // re-runnable (a mechanism is per context, activation is one-way) — the
+  // same reason the walk itself makes one.
+  if (mode.startsWith("funders-")) {
+    let r = await flowAsPartyOn(request, FLOW_API.parties, me, "POST", "/v1/projects", {
+      name: "Fidelity gate funders " + stamp, ownerPartyId: me,
+      configuration: { coverage: "Fidelity gate walk" },
+    });
+    if (r.status() !== 201) return `the flow's own project was refused (${r.status()})`;
+    const projBody = await r.json();
+    const projId = (projBody.project || projBody).id;
+
+    r = await flowAsPartyOn(request, FLOW_API.parties, me, "POST", "/v1/authorizations", {
+      id: "crest:authorization:" + fakeUlid(),
+      partyId: FLOW_FIX.supervisor,
+      terms: { id: "crest:terms:01JCREST00000000000000TERM", version: 1 },
+      scope: { kind: "context", contextId: projId },
+      functions: ["submit-work-evidence"],
+      period: { start: "2026-01-01T00:00:00Z", end: "2027-12-31T00:00:00Z" },
+      authorityPartyId: me, approvedByPartyId: me,
+      approvedAt: "2026-09-01T00:00:00Z", state: "ACTIVE",
+    });
+    if (r.status() !== 201) return `the supervisor's grant on the flow's project was refused (${r.status()})`;
+
+    let p = await flowConsolePersona(page, "payowner");
+    if (p) return p;
+    await flowSignedInAs(page, "Daniel Mwangi");
+    await flowLand(page, "#/where");
+    const chose = await page.locator(`[data-context="${projId}"]`).count();
+    if (!chose) return `the flow's own project ${projId} never appeared at #/where`;
+    await page.locator(`[data-context="${projId}"]`).click();
+    await settle(page);
+
+    await flowLand(page, "#/mech/test");
+    await page.click("#mech-create");
+    const configured = await page.locator("body").filter({ hasText: /configured, not live/i })
+      .first().waitFor({ state: "visible", timeout: 20000 }).then(() => true, () => false);
+    if (!configured) return "the mechanism did not reach 'configured, not live' within 20s";
+
+    if (mode === "funders-mechanism") {
+      await flowLand(page, route);
+      return "";
+    }
+
+    // funders-held (f2_9) / funders-live (f2_10) — drive the invariant
+    // through, then (funders-live only) every activation condition.
+    await flowBindParty(request, FLOW_FIX.workerA);
+    const supTok = await flowMintToken(request, FLOW_FIX.supervisor);
+    const csv = "activity,outcome_value,outcome_unit,worker_id_kind,worker_id," +
+      "period_start,period_end,geography,household_id,beneficiary_count,source_record_ref\n" +
+      `bednet-distribution,3,bednets-distributed,phone,+15550100011,2026-09-01,2026-09-01,` +
+      `Riverside,fidelity-HH-${stamp},3,fidelity-funders-${stamp}\n`;
+    const batch = await request.fetch(FLOW_API.evidence +
+      `/v1/batches?contextId=${encodeURIComponent(projId)}&definitionId=${encodeURIComponent(FUNDERS_DEFN)}` +
+      `&submittedBy=${encodeURIComponent(FLOW_FIX.supervisor)}&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch&systemRef=fidelity-gate`, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + supTok, "Content-Type": "text/csv" },
+      data: csv,
+    });
+    if (![200, 201].includes(batch.status())) return `the flow's own batch was refused (${batch.status()})`;
+    const claimId = (await batch.json()).claimIds[0];
+    if (!claimId) return "the batch minted no claim";
+
+    let windowUp = false;
+    for (let i = 0; i < 30 && !windowUp; i++) {
+      const w = await flowAsPartyOn(request, FLOW_API.payments, FLOW_FIX.workerA, "GET", `/v1/windows/${claimId}`);
+      windowUp = w.status() === 200;
+      if (!windowUp) await page.waitForTimeout(2000);
+    }
+    if (!windowUp) return "the confirmation window never opened within 60s";
+    r = await flowAsPartyOn(request, FLOW_API.payments, FLOW_FIX.workerA, "POST", `/v1/claims/${claimId}/confirm`, {});
+    if (r.status() !== 200) return `the worker's confirmation exit was refused (${r.status()})`;
+
+    let instruction;
+    let held = false;
+    for (let i = 0; i < 30 && !held; i++) {
+      const res = await flowAsPartyOn(request, FLOW_API.payments, me, "GET", `/v1/instructions/by-claim/${claimId}`);
+      if (res.status() === 200) {
+        instruction = await res.json();
+        held = instruction.state === "HELD";
+      }
+      if (!held) await page.waitForTimeout(2000);
+    }
+    if (!held) return "the exit's instruction never reached HELD within 60s";
+
+    if (mode === "funders-held") {
+      await flowLand(page, route);
+      return "";
+    }
+
+    // funders-live — complete every activation condition, then activate.
+    const mechR = await flowAsPartyOn(request, FLOW_API.payments, me, "GET",
+      `/v1/mechanisms/by-context/${encodeURIComponent(projId)}`);
+    const mechId = (await mechR.json()).mechanism.id;
+
+    await flowLand(page, "#/mech/test");
+    await page.fill('[name="testdest"]', "fidelity-gate-account");
+    await page.fill('[name="testamount"]', "10.00");
+    await page.click("#send-test");
+    const testOk = await page.locator('[data-test-result="SUCCEEDED"]')
+      .waitFor({ state: "visible", timeout: 20000 }).then(() => true, () => false);
+    if (!testOk) return "the test disbursement did not succeed within 20s";
+
+    await flowLand(page, "#/mech/recon");
+    await page.click("#agree-recon");
+    await settle(page);
+
+    await flowLand(page, "#/mech/statement");
+    await page.click("#agree-statement");
+    await settle(page);
+
+    await flowLand(page, "#/mech/batching");
+    await page.fill('[name="batchwindow"]', "daily-17:00");
+    await page.fill('[name="batchtradeoff"]',
+      "workers paid once daily at 17:00 wait up to a day for confirmed work " + stamp);
+    await page.click("#record-batching");
+    const batching = await page.locator("[data-batching]")
+      .waitFor({ state: "visible", timeout: 20000 }).then(() => true, () => false);
+    if (!batching) return "the batching choice did not record within 20s";
+
+    await flowLand(page, "#/mech/qualify");
+    await page.click("#submit-qual");
+    const submitted = await page.waitForURL(/#\/mech\/live/, { timeout: 20000 }).then(() => true, () => false);
+    if (!submitted) return "submitting for verification did not reach #/mech/live within 20s";
+    await settle(page);
+
+    r = await flowAsPartyOn(request, FLOW_API.payments, FLOW_FIX.custodian, "POST",
+      `/v1/mechanisms/${mechId}/records`,
+      { kind: "qualification-verified", actorPartyId: FLOW_FIX.custodian });
+    if (r.status() !== 201) return `the verification record was refused (${r.status()})`;
+
+    await flowLand(page, "#/mech/activate");
+    await page.click("#activate-mech");
+    const live = await page.waitForURL(/#\/mech\/live/, { timeout: 20000 }).then(() => true, () => false);
+    if (!live) return "activation did not reach #/mech/live within 20s";
+    await settle(page);
+    return "";
+  }
+
+  return `unknown flow arrival "flow:${mode}"`;
+}
 
 async function flowMintToken(request, partyId) {
   const sub = "story|" + partyId.replace("did:crest:party:", "");
@@ -130,8 +349,27 @@ async function flowAsParty(request, partyId, method, path, body) {
   return flowAsPartyOn(request, FLOW_API.parties, partyId, method, path, body);
 }
 
+// First-login self-bind for a party the fixture world never bound — the
+// exact append the browser's dev login performs, done from the test for a
+// party (the funders walk's worker) that here acts only through the API.
+async function flowBindParty(request, partyId) {
+  const token = await flowMintToken(request, partyId);
+  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const pw = await request
+    .get(FLOW_API.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub))
+    .then((r) => r.json());
+  return request.post(FLOW_API.parties + `/v1/parties/${encodeURIComponent(partyId)}/identity-bindings`, {
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    data: { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject },
+  });
+}
+
 // A run must be re-runnable on the same stack (the G-2 walk learned this):
 // every registration and every published terms set is unique per call.
+const FUNDERS_ULID32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const fakeUlid = () =>
+  "01" + Array.from({ length: 24 }, () => FUNDERS_ULID32[Math.floor(Math.random() * 32)]).join("");
+
 function flowStamp() {
   return (Date.now() + Math.floor(Math.random() * 1000)).toString().slice(-6);
 }
@@ -434,14 +672,22 @@ async function arrive(page, request, entry) {
     // A scripted-flow arrival drives the real flow before landing on the
     // route; any step that breaks is reported as what it is — an arrival
     // problem — never as a missing label on a screen the gate never reached.
+    const mode = entry.arrive.slice("flow:".length);
     let problem;
     try {
-      problem = await flowArrive(page, request, entry.arrive.slice("flow:".length));
+      // The funders modes (#193) hold their console session in memory —
+      // exactly like the admissions-queue/-review modes above — so they take
+      // the target route themselves and land the page, never a post-return
+      // reload that would sign the persona back out or reset the in-memory
+      // selected project.
+      problem = mode.startsWith("funders-")
+        ? await flowFundersArrive(page, request, mode, entry.route)
+        : await flowArrive(page, request, mode);
     } catch (e) {
       problem = String((e && e.message) || e);
     }
     if (problem) return problem;
-    if (entry.route) {
+    if (entry.route && !mode.startsWith("funders-")) {
       await page.evaluate((h) => { location.hash = h; }, entry.route);
       await settle(page);
       // Remount so the screen reads the registry's CURRENT state (the flow's

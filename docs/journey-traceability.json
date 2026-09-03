@@ -6,8 +6,8 @@
  "coverage": {
   "compressed": 25,
   "illustrative": 13,
-  "implemented": 53,
-  "missing": 44,
+  "implemented": 64,
+  "missing": 33,
   "semantically-different": 8
  },
  "statuses": {
@@ -1052,11 +1052,11 @@
    "title": "Anyone can ask. Only one person can assign.",
    "source": "reference",
    "roleName": "Rate Owner",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Rate-owner assignment: no assignment flow",
-   "gate": "—"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/rateowner",
+   "note": "Rate-owner assignment: one current owner, every assignment kept as history; the Org Admin assigns",
+   "gate": "**asserted**"
   },
   {
    "id": "f1_3",
@@ -1065,11 +1065,11 @@
    "title": "Pricing a unit somebody else defined",
    "source": "reference",
    "roleName": "Rate Owner",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Rate authoring: no rate write endpoint in the console",
-   "gate": "—"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/rate",
+   "note": "Authoring: the assigned owner prices a unit somebody else defined — the unit is read-only by construction",
+   "gate": "**asserted**"
   },
   {
    "id": "f1_4",
@@ -1078,11 +1078,11 @@
    "title": "A rate is terms, not a setting",
    "source": "reference",
    "roleName": "Rate Owner",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Rate publication as terms: not built",
-   "gate": "—"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/ratepublish",
+   "note": "Publication as a new version naming what it supersedes. No edit affordance exists, and the walk asserts its absence",
+   "gate": "**asserted**"
   },
   {
    "id": "f1_5",
@@ -1091,11 +1091,11 @@
    "title": "Half done is a real state",
    "source": "reference",
    "roleName": "Rate Owner",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Half-done handover state: not built",
-   "gate": "—"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/ratestanding",
+   "note": "The derived standing — not-configured / configured-not-live / live — as a real screen state, never stored",
+   "gate": "**asserted**"
   },
   {
    "id": "f2_1",
@@ -1143,11 +1143,11 @@
    "title": "Proving the whole path, once",
    "source": "reference",
    "roleName": "Payment Mechanism Owner",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Real payment test: not built",
-   "gate": "—"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/mech/test",
+   "note": "Mechanism configuration (owner named) + one real test disbursement through the mock rail, recorded either way; a failure renders reason + owner",
+   "gate": "**asserted**"
   },
   {
    "id": "f2_5",
@@ -1156,11 +1156,11 @@
    "title": "The file that makes a mismatch findable",
    "source": "reference",
    "roleName": "Payment Mechanism Owner",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Reconciliation file contract: not built",
-   "gate": "—"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/mech/recon",
+   "note": "The live crest-recon-csv-v1 export, every line tied back by instruction id; agreement recorded",
+   "gate": "**asserted**"
   },
   {
    "id": "f2_6",
@@ -1169,11 +1169,11 @@
    "title": "A statement, and an honest limit",
    "source": "reference",
    "roleName": "Payment Mechanism Owner",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Advisory statement: not built",
-   "gate": "—"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/mech/statement",
+   "note": "The advisory statement with its limits rendered on itself",
+   "gate": "**asserted**"
   },
   {
    "id": "f2_7",
@@ -1182,11 +1182,11 @@
    "title": "Batching is paid for by the worker",
    "source": "reference",
    "roleName": "Payment Mechanism Owner",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Batching timing choice: not built",
-   "gate": "—"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/mech/batching",
+   "note": "The batching choice: who chose, when, and the trade-off in a sentence — refused loudly when unstated. The reference field 'Hold payment if a dispute is open' is answered honestly as Never, contradicting the reference's own Yes — a dispute contests the record, never the money (W4) — design finding filed",
+   "gate": "**asserted**"
   },
   {
    "id": "f2_8",
@@ -1195,11 +1195,11 @@
    "title": "Configured is not the same as live",
    "source": "reference",
    "roleName": "Payment Mechanism Owner",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Mechanism activation gate: not built",
-   "gate": "—"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/mech/activate",
+   "note": "The four activation conditions, each satisfied only by a recorded act; refusal renders the readable list, never a bare 409",
+   "gate": "**asserted**"
   },
   {
    "id": "f2_9",
@@ -1208,11 +1208,11 @@
    "title": "The gate sits in front of disbursement, not in front of existing",
    "source": "reference",
    "roleName": "Payment Mechanism Owner",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Qualification gate before disbursement: not built",
-   "gate": "—"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/mech/qualify",
+   "note": "The invariant screen: held instructions carrying mechanism_not_live with the owner named, and the boundary stated — all four exits released; only disbursement waits",
+   "gate": "**asserted**"
   },
   {
    "id": "f2_10",
@@ -1221,11 +1221,11 @@
    "title": "The last gate, and what it opened",
    "source": "reference",
    "roleName": "Payment Mechanism Owner",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "The last gate and what it opened: not built",
-   "gate": "—"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/mech/live",
+   "note": "Verification recorded, activation flipping ACTIVE, and what the last gate opened — the held instructions re-priced and released",
+   "gate": "**asserted**"
   },
   {
    "id": "w1_1",
@@ -2028,20 +2028,20 @@
    "w6_2": "—",
    "w6_3": "—",
    "f1_1": "—",
-   "f1_2": "—",
-   "f1_3": "—",
-   "f1_4": "—",
-   "f1_5": "—",
+   "f1_2": "**asserted**",
+   "f1_3": "**asserted**",
+   "f1_4": "**asserted**",
+   "f1_5": "**asserted**",
    "f2_1": "—",
    "f2_2": "—",
    "f2_3": "—",
-   "f2_4": "—",
-   "f2_5": "—",
-   "f2_6": "—",
-   "f2_7": "—",
-   "f2_8": "—",
-   "f2_9": "—",
-   "f2_10": "—",
+   "f2_4": "**asserted**",
+   "f2_5": "**asserted**",
+   "f2_6": "**asserted**",
+   "f2_7": "**asserted**",
+   "f2_8": "**asserted**",
+   "f2_9": "**asserted**",
+   "f2_10": "**asserted**",
    "w1_1": "—",
    "w1_2": "—",
    "w1_3": "—",
