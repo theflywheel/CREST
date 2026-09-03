@@ -217,14 +217,3 @@ func listRecoveryContacts(ctx context.Context, q store.Querier, partyID string) 
 	}
 	return out, err
 }
-
-// isLiveRecoveryContact answers whether contact currently stands nominated by
-// the party a recovery is about — the confirmer's-view filter.
-func isLiveRecoveryContact(ctx context.Context, q store.Querier, partyID, contactID string) (bool, error) {
-	var n int
-	err := q.QueryRow(ctx, `
-		SELECT count(*) FROM recovery_contacts
-		WHERE party_id = $1 AND contact_party_id = $2 AND revoked_at IS NULL`,
-		partyID, contactID).Scan(&n)
-	return n > 0, err
-}

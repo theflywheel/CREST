@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:profiles:trusted-payments:payment-structure:1",
+  "title": "payment-structure LinkedRecord payload",
+  "description": "The author's intended payment shape for a definition (p3_11–p3_13, p3_20): tranches, preconditions, deductions, and who holds which project role. Structure, never price — a tranche is a share of a rate somebody else will publish, because pricing belongs to the assigned rate owner (F-1) and the rate itself is the payment-setup record. A LinkedRecord by reference like every other payment fact (§7): the definition stays complete and usable if this record never exists.",
+  "type": "object",
+  "properties": {
+    "definitionVersion": { "type": "integer", "minimum": 1 },
+    "roles": {
+      "type": "object",
+      "description": "The four project roles (p3_20) — e.g. author, rate-owner, mechanism-owner, validator — mapped to a party id or a role name. Descriptive: authority to act comes from Authorizations and the RateOwnerAssignment, never from this map.",
+      "maxProperties": 8,
+      "propertyNames": { "minLength": 1, "maxLength": 64 },
+      "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 200 }
+    },
+    "tranches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "share": { "type": "string", "minLength": 1, "maxLength": 32, "description": "A proportion of the eventual rate, as the author wrote it (\"60%\", \"balance\"). Never an amount of money." },
+          "condition": { "type": "string", "minLength": 1, "maxLength": 500 }
+        },
+        "required": ["label"],
+        "additionalProperties": false
+      }
+    },
+    "preconditions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "deductions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "rule": { "type": "string", "minLength": 1, "maxLength": 500 }
+        },
+        "required": ["label", "rule"],
+        "additionalProperties": false
+      }
+    },
+    "authoredByPartyId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" }
+  },
+  "required": ["definitionVersion", "authoredByPartyId"],
+  "additionalProperties": false
+}

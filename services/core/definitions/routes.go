@@ -1,9 +1,11 @@
 package definitions
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
@@ -23,6 +25,21 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/definitions/{id}/versions/{version}/activate", h.activate)
 	mux.HandleFunc("POST /v1/definitions/{id}/linked-records", h.addLinkedRecord)
 	mux.HandleFunc("GET /v1/definitions/{id}/linked-records", h.listLinkedRecords)
+	mux.HandleFunc("GET /v1/definitions/{id}/events", h.events)
+	mux.HandleFunc("GET /v1/definitions/{id}/versions/{version}/template", h.template)
+	mux.HandleFunc("POST /v1/definitions/{id}/versions/{version}/payment-handoff", h.paymentHandoff)
+	mux.HandleFunc("GET /v1/adaptors", h.adaptors)
+
+	// Authoring (P-3): the mutable draft layer over the immutable table.
+	dh := &draftHandlers{d: d}
+	mux.HandleFunc("POST /v1/definition-drafts", dh.createDraft)
+	mux.HandleFunc("GET /v1/definition-drafts", dh.listDrafts)
+	mux.HandleFunc("GET /v1/definition-drafts/{id}", dh.getDraft)
+	mux.HandleFunc("PUT /v1/definition-drafts/{id}/sections/{section}", dh.putSection)
+	mux.HandleFunc("POST /v1/definition-drafts/{id}/discard", dh.discard)
+	mux.HandleFunc("POST /v1/definition-drafts/{id}/validate", dh.validate)
+	mux.HandleFunc("POST /v1/definition-drafts/{id}/dry-run", dh.dryRun)
+	mux.HandleFunc("POST /v1/definition-drafts/{id}/submit", dh.submit)
 }
 
 type handlers struct{ d service.Deps }
@@ -161,6 +178,10 @@ func (h *handlers) publication(w http.ResponseWriter, r *http.Request) {
 func (h *handlers) ratify(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		RatifiedByPartyID string `json:"ratifiedByPartyId"`
+		// PendingFields is the ratifier's own declaration (p3_15): what they
+		// judged acceptable to leave open. RATIFIED-with-pending is a real
+		// state, not a blocked one, and only the approver may declare it.
+		PendingFields []string `json:"pendingFields,omitempty"`
 	}
 	if !httpx.ReadJSON(w, r, &body) {
 		return
@@ -176,13 +197,19 @@ func (h *handlers) ratify(w http.ResponseWriter, r *http.Request) {
 		out, err = transition(r.Context(), tx, r.PathValue("id"), version,
 			schema.DefinitionStateDRAFT, schema.DefinitionStateRATIFIED,
 			func(d *schema.Definition) error {
-				if body.RatifiedByPartyID == d.AuthoredByPartyID {
-					return ErrSelfRatified
-				}
-				d.RatifiedByPartyID = &body.RatifiedByPartyID
-				return nil
+				return applyRatification(d, body.RatifiedByPartyID, body.PendingFields)
 			})
-		return err
+		if err != nil {
+			return err
+		}
+		// The two-records-one-signature flow (p3_16): the state change and
+		// the governance event commit together or not at all.
+		detail := map[string]any{}
+		if len(out.PendingFields) > 0 {
+			detail["pendingFields"] = out.PendingFields
+		}
+		return appendEvent(r.Context(), tx, out.ID, out.Version,
+			eventRatified, body.RatifiedByPartyID, h.d.Clock.Now(), detail)
 	})
 	switch {
 	case errors.Is(err, ErrSelfRatified):
@@ -201,6 +228,14 @@ func (h *handlers) activate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// The actor is optional in the body for compatibility with pre-authoring
+	// callers; absent, the event names the ratifier, because in the wizard's
+	// sign-and-publish the same signature does both (p3_16).
+	var body struct {
+		ActivatedByPartyID string `json:"activatedByPartyId"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
 	var out schema.Definition
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		var err error
@@ -212,6 +247,14 @@ func (h *handlers) activate(w http.ResponseWriter, r *http.Request) {
 				return nil
 			})
 		if err != nil {
+			return err
+		}
+		actor := body.ActivatedByPartyID
+		if actor == "" && out.RatifiedByPartyID != nil {
+			actor = *out.RatifiedByPartyID
+		}
+		if err := appendEvent(r.Context(), tx, out.ID, out.Version,
+			eventActivated, actor, h.d.Clock.Now(), nil); err != nil {
 			return err
 		}
 		// In the same transaction as the state change. A publish attempted
@@ -259,8 +302,19 @@ func (h *handlers) addLinkedRecord(w http.ResponseWriter, r *http.Request) {
 	}
 	// The core stores a payload opaquely, but somebody has to check it, and for
 	// a record keyed to a definition that somebody is this service.
-	if lr.Type == "payment-setup" {
+	switch lr.Type {
+	case "payment-setup":
 		if err := schema.Validate(schema.IDPaymentSetup, lr.Payload); err != nil {
+			writeValidation(w, err)
+			return
+		}
+	case "payment-structure":
+		if err := schema.Validate(schema.IDPaymentStructure, lr.Payload); err != nil {
+			writeValidation(w, err)
+			return
+		}
+	case "payment-handoff":
+		if err := schema.Validate(schema.IDPaymentHandoff, lr.Payload); err != nil {
 			writeValidation(w, err)
 			return
 		}
@@ -284,6 +338,86 @@ func (h *handlers) listLinkedRecords(w http.ResponseWriter, r *http.Request) {
 		records = []schema.LinkedRecord{}
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"linkedRecords": records})
+}
+
+// events serves the append-only governance record: who did what to which
+// version, when. This is where a dispute about a ratification goes.
+func (h *handlers) events(w http.ResponseWriter, r *http.Request) {
+	evs, err := listEvents(r.Context(), h.d.DB.Q(), r.PathValue("id"))
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "list definition events", err)
+		return
+	}
+	if evs == nil {
+		evs = []Event{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"events": evs})
+}
+
+// paymentHandoff records the hand-over of pricing to a rate owner (p3_pay):
+// the definition is signed, nothing prices it yet, and that is a complete
+// state made visible rather than an error. The record composes with the
+// payments service's RateOwnerAssignment (F-1) — the invitation lives here,
+// the authority lives there, and neither substitutes for the other.
+func (h *handlers) paymentHandoff(w http.ResponseWriter, r *http.Request) {
+	version, ok := h.version(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		InvitedPartyID   string `json:"invitedPartyId,omitempty"`
+		InvitedByPartyID string `json:"invitedByPartyId"`
+		Note             string `json:"note,omitempty"`
+	}
+	if !httpx.ReadJSON(w, r, &body) {
+		return
+	}
+
+	def, err := getDefinition(r.Context(), h.d.DB.Q(), r.PathValue("id"), version)
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "definition version", err, store.ErrNotFound)
+		return
+	}
+	now := h.d.Clock.Now()
+	payload := map[string]any{
+		"definitionVersion": def.Version,
+		"invitedByPartyId":  body.InvitedByPartyID,
+		"invitedAt":         now.UTC().Format(time.RFC3339),
+	}
+	if body.InvitedPartyID != "" {
+		payload["invitedPartyId"] = body.InvitedPartyID
+	}
+	if body.Note != "" {
+		payload["note"] = body.Note
+	}
+	if err := schema.Validate(schema.IDPaymentHandoff, payload); err != nil {
+		writeValidation(w, err)
+		return
+	}
+	lr := schema.LinkedRecord{
+		ID:        id.New(h.d.Clock, "linked-record"),
+		Type:      "payment-handoff",
+		Version:   1,
+		State:     "ACTIVE",
+		KeyedTo:   schema.LinkedRecordKeyedTo{Kind: schema.LinkedRecordKeyedToKindDefinition, ID: def.ID},
+		Payload:   payload,
+		CreatedAt: now,
+	}
+	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+		if err := insertLinkedRecord(r.Context(), tx, def.ID, lr); err != nil {
+			return err
+		}
+		detail := map[string]any{}
+		if body.InvitedPartyID != "" {
+			detail["invitedPartyId"] = body.InvitedPartyID
+		}
+		return appendEvent(r.Context(), tx, def.ID, def.Version,
+			eventHandoff, body.InvitedByPartyID, now, detail)
+	}); err != nil {
+		httpx.Fail(w, h.d.Log, "record payment handoff", err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, lr)
 }
 
 func (h *handlers) lookup(w http.ResponseWriter, r *http.Request) (schema.Definition, error) {

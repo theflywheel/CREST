@@ -49,6 +49,62 @@
       "minLength": 1,
       "description": "The unit a Unit's outcome is counted in. Comes from here, never from a source system."
     },
+    "classification": {
+      "type": "object",
+      "description": "Descriptive taxonomy facts about the defined activity — sector, category, performer role (P-3 authoring). L1 holds the map, never the vocabulary: which keys exist and which values are legal is deployment configuration, per the layering test and the Party.attributes precedent (#168). Small bounded strings only; never provenance, never anything the strength function reads.",
+      "maxProperties": 16,
+      "propertyNames": { "minLength": 1, "maxLength": 64 },
+      "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 200 }
+    },
+    "counting": {
+      "type": "object",
+      "description": "How a completed instance is counted. Generic across domains — a visit, a paid period, a measured result; a training session or an assessment count the same way — so the shape is L1 while every value inside it is this deployment's own vocabulary. Optional because the seeded pre-authoring definitions never carried it; a definition without it counts by outcomeUnit alone.",
+      "properties": {
+        "basis": {
+          "type": "string",
+          "enum": ["event", "time-period", "outcome"],
+          "description": "The counting fork (p3_3): discrete attested events, elapsed periods of engagement, or a measured result."
+        },
+        "frequency": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "aggregationLevel": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "outcome": {
+          "type": "object",
+          "description": "Present only when basis is outcome: what result is paid for and how it is measured. Descriptive programme facts, not inputs to the strength function.",
+          "properties": {
+            "indicator": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "baseline": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "target": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "measuredBy": { "type": "string", "minLength": 1, "maxLength": 200 }
+          },
+          "required": ["indicator"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["basis"],
+      "additionalProperties": false
+    },
+    "extensions": {
+      "type": "object",
+      "description": "The honest escape hatch (p3_14): typed, labelled fields the authoring form did not have, keyed by the author's own name for them. L1 holds the slot; what goes in it is deployment content. Never identity data, never provenance, never money — payment structure is a LinkedRecord by reference (§7), and a value here is read by nothing in the infrastructure.",
+      "maxProperties": 32,
+      "propertyNames": { "minLength": 1, "maxLength": 64 },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "valueType": { "type": "string", "enum": ["string", "number", "boolean", "date"] },
+          "value": { "type": "string", "minLength": 1, "maxLength": 500, "description": "The value as the author entered it, carried as text; valueType says how to read it. A slot nothing in the infrastructure interprets does not need a machine type." }
+        },
+        "required": ["label", "valueType", "value"],
+        "additionalProperties": false
+      }
+    },
+    "pendingFields": {
+      "type": "array",
+      "description": "Named at ratification by the ratifier: fields the approver judged acceptable to leave unresolved (p3_15). RATIFIED-with-pending is a real recorded state, not a blocked one — but only the ratifier may declare it, it is append-only in the event record, and an ACTIVE version carries it forever so a verifier can see what was open when it was signed.",
+      "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+    },
     "faces": {
       "type": "object",
       "description": "Three projections of one record, never three documents (§7).",

@@ -141,6 +141,14 @@ paths:
               required: [ratifiedByPartyId]
               properties:
                 ratifiedByPartyId: { type: string }
+                pendingFields:
+                  type: array
+                  items: { type: string }
+                  description: >
+                    What the ratifier judged acceptable to leave open (p3_15).
+                    RATIFIED-with-pending is a real recorded state, not a blocked
+                    one; only the approver may declare it, and the declaration is
+                    appended to the version's event record with their name on it.
       responses:
         "200":
           description: Ratified.
@@ -247,6 +255,350 @@ paths:
                       $ref: "urn:crest:schema:primitives:linked-record:1"
         "500": { $ref: "#/components/responses/Internal" }
 
+  /v1/definitions/{id}/events:
+    get:
+      operationId: listDefinitionEvents
+      summary: The governance record for a definition
+      description: >
+        Append-only: who submitted, who ratified naming which pending fields, who
+        activated, who recorded a payment handoff. The definition document shows
+        the current state; this shows how it got there, which is what a dispute
+        needs.
+      parameters: [{ $ref: "#/components/parameters/DefinitionID" }]
+      responses:
+        "200":
+          description: The events, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events]
+                properties:
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, definitionId, version, action, actorPartyId, at]
+                      properties:
+                        id: { type: integer }
+                        definitionId: { type: string }
+                        version: { type: integer }
+                        action: { type: string }
+                        actorPartyId: { type: string }
+                        at: { type: string, format: date-time }
+                        detail: { type: object }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/definitions/{id}/versions/{version}/template:
+    get:
+      operationId: definitionTemplate
+      summary: The spreadsheet template for one version
+      description: >
+        Derived from the version's platform face and tier map, never stored, so it
+        cannot drift from the version it serves (p3_23). Publishing a new version
+        inherently produces a fresh template; files built on the old one describe
+        the old version.
+      parameters:
+        - { $ref: "#/components/parameters/DefinitionID" }
+        - { $ref: "#/components/parameters/Version" }
+        - { name: format, in: query, schema: { type: string, enum: [csv] }, description: "`csv` returns the header row itself." }
+      responses:
+        "200":
+          description: The template, pinned to the version.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [definitionId, version, activity, filename, columns, requiredEnrichment]
+                properties:
+                  definitionId: { type: string }
+                  version: { type: integer }
+                  activity: { type: string }
+                  filename: { type: string }
+                  columns: { type: array, items: { type: string } }
+                  requiredEnrichment: { type: array, items: { type: string } }
+            text/csv:
+              schema: { type: string }
+        "404":
+          description: No such definition version.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/definitions/{id}/versions/{version}/payment-handoff:
+    post:
+      operationId: recordPaymentHandoff
+      summary: Hand pricing to a rate owner
+      description: >
+        Records the invitation (p3_pay): the definition is signed, nothing prices
+        it yet, and that is a complete state made visible rather than an error. The
+        record is a `payment-handoff` LinkedRecord; the authority itself is the
+        payments service's RateOwnerAssignment (F-1), which this composes with and
+        never substitutes for.
+      parameters:
+        - { $ref: "#/components/parameters/DefinitionID" }
+        - { $ref: "#/components/parameters/Version" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invitedByPartyId]
+              properties:
+                invitedByPartyId: { type: string }
+                invitedPartyId: { type: string, description: "Optional: a handoff can be recorded before anyone is named." }
+                note: { type: string }
+      responses:
+        "201":
+          description: The handoff record, also appended to the event log.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:linked-record:1"
+        "400": { $ref: "#/components/responses/BadBody" }
+        "404":
+          description: No such definition version.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "422":
+          description: The payload fails `urn:crest:schema:profiles:trusted-payments:payment-handoff:1`.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/adaptors:
+    get:
+      operationId: listAdaptors
+      summary: The adaptor catalogue, honestly
+      description: >
+        Built from what the binary links, plus named absences. CREST has one
+        implemented adapter class today (batch-file); a DHIS2-shaped source runs
+        through it with a per-source column mapping. Entries the reference journey
+        shows but CREST does not have say `not-implemented` rather than appearing
+        available.
+      responses:
+        "200":
+          description: The catalogue.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [adaptors]
+                properties:
+                  adaptors:
+                    type: array
+                    items:
+                      type: object
+                      required: [class, status]
+                      properties:
+                        ref: { type: string }
+                        class: { type: string }
+                        status: { type: string, enum: [available, not-implemented] }
+                        note: { type: string }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/definition-drafts:
+    post:
+      operationId: createDraft
+      summary: Start a draft
+      description: >
+        Empty ("Define new work", p3_2) or cloned from an existing version
+        ("Clone a version", p3_1). Cloning rebuilds the wizard document from the
+        version and edits a copy; nothing on this path can reach the source
+        version. Drafts are the one mutable object in this service, and only
+        while OPEN.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [createdByPartyId]
+              properties:
+                createdByPartyId: { type: string }
+                cloneFromDefinitionId: { type: string }
+                cloneFromVersion: { type: integer }
+                doc: { $ref: "#/components/schemas/DraftDoc" }
+      responses:
+        "201":
+          description: The draft, OPEN.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Draft" } } }
+        "400": { $ref: "#/components/responses/BadBody" }
+        "404":
+          description: The definition to clone does not exist.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "422":
+          description: "`no_author` - a draft records who is authoring it."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+    get:
+      operationId: listDrafts
+      summary: List drafts
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [OPEN, SUBMITTED, DISCARDED] } }
+      responses:
+        "200":
+          description: The drafts, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [drafts]
+                properties:
+                  drafts: { type: array, items: { $ref: "#/components/schemas/Draft" } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/definition-drafts/{id}:
+    get:
+      operationId: getDraft
+      summary: Read a draft
+      parameters: [{ $ref: "#/components/parameters/DraftID" }]
+      responses:
+        "200":
+          description: The draft.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Draft" } } }
+        "404":
+          description: No such draft.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/definition-drafts/{id}/sections/{section}:
+    put:
+      operationId: putDraftSection
+      summary: Replace one wizard section
+      description: >
+        Whole-section writes, because that is what the wizard's Continue buttons
+        mean. Sections: scope, activity, parties, evidence, validation, sources,
+        cascade, extensions, payment. Refused once the draft is submitted or
+        discarded - a submitted draft is the provenance of the version it produced.
+      parameters:
+        - { $ref: "#/components/parameters/DraftID" }
+        - { name: section, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object } } }
+      responses:
+        "200":
+          description: The draft after the write.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Draft" } } }
+        "404":
+          description: No such draft.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: "`draft_closed` - the draft is no longer open."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "422":
+          description: "`bad_section` - unknown section name or unparseable body."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/definition-drafts/{id}/discard:
+    post:
+      operationId: discardDraft
+      summary: Discard a draft
+      parameters: [{ $ref: "#/components/parameters/DraftID" }]
+      responses:
+        "200": { description: Discarded. }
+        "404":
+          description: No such draft.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: "`draft_closed` - already submitted or discarded."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/definition-drafts/{id}/validate:
+    post:
+      operationId: validateDraft
+      summary: What stands between this draft and a definition?
+      description: >
+        Compiles the draft and reports every open question by section (p3_15,
+        p3_18), plus the compiled preview. The same function submit runs, so the
+        review can never disagree with the submission it precedes. Writes nothing.
+      parameters: [{ $ref: "#/components/parameters/DraftID" }]
+      responses:
+        "200":
+          description: Readiness, problems, and the compiled preview.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ready, problems]
+                properties:
+                  ready: { type: boolean }
+                  problems: { type: array, items: { $ref: "#/components/schemas/Problem" } }
+                  preview: { $ref: "urn:crest:schema:primitives:definition:1" }
+        "404":
+          description: No such draft.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/definition-drafts/{id}/dry-run:
+    post:
+      operationId: dryRunDraft
+      summary: Sample evidence against the draft, committing nothing
+      description: >
+        Runs the sample through the same CSV adapter and the same strength
+        function the real pipeline uses (p3_27). Source facts come from the
+        request, never the file. Nothing is written - no unit, no source, no
+        queue entry - and identity resolution is deliberately not rehearsed:
+        joining identifiers resolve against real registries at ingestion.
+      parameters: [{ $ref: "#/components/parameters/DraftID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [csv, sourceClass, captureMethod]
+              properties:
+                csv: { type: string }
+                sourceClass: { type: string }
+                captureMethod: { type: string }
+                systemRef: { type: string }
+                mapping: { type: object }
+                identityAssurance: { type: string }
+      responses:
+        "200":
+          description: Per-row verdicts and adapter rejections; `committed` is always false.
+          content: { application/json: { schema: { type: object } } }
+        "404":
+          description: No such draft.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "422":
+          description: >
+            `no_sample`, `no_source_facts`, `unparseable`, or `draft_not_testable` -
+            the evidence rules and activity must be settled before rows can be
+            judged against them.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/definition-drafts/{id}/submit:
+    post:
+      operationId: submitDraft
+      summary: Compile the draft into the next immutable version
+      description: >
+        One transaction: the definitions row (state DRAFT, awaiting ratification),
+        the LinkedRecords the draft implies (linked-definition cascade,
+        payment-structure), the SUBMITTED event, and the draft's closure. A draft
+        with open questions is refused with the list, not guessed at.
+      parameters: [{ $ref: "#/components/parameters/DraftID" }]
+      responses:
+        "201":
+          description: The definition version the draft became.
+          content:
+            application/json:
+              schema:
+                $ref: "urn:crest:schema:primitives:definition:1"
+        "404":
+          description: No such draft.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "409":
+          description: "`draft_closed` - already submitted or discarded."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "422":
+          description: "`not_ready` - the open questions are listed in `problems`."
+          content: { application/json: { schema: { type: object } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
   # Every CREST service carries these two, added by pkg/httpx.Server.
   /healthz: { $ref: "#/components/pathItems/healthz" }
   /readyz: { $ref: "#/components/pathItems/readyz" }
@@ -313,8 +665,45 @@ components:
       in: path
       required: true
       schema: { type: integer }
+    DraftID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
 
   schemas:
+    Draft:
+      type: object
+      description: >
+        The authoring document with its lifecycle facts. Mutable only while
+        state is OPEN; a SUBMITTED draft is the provenance of the version it
+        produced and names it in submittedVersion.
+      required: [id, state, doc, createdByPartyId, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        definitionId: { type: string }
+        baseVersion: { type: integer }
+        state: { type: string, enum: [OPEN, SUBMITTED, DISCARDED] }
+        doc: { $ref: "#/components/schemas/DraftDoc" }
+        createdByPartyId: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        submittedVersion: { type: integer }
+    DraftDoc:
+      type: object
+      description: >
+        The wizard document, one property per section (scope, activity, parties,
+        evidence, validation, sources, cascade, extensions, payment). The
+        authoritative shape is the Go DraftDoc in services/core/definitions;
+        compile() is the one translation into the definition primitive.
+    Problem:
+      type: object
+      description: One thing standing between a draft and a definition, named by section.
+      required: [section, reason]
+      properties:
+        section: { type: string }
+        field: { type: string }
+        reason: { type: string }
     Error:
       type: object
       description: >
