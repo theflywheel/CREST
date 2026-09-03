@@ -512,7 +512,7 @@ function RoleHolders() {
 
 // ── p2_2 · Registration and import are not alternatives ─────────────────────
 // The reference's p2_3 rows: a full-width radio row, tinted orange when on.
-function SourcingRow(props: { on: boolean; t: string; s: string; onPick: () => void }) {
+export function SourcingRow(props: { on: boolean; t: string; s: string; onPick: () => void }) {
   return (
     <button
       onClick={props.onPick}

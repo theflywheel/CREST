@@ -3,15 +3,130 @@
 // The J3 dashboard wave — Work status, Quality, Payments, Proof, Reports —
 // lives in Dashboard.tsx, in the reference's own frames.
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@crest/api";
-import { Chip, Sidecar, OpenNote } from "@crest/ui";
-import { useConsole } from "../state";
+import { Callout, Chip, Sidecar, OpenNote } from "@crest/ui";
+import { errText, useConsole } from "../state";
+import { SourcingRow } from "./Setup";
 import {
   money, when, Mono, MonoShort, KVR, Title, Lede, Empty, Tbl,
   CardTitled, TierChip, useLoad, LoadFrame,
 } from "../ui";
 
+// p2's "Where the work definition comes from": the configurator's rail entry
+// draws the origin choice, not the published read — the read (p3_19) belongs
+// to the personas who resolve a definition rather than commission one.
+function DefinitionOrigin() {
+  const s = useConsole();
+  const nav = useNavigate();
+  const [gen, setGen] = useState(0);
+  const [err, setErr] = useState<string | null>(null);
+  const r = useLoad(async () => {
+    const [comp, roles] = await Promise.all([
+      api.get("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/composition`).catch(() => ({ choices: [] })),
+      api.get("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/roles`).catch(() => ({ roles: [] })),
+    ]);
+    const rec = ((comp.choices || []) as Array<{ kind?: string; payload?: { value?: unknown } }>).find(
+      (c) => (c.kind || "").replace(/^composition:/, "") === "definition-origin",
+    );
+    const grants = (roles.roles || []) as Array<{ partyId?: string; displayName?: string; functions?: string[]; state?: string }>;
+    const holder = (fn: string) => grants.find((g) => g.state === "ACTIVE" && (g.functions || []).includes(fn));
+    return {
+      origin: rec ? String(rec.payload?.value || "") : "",
+      author: holder("specify-definition"),
+      approver: holder("ratify-definition"),
+    };
+  }, [s.projectId, gen]);
+  const record = async (v: string) => {
+    setErr(null);
+    try {
+      await api.put("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/composition/definition-origin`, { value: v });
+      setGen((g) => g + 1);
+    } catch (e) {
+      setErr(errText(e));
+    }
+  };
+  return (
+    <LoadFrame r={r}>
+      {({ origin, author, approver }) => (
+        <>
+          <Title t="Where the work definition comes from" />
+          <Lede>
+            Author it, start from a template, or derive it from a source system that already describes this work.
+          </Lede>
+          {err ? <div className="errbar">{err}</div> : null}
+          <div style={{ maxWidth: 780 }}>
+            <SourcingRow
+              t="Author it here"
+              s="Define the work from scratch. The Work Definition Author walks the full flow."
+              on={origin === "author-here"}
+              onPick={() => record("author-here")}
+            />
+            <SourcingRow
+              t="Start from a template"
+              s="Curated by Instance Registry Maintainer, or reused from another organisation's ratified definition."
+              on={origin === "template"}
+              onPick={() => record("template")}
+            />
+            <SourcingRow
+              t="Derive from a source system"
+              s="Read the existing configuration out of a delivery platform and ratify it locally."
+              on={origin === "derive"}
+              onPick={() => record("derive")}
+            />
+            {origin ? null : (
+              <p className="muted" style={{ margin: "2px 0 10px" }}>
+                Nothing is answered yet — picking a row records the choice on the project, with your name and the date.
+              </p>
+            )}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "14px 0", borderBottom: "1px solid var(--line, #E5E1DC)" }}>
+              <div>
+                <div style={{ font: "500 15px/1.4 Roboto,system-ui" }}>Work Definition Author (Work Definition Author)</div>
+                <div className="muted" style={{ font: "400 13px/1.5 Roboto,system-ui", marginTop: 2 }}>
+                  {author ? (author.displayName || author.partyId) : "Nobody is assigned — no active grant on this project carries specify-definition"}
+                </div>
+              </div>
+              <Chip kind={author ? "ok" : "plain"}>{author ? "Assigned" : "Not assigned"}</Chip>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "14px 0" }}>
+              <div>
+                <div className="muted" style={{ font: "500 15px/1.4 Roboto,system-ui" }}>Work Definition Approver (Work Definition Approver)</div>
+                <div className="muted" style={{ font: "400 13px/1.5 Roboto,system-ui", marginTop: 2 }}>
+                  {approver
+                    ? (approver.displayName || approver.partyId)
+                    : "Optional second sign-off. Not used by this project."}
+                </div>
+              </div>
+              <Chip kind={approver ? "ok" : "plain"}>{approver ? "Assigned" : "Not used"}</Chip>
+            </div>
+            <div style={{ height: 12 }} />
+            <Callout kind="teal" title="">
+              A definition derived from a source system still has to be ratified locally and signed by a legitimate
+              Work Definition Author. Deriving saves the authoring, not the accountability.
+            </Callout>
+            <div style={{ borderTop: "1px solid var(--line, #E5E1DC)", marginTop: 16, paddingTop: 14, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button className="btn secondary" style={{ width: "auto", padding: "10px 22px" }} onClick={() => nav("/workers")}>
+                Back
+              </button>
+              <button className="btn dominant" style={{ width: "auto", padding: "10px 22px" }} onClick={() => nav("/validation")}>
+                Continue
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </LoadFrame>
+  );
+}
+
 export function Definition() {
+  const { persona } = useConsole();
+  // Two components, not an early return: the origin frame and the published
+  // read carry different hook sets, and React needs each to keep its own.
+  return persona === "orgadmin" || persona === "configurator" ? <DefinitionOrigin /> : <DefinitionRead />;
+}
+
+function DefinitionRead() {
   const { definitionId } = useConsole();
   const r = useLoad<{ d: any; v: any; lr: any } | null>(async () => {
     if (!definitionId) return null;
