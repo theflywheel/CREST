@@ -1301,8 +1301,14 @@ test("assisted enrolment: the confidence check records a method, never a tier", 
   await page.click("#confidence-continue");
   await settle(page);
   await expect(page.locator("body")).toContainText("Read this to Halima");
-  // The record carries the METHOD as provenance — read back from the registry.
-  const e = await asParty(request, FIX.custodian, "GET", `/v1/parties/${pid}/enrolment`);
+  // The record carries the METHOD as provenance — read back from the registry
+  // by the enrolling agent, acting for the worker in the programme's context
+  // (who enrolled a worker is the worker's own record, #102).
+  const supTok = await mintToken(request, SPVR);
+  const e = await request.get(
+    G2.parties + `/v1/parties/${encodeURIComponent(pid)}/enrolment?contextId=${encodeURIComponent(FIX.project)}`,
+    { headers: { Authorization: "Bearer " + supTok, "X-CREST-On-Behalf-Of": pid } },
+  );
   expect(e.status()).toBe(200);
   expect((await e.json()).method).toBe("confidence-check");
   await assertAlive(page, errors, "confidence-check enrolment");
