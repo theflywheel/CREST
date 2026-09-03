@@ -232,6 +232,24 @@ export function ConsoleProvider(props: { children: ReactNode }) {
           .catch(() => null);
         list = (configured && configured.projects) || [];
       }
+      if (!list.length) {
+        // Neither owner nor configurator: the projects this person holds a
+        // grant on (an author's world is where somebody granted them a role).
+        const mine = await api.get("parties", "/v1/authorizations/mine").catch(() => null);
+        const ctxIds = Array.from(
+          new Set(
+            ((mine && mine.authorizations) || [])
+              .map((a: { scope?: { contextId?: string }; contextId?: string }) => a.contextId || a.scope?.contextId)
+              .filter(Boolean) as string[],
+          ),
+        );
+        const fetched = await Promise.all(
+          ctxIds.map((id) =>
+            api.get("parties", "/v1/projects/" + encodeURIComponent(id)).then((p) => p.project || p).catch(() => null),
+          ),
+        );
+        list = fetched.filter(Boolean) as ProjectRow[];
+      }
       if (!live) return;
       setProjects(list);
       setProjectId((cur) => (cur && list.some((p) => p.id === cur) ? cur : list[0]?.id || ""));
@@ -273,19 +291,36 @@ export function ConsoleProvider(props: { children: ReactNode }) {
       setSession(null);
       return "stranger" as const;
     }
-    // The role is derived from the registry, not chosen in a browser. The
-    // instance's published self-description names its operator; a party that
-    // IS that operator gets the instance rail. Everyone else lands on the
-    // organisation side — the remaining p1_2 honesty: per-party org-role
-    // permits (author vs approver vs rate owner) are not registry-derivable
-    // yet, so a bound non-operator party reads as the Org Admin flow.
+    // The role is derived from the registry, not chosen in a browser. Three
+    // real facts, in order: the instance's published self-description names
+    // its operator; a person's own grants (/v1/authorizations/mine — the #68
+    // self-read) name the functions they hold, and specify-definition /
+    // ratify-definition are the P-3 roles; everyone else lands on the
+    // organisation side.
     const inst = await api.get("parties", "/v1/instance").catch(() => null);
     const operator = Boolean(inst && inst.instance && inst.instance.operatorPartyId === w.partyId);
-    const key: PersonaKey = operator ? "instance" : "orgadmin";
+    let key: PersonaKey = "orgadmin";
+    let role = "Org Admin";
+    if (operator) {
+      key = "instance";
+      role = "Instance Operator";
+    } else {
+      const mine = await api.get("parties", "/v1/authorizations/mine").catch(() => null);
+      const fns = new Set(
+        ((mine && mine.authorizations) || []).flatMap((a: { functions?: string[] }) => a.functions || []),
+      );
+      if (fns.has("specify-definition")) {
+        key = "author";
+        role = "Work Definition Author";
+      } else if (fns.has("ratify-definition")) {
+        key = "approver";
+        role = "Work Definition Approver";
+      }
+    }
     const who = {
       partyId: w.partyId,
       who: "Signed in via eSignet",
-      role: operator ? "Instance Operator" : "Org Admin",
+      role,
     };
     setPersonToken(token);
     setMe(who);

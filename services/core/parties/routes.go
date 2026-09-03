@@ -82,6 +82,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/terms", h.listTerms)
 	mux.HandleFunc("POST /v1/authorizations", h.createAuthorization)
 	mux.HandleFunc("GET /v1/authorizations/permits", h.permits)
+	mux.HandleFunc("GET /v1/authorizations/mine", h.myAuthorizations)
 	mux.HandleFunc("GET /v1/authorizations", h.listAuthorizations)
 	mux.HandleFunc("GET /v1/authorizations/overdue", h.overdueAuthorizations)
 	mux.HandleFunc("GET /v1/authorizations/{id}", h.readAuthorization)
@@ -532,6 +533,31 @@ func (h *handlers) readAuthorization(w http.ResponseWriter, r *http.Request) {
 // answered for a person, would be a roster query — and a roster of who works
 // where is precisely what #68 established must not be readable, whether from
 // the log or from here.
+// myAuthorizations is the self-read #68's refusal deliberately left open: a
+// signed-in person listing THEIR OWN active grants. What #68 forbids is a
+// third party assembling who-works-where; a person's own list is the opposite
+// — it is how a console shows somebody the roles they actually hold instead
+// of offering them a role to pick.
+func (h *handlers) myAuthorizations(w http.ResponseWriter, r *http.Request) {
+	caller := identity.From(r.Context())
+	if !caller.Authenticated() || caller.PartyID == "" {
+		httpx.WriteError(w, http.StatusUnauthorized, "no_token",
+			"this endpoint answers about a verified caller's own grants")
+		return
+	}
+	list, err := activeAuthorizationsHeldBy(r.Context(), h.d.DB.Q(), caller.PartyID, h.d.Clock.Now())
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "list own authorizations", err)
+		return
+	}
+	if list == nil {
+		list = []schema.Authorization{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"partyId": caller.PartyID, "authorizations": list, "count": len(list),
+	})
+}
+
 func (h *handlers) listAuthorizations(w http.ResponseWriter, r *http.Request) {
 	// A custodian/operations read: who holds what, where. Signed-in callers
 	// only (#102); the anonymous question this could answer is a roster probe.
