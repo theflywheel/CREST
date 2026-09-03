@@ -117,9 +117,6 @@ type State = {
   logout: () => void;
   // Re-asserts the signed-in person's token on the api session (see provider).
   assertSession: () => void;
-  // Switch the role lens (UI navigation only — the backend still authorizes
-  // by token and party; honest limit p1_2).
-  viewAs: (key: PersonaKey) => void;
   traceClaim: string;
   setTraceClaim: (c: string) => void;
   wizStep: number;
@@ -276,24 +273,25 @@ export function ConsoleProvider(props: { children: ReactNode }) {
       setSession(null);
       return "stranger" as const;
     }
-    const who = { partyId: w.partyId, who: "Signed in via eSignet", role: "Org Admin" };
+    // The role is derived from the registry, not chosen in a browser. The
+    // instance's published self-description names its operator; a party that
+    // IS that operator gets the instance rail. Everyone else lands on the
+    // organisation side — the remaining p1_2 honesty: per-party org-role
+    // permits (author vs approver vs rate owner) are not registry-derivable
+    // yet, so a bound non-operator party reads as the Org Admin flow.
+    const inst = await api.get("parties", "/v1/instance").catch(() => null);
+    const operator = Boolean(inst && inst.instance && inst.instance.operatorPartyId === w.partyId);
+    const key: PersonaKey = operator ? "instance" : "orgadmin";
+    const who = {
+      partyId: w.partyId,
+      who: "Signed in via eSignet",
+      role: operator ? "Instance Operator" : "Org Admin",
+    };
     setPersonToken(token);
     setMe(who);
-    setPersona("orgadmin");
-    store({ token, me: who, persona: "orgadmin" });
-    return "enrolled" as const;
-  };
-  // The role lens, switchable in the appbar. Honest limit p1_2 restated: the
-  // backend authorizes by token and party regardless; the persona only decides
-  // which screens the rail offers. Until per-party role permits exist, a real
-  // signed-in person may look through any lens — switching asserts nothing.
-  const viewAs = (key: PersonaKey) => {
-    if (!me) return;
-    const role = personas.find((p) => p.key === key)?.role || key;
-    const who = { ...me, role };
-    setMe(who);
     setPersona(key);
-    if (personToken) store({ token: personToken, me: who, persona: key });
+    store({ token, me: who, persona: key });
+    return "enrolled" as const;
   };
   const assertSession = () => {
     if (personToken) setSession(personToken);
@@ -319,7 +317,6 @@ export function ConsoleProvider(props: { children: ReactNode }) {
         completeEsignet,
         logout,
         assertSession,
-        viewAs,
         traceClaim,
         setTraceClaim,
         wizStep,
