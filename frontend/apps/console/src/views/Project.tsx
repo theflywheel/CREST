@@ -108,7 +108,7 @@ function DefinitionOrigin() {
               <button className="btn secondary" style={{ width: "auto", padding: "10px 22px" }} onClick={() => nav("/workers")}>
                 Back
               </button>
-              <button className="btn dominant" style={{ width: "auto", padding: "10px 22px" }} onClick={() => nav("/validation")}>
+              <button className="btn dominant" style={{ width: "auto", padding: "10px 22px" }} onClick={() => nav("/intake")}>
                 Continue
               </button>
             </div>

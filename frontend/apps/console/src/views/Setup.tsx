@@ -704,71 +704,107 @@ export function Validation() {
 // ── p2_19 · Two ways in, and there is no third ──────────────────────────────
 export function Intake() {
   const nav = useNavigate();
-  const [ways, setWays] = useState<Record<string, boolean>>({ pull: true, upload: true });
-  const toggle = (k: string) => setWays({ ...ways, [k]: !ways[k] });
+  const s = useConsole();
+  const [gen, setGen] = useState(0);
+  const [err, setErr] = useState<string | null>(null);
   const r = useLoad(async () => {
-    const out = await api.get("evidence", "/v1/sources").catch(() => ({ sources: [] }));
-    return (out.sources || []) as Array<{ systemRef?: string; adapterRef?: string; expectedEvery?: string; state?: string }>;
-  });
+    const [out, comp] = await Promise.all([
+      api.get("evidence", "/v1/sources").catch(() => ({ sources: [] })),
+      api.get("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/composition`).catch(() => ({ choices: [] })),
+    ]);
+    const rec = ((comp.choices || []) as Array<{ kind?: string; payload?: { value?: unknown } }>).find(
+      (c) => (c.kind || "").replace(/^composition:/, "") === "evidence-ways-in",
+    );
+    const v = rec ? String(rec.payload?.value || "") : "";
+    return {
+      sources: (out.sources || []) as Array<{ systemRef?: string; adapterRef?: string; expectedEvery?: string; state?: string }>,
+      // Both ways in until an answer narrows it — the same reading as p2_1.
+      ways: { pull: v === "" || v.includes("pull"), upload: v === "" || v.includes("upload"), recorded: v !== "" },
+    };
+  }, [s.projectId, gen]);
+  const record = async (pull: boolean, upload: boolean) => {
+    setErr(null);
+    const v = pull && upload ? "pull-and-upload" : pull ? "pull" : upload ? "upload" : "none";
+    try {
+      await api.put("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/composition/evidence-ways-in`, { value: v });
+      setGen((g) => g + 1);
+    } catch (e) {
+      setErr(errText(e));
+    }
+  };
   return (
-    <>
-      <Title t="How does evidence reach CREST?" />
-      <Lede>
-        CREST does not record work. Somewhere else already does, and this decides how that record gets here. Both
-        options can run at once, on different definitions.
-      </Lede>
-      <div className="optcols">
-        <OptionCard
-          t="A system CREST pulls from"
-          s="An adaptor reads records on a schedule from a platform that already logs the work: a campaign system, a case-management tool, an HR or attendance system. Nobody retypes anything, and nobody in the chain had a reason to change the number."
-          on={ways.pull}
-          onPick={() => toggle("pull")}
-        />
-        <OptionCard
-          t="A spreadsheet the project uploads"
-          s="CREST generates a template from the work definition. Whoever holds the records fills it and the project uploads it. A person opened the file and typed into it, so it is weaker evidence than a system record, however careful they were."
-          on={ways.upload}
-          onPick={() => toggle("upload")}
-        />
-        <OptionCard
-          t="Somebody entering work into CREST"
-          s="This does not exist and will not be built. A record CREST captured itself would be evidence CREST is vouching for on its own authority, which is the one thing the trust model cannot do."
-          unavailable
-        />
-      </div>
-      <Callout kind="green" title="Why both, usually">
-        The two are not alternatives, and most real projects need both. A campaign system covers the work it manages,
-        and there is always work it does not: a training an institute ran, a round a contractor completed, a month a
-        partner recorded on paper.
-      </Callout>
-      <LoadFrame r={r}>
-        {(sources) => (
-          <div className="form-grid">
-            <RefField label="Pull from">
-              <select name="pullfrom" defaultValue="">
-                <option value="">—</option>
-                {sources.map((s) => (
-                  <option key={s.systemRef || s.adapterRef} value={s.systemRef || s.adapterRef}>
-                    {s.systemRef || s.adapterRef} {s.expectedEvery ? "· " + s.expectedEvery : ""}
-                  </option>
-                ))}
-              </select>
-            </RefField>
-            <RefField label="How often" value={sources[0]?.expectedEvery || "set on the registered source, not here"} />
-            <RefField
-              label="Upload accepted from"
-              value="The Org Admin of any organisation on this project"
-              hint="Whoever uploads is recorded on every row the file produces"
+    <LoadFrame r={r}>
+      {({ sources, ways }) => (
+        <>
+          <Title t="How does evidence reach CREST?" />
+          <Lede>
+            CREST does not record work. Somewhere else already does, and this decides how that record gets here. Both
+            options can run at once, on different definitions.
+          </Lede>
+          {err ? <div className="errbar">{err}</div> : null}
+          <div style={{ maxWidth: 780 }}>
+            <SourcingRow
+              t="A system CREST pulls from"
+              s="An adaptor reads records on a schedule from a platform that already logs the work: a campaign system, a case-management tool, an HR or attendance system. Nobody retypes anything, and nobody in the chain had a reason to change the number."
+              on={ways.pull}
+              onPick={() => record(!ways.pull, ways.upload)}
             />
+            <SourcingRow
+              t="A spreadsheet the project uploads"
+              s="CREST generates a template from the work definition. Whoever holds the records fills it and the project uploads it. A person opened the file and typed into it, so it is weaker evidence than a system record, however careful they were."
+              on={ways.upload}
+              onPick={() => record(ways.pull, !ways.upload)}
+            />
+            <div
+              style={{
+                display: "flex", gap: 12, alignItems: "flex-start", padding: "14px 16px", marginBottom: 12,
+                borderRadius: 8, border: "1px dashed var(--line, #DDD9D3)", opacity: 0.75,
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div className="muted" style={{ font: "500 15px/1.4 Roboto,system-ui" }}>Somebody entering work into CREST</div>
+                <div className="muted" style={{ font: "400 13px/1.5 Roboto,system-ui", marginTop: 2 }}>
+                  This does not exist and will not be built. A record CREST captured itself would be evidence CREST is
+                  vouching for on its own authority, which is the one thing the trust model cannot do.
+                </div>
+              </div>
+              <Chip kind="plain">not available</Chip>
+            </div>
+            {ways.recorded ? null : (
+              <p className="muted" style={{ margin: "2px 0 10px" }}>
+                Both ways stand open until an answer narrows them — flipping a card records the choice on the project.
+              </p>
+            )}
+            <Callout kind="green" title="Why both, usually">
+              The two are not alternatives, and most real projects need both. A campaign system covers the work it
+              manages, and there is always work it does not: a training an institute ran, a round a contractor
+              completed, a month a partner recorded on paper.
+            </Callout>
+            <div className="form-grid">
+              <RefField label="Pull from">
+                <select name="pullfrom" defaultValue="">
+                  <option value="">—</option>
+                  {sources.map((x) => (
+                    <option key={x.systemRef || x.adapterRef} value={x.systemRef || x.adapterRef}>
+                      {x.systemRef || x.adapterRef} {x.expectedEvery ? "· " + x.expectedEvery : ""}
+                    </option>
+                  ))}
+                </select>
+              </RefField>
+              <RefField label="How often" value={sources[0]?.expectedEvery || "set on the registered source, not here"} />
+              <RefField
+                label="Upload accepted from"
+                value="The Org Admin of any organisation on this project"
+                hint="Whoever uploads is recorded on every row the file produces"
+              />
+            </div>
+            <div style={{ borderTop: "1px solid var(--line, #E5E1DC)", marginTop: 16, paddingTop: 14, display: "flex", justifyContent: "flex-end" }}>
+              <Actions back={["Back", () => nav("/definition")]} go={["Save and continue", () => nav("/validation")]} />
+            </div>
           </div>
-        )}
-      </LoadFrame>
-      <OpenNote>
-        The pull list is every source really registered with the evidence service, so an empty list means no feed
-        exists — not that one is hidden. Which ways-in a project allows is a composition choice with no store yet.
-      </OpenNote>
-      <Actions back={["Back", () => nav("/definition")]} go={["Save and continue", () => nav("/intake/file")]} />
-    </>
+        </>
+      )}
+    </LoadFrame>
   );
 }
 
