@@ -10,7 +10,7 @@
 import { useState } from "react";
 import { api } from "@crest/api";
 import { Callout, Chip, OptionCard, RefField, OpenNote, StepCounter } from "@crest/ui";
-import { Card, CardTitled, KVR, Lede, LoadFrame, Mono, MonoShort, short, Stat, Tbl, Title, useLoad, when } from "../ui";
+import { Card, CardTitled, KVR, Lede, LoadFrame, MonoShort, short, Tbl, Title, useLoad, when } from "../ui";
 import { errText, useConsole } from "../state";
 import { useNavigate } from "react-router-dom";
 
@@ -32,6 +32,61 @@ function Actions(props: { back?: [string, () => void]; go?: [string, () => void]
   );
 }
 
+// The reference's p1_1 rows: bold (or muted) label, a quiet sub-line, and a
+// chip or count pinned right, each row separated by a hairline.
+function HomeRow(props: {
+  label: React.ReactNode;
+  sub?: React.ReactNode;
+  right?: React.ReactNode;
+  muted?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 16,
+        padding: "14px 0",
+        borderBottom: "1px solid var(--line, #E5E1DC)",
+      }}
+    >
+      <div>
+        <div style={{ font: props.muted ? "400 15px/1.4 Roboto,system-ui" : "500 15px/1.4 Roboto,system-ui", color: props.muted ? "var(--muted, #6B6660)" : "inherit" }}>
+          {props.label}
+        </div>
+        {props.sub ? (
+          <div className="muted" style={{ font: "400 13px/1.5 Roboto,system-ui", marginTop: 2 }}>
+            {props.sub}
+          </div>
+        ) : null}
+      </div>
+      <div style={{ flexShrink: 0 }}>{props.right}</div>
+    </div>
+  );
+}
+
+// The grey count badge the reference pins on the Projects / People rows.
+function CountBadge(props: { n: number }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minWidth: 28,
+        height: 28,
+        padding: "0 8px",
+        borderRadius: 14,
+        background: "var(--chip, #EFEDEA)",
+        font: "500 13px/1 Roboto,system-ui",
+      }}
+    >
+      {props.n}
+    </span>
+  );
+}
+
 // ── p1_1 · Standing configuration, not project work ─────────────────────────
 export function Projects() {
   const nav = useNavigate();
@@ -40,7 +95,19 @@ export function Projects() {
   const r = useLoad(async () => {
     const [org, reg, projects, declined, orgRoles] = await Promise.all([
       api.get("parties", `/v1/parties/${encodeURIComponent(me)}`),
-      api.get("parties", `/v1/organisations/${encodeURIComponent(me)}/registration`).catch(() => null),
+      api
+        .get("parties", `/v1/organisations/${encodeURIComponent(me)}/registration`)
+        .then(async (reg0) => {
+          // The reference's terms row names the terms, not their id: "Standard
+          // delivery, version 2 — approved 14 August 2026".
+          if (reg0 && reg0.termsId) {
+            const t = await api.get("parties", "/v1/terms").catch(() => null);
+            const hit = t && (t.terms || []).find((x: { id: string; name?: string }) => x.id === reg0.termsId);
+            return { ...reg0, termsTitle: hit && hit.name };
+          }
+          return reg0;
+        })
+        .catch(() => null),
       api.get("parties", `/v1/projects?ownerPartyId=${encodeURIComponent(me)}`).catch(() => ({ projects: [] })),
       api.get("parties", `/v1/projects?ownerPartyId=${encodeURIComponent(me)}&ownership=DECLINED`).catch(() => ({ projects: [] })),
       api.get("parties", `/v1/organisations/${encodeURIComponent(me)}/roles`).catch(() => ({ roles: [] })),
@@ -62,25 +129,44 @@ export function Projects() {
             Your organisation is set up and ready. Add your first project to start defining work and registering
             workers.
           </Lede>
-          <div className="pane-cols">
-            <div>
-              <CardTitled
-                t="Terms held"
-                chip={<Chip kind={reg && reg.state === "APPROVED" ? "ok" : "warn"}>{(reg && reg.state) || "unknown"}</Chip>}
-              >
-                <KVR
-                  rows={[
-                    ["version", reg && reg.termsVersion ? <Mono>{reg.termsVersion}</Mono> : "no acceptance on record"],
-                    ["decided", reg ? when(reg.decidedAt) : "—"],
-                    ["decided by", reg && reg.decidedBy ? <Mono>{reg.decidedBy}</Mono> : "—"],
-                  ]}
-                />
-              </CardTitled>
-              <CardTitled t="Worker Registry Custodian (Worker Registry Custodian)" chip={<Chip kind="info">Held here</Chip>}>
-                <p className="body-2">Sits inside this organisation. Cannot be delegated out.</p>
-                <div style={{ height: 8 }} />
-                <KVR rows={[["custodian party", "named per deployment — see the Instance view"]]} />
-              </CardTitled>
+          <div style={{ maxWidth: 780 }}>
+            <HomeRow
+              label="Terms held"
+              sub={
+                reg && reg.termsVersion
+                  ? `${reg.termsTitle || reg.termsId}, version ${reg.termsVersion}` +
+                    (reg.decidedAt ? ` — approved ${when(reg.decidedAt)}` : " — accepted, decision pending")
+                  : "No acceptance on record"
+              }
+              right={
+                <Chip kind={reg && reg.state === "APPROVED" ? "ok" : "warn"}>
+                  {reg && reg.state === "APPROVED" ? "Active" : (reg && reg.state) || "unknown"}
+                </Chip>
+              }
+            />
+            <HomeRow
+              label="Worker Registry Custodian (Worker Registry Custodian)"
+              sub="Sits inside this organisation. Cannot be delegated out."
+              right={<Chip kind="info">Held here</Chip>}
+            />
+            <HomeRow
+              muted
+              label="Projects"
+              sub={projects.length ? "The list below carries each project's state and handover" : "Ready to add your first"}
+              right={<CountBadge n={projects.length} />}
+            />
+            <HomeRow
+              muted
+              label="People in roles"
+              sub={roles.length <= 1 ? "You, as Org Admin" : "Granted by this organisation"}
+              right={<CountBadge n={Math.max(roles.length, 1)} />}
+            />
+            <div style={{ height: 16 }} />
+            <Callout kind="teal" title="">
+              An Org Admin manages standing configuration across every project this organisation runs. It does not
+              configure any individual project — that is a separate role, assigned per project.
+            </Callout>
+            {projects.length ? (
               <CardTitled t="Projects this organisation runs">
                 <Tbl
                   heads={["Project", "State", "Handover", "Configurator", ""]}
@@ -110,7 +196,8 @@ export function Projects() {
                   empty="No project yet. Creating one names it and appoints who configures it — nothing about how it runs is decided here."
                 />
               </CardTitled>
-              {declined.length ? (
+            ) : null}
+            {declined.length ? (
                 <CardTitled t="Handed back to you" chip={<Chip kind="err">{declined.length}</Chip>}>
                   <KVR
                     rows={declined.map((p) => [
@@ -130,19 +217,17 @@ export function Projects() {
                   </p>
                 </CardTitled>
               ) : null}
-            </div>
-            <div>
-              <div className="stats">
-                <Stat n={<span data-stat="projects">{projects.length}</span>} label={projects.length ? "Projects" : "Projects · ready to add your first"} />
-                <Stat n={roles.length} label="People in roles · granted by this organisation" />
-              </div>
-              <Callout kind="teal" title="What an Org Admin holds">
-                An Org Admin manages standing configuration across every project this organisation runs. It does not
-                configure any individual project — that is a separate role, assigned per project.
-              </Callout>
+            {/* The e2e suite reads the project count off this stat. */}
+            <span data-stat="projects" hidden>
+              {projects.length}
+            </span>
+            <div style={{ borderTop: "1px solid var(--line, #E5E1DC)", marginTop: 18, paddingTop: 14, display: "flex", justifyContent: "flex-end" }}>
+              <Actions
+                back={["Assign people to roles", () => nav("/people")]}
+                go={["Create a project", () => nav("/projects/new")]}
+              />
             </div>
           </div>
-          <Actions back={["Assign people to roles", () => nav("/people")]} go={["Create a project", () => nav("/projects/new")]} />
         </>
       )}
     </LoadFrame>

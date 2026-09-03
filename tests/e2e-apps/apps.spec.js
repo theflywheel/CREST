@@ -161,7 +161,7 @@ for (const [personaIdx, personaName, who, views] of [
   [8, "Naliaka (support agent, W-3)", "Naliaka", ["cases", "supportfind", "supporttrace"]],
   [9, "Funding oversight (V-4)", "Funding oversight", ["portfolio", "status"]],
 ]) {
-  test(`console: ${personaName} walks every view`, async ({ page }) => {
+  test(`console: ${personaName} walks every view`, async ({ page, request }) => {
     const errors = watch(page);
     await page.goto("/console/");
     await settle(page);
@@ -297,11 +297,9 @@ test("console: the approver cannot reach the author's wizard", async ({ page, re
 // only because the navigation lacks the entry — the definitions service
 // refuses a version whose ratifier is its author, and the two personas are
 // two parties so that the refusal is real rather than assumed.
-test("console: the author cannot reach the approver's signature", async ({ page }) => {
+test("console: the author cannot reach the approver's signature", async ({ page, request }) => {
   const errors = watch(page);
-  await page.goto("/console/");
-  await settle(page);
-  await page.click('[data-persona="author"]');
+  await consoleSignIn(page, request, "author");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await expect(page.locator('.sidebar a[href*="ratify"]')).toHaveCount(0);
@@ -1490,9 +1488,7 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   const me = FIX.org;
 
   // ── F-1 · f1_2: only one person can assign — the Org Admin records it. ──
-  await page.goto("/console/");
-  await settle(page);
-  await page.click('[data-persona="orgadmin"]');
+  await consoleSignIn(page, request, "orgadmin");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await signedInAs(page, "Peter Otieno");
@@ -1515,9 +1511,7 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   expect((await notOwner.json()).code).toBe("not_rate_owner");
 
   // ── f1_3 / f1_4: the owner prices a unit somebody else defined. ──
-  await page.click("#logout");
-  await settle(page);
-  await page.click('[data-persona="rateowner"]');
+  await consoleSignIn(page, request, "rateowner");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await signedInAs(page, "Nadia Okoth");
@@ -1580,9 +1574,7 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   expect(r.status(), "the supervisor's grant on the walk's project").toBe(201);
 
   // ── F-2: the mechanism owner configures — and no further. ──
-  await page.click("#logout");
-  await settle(page);
-  await page.click('[data-persona="payowner"]');
+  await consoleSignIn(page, request, "payowner");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await signedInAs(page, "Daniel Mwangi");
@@ -1818,10 +1810,8 @@ async function step(page, label, route) {
   await settle(page);
 }
 
-async function signInAs(page, persona, who) {
-  await page.goto("/console/");
-  await settle(page);
-  await page.click(`[data-persona="${persona}"]`);
+async function signInAs(page, request, persona, who) {
+  await consoleSignIn(page, request, persona);
   await page.locator("#logout").waitFor({ state: "visible", timeout: 25000 });
   await settle(page);
   await signedInAs(page, who);
@@ -1830,10 +1820,10 @@ async function signInAs(page, persona, who) {
 // Switch persona inside the same tab, so sessionStorage — which is where the
 // draft id lives — survives. That is deliberate: the approver reads the very
 // draft the author just submitted, and the console holds nothing else.
-async function switchTo(page, persona, who) {
-  await page.click("#logout");
-  await settle(page);
-  await page.click(`[data-persona="${persona}"]`);
+// consoleSignIn only rewrites the session key, so the rest of sessionStorage
+// (the draft id) survives the switch.
+async function switchTo(page, request, persona, who) {
+  await consoleSignIn(page, request, persona);
   await page.locator("#logout").waitFor({ state: "visible", timeout: 25000 });
   await settle(page);
   await signedInAs(page, who);
@@ -1847,9 +1837,7 @@ test("console: the registry metrics read real counts, and the receipt shows a re
   const errors = watch(page);
 
   // ── g4_4/g4_5/g4_7, as the registry custodian. ──
-  await page.goto("/console/");
-  await settle(page);
-  await page.click('[data-persona="custodian"]');
+  await consoleSignIn(page, request, "custodian");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await signedInAs(page, "Otieno");
@@ -1896,7 +1884,7 @@ test("console: the registry metrics read real counts, and the receipt shows a re
   const batchId = (await batchRes.json()).batch.id;
   expect(batchId).toBeTruthy();
 
-  await switchTo(page, "instance", "Instance administrator");
+  await switchTo(page, request, "instance", "Instance administrator");
   await page.evaluate(() => { location.hash = "#/receipt"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("What the project received, and where it sits");
@@ -1909,13 +1897,13 @@ test("console: the registry metrics read real counts, and the receipt shows a re
   await assertAlive(page, errors, "project receipt");
 });
 
-test("console: the authoring wizard writes a definition, proves it dry, and has it ratified with its gaps named", async ({ page }) => {
+test("console: the authoring wizard writes a definition, proves it dry, and has it ratified with its gaps named", async ({ page, request }) => {
   const errors = watch(page);
   test.setTimeout(240000);
 
   // ── p3_1 · the registry. "Define new work" is a real POST; a draft exists
   //    on the server before the first screen renders. ──
-  await signInAs(page, "author", "Amina Yusuf");
+  await signInAs(page, request, "author", "Amina Yusuf");
   await page.evaluate(() => { location.hash = "#/definework"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("Work definitions");
@@ -2209,7 +2197,7 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   // ── p3_15 · the approver signs, and names what stays pending. A DIFFERENT
   //    party: the service refuses a self-ratified version, and these two
   //    personas are two parties so that refusal is load-bearing. ──
-  await switchTo(page, "approver", "Prof. Ndegwa");
+  await switchTo(page, request, "approver", "Prof. Ndegwa");
   await page.evaluate(() => { location.hash = "#/ratify"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("Review and sign");
@@ -2241,7 +2229,7 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
 
   // ── p3_pay · pricing handed to the rate owner. The author's act, not the
   //    approver's, and a record rather than an authority. ──
-  await switchTo(page, "author", "Amina Yusuf");
+  await switchTo(page, request, "author", "Amina Yusuf");
   await page.evaluate(() => { location.hash = "#/handoff"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("The definition is signed. Nothing prices it yet.");
@@ -2266,11 +2254,11 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
 // that named fields. Driven through "Clone a version", which also proves that
 // submitting a clone APPENDS v2 and leaves v1 exactly as ratified — the
 // property that protects every credential already pinned to v1.
-test("console: a clone submits as the next version, and ratifying names nothing pending", async ({ page }) => {
+test("console: a clone submits as the next version, and ratifying names nothing pending", async ({ page, request }) => {
   const errors = watch(page);
   test.setTimeout(180000);
 
-  await signInAs(page, "author", "Amina Yusuf");
+  await signInAs(page, request, "author", "Amina Yusuf");
   await page.evaluate(() => { location.hash = "#/definework"; });
   await settle(page);
   await step(page, "Clone a version", "define/sector");
@@ -2317,7 +2305,7 @@ test("console: a clone submits as the next version, and ratifying names nothing 
 
   // ── Ratified with nothing pending: the approver declares no open fields,
   //    and that is a different record from a list that happens to be empty. ──
-  await switchTo(page, "approver", "Prof. Ndegwa");
+  await switchTo(page, request, "approver", "Prof. Ndegwa");
   await page.evaluate(() => { location.hash = "#/ratify"; });
   await settle(page);
   await expect(page.locator("#ratify-read")).toContainText(`v${appended}`);

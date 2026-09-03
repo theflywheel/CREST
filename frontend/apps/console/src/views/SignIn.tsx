@@ -38,6 +38,10 @@ export function SignIn() {
       <h1 className="scr-title" id="signin-title">
         Sign in to CREST Console
       </h1>
+      <p className="muted" style={{ maxWidth: 700 }}>
+        One door, every console role. What you see after signing in is decided by the roles you hold — never by
+        which link you opened.
+      </p>
       {s.err ? <ErrBar>{s.err}</ErrBar> : null}
 
       <div className="card" style={{ maxWidth: 700 }} data-panel="signin-with">
@@ -46,6 +50,17 @@ export function SignIn() {
         <button className="btn" id="signin-esignet" onClick={() => startEsignetLogin()}>
           Continue with eSignet
         </button>
+        <p className="muted" style={{ marginTop: 8 }}>
+          Your national identity provider. CREST never sees a credential of yours.
+        </p>
+      </div>
+
+      <div className="card" style={{ maxWidth: 700, borderLeft: "4px solid #00703C" }}>
+        <span className="eyebrow">What this screen never does</span>
+        <p className="body-2" style={{ marginTop: 8 }}>
+          It never asks which role you want, and never offers a role you do not hold. A role is granted in the
+          registry and read back here — picking your own would make authority a matter of self-declaration.
+        </p>
       </div>
     </AppbarOnly>
   );
