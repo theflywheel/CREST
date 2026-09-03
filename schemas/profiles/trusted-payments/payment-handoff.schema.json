@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:crest:schema:profiles:trusted-payments:payment-handoff:1",
+  "title": "payment-handoff LinkedRecord payload",
+  "description": "The author's recorded hand-over of pricing to a rate owner (p3_pay → F-1). A definition is signed with nothing pricing it, and that is a complete state (§7); this record is the invitation, not the authority. The authority is the RateOwnerAssignment the payments service keeps — an accepted handoff composes with it, it never substitutes for it, and nothing on this record can touch the definition or a rate.",
+  "type": "object",
+  "properties": {
+    "definitionVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The version whose pricing is being handed over. Named explicitly because a rate owner invited against v1 has not been invited against v2."
+    },
+    "invitedPartyId": {
+      "$ref": "urn:crest:schema:primitives:common:1#/$defs/did",
+      "description": "Who is being asked to own the rate. Optional: a handoff can be recorded before anyone is named, which is the honest state p3_pay shows — signed, unpriced, and visibly waiting."
+    },
+    "invitedByPartyId": {
+      "$ref": "urn:crest:schema:primitives:common:1#/$defs/did",
+      "description": "Who recorded the handoff. Required: an ownerless invitation records nothing."
+    },
+    "invitedAt": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" },
+    "note": { "type": "string", "minLength": 1, "maxLength": 500 }
+  },
+  "required": ["definitionVersion", "invitedByPartyId", "invitedAt"],
+  "additionalProperties": false
+}
