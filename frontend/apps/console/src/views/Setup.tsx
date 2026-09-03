@@ -799,12 +799,150 @@ export function Intake() {
               />
             </div>
             <div style={{ borderTop: "1px solid var(--line, #E5E1DC)", marginTop: 16, paddingTop: 14, display: "flex", justifyContent: "flex-end" }}>
-              <Actions back={["Back", () => nav("/definition")]} go={["Save and continue", () => nav("/validation")]} />
+              <Actions back={["Back", () => nav("/definition")]} go={["Save and continue", () => nav("/intake/file")]} />
             </div>
           </div>
         </>
       )}
     </LoadFrame>
+  );
+}
+
+// ── p2_20/p2_21 · A spreadsheet arrived ──────────────────────────────────────
+// The reference's frame reviews a file before anything is written ("Nothing
+// has been written yet", Accept N / hold M as buttons). CREST's one ingestion
+// door works the other way and this frame says so: POST /v1/batches checks
+// every row at ingestion, writes the rows that clear, and holds the rest in
+// the unclear queue with a reason and an owner — the accept/hold split is a
+// fact the service already decided, not a button.
+export function SpreadsheetArrived() {
+  const nav = useNavigate();
+  const s = useConsole();
+  const [fileName, setFileName] = useState("");
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [result, setResult] = useState<{
+    batch?: { id?: string };
+    claimIds?: string[];
+    unclear?: Array<{ rowRef?: string; reason?: string }>;
+  } | null>(null);
+  const rows = text
+    ? text.trim().split(/\r?\n/).slice(0, 7).map((l) => l.split(","))
+    : [];
+  const submit = async () => {
+    setErr(null);
+    setBusy(true);
+    try {
+      const qs = new URLSearchParams({
+        contextId: s.projectId,
+        definitionId: s.definitionId,
+        submittedBy: s.me!.partyId,
+        sourceClass: "programme-system",
+        captureMethod: "unsupervised-manual",
+        sourceExposure: "supervised-upload",
+        systemRef: fileName || "console-upload",
+      });
+      setResult(await api.postRaw("evidence", "/v1/batches?" + qs.toString(), text, "text/csv"));
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const accepted = result?.claimIds?.length ?? 0;
+  const held = result?.unclear?.length ?? 0;
+  return (
+    <>
+      <Title t="A spreadsheet arrived" />
+      <Lede>
+        {result
+          ? `${fileName} · uploaded by ${s.me!.who}. Every row has already been checked; what cleared is written, what did not is held with a reason.`
+          : "Pick the filled template. The file goes through the one ingestion door that exists — every row is checked against the definition before anything is written."}
+      </Lede>
+      {err ? <div className="errbar">{err}</div> : null}
+      <div style={{ maxWidth: 820 }}>
+        {!s.definitionId ? (
+          <Callout kind="grey" title="No definition is in force">
+            Evidence is only accepted against an ACTIVE work definition, and this deployment has none yet — the
+            reference's file is itself "generated from WD-4471 v1.2". Author and ratify a definition first; this
+            frame then accepts files against it.
+          </Callout>
+        ) : null}
+        <div
+          style={{ padding: "12px 14px", border: "1px dashed var(--line, #DDD9D3)", borderRadius: 8, marginBottom: 12, display: "flex", gap: 12, alignItems: "center" }}
+        >
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(ev) => {
+              const f = ev.target.files?.[0];
+              if (!f) return;
+              setFileName(f.name);
+              setResult(null);
+              f.text().then(setText);
+            }}
+          />
+          <span className="muted" style={{ font: "400 13px/1.5 Roboto,system-ui" }}>
+            The template's columns: activity, outcome_value, outcome_unit, worker_id_kind, worker_id, period_start,
+            period_end — a registered source's own column names are translated by its mapping.
+          </span>
+        </div>
+        {rows.length ? (
+          <div style={{ overflowX: "auto", marginBottom: 12 }}>
+            <Tbl heads={rows[0]} rows={rows.slice(1)} empty="the file has a header and no rows" />
+          </div>
+        ) : null}
+        {result ? (
+          <>
+            <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+              {[
+                [accepted, "Rows that cleared and were written", "#00703C"],
+                [held, "Rows held, each with a reason and an owner", "#C84C0E"],
+              ].map(([n, label, color]) => (
+                <div key={String(label)} style={{ flex: 1, border: "1px solid var(--line, #DDD9D3)", borderRadius: 8, padding: "14px 16px" }}>
+                  <div style={{ font: "600 26px/1.2 Roboto,system-ui", color: String(color) }}>{n}</div>
+                  <div className="muted" style={{ font: "400 13px/1.5 Roboto,system-ui" }}>{label}</div>
+                </div>
+              ))}
+            </div>
+            {held ? (
+              <Tbl
+                heads={["Row", "Why it is held"]}
+                rows={(result.unclear || []).map((u) => [u.rowRef || "", u.reason || ""])}
+                empty=""
+              />
+            ) : null}
+          </>
+        ) : null}
+        <Callout kind="teal" title="What the check actually is">
+          Every row is checked against the definition before anything is accepted: does the worker exist, is the
+          definition the active version, is the quantity within what the definition permits, is the date inside the
+          period. A row that fails any of those is held, and the rest are unaffected — the reference's "Accept N,
+          hold M" is a decision this service makes at ingestion, row by row, so here it is a receipt rather than a
+          button.
+        </Callout>
+        <div style={{ borderTop: "1px solid var(--line, #E5E1DC)", marginTop: 16, paddingTop: 14, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button className="btn secondary" style={{ width: "auto", padding: "10px 22px" }} onClick={() => nav("/intake")}>
+            Back
+          </button>
+          {result ? (
+            <button className="btn dominant" style={{ width: "auto", padding: "10px 22px" }} onClick={() => nav("/validation")}>
+              Continue
+            </button>
+          ) : (
+            <button
+              className="btn dominant"
+              style={{ width: "auto", padding: "10px 22px" }}
+              disabled={!text || !s.definitionId || busy}
+              onClick={submit}
+            >
+              {busy ? "Submitting…" : "Submit the file"}
+            </button>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
 

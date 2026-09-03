@@ -36,7 +36,7 @@ import {
 } from "./views/OnboardOrg";
 import { SignIn, AuthReturn } from "./views/SignIn";
 import {
-  Projects as OrgHome, NewProject, People, Workers, Validation, Intake, Finance as FinanceConnect, Navigation,
+  Projects as OrgHome, NewProject, People, Workers, Validation, Intake, SpreadsheetArrived, Finance as FinanceConnect, Navigation,
 } from "./views/Setup";
 import {
   Where, Handover, Compose, Owners, Activate, FinanceCode, SupportOwner, Partners,
@@ -80,7 +80,7 @@ const FINANCE_ROUTES = ["/finance", "/finance/connect", "/support"];
 // frame's own buttons rather than by the rail.
 const J3_ROUTES = [
   "/org", "/people", "/projects", "/projects/new", "/definition", "/paysetup", "/workers",
-  "/validation", "/intake", "/sources", "/where", "/handover", "/compose", "/owners",
+  "/validation", "/intake", "/intake/file", "/sources", "/where", "/handover", "/compose", "/owners",
   "/activate", "/partners", "/rateowner", ...DASHBOARD_ROUTES, ...FINANCE_ROUTES,
 ];
 
@@ -316,6 +316,7 @@ export function App() {
         <Route path="/workers" element={<Workers />} />
         <Route path="/validation" element={<Validation />} />
         <Route path="/intake" element={<Intake />} />
+        <Route path="/intake/file" element={<SpreadsheetArrived />} />
         <Route path="/finance" element={<FinanceCode />} />
         <Route path="/finance/connect" element={<FinanceConnect />} />
         <Route path="/support" element={<SupportOwner />} />
