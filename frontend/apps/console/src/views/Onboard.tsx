@@ -524,31 +524,95 @@ export function OnboardChecks() {
         <div>
           {checks === null ? (
             <p className="muted">Reading the recorded verdicts…</p>
-          ) : checks.length ? (
-            <GridTable cols="1.2fr 2fr 0.8fr" head={["What", "Who answers for it", "Status"]}>
-              {checks.map((c: any) => (
-                <div className="g-row" key={c.id || c.name}>
-                  <span>{c.name}</span>
-                  <span>
-                    {c.ownerKind === "policy" ? "policy " : ""}
-                    <span className="mono">{c.owner}</span>
-                    {c.note ? ` — ${c.note}` : ""}
-                  </span>
-                  <span>
-                    <Chip sm kind={c.outcome === "PASS" ? "ok" : "err"}>
-                      {c.outcome}
-                    </Chip>
-                  </span>
-                </div>
-              ))}
-            </GridTable>
           ) : (
-            <Sidecar>
-              No check verdict has been recorded yet. A check here is a recorded verdict with a named owner — a
-              person, or a named policy such as a business-register adapter — never a simulation; verdicts are
-              recorded while a request sits under review, and none exists on this application yet.
-              {request ? ` The open request is ${request.id} (${request.state}).` : ""}
-            </Sidecar>
+            (() => {
+              // The reference's four questions (g2_12), asked always; each
+              // status is read from a record that exists — a verdict the
+              // reviewer recorded, or the contact the applicant declared —
+              // and says "not recorded" where none does. No status here is
+              // ever simulated; there is no automated checker in this
+              // codebase and the register row stays honest about that.
+              const verdict = (name: string) => (checks as any[]).find((c) => (c.name || "").includes(name));
+              const vChip = (c: any) =>
+                c ? (
+                  <Chip sm kind={c.outcome === "PASS" ? "ok" : "err"}>
+                    {c.outcome === "PASS" ? "confirmed" : "failed"}
+                  </Chip>
+                ) : (
+                  <Chip sm kind="plain">
+                    not recorded
+                  </Chip>
+                );
+              const contact = reg?.attributes?.contactPerson;
+              const rows: Array<[string, string, React.ReactNode]> = [
+                [
+                  "Your registration number",
+                  "Checked against the business register for bodies like yours — recorded by the reviewer, never simulated",
+                  vChip(verdict("register")),
+                ],
+                [
+                  "Your organisation\u2019s certificate",
+                  "So the systems you connect can be recognised as yours — a declared reference, read by a person",
+                  vChip(verdict("certificate")),
+                ],
+                [
+                  "A named data contact",
+                  "Required before you hold anybody\u2019s identity number or photograph",
+                  contact ? (
+                    <Chip sm kind="ok">
+                      named · {String(contact)}
+                    </Chip>
+                  ) : (
+                    <Chip sm kind="warn">
+                      needed
+                    </Chip>
+                  ),
+                ],
+                [
+                  "If the register cannot confirm you",
+                  "A certificate or gazette reference, read by a person instead",
+                  vChip(verdict("fallback") || verdict("gazette")),
+                ],
+              ];
+              const named = new Set(["register", "certificate", "fallback", "gazette"]);
+              const extra = (checks as any[]).filter((c) => ![...named].some((n) => (c.name || "").includes(n)));
+              return (
+                <>
+                  <GridTable cols="1.2fr 2fr 0.9fr" head={["What", "Why it is asked", "Status"]}>
+                    {rows.map(([what, why, status]) => (
+                      <div className="g-row" key={what}>
+                        <span>{what}</span>
+                        <span className="muted">{why}</span>
+                        <span>{status}</span>
+                      </div>
+                    ))}
+                    {extra.map((c: any) => (
+                      <div className="g-row" key={c.id || c.name}>
+                        <span>{c.name}</span>
+                        <span className="muted">
+                          {c.ownerKind === "policy" ? "policy " : ""}
+                          <span className="mono">{c.owner}</span>
+                          {c.note ? ` — ${c.note}` : ""}
+                        </span>
+                        <span>
+                          <Chip sm kind={c.outcome === "PASS" ? "ok" : "err"}>
+                            {c.outcome}
+                          </Chip>
+                        </span>
+                      </div>
+                    ))}
+                  </GridTable>
+                  {!checks.length ? (
+                    <Sidecar>
+                      "Not recorded" is the honest status: a check is a verdict with a named owner — a person, or a
+                      named policy such as a business-register adapter — recorded while a request sits under review,
+                      and none exists on this application yet.
+                      {request ? ` The open request is ${request.id} (${request.state}).` : ""}
+                    </Sidecar>
+                  ) : null}
+                </>
+              );
+            })()
           )}
         </div>
         <Callout kind="teal" title="Read the third row">
