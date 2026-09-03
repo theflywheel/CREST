@@ -20,7 +20,47 @@ const F = BASE + "/enrolment/";
 const C = BASE + "/console/";
 const V = BASE + "/verify/";
 const FIXWORKER = "did:crest:party:01JCREST00000000000000WRKA";
+const FIXORG = "did:crest:party:01JCREST000000000000000RGN";
+const FIXSPVR = "did:crest:party:01JCREST00000000000000SPVR";
+const FIXCSTD = "did:crest:party:01JCREST00000000000000CSTD";
 const STAMP = Date.now().toString().slice(-6);
+
+// Bearer-authenticated service calls for the acts that are not the recorded
+// actor's own — a verifier asking, a custodian opening a recovery. The same
+// doors apps.spec.js's walks and the seeder use.
+const LOCAL = new URL(BASE).port === "59110";
+const SVCBASE = LOCAL
+  ? `http://${new URL(BASE).hostname}:59000`
+  : BASE.replace(/\/$/, "") + "/api/crest-registry";
+const OIDCBASE = LOCAL
+  ? `http://${new URL(BASE).hostname}:59103`
+  : BASE.replace(/\/$/, "") + "/api/crest-mock-oidc";
+
+async function mintToken(partyId) {
+  const r = await fetch(OIDCBASE + "/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sub: "story|" + partyId.replace("did:crest:party:", ""),
+      aud: "crest", expiresIn: "1h",
+    }),
+  });
+  const d = await r.json();
+  return d.accessToken || d.access_token || d.token;
+}
+
+const VERIFBASE = LOCAL
+  ? `http://${new URL(BASE).hostname}:59000`
+  : BASE.replace(/\/$/, "") + "/api/crest-verification";
+
+async function asParty(partyId, method, path, body, base = SVCBASE) {
+  const token = await mintToken(partyId);
+  return fetch(base + path, {
+    method,
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
 
 const CAPTION_CSS = `
 #crest-cap{position:fixed;left:0;right:0;bottom:0;z-index:99999;
@@ -146,12 +186,45 @@ const J7 = async (p, cap) => {
   await cap("Show to someone — the QR is the offline presentation (w1_18)",
     "Generated on this device; a verifier scans and checks the signature with no signal. The JSON sits behind a toggle. What a scan gives away is listed first.");
   await pause(p, 5000);
-  await hash(p, "#/wallet/share", 2000);
-  await cap("Share links — the honest gap (w1_19–w1_20)", "No share-link endpoint exists yet; nothing live is drawn.");
-  await pause(p, 3500);
+  // The consent loop is real now: a verifier asks through the verification
+  // service, and Grace decides line by line.
+  const shareR = await asParty(FIXORG, "POST", "/v1/presentation-requests", {
+    subjectPartyId: FIXWORKER, requestedByPartyId: FIXORG,
+    purpose: "Hiring for a private clinic " + STAMP,
+  }, VERIFBASE);
+  const shareId = (await shareR.json()).request.id;
+  await hash(p, "#/shares", 2200);
+  await cap("Someone is asking — who, and why, before any list (w1_19)",
+    "The inbox names the requester and the purpose only. Nobody sees more than the public record without asking, and no disclosure list renders until Grace opens the request.");
+  await pause(p, 5000);
+  await hash(p, `#/shares/${encodeURIComponent(shareId)}`, 2500);
+  await cap("Consent, per share, every time (w1_15)",
+    "The resolved disclosure list, ticked line by line. Nothing moves before approval — a collect before the decision is the service's 409. The request expires on the service's real 72h clock.");
+  await pause(p, 5000);
+  const boxes = p.locator("[data-dis] input[type=checkbox]");
+  if ((await boxes.count()) > 1) {
+    await boxes.first().uncheck();
+    await pause(p, 1500);
+    await cap("Unticking a line is a per-line refusal — shown as refused, never as a gap", "");
+    await pause(p, 3000);
+    await p.click("#share-approve");
+    await pause(p, 2500);
+    await cap("Sent — what they got, what you kept (w1_20)",
+      "Both faces read one record and one resolved list: this is the very list the verifier sees. The history callout carries Grace's real counts; the reference's twelve-asked-nine-agreed is named as its worked example.");
+    await pause(p, 5500);
+  }
   await hash(p, "#/wallet/deferred", 1800);
-  await cap("Deferred qualification — the honest gap (w1_16–w1_17)", "No endpoint serves it; the promise the screen will keep is stated.");
+  await cap("Deferred qualification — the honest gap (w1_16)", "No endpoint serves it; the promise the screen will keep is stated.");
   await pause(p, 3000);
+  await hash(p, "#/added", 2200);
+  await cap("A qualification arrives, and earned strength re-derives (w1_17)",
+    "Derived assurance with its because, and a live /v1/verify re-check — the tier is derived at this check, stored nowhere. The story's flip (weakest-assurance caveat gone when the anchor binds, credential untouched) is proven in the e2e walk.");
+  await pause(p, 4500);
+  const recheck = p.locator("#recheck");
+  if (await recheck.isVisible().catch(() => false)) {
+    await recheck.click();
+    await pause(p, 3000);
+  }
   await hash(p, "#/pay", 2200);
   await cap("My money — every held payment has a reason with an owner (w1_13, w1_24)",
     "The story seeds one held instruction; its reason and owner are on the face of it.");
@@ -165,8 +238,9 @@ const J7 = async (p, cap) => {
   await cap("Who checked me — every scan leaves a line (w1_18's other half)", "");
   await pause(p, 3000);
   await hash(p, "#/profile/recovery", 2000);
-  await cap("Recovery — nomination is the honest gap (w1_7)", "Recoveries exist server-side; the worker-facing nomination flow does not yet.");
-  await pause(p, 3500);
+  await cap("Who can confirm it is you? Nomination is real, and party-linked (w1_7)",
+    "POST /v1/parties/{id}/recovery-contacts — a person on the registry, never a phone number. Revoking keeps the row. Nomination routes the request; the quorum stays two voices from distinct authorities.");
+  await pause(p, 4500);
 };
 
 /* ── J6 · Registering a worker who cannot self-register (W-2) ─────────── */
@@ -440,9 +514,40 @@ const J10 = async (p, cap) => {
   await pause(p, 4000);
   await consoleLogin(p, "custodian");
   await hash(p, "#/recover", 2200);
-  await cap("Recovery, administered by the custodian — and the W-5 gap named (w4_1–w4_3)",
-    "The story's open recovery is real; the Recovery Confirmer's own SMS journey (two of three must agree) has no channel yet — recorded missing, not faked.");
+  await cap("Recovery, administered by the custodian (w4 begins here)",
+    "The story's open recovery is real. The confirmer now has screens of their own in the worker door — only the SMS delivery channel is still absent (#150, §16), and those screens say so.");
   await pause(p, 5500);
+
+  // The confirmer's own side (w4_1–w4_3): Grace's nomination routes the
+  // request to the supervisor; the custodian opens the recovery (a leftover
+  // OPEN one from another run is reused — one live recovery per party).
+  await asParty(FIXWORKER, "POST", `/v1/parties/${FIXWORKER}/recovery-contacts`,
+    { contactPartyId: FIXSPVR });
+  const opened = await asParty(FIXCSTD, "POST", "/v1/recoveries", {
+    partyId: FIXWORKER, openedByPartyId: FIXCSTD, reason: "lost phone " + STAMP,
+  });
+  let recId;
+  if (opened.status === 201) recId = (await opened.json()).id;
+  else {
+    const l = await asParty(FIXSPVR, "GET", `/v1/recoveries?confirmerPartyId=${FIXSPVR}`);
+    recId = (((await l.json()) || {}).recoveries || [])
+      .find((x) => x.partyId === FIXWORKER && !x.completedAt)?.id;
+  }
+  await go(p, W, 1500);
+  const out10 = p.locator("#logout");
+  if (await out10.isVisible().catch(() => false)) { await out10.click(); await pause(p, 800); }
+  await p.click("#login-supervisor");
+  await pause(p, 2200);
+  await hash(p, "#/vouch", 2200);
+  await cap("The Recovery Confirmer's request, delivered honestly (w4_1)",
+    "The reference draws an SMS; this deployment has no SMS channel (#150, §16) and says so on-screen. The request itself — GET /v1/recoveries?confirmerPartyId= — is what any returning channel would deliver from.");
+  await pause(p, 5500);
+  if (recId) {
+    await hash(p, `#/vouch/${encodeURIComponent(recId)}`, 2200);
+    await cap("Two voices from distinct authorities, read live (w4_2)",
+      "Completion appends a NEW identity binding of class recovery; the old bindings stay for audit, the credential history is untouched, and the recovered worker re-enters at IA-1 until they re-anchor. The refusal path (w4_3) is a recorded answer with an owner, never a dead end.");
+    await pause(p, 6000);
+  }
 };
 
 /* ── J11 · Seeing where it stands (P-2 monitoring + V-4 + G-4) ────────── */

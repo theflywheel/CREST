@@ -22,6 +22,15 @@
     "flow:admissions-review (as admissions-queue, landing on the registered",
     "organisation's own #/admissions/:pid detail; the route is per-run, so the",
     "map's route stays '' and the flow lands the page itself).",
+    "The workers wave adds worker-door depths, every one over real writes:",
+    "flow:share-pending (a presentation request minted by the verifier org,",
+    "landing on the worker's decision surface with two lines left ticked),",
+    "flow:share-decided (the same, decided by the subject's own voice, landing",
+    "on the sent view), flow:recovery-confirmer / flow:recovery-progress /",
+    "flow:recovery-refused (a nominated contact, an OPEN recovery, and for the",
+    "refused depth a recorded refusal, viewed as the signed-in supervisor),",
+    "and flow:anchor-arrival (the story's unanchored worker's first dev",
+    "sign-in — the binding append itself — landing on #/added).",
     "route: the hash route inside the door, or '' for the door's entry screen.",
     "",
     "A screen with no entry here is out of the gate's scope and is reported as",
@@ -30,7 +39,7 @@
   "scope": {
     "journeys": ["p1", "p2", "g2", "g1"],
     "designScreens": ["n1", "n2", "n3", "n4", "n5"],
-    "why": "Phase 1 is scoped to J3 — setting up a project (P-1 Org Admin, P-2 Project Configurator) — plus the five connective-tissue screens our own design adds (docs/design/j3-connective-tissue/README.md). The G-2 wave adds the org onboarding journey (g2_1..g2_13; g2_2/g2_3 do not exist in the reference): the onboarding door is deliberately reachable with no persona (#20, #155 phase D) — g2_1 arrives anon, and every screen past it arrives by a flow: mode (#179), because the flow's state is session-scoped by design and only driving the real flow can honestly put a screen in the state its spec draws. The G-1 wave (#187) adds the instance walk (g1_1..g1_6, console:instance — the screens read instance state, so a cold load is honest) and the operator's admission review (g4_1..g4_3, flow:admissions-* — the queue needs a real pending registration, so the arrival registers one first). The rest of the g4 journey (g4_4..g4_7) stays out of the declared scope: g4_6 is a custodian-console screen an earlier wave built to its own rail, and holding it to the reference's G-4 rail is its own piece of work, not this close-out's. Screens the ledger does not call implemented skip with the ledger's own gap note."
+    "why": "Phase 1 is scoped to J3 — setting up a project (P-1 Org Admin, P-2 Project Configurator) — plus the five connective-tissue screens our own design adds (docs/design/j3-connective-tissue/README.md). The G-2 wave adds the org onboarding journey (g2_1..g2_13; g2_2/g2_3 do not exist in the reference): the onboarding door is deliberately reachable with no persona (#20, #155 phase D) — g2_1 arrives anon, and every screen past it arrives by a flow: mode (#179), because the flow's state is session-scoped by design and only driving the real flow can honestly put a screen in the state its spec draws. The G-1 wave (#187) adds the instance walk (g1_1..g1_6, console:instance — the screens read instance state, so a cold load is honest) and the operator's admission review (g4_1..g4_3, flow:admissions-* — the queue needs a real pending registration, so the arrival registers one first). The rest of the g4 journey (g4_4..g4_7) stays out of the declared scope: g4_6 is a custodian-console screen an earlier wave built to its own rail, and holding it to the reference's G-4 rail is its own piece of work, not this close-out's. The workers wave (#189/#190) adds the nine screens it flipped — w1_19/w1_15/w1_20 (per-share consent), w1_7 (nomination), w4_1..w4_3 (the confirmer), w1_4 (the no-document route) and w1_17 (the anchor arrival) — as picked entries rather than whole w1/w4 journeys, because the rest of w1 was flipped by earlier waves before the gate reached the worker door and holding all of it to spec is its own piece of work. Every one is session-scoped, so all but w1_7 and w1_4 arrive by flow: modes that drive the real presentation-request, recovery and dev-login writes first. Screens the ledger does not call implemented skip with the ledger's own gap note."
   },
   "screens": {
     "p1_1": { "app": "console", "arrive": "console:orgadmin", "route": "#/org" },
@@ -80,6 +89,16 @@
     "g2_11": { "app": "console", "arrive": "flow:onboarding-terms", "route": "#/onboard/terms", "note": "the published-terms catalogue for the session's application; a second set is published so 'other sets you could ask for' has something true to say" },
     "g2_12": { "app": "console", "arrive": "flow:onboarding-terms-request", "route": "#/onboard/checks", "note": "checks are recorded verdicts with named owners from GET .../terms-requests/{id}, no fake automation; honestly empty on a fresh application" },
     "g2_13": { "app": "console", "arrive": "flow:onboarding-approved", "route": "#/onboard/status", "note": "the approved terminal state of the same status screen as g2_4" },
+
+    "w1_19": { "app": "worker", "arrive": "flow:share-pending", "route": "", "note": "the reference's who-is-asking frame: its buttons and callouts live on the decision surface (#/shares/:id), which one console surface serves together with w1_15; the inbox arrival at #/shares (the ledger's route) is asserted by the apps.spec.js presentation walk. The request id is per-run, so the flow lands the page itself" },
+    "w1_15": { "app": "worker", "arrive": "flow:share-pending", "route": "", "note": "#/shares/:id — the per-line consent decision on a REQUESTED share the flow just minted through the real verification service" },
+    "w1_20": { "app": "worker", "arrive": "flow:share-decided", "route": "", "note": "#/shares/:id/sent — the decided share, read back from the same record the verifier's face reads" },
+    "w1_7": { "app": "worker", "arrive": "worker", "route": "#/profile/recovery" },
+    "w4_1": { "app": "worker", "arrive": "flow:recovery-confirmer", "route": "", "note": "#/vouch — the confirmer's inbox needs an OPEN recovery naming the signed-in nominee, so the flow nominates and opens one through the real registry doors, then signs in as the supervisor" },
+    "w4_2": { "app": "worker", "arrive": "flow:recovery-progress", "route": "", "note": "#/vouch/:id — the live quorum read; the recovery id is per-run, so the flow lands the page itself" },
+    "w4_3": { "app": "worker", "arrive": "flow:recovery-refused", "route": "", "note": "#/vouch/:id/refused — the refusal the flow records through POST .../refusals, held OPEN with its owner" },
+    "w1_4": { "app": "field", "arrive": "field", "route": "#/confidence", "note": "the no-document route: every asserted facet renders before the form is submitted, so the honest arrival is the route the register frame's own button opens" },
+    "w1_17": { "app": "worker", "arrive": "flow:anchor-arrival", "route": "", "note": "#/added — the anchor-arrival moment belongs to the story's unanchored worker, whose first dev sign-in appends the binding; the flow signs in as her, not as Grace" },
 
     "n1": { "app": "console", "arrive": "anon", "route": "" },
     "n2": { "app": "console", "arrive": "console:orgadmin", "route": "#/where" },

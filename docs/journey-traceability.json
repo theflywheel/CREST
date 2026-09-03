@@ -6,8 +6,8 @@
  "coverage": {
   "compressed": 25,
   "illustrative": 13,
-  "implemented": 44,
-  "missing": 53,
+  "implemented": 53,
+  "missing": 44,
   "semantically-different": 8
  },
  "statuses": {
@@ -1273,11 +1273,11 @@
    "title": "No document? A confidence check instead",
    "source": "reference",
    "roleName": "Worker",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "No-document confidence-check route: self path requires eSignet; the no-document worker's route is assisted enrollment (named on the entry screen)",
-   "gate": "—"
+   "status": "implemented",
+   "app": "field",
+   "route": "#/confidence",
+   "note": "method=confidence-check as enrolment provenance; IA-0 until anchored, derived never stored; recovery contact nominated on the spot (agent acting for the worker, contextId threaded)",
+   "gate": "**asserted**"
   },
   {
    "id": "w1_5",
@@ -1312,11 +1312,11 @@
    "title": "Nominate three people, two must agree",
    "source": "reference",
    "roleName": "Worker",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Recovery-contact nomination at enrolment: recoveries exist server-side (POST /v1/recoveries) but nomination has no worker-facing write",
-   "gate": "—"
+   "status": "implemented",
+   "app": "worker",
+   "route": "#/profile/recovery",
+   "note": "POST/GET/revoke /v1/parties/{id}/recovery-contacts; party-linked, never a phone number; nomination is routing, quorum stays 2-of-distinct-authorities",
+   "gate": "**asserted**"
   },
   {
    "id": "w1_8",
@@ -1442,11 +1442,11 @@
    "title": "Consent, per share, every time",
    "source": "reference",
    "roleName": "Worker",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Per-share consent: no share/presentation flow exists",
-   "gate": "—"
+   "status": "implemented",
+   "app": "worker",
+   "route": "#/shares/:id",
+   "note": "Per-line consent against the resolved disclosureList; approve-subset or decline-with-reason via POST .../decision; collect-before-decision is the service's 409, asserted; one surface serves w1_15+w1_19 (two idioms of one moment); real 72h TTL shown, not the reference's 24h",
+   "gate": "**asserted**"
   },
   {
    "id": "w1_16",
@@ -1468,11 +1468,11 @@
    "title": "One action, and everything already earned changes state",
    "source": "reference",
    "roleName": "Worker",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Qualification arrival changing earned state: not built",
-   "gate": "—"
+   "status": "implemented",
+   "app": "worker",
+   "route": "#/added",
+   "note": "Derived assurance + live /v1/verify re-check; the weakest-assurance caveat flips off when the anchor binds, credential untouched",
+   "gate": "**asserted**"
   },
   {
    "id": "w1_18",
@@ -1494,11 +1494,11 @@
    "title": "Who is asking, and why, before you decide",
    "source": "reference",
    "roleName": "Worker",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Who-is-asking pre-consent: no presentation-request flow",
-   "gate": "—"
+   "status": "implemented",
+   "app": "worker",
+   "route": "#/shares",
+   "note": "Requester (proven party id — party reads are self-only #102, no name directory faked) and purpose shown before any disclosure list; GET /v1/presentation-requests as the subject",
+   "gate": "**asserted**"
   },
   {
    "id": "w1_20",
@@ -1507,11 +1507,11 @@
    "title": "The worker sees the same list the verifier does",
    "source": "reference",
    "roleName": "Worker",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Worker sees the verifier's list: no presentation flow",
-   "gate": "—"
+   "status": "implemented",
+   "app": "worker",
+   "route": "#/shares/:id/sent",
+   "note": "Both faces read one record and one resolved list; verifier's collect surface at verify #/requests; history callout carries live counts, reference's twelve/nine named as example",
+   "gate": "**asserted**"
   },
   {
    "id": "w2_1",
@@ -1689,11 +1689,11 @@
    "title": "A request arrives by SMS",
    "source": "reference",
    "roleName": "Recovery Confirmer",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Confirmer SMS request: no confirmer-facing channel (recoveries administered from the custodian console only)",
-   "gate": "—"
+   "status": "implemented",
+   "app": "worker",
+   "route": "#/vouch",
+   "note": "GET /v1/recoveries?confirmerPartyId=; SMS delivery honestly absent (#150/§16), channel is deployment config",
+   "gate": "**asserted**"
   },
   {
    "id": "w4_2",
@@ -1702,11 +1702,11 @@
    "title": "Two of three, and the old key dies",
    "source": "reference",
    "roleName": "Recovery Confirmer",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Two-of-three quorum progress: POST /v1/recoveries/{id}/confirmations exists server-side; no confirmer UI",
-   "gate": "—"
+   "status": "implemented",
+   "app": "worker",
+   "route": "#/vouch/:id",
+   "note": "Live quorum read; completion appends a recovery-class binding, old bindings stay; third-nominee notification gap stated",
+   "gate": "**asserted**"
   },
   {
    "id": "w4_3",
@@ -1715,11 +1715,11 @@
    "title": "A refusal, and no defined path after it",
    "source": "reference",
    "roleName": "Recovery Confirmer",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Refusal path: not built",
-   "gate": "—"
+   "status": "implemented",
+   "app": "worker",
+   "route": "#/vouch/:id/refused",
+   "note": "Reference's unresolved questions quoted, then the defined path: POST .../refusals (owner + required reason), recovery OPEN, opener owns ?refused=true next step",
+   "gate": "**asserted**"
   },
   {
    "id": "v1_1",
@@ -2045,10 +2045,10 @@
    "w1_1": "—",
    "w1_2": "—",
    "w1_3": "—",
-   "w1_4": "—",
+   "w1_4": "**asserted**",
    "w1_5": "—",
    "w1_6": "—",
-   "w1_7": "—",
+   "w1_7": "**asserted**",
    "w1_8": "—",
    "w1_9": "—",
    "w1_10": "—",
@@ -2058,12 +2058,12 @@
    "w1_23": "—",
    "w1_24": "—",
    "w1_14": "—",
-   "w1_15": "—",
+   "w1_15": "**asserted**",
    "w1_16": "—",
-   "w1_17": "—",
+   "w1_17": "**asserted**",
    "w1_18": "—",
-   "w1_19": "—",
-   "w1_20": "—",
+   "w1_19": "**asserted**",
+   "w1_20": "**asserted**",
    "w2_1": "—",
    "w2_2": "—",
    "w2_3": "—",
@@ -2077,9 +2077,9 @@
    "w3_3": "—",
    "w3_4": "—",
    "w3_5": "—",
-   "w4_1": "—",
-   "w4_2": "—",
-   "w4_3": "—",
+   "w4_1": "**asserted**",
+   "w4_2": "**asserted**",
+   "w4_3": "**asserted**",
    "v1_1": "—",
    "v1_2": "—",
    "v1_3": "—",
