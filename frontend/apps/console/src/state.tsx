@@ -12,8 +12,8 @@
 // role signs in as the organisation party and every registry/support role as
 // the custodian party. Per-role backend permits are L1 work the traceability
 // manifest records as missing (p1_2 role assignment).
-import { createContext, useContext, useState, type ReactNode } from "react";
-import { ApiError, loginAs, setSession, whoAmI, FIX } from "@crest/api";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { ApiError, api, loginAs, setSession, whoAmI, FIX } from "@crest/api";
 
 export const personas = [
   {
@@ -119,12 +119,27 @@ type State = {
   setTraceClaim: (c: string) => void;
   wizStep: number;
   setWizStep: (n: number) => void;
-  // Which project this console is working on. Chosen on n2 from the projects
-  // the registry says you hold a role in — never a project id typed into a
-  // browser. The seeded programme project is the default so a fresh session
-  // has somewhere to land.
+  // Which project this console is working on. Loaded from the registry's own
+  // answer (GET /v1/projects, narrowed to the signed-in party) — never a
+  // project id typed into a browser, and never a fixture id: on a clean slate
+  // the honest value is "", and every view shows its empty state.
+  projects: ProjectRow[];
   projectId: string;
   setProjectId: (id: string) => void;
+  // Which work definition the console reads. From GET /v1/definitions — the
+  // newest ACTIVE one by default; "" while the deployment has defined nothing.
+  definitions: DefRow[];
+  definitionId: string;
+  setDefinitionId: (id: string) => void;
+};
+
+export type ProjectRow = { id: string; name?: string; kind?: string; state?: string; ownerPartyId?: string };
+export type DefRow = {
+  id: string;
+  version: number;
+  state: string;
+  outcomeUnit?: string;
+  activity?: { code?: string; label?: string };
 };
 
 const Ctx = createContext<State>(null as unknown as State);
@@ -165,7 +180,52 @@ export function ConsoleProvider(props: { children: ReactNode }) {
   const [err, setErr] = useState<string | null>(null);
   const [traceClaim, setTraceClaim] = useState("");
   const [wizStep, setWizStep] = useState(0);
-  const [projectId, setProjectId] = useState<string>(FIX.project);
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [projectId, setProjectId] = useState<string>("");
+  const [definitions, setDefinitions] = useState<DefRow[]>([]);
+  const [definitionId, setDefinitionId] = useState<string>("");
+
+  // The world this session can see, from the services' own answers. Loaded on
+  // sign-in (and reload) rather than hardcoded: the fixture world passes
+  // through the same two queries, so the seeded console reads identically.
+  useEffect(() => {
+    if (!me) {
+      setProjects([]);
+      setProjectId("");
+      setDefinitions([]);
+      setDefinitionId("");
+      return;
+    }
+    let live = true;
+    (async () => {
+      const owned = await api
+        .get("parties", "/v1/projects?ownerPartyId=" + encodeURIComponent(me.partyId))
+        .catch(() => null);
+      let list: ProjectRow[] = (owned && owned.projects) || [];
+      if (!list.length) {
+        const configured = await api
+          .get("parties", "/v1/projects?configuratorPartyId=" + encodeURIComponent(me.partyId))
+          .catch(() => null);
+        list = (configured && configured.projects) || [];
+      }
+      if (!live) return;
+      setProjects(list);
+      setProjectId((cur) => (cur && list.some((p) => p.id === cur) ? cur : list[0]?.id || ""));
+
+      const listed = await api.get("definitions", "/v1/definitions?limit=100").catch(() => null);
+      if (!live) return;
+      const defs: DefRow[] = (listed && listed.definitions) || [];
+      setDefinitions(defs);
+      setDefinitionId((cur) =>
+        cur && defs.some((d) => d.id === cur)
+          ? cur
+          : defs.find((d) => d.state === "ACTIVE")?.id || defs[0]?.id || "",
+      );
+    })();
+    return () => {
+      live = false;
+    };
+  }, [me]);
 
   const login = async (idx: number) => {
     const p = personas[idx];
@@ -217,8 +277,12 @@ export function ConsoleProvider(props: { children: ReactNode }) {
         setTraceClaim,
         wizStep,
         setWizStep,
+        projects,
         projectId,
         setProjectId,
+        definitions,
+        definitionId,
+        setDefinitionId,
       }}
     >
       {props.children}

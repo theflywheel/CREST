@@ -3,25 +3,37 @@
 // The J3 dashboard wave — Work status, Quality, Payments, Proof, Reports —
 // lives in Dashboard.tsx, in the reference's own frames.
 import { useState } from "react";
-import { api, FIX } from "@crest/api";
+import { api } from "@crest/api";
 import { Chip, Sidecar, OpenNote } from "@crest/ui";
+import { useConsole } from "../state";
 import {
-  money, when, Mono, MonoShort, KVR, Title, Lede, Tbl,
-  CardTitled, TierChip, useLoad, LoadFrame, Empty,
+  money, when, Mono, MonoShort, KVR, Title, Lede, Empty, Tbl,
+  CardTitled, TierChip, useLoad, LoadFrame,
 } from "../ui";
 
 export function Definition() {
-  const r = useLoad(async () => {
+  const { definitionId } = useConsole();
+  const r = useLoad<{ d: any; v: any; lr: any } | null>(async () => {
+    if (!definitionId) return null;
     const [d, v, lr] = await Promise.all([
-      api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}`),
-      api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}/faces/verifier`).catch(() => null),
-      api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}/linked-records`).catch(() => ({ linkedRecords: [] })),
+      api.get("definitions", `/v1/definitions/${encodeURIComponent(definitionId)}`),
+      api.get("definitions", `/v1/definitions/${encodeURIComponent(definitionId)}/faces/verifier`).catch(() => null),
+      api.get("definitions", `/v1/definitions/${encodeURIComponent(definitionId)}/linked-records`).catch(() => ({ linkedRecords: [] })),
     ]);
     return { d, v, lr: lr.linkedRecords || [] };
-  });
+  }, [definitionId]);
+  if (!definitionId) {
+    return (
+      <>
+        <Title t="The work, defined" />
+        <Empty>No work definition exists yet. When one is authored and ratified, this screen reads it as published.</Empty>
+      </>
+    );
+  }
   return (
     <LoadFrame r={r}>
-      {({ d, v, lr }) => {
+      {(data) => {
+        const { d, v, lr } = data!;
         const tm: Array<{ tier: number; sourceClassIn?: string[]; captureMethodIn?: string[]; minIdentityAssurance?: string; requiresFields?: string[] }> =
           (v && v.tierMap) || d.tierMap || [];
         const pays = lr.find((x: { type?: string }) => x.type === "payment-setup");

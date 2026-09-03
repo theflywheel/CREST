@@ -10,7 +10,7 @@
 // that decides whether a project looks healthy is the exact failure this
 // project cannot afford.
 import { useState } from "react";
-import { api, FIX } from "@crest/api";
+import { api } from "@crest/api";
 import { Callout, Chip, GridTable, NextBlock, OpenNote } from "@crest/ui";
 import {
   agoDays, Card, CardTitled, ILLUSTRATIVE, KVR, Lede, LoadFrame, Mono, MonoShort, money,
@@ -33,7 +33,7 @@ const oldest = (arr: Array<Record<string, string | undefined>>, field: string) =
 };
 const median = (xs: number[]) => (xs.length ? xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)] : null);
 
-async function projectRead() {
+async function projectRead(defId: string) {
   const [claims, unclear, unreleased, unreached, instr, metrics, def] = await Promise.all([
     api.get("evidence", "/v1/claims").catch(() => ({ claims: [] })),
     api.get("evidence", "/v1/unclear").catch(() => ({ unclear: [] })),
@@ -41,7 +41,7 @@ async function projectRead() {
     api.get("confirmation", "/v1/unreached").catch(() => ({ windows: [] })),
     api.get("payments", "/v1/instructions").catch(() => ({ instructions: [] })),
     api.get("parties", "/v1/holds/metrics").catch(() => null),
-    api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}`).catch(() => null),
+    defId ? api.get("definitions", `/v1/definitions/${encodeURIComponent(defId)}`).catch(() => null) : Promise.resolve(null),
   ]);
   return {
     claims: (claims.claims || []) as Array<{ state?: string; createdAt?: string }>,
@@ -54,13 +54,14 @@ async function projectRead() {
   };
 }
 
-const projectTitle = (def: { activity?: { label?: string } } | null) =>
-  short(FIX.project) + " · " + (def?.activity?.label || "this project's work");
+const projectTitle = (projectId: string, def: { activity?: { label?: string } } | null) =>
+  (projectId ? short(projectId) : "no project yet") + " · " + (def?.activity?.label || "this project's work");
 
 // ── p2_11 · A funnel, not a set of totals ───────────────────────────────────
 export function Status() {
   const nav = useNavigate();
-  const r = useLoad(projectRead);
+  const s = useConsole();
+  const r = useLoad(() => projectRead(s.definitionId), [s.definitionId]);
   return (
     <LoadFrame r={r}>
       {(f) => {
@@ -79,7 +80,7 @@ export function Status() {
         const oldestUnclear = oldest(f.unclear, "createdAt");
         return (
           <>
-            <Title t={projectTitle(f.def)} />
+            <Title t={projectTitle(s.projectId, f.def)} />
             <Lede>This month to date · read from the services just now.</Lede>
             <div className="stats">
               <Stat n={f.claims.length} label="Work units received" owner="evidence service" />
@@ -144,7 +145,8 @@ export function Status() {
 // ── p2_12 · The headline, with the causes underneath it ─────────────────────
 export function Stp() {
   const nav = useNavigate();
-  const r = useLoad(projectRead);
+  const s = useConsole();
+  const r = useLoad(() => projectRead(s.definitionId), [s.definitionId]);
   return (
     <LoadFrame r={r}>
       {(f) => {
@@ -218,18 +220,19 @@ export function Stp() {
 // ── p2_13 · Two different problems that look identical in a pie chart ───────
 export function Quality() {
   const nav = useNavigate();
+  const s = useConsole();
   const r = useLoad(async () => {
     const [sources, assess, def] = await Promise.all([
       api.get("evidence", "/v1/sources").catch(() => ({ sources: [] })),
       api.get("verification", "/v1/source-assessments").catch(() => ({ assessments: [] })),
-      api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}`).catch(() => null),
+      s.definitionId ? api.get("definitions", `/v1/definitions/${encodeURIComponent(s.definitionId)}`).catch(() => null) : Promise.resolve(null),
     ]);
     return {
       sources: (sources.sources || []) as Array<{ systemRef?: string; adapterRef?: string; state?: string }>,
       assessments: (assess.assessments || []) as Array<{ adapterRef: string; maxTier: number; reason?: string }>,
       tierMap: (def?.tierMap || []) as Array<{ tier: number; sourceClassIn?: string[]; captureMethodIn?: string[] }>,
     };
-  });
+  }, [s.definitionId]);
   return (
     <LoadFrame r={r}>
       {({ sources, assessments, tierMap }) => (
@@ -537,7 +540,8 @@ export function Trace() {
 
 // ── p2_16 · Two things a funder always wants, pre-built ─────────────────────
 export function Reports() {
-  const r = useLoad(projectRead);
+  const s = useConsole();
+  const r = useLoad(() => projectRead(s.definitionId), [s.definitionId]);
   return (
     <LoadFrame r={r}>
       {(f) => {
@@ -580,7 +584,7 @@ export function Reports() {
             <CardTitled t="Proof of work — volume with the strength of evidence attached">
               <GridTable cols="1.6fr 1fr 1fr" head={["Work definition", "Validated units", "Tier mix"]}>
                 <div className="g-row">
-                  <span>{f.def?.activity?.label || short(FIX.definition)}</span>
+                  <span>{f.def?.activity?.label || (s.definitionId ? short(s.definitionId) : "no definition yet")}</span>
                   <span className="num">{f.claims.length}</span>
                   <span className="muted">— · no project-wide tier read exists</span>
                 </div>
@@ -598,7 +602,7 @@ export function Reports() {
               need a governance decision, not a checkbox.
             </OpenNote>
             <NextBlock
-              happened={<>This project's records are readable end to end · <Mono>{short(FIX.project)}</Mono></>}
+              happened={<>This project's records are readable end to end · <Mono>{s.projectId ? short(s.projectId) : "—"}</Mono></>}
               who="Work definitions, then workers submitting against them"
               when="Records arrive as evidence is submitted; the confirmation window then runs its course"
               told="Nothing is pushed to you — this console is the read"

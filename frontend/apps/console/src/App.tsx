@@ -17,7 +17,7 @@
 // corrected in docs/design/j3-connective-tissue/README.md: it holds per
 // section, not across all 24 frames.
 import { useEffect } from "react";
-import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { ConsoleShell, ErrBar, type NavGroup, type NavItem } from "@crest/ui";
 import { useConsole, type PersonaKey } from "./state";
 import { Definition, Sources, Receipt } from "./views/Project";

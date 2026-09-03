@@ -8,7 +8,7 @@
 // deployment cannot yet persist, the frame renders in full and an honest note
 // says so — the copy is never softened to hide the gap.
 import { useState } from "react";
-import { api, FIX } from "@crest/api";
+import { api } from "@crest/api";
 import { Callout, Chip, OptionCard, RefField, OpenNote, StepCounter } from "@crest/ui";
 import { Card, CardTitled, KVR, Lede, LoadFrame, Mono, MonoShort, short, Stat, Tbl, Title, useLoad, when } from "../ui";
 import { errText, useConsole } from "../state";
@@ -39,11 +39,11 @@ export function Projects() {
   const me = s.me!.partyId;
   const r = useLoad(async () => {
     const [org, reg, projects, declined, orgRoles] = await Promise.all([
-      api.get("parties", `/v1/parties/${encodeURIComponent(FIX.org)}`),
-      api.get("parties", `/v1/organisations/${encodeURIComponent(FIX.org)}/registration`).catch(() => null),
+      api.get("parties", `/v1/parties/${encodeURIComponent(me)}`),
+      api.get("parties", `/v1/organisations/${encodeURIComponent(me)}/registration`).catch(() => null),
       api.get("parties", `/v1/projects?ownerPartyId=${encodeURIComponent(me)}`).catch(() => ({ projects: [] })),
       api.get("parties", `/v1/projects?ownerPartyId=${encodeURIComponent(me)}&ownership=DECLINED`).catch(() => ({ projects: [] })),
-      api.get("parties", `/v1/organisations/${encodeURIComponent(FIX.org)}/roles`).catch(() => ({ roles: [] })),
+      api.get("parties", `/v1/organisations/${encodeURIComponent(me)}/roles`).catch(() => ({ roles: [] })),
     ]);
     return {
       org: org.party || org,
@@ -79,7 +79,7 @@ export function Projects() {
               <CardTitled t="Worker Registry Custodian (Worker Registry Custodian)" chip={<Chip kind="info">Held here</Chip>}>
                 <p className="body-2">Sits inside this organisation. Cannot be delegated out.</p>
                 <div style={{ height: 8 }} />
-                <KVR rows={[["custodian party", <MonoShort id={FIX.custodian} />]]} />
+                <KVR rows={[["custodian party", "named per deployment — see the Instance view"]]} />
               </CardTitled>
               <CardTitled t="Projects this organisation runs">
                 <Tbl
@@ -204,7 +204,7 @@ export function NewProject() {
     try {
       const out = await api.post("parties", "/v1/projects", {
         name: name.trim(),
-        ownerPartyId: FIX.org,
+        ownerPartyId: s.me!.partyId,
         configuration: coverage.trim() ? { coverage: coverage.trim() } : undefined,
         configuratorPartyId: configurator.trim() || undefined,
       });
@@ -304,7 +304,7 @@ function RoleGuard() {
             <KVR
               rows={[
                 ["the role you would need", "Org Admin"],
-                ["granted by", org?.displayName ? String(org.displayName) : <MonoShort id={grantableBy || FIX.org} />],
+                ["granted by", org?.displayName ? String(org.displayName) : grantableBy ? <MonoShort id={grantableBy} /> : "\u2014"],
                 [
                   "how to reach them",
                   (org?.contactRoutes || []).length
@@ -348,8 +348,9 @@ function RoleGuard() {
 // who GAVE the grant, which is what a standing-configuration screen is about.
 function RoleHolders() {
   const nav = useNavigate();
+  const s = useConsole();
   const r = useLoad(async () => {
-    const out = await api.get("parties", `/v1/organisations/${encodeURIComponent(FIX.org)}/roles`);
+    const out = await api.get("parties", `/v1/organisations/${encodeURIComponent(s.me!.partyId)}/roles`);
     return {
       roles: (out.roles || []) as Array<{
         partyId?: string; displayName?: string; partyKind?: string; functions?: string[];

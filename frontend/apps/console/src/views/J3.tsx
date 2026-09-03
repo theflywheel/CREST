@@ -21,7 +21,7 @@
 //     stays visible and readable, and the screen says what is missing.
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, ApiError, FIX } from "@crest/api";
+import { api, ApiError } from "@crest/api";
 import { Callout, Chip, OpenNote, RefField, StepCounter as StepBar } from "@crest/ui";
 import {
   Card, CardTitled, KVR, Lede, LoadFrame, Mono, MonoShort, Stat, Title, Tbl, useLoad, when, short,
@@ -149,7 +149,7 @@ export function Where() {
                 <div style={{ font: "500 14px/1.4 Roboto" }}>No project has been handed to you</div>
                 <p className="muted">
                   An empty list is a true answer: it means a role still has to be granted. The organisation that can
-                  grant one is {org?.displayName ? String(org.displayName) : <MonoShort id={FIX.org} />}
+                  grant one is {org?.displayName ? String(org.displayName) : "your organisation's admin"}
                   {(org?.contactRoutes || []).length
                     ? " · " +
                       (org.contactRoutes as Array<{ kind: string; value?: string }>)

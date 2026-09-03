@@ -11,6 +11,7 @@
 import { api, FIX } from "@crest/api";
 import { Chip, OpenNote, NextBlock } from "@crest/ui";
 import { useNavigate } from "react-router-dom";
+import { useConsole } from "../state";
 import {
   short, money, when, Mono, MonoShort, KVR, Title, Lede, Empty, Tbl,
   CardTitled, ILLUSTRATIVE, SIMULATED, useLoad, LoadFrame,
@@ -24,17 +25,29 @@ type LinkedRecord = {
   payload?: { ratePerOutcomeUnit: { amountMinor: number; currency: string }; payerPartyId: string; effectiveFrom?: string };
 };
 
-async function loadDefinition() {
+async function loadDefinition(defId: string) {
   const [d, worker, lr] = await Promise.all([
-    api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}`),
-    api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}/faces/worker`).catch(() => null),
-    api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}/linked-records`).catch(() => ({ linkedRecords: [] })),
+    api.get("definitions", `/v1/definitions/${encodeURIComponent(defId)}`),
+    api.get("definitions", `/v1/definitions/${encodeURIComponent(defId)}/faces/worker`).catch(() => null),
+    api.get("definitions", `/v1/definitions/${encodeURIComponent(defId)}/linked-records`).catch(() => ({ linkedRecords: [] })),
   ]);
   return { d, worker, lr: (lr.linkedRecords || []) as LinkedRecord[] };
 }
 
 export function PaySetup() {
-  const r = useLoad(loadDefinition);
+  const s = useConsole();
+  const r = useLoad<Awaited<ReturnType<typeof loadDefinition>>>(
+    () => (s.definitionId ? loadDefinition(s.definitionId) : new Promise(() => {})),
+    [s.definitionId],
+  );
+  if (!s.definitionId) {
+    return (
+      <>
+        <Title t="Payment set up" />
+        <Empty>Payment attaches to a work definition, and none exists yet.</Empty>
+      </>
+    );
+  }
   return (
     <LoadFrame r={r}>
       {({ d, worker, lr }) => {
@@ -113,7 +126,7 @@ export function Org() {
   // The signed-in party, not the fixture organisation: a real eSignet session
   // must see its own standing record. Fixture sessions bind me.partyId to
   // FIX.org anyway, so the seeded world reads identically.
-  const { me } = useConsole();
+  const { me, projectId } = useConsole();
   const orgId = me?.partyId || FIX.org;
   const r = useLoad(async () => {
     const [org, overdue] = await Promise.all([
@@ -122,8 +135,12 @@ export function Org() {
     ]);
     const checks: Array<[string, string | null, string]> = [
       ["attest-work", null, "may this organisation attest work at all (instance-wide)"],
-      ["attest-work", FIX.project, "…and specifically on PRJ-118"],
-      ["submit-work-evidence", FIX.project, "may it submit evidence on PRJ-118"],
+      ...(projectId
+        ? ([
+            ["attest-work", projectId, "…and specifically on " + short(projectId)],
+            ["submit-work-evidence", projectId, "may it submit evidence on " + short(projectId)],
+          ] as Array<[string, string | null, string]>)
+        : []),
     ];
     const permits = await Promise.all(
       checks.map(([fn, ctx]) => {

@@ -4,7 +4,7 @@
 // release money.
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, ApiError, FIX } from "@crest/api";
+import { api, ApiError } from "@crest/api";
 import { Callout, Chip, OpenNote, Sidecar } from "@crest/ui";
 import {
   short, when, agoDays, Mono, MonoShort, Stat, KVR, Title, Lede, Empty,
@@ -13,9 +13,10 @@ import {
 import { useConsole, errText } from "../state";
 
 export function Find(props: { support?: boolean }) {
+  const s = useConsole();
   const [kind, setKind] = useState("");
   const [value, setValue] = useState("");
-  const [ctx, setCtx] = useState<string>(FIX.project);
+  const [ctx, setCtx] = useState<string>(s.projectId);
   const [out, setOut] = useState<React.ReactNode>(null);
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
