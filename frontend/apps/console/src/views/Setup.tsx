@@ -511,53 +511,125 @@ function RoleHolders() {
 }
 
 // ── p2_2 · Registration and import are not alternatives ─────────────────────
+// The reference's p2_3 rows: a full-width radio row, tinted orange when on.
+function SourcingRow(props: { on: boolean; t: string; s: string; onPick: () => void }) {
+  return (
+    <button
+      onClick={props.onPick}
+      aria-pressed={props.on}
+      data-sourcing={props.t}
+      style={{
+        display: "flex",
+        gap: 12,
+        alignItems: "flex-start",
+        textAlign: "left",
+        width: "100%",
+        padding: "14px 16px",
+        marginBottom: 12,
+        borderRadius: 8,
+        cursor: "pointer",
+        border: props.on ? "1.5px solid #C84C0E" : "1px solid var(--line, #DDD9D3)",
+        background: props.on ? "rgba(200,76,14,0.07)" : "transparent",
+        font: "inherit",
+        color: "inherit",
+      }}
+    >
+      <span
+        style={{
+          width: 16,
+          height: 16,
+          marginTop: 2,
+          flexShrink: 0,
+          borderRadius: "50%",
+          border: props.on ? "5px solid #C84C0E" : "2px solid var(--muted, #8A857E)",
+          background: "#fff",
+        }}
+      />
+      <span>
+        <span style={{ display: "block", font: "500 15px/1.4 Roboto,system-ui" }}>{props.t}</span>
+        <span className="muted" style={{ display: "block", font: "400 13px/1.5 Roboto,system-ui", marginTop: 2 }}>
+          {props.s}
+        </span>
+      </span>
+    </button>
+  );
+}
+
 export function Workers() {
   const nav = useNavigate();
-  const [pick, setPick] = useState<string | null>(null);
+  const s = useConsole();
+  const [err, setErr] = useState<string | null>(null);
+  const [gen, setGen] = useState(0);
+  const r = useLoad(async () => {
+    const comp = await api.get("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/composition`).catch(() => ({ choices: [] }));
+    const rec = ((comp.choices || []) as Array<{ kind?: string; payload?: { value?: unknown } }>).find(
+      (c) => (c.kind || "").replace(/^composition:/, "") === "worker-sourcing",
+    );
+    return { sourcing: rec ? String(rec.payload?.value || "") : "" };
+  }, [s.projectId, gen]);
+  const record = async (v: string) => {
+    setErr(null);
+    try {
+      await api.put("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/composition/worker-sourcing`, { value: v });
+      setGen((g) => g + 1);
+    } catch (e) {
+      setErr(errText(e));
+    }
+  };
   return (
-    <>
-      <Title t="Where the workers come from" />
-      <Lede>
-        Register them here, bring in records that already exist, or both. Both is common: a registry covers the known
-        workers, enrollment covers the rest.
-      </Lede>
-      <div className="optcols">
-        <OptionCard
-          t="Register in CREST"
-          s="Full enrollment — identity, consent, recovery contacts. Self-registration or assisted by a Registering Agent."
-          on={pick === "register"}
-          onPick={() => setPick("register")}
-        />
-        <OptionCard
-          t="Import existing records"
-          s="Map identifiers from a registry you already run onto Crest identities. Nobody is re-registered."
-          on={pick === "import"}
-          onPick={() => setPick("import")}
-        />
-        <OptionCard
-          t="Import only"
-          s="No enrollment at all. Every worker must already exist in the source registry."
-          on={pick === "importonly"}
-          onPick={() => setPick("importonly")}
-        />
-      </div>
-      <RefField
-        label="Source registry"
-        hint="Whoever operates it holds Source-System Administrator (Source-System Administrator), and is accountable if a record there is wrong or stale."
-      >
-        <input name="sourceregistry" placeholder="the registry this project imports from" />
-      </RefField>
-      <Callout kind="teal">
-        Importing does not create identities. It links an existing identifier to a Crest identity, so a worker already
-        known to the county is not enrolled a second time under a new number.
-      </Callout>
-      <OpenNote>
-        The choice on this frame is not yet stored anywhere: the project-composition record it belongs to is the J3
-        backend's, and a browser-held answer would read as configuration that is not. Worker registration itself is
-        real — assisted in the field door, self-service in the worker door.
-      </OpenNote>
-      <Actions back={["Back", () => nav("/projects")]} go={["Continue", () => nav("/definition")]} />
-    </>
+    <LoadFrame r={r}>
+      {({ sourcing }) => (
+        <>
+          <Title t="Where the workers come from" />
+          <Lede>
+            Register them here, bring in records that already exist, or both. Both is common: a registry covers the
+            known workers, enrollment covers the rest.
+          </Lede>
+          {err ? <div className="errbar">{err}</div> : null}
+          <div style={{ maxWidth: 780 }}>
+            <SourcingRow
+              t="Register in CREST"
+              s="Full enrollment — identity, consent, recovery contacts. Self-registration or assisted by a Registering Agent."
+              on={sourcing === "register" || sourcing === "register-and-import"}
+              onPick={() => record(sourcing === "import" || sourcing === "register-and-import" ? "register-and-import" : "register")}
+            />
+            <SourcingRow
+              t="Import existing records"
+              s="Map identifiers from a registry you already run onto Crest identities. Nobody is re-registered."
+              on={sourcing === "register-and-import" || sourcing === "import"}
+              onPick={() => record(sourcing === "register" || sourcing === "register-and-import" ? "register-and-import" : "import")}
+            />
+            <SourcingRow
+              t="Import only"
+              s="No enrollment at all. Every worker must already exist in the source registry."
+              on={sourcing === "import-only"}
+              onPick={() => record("import-only")}
+            />
+            {sourcing ? null : (
+              <p className="muted" style={{ margin: "2px 0 10px" }}>
+                Nothing is answered yet — picking a row records the choice on the project, with your name and the date.
+              </p>
+            )}
+            <RefField
+              label="Source registry"
+              hint="Whoever operates it holds Source-System Administrator (Source-System Administrator), and is accountable if a record there is wrong or stale."
+            >
+              <input
+                name="sourceregistry"
+                placeholder="no source registry is connected to this deployment — the reference's Kenya CHW Registry is its demo world"
+              />
+            </RefField>
+            <Callout kind="teal">
+              Importing does not create identities. It links an existing identifier to a Crest identity, so a worker
+              already known to the county is not enrolled a second time under a new number.
+            </Callout>
+            <div style={{ borderTop: "1px solid var(--line, #E5E1DC)", marginTop: 16, paddingTop: 14, display: "flex", justifyContent: "flex-end" }}>
+              <Actions back={["Back", () => nav("/compose")]} go={["Continue", () => nav("/definition")]} />
+            </div>
+          </div>
+        </>
+      )}
+    </LoadFrame>
   );
 }
 
