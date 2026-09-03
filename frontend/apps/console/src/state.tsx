@@ -280,10 +280,7 @@ export function ConsoleProvider(props: { children: ReactNode }) {
     return p.key;
   };
   // The eSignet return leg: the callback handed the door a verified token;
-  // ask the registry who that makes us. Honest limit, restated from the
-  // header: per-party role permits are L1 work the traceability manifest
-  // records as missing (p1_2 role assignment), so a real sign-in lands on the
-  // Org Admin view rather than a registry-derived one.
+  // ask the registry who that makes us.
   const completeEsignet = async (token: string) => {
     setSession(token);
     const w = await whoAmI();
@@ -317,9 +314,17 @@ export function ConsoleProvider(props: { children: ReactNode }) {
         role = "Work Definition Approver";
       }
     }
+    // The reference shows the signed-in person's own name. That is the
+    // party's displayName, read through the same self-read a person may
+    // always make of their own record (GET /v1/parties/{id}) — the literal
+    // stays only as the fallback an unreadable record leaves behind.
+    const name = await api
+      .get("parties", `/v1/parties/${encodeURIComponent(w.partyId)}`)
+      .then((p) => (p && (p.displayName || (p.party && p.party.displayName))) || "Signed in via eSignet")
+      .catch(() => "Signed in via eSignet");
     const who = {
       partyId: w.partyId,
-      who: "Signed in via eSignet",
+      who: name,
       role,
     };
     setPersonToken(token);
