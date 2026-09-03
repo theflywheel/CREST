@@ -55,6 +55,7 @@ const loadInstance = async () => {
 // g1_1 — the stand-up front door. In CREST an instance is stood up at deploy
 // time; this frame states what this deployment already IS, read live.
 export function G1Setup() {
+  const nav = useNavigate();
   const r = useLoad(async () => {
     const base = await loadInstance();
     // The fourth step of the reference's wizard, answered from the record:
@@ -65,84 +66,91 @@ export function G1Setup() {
   });
   return (
     <LoadFrame r={r}>
-      {({ inst, regs }) => (
-        <>
-          <Title t={"Let's set up CREST — " + (inst.name || "this deployment")} />
-          <Lede>
-            The reference opens G-1 with a stand-up wizard. There is no wizard: a CREST instance is stood up by its
-            deployment — compose locally, Railway in the cloud — and told who it is through configuration the services
-            read at start. This walk shows what that stand-up already decided, each value read live from{" "}
-            <span className="mono">GET /v1/instance</span>, none of them editable from a console because none of them
-            is stored anywhere a console could edit.
-          </Lede>
-          <CardTitled t="The reference's four steps — already decided, read from the record">
-            {(() => {
-              const approved = Array.isArray(regs) ? regs.filter((x: any) => x.state === "APPROVED").length : null;
-              const undecided = Array.isArray(regs) ? regs.filter((x: any) => x.state !== "APPROVED" && x.state !== "REJECTED").length : null;
-              const steps: Array<[string, string, boolean | null, string]> = [
-                [
-                  "Name the instance",
-                  "What it covers, and in which languages",
-                  Boolean(inst.name),
-                  inst.name ? `named “${inst.name}” at deploy time` : "not named — CREST_INSTANCE_* configuration",
-                ],
-                [
-                  "Set the consent rules",
-                  "Before a single worker registers",
-                  true,
-                  "the floor is enforced by the infrastructure itself; scripts and templates are programme configuration (#59)",
-                ],
-                [
-                  "Appoint an Instance Administrator",
-                  "So organisations can be admitted",
-                  Boolean(inst.operatorPartyId),
-                  inst.operatorPartyId ? "" : "not appointed — CREST_OPERATOR_PARTY_ID names the party",
-                ],
-                [
-                  "Admit the first organisation",
-                  "Which registers itself, then asks for terms",
-                  approved === null ? null : approved > 0,
-                  approved === null
-                    ? "the queue answers the operator only"
-                    : approved > 0
-                      ? `${approved} admitted${undecided ? ` · ${undecided} waiting on your decision` : ""}`
-                      : undecided
-                        ? `none yet — ${undecided} waiting on your decision in the queue`
-                        : "none yet — the door is open",
-                ],
-              ];
-              return (
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {steps.map(([t, sub, done, note], i) => (
-                    <div key={i} style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
-                      <Chip sm kind={done === null ? "plain" : done ? "ok" : "warn"}>
-                        {done === null ? "?" : done ? "✓" : "–"}
-                      </Chip>
-                      <div>
-                        <b>{t}</b>
-                        {i === 2 && inst.operatorPartyId ? <> — <MonoShort id={inst.operatorPartyId} /></> : null}
-                        <div className="muted">{sub}{note ? ` · ${note}` : ""}</div>
-                      </div>
-                    </div>
-                  ))}
+      {({ inst, regs }) => {
+        const approved = Array.isArray(regs) ? regs.filter((x: any) => x.state === "APPROVED").length : null;
+        const undecided = Array.isArray(regs) ? regs.filter((x: any) => x.state !== "APPROVED" && x.state !== "REJECTED").length : null;
+        // The reference's four steps, drawn as its timeline — each dot's state
+        // derived from the record, never from a wizard's progress variable.
+        const steps: Array<{ t: string; sub: React.ReactNode; done: boolean | null }> = [
+          {
+            t: "Name the instance",
+            sub: <>What it covers, and in which languages{inst.name ? <> · named “{inst.name}” at deploy time</> : " · not named — CREST_INSTANCE_* configuration"}</>,
+            done: Boolean(inst.name),
+          },
+          {
+            t: "Set the consent rules",
+            sub: "Before a single worker registers · the floor is enforced by the infrastructure; scripts and templates are programme configuration (#59)",
+            done: true,
+          },
+          {
+            t: "Appoint an Instance Administrator",
+            sub: <>So organisations can be admitted{inst.operatorPartyId ? <> · <MonoShort id={inst.operatorPartyId} /></> : " · not appointed — CREST_OPERATOR_PARTY_ID names the party"}</>,
+            done: Boolean(inst.operatorPartyId),
+          },
+          {
+            t: "Admit the first organisation",
+            sub: <>
+              Which registers itself, then asks for terms
+              {approved === null
+                ? " · the queue answers the operator only"
+                : approved > 0
+                  ? ` · ${approved} admitted${undecided ? ` · ${undecided} waiting on your decision` : ""}`
+                  : undecided
+                    ? ` · none yet — ${undecided} waiting on your decision in the queue`
+                    : " · none yet — the door is open"}
+            </>,
+            done: approved === null ? null : approved > 0,
+          },
+        ];
+        const dot = (done: boolean | null) =>
+          done ? "var(--ok, #00703C)" : done === null ? "#B9B9B9" : "#C84C0E";
+        return (
+          <>
+            <Title t={"Let\u2019s set up CREST for " + (inst.name || "this deployment")} />
+            <Lede>
+              Four steps to a working deployment — your state or country's own installation of CREST. There is no
+              wizard here: each step is deploy-time configuration, and the dots show what this deployment already
+              decided, read live from <span className="mono">GET /v1/instance</span>.
+            </Lede>
+            <div style={{ margin: "6px 0 2px" }}>
+              {steps.map((st, i) => (
+                <div key={i} style={{ display: "flex", gap: 14 }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 12 }}>
+                    <span style={{ flex: "none", width: 11, height: 11, borderRadius: "50%", background: dot(st.done), marginTop: 5 }} />
+                    {i < steps.length - 1 ? (
+                      <span style={{ flex: 1, width: 2, minHeight: 26, background: st.done ? dot(st.done) : "#DDDDDD", opacity: st.done ? 0.55 : 1 }} />
+                    ) : null}
+                  </div>
+                  <div style={{ paddingBottom: i < steps.length - 1 ? 18 : 0 }}>
+                    <div style={{ font: "500 14px/1.35 Roboto, system-ui, sans-serif" }}>{st.t}</div>
+                    <div className="muted" style={{ marginTop: 2 }}>{st.sub}</div>
+                  </div>
                 </div>
-              );
-            })()}
-          </CardTitled>
-          <CardTitled t="What this deployment already is">
-            <KVR rows={[
-              ["instance", <Mono>{inst.instanceId}</Mono>],
-              ["name", inst.name || "—"],
-              ["stood up by", "the deployment itself — compose/Railway configuration, not a console action"],
-            ]} />
-          </CardTitled>
-          <OpenNote>
-            "Import from another instance" is drawn in the reference and not built: nothing imports a deployment's
-            identity, because an identity that could be imported could collide on the append-only log.
-          </OpenNote>
-          <WalkButtons next="/instance/covers" nextLabel="Begin" />
-        </>
-      )}
+              ))}
+            </div>
+            <Callout kind="teal">
+              You are not creating an organisation. An instance is the deployment itself — a country's or a state's
+              installation. Personal data collected here never leaves it.
+            </Callout>
+            <div style={{ borderTop: "1px solid var(--line, #E4E4E4)", marginTop: 4, paddingTop: 14, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button
+                className="btn secondary"
+                disabled
+                title="Drawn in the reference and not built: nothing imports a deployment's identity, because an identity that could be imported could collide on the append-only log."
+              >
+                Import from another instance
+              </button>
+              <button className="btn dominant" id="g1-begin" onClick={() => nav("/instance/covers")}>
+                Begin
+              </button>
+            </div>
+            <p className="muted" style={{ margin: 0 }}>
+              "Import from another instance" is deliberately inert — an importable identity could collide on the
+              append-only log.
+            </p>
+          </>
+        );
+      }}
     </LoadFrame>
   );
 }
