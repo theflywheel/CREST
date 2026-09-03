@@ -594,18 +594,79 @@ const J4 = async (p, cap) => {
 
 /* ── J5 · Payment and putting it right (F-1 + F-2) ────────────────────── */
 const J5 = async (p, cap) => {
+  // F-1: the Org Admin names one owner; the walk assigns the fixture
+  // organisation itself, exactly as apps.spec.js's funders walk does.
+  await consoleLogin(p, "orgadmin");
+  await hash(p, "#/rateowner", 2000);
+  await cap("J5 · A request to put someone on payment (f1_2)",
+    "Anyone can ask. Only one person can assign — the Org Admin's own act, kept as history.");
+  await p.fill('[name="rateownerparty"]', FIXORG).catch(() => {});
+  await p.click("#assign-owner").catch(() => {});
+  await pause(p, 2500);
+
   await consoleLogin(p, "rateowner");
-  await hash(p, "#/paysetup", 2500);
-  await cap("J5 · The Rate Owner — pricing a unit somebody else defined (f1_1, f1_3)",
-    "The linked rate is read live. Assignment, authoring and publication are the named gaps (f1_2–f1_5).");
-  await pause(p, 5500);
-  await consoleLogin(p, "payowner");
-  await hash(p, "#/paysetup", 2500);
-  await cap("The Payment Mechanism Owner — where CREST stops (f2_1)",
-    "The rail is labelled illustrative/simulated (f2_2, f2_3); the real payment test, reconciliation contract and activation gates are the named gaps (f2_4–f2_10). CREST's boundary is the instruction.");
-  await pause(p, 6000);
-  await p.mouse.wheel(0, 600);
+  await hash(p, "#/rate", 2200);
+  await cap("The Rate Owner prices a unit somebody else defined (f1_3)",
+    "The unit of work is read-only by construction; only the amount, the calculation rule and the effective date are the owner's to set.");
+  await p.fill('[name="rateamount"]', "175.00").catch(() => {});
+  await pause(p, 2000);
+  await p.click("#rate-continue").catch(() => {});
+  await pause(p, 2000);
+  await cap("Publication is a new version, never an edit (f1_4)",
+    "The seeded rate stays on the record; publishing names what it supersedes. No edit control exists here, and none ever will.");
   await pause(p, 3500);
+  await p.click("#publish-rate").catch(() => {});
+  await pause(p, 2200);
+  await cap("Half done is a real, derived state (f1_5)",
+    "The rate is live; the money still cannot move until a mechanism exists. Nothing here is stored — the standing is computed fresh every time.");
+  await pause(p, 3500);
+
+  // A fresh project so the mechanism half has somewhere real to live — the
+  // same isolation apps.spec.js's funders walk keeps for re-runnability.
+  const stamp = Date.now().toString().slice(-6);
+  const r = await asParty(FIXORG, "POST", "/v1/projects", {
+    name: "J5 recording " + stamp, ownerPartyId: FIXORG,
+    configuration: { coverage: "Journey recording" },
+  });
+  const proj = await r.json();
+  const pid = (proj.project || proj).id;
+
+  await consoleLogin(p, "payowner");
+  await hash(p, "#/where", 2000);
+  await p.click(`[data-context="${pid}"]`).catch(() => {});
+  await pause(p, 1500);
+  await hash(p, "#/mech/test", 2000);
+  await cap("The Payment Mechanism Owner sends one real payment (f2_4)",
+    "Through the mock rail — recorded whether it succeeds or fails, never smoothed over. CREST's boundary is the instruction; the rail beyond it is connected, not owned.");
+  await p.fill('[name="testdest"]', "recording-account").catch(() => {});
+  await p.fill('[name="testamount"]', "10.00").catch(() => {});
+  await p.click("#send-test").catch(() => {});
+  await pause(p, 2500);
+
+  await hash(p, "#/mech/recon", 2000);
+  await cap("The reconciliation file, tied back line by line (f2_5)",
+    "crest-recon-csv-v1 — every row an instruction id, agreed by the owner before it is trusted.");
+  await p.click("#agree-recon").catch(() => {});
+  await pause(p, 2200);
+
+  await hash(p, "#/mech/statement", 2000);
+  await cap("The advisory statement carries its own limits (f2_6)",
+    "A held payment appears here with its reason and its owner — never missing, always explained.");
+  await p.click("#agree-statement").catch(() => {});
+  await pause(p, 2200);
+
+  await hash(p, "#/mech/batching", 2000);
+  await cap("Batching is paid for by the worker — the trade-off must be named (f2_7)",
+    "The reference asks whether a dispute should hold payment. It never does — a dispute contests the record, not the money (W4) — and the screen answers that honestly instead of drawing a working toggle (design finding #195).");
+  await p.fill('[name="batchwindow"]', "daily-17:00").catch(() => {});
+  await p.fill('[name="batchtradeoff"]', "workers paid once daily wait up to a day for confirmed work").catch(() => {});
+  await p.click("#record-batching").catch(() => {});
+  await pause(p, 2500);
+
+  await hash(p, "#/mech/activate", 2200);
+  await cap("Activation refuses readably — never a bare no (f2_8)",
+    "Four conditions, each satisfied only by a recorded act. What is unmet is named, not hidden.");
+  await pause(p, 4000);
 };
 
 /* ── J12 · Systems CREST does not own (EXT) ───────────────────────────── */
