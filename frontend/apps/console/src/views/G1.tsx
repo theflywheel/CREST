@@ -236,33 +236,94 @@ export function G1Covers() {
   );
 }
 
-// g1_3 — consent rules, before the first worker.
+// g1_3 — consent rules, before the first worker. The reference's checkbox
+// frame, each box's state derived from what the infrastructure actually
+// enforces — the three enforced rules render checked and locked (a floor you
+// could untick would not be a floor), the fourth renders off because the
+// mechanism it would switch does not exist.
+function ConsentRule(p: { on: boolean; locked?: boolean; title: string; sub: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 18 }}>
+      <span
+        aria-checked={p.on}
+        role="checkbox"
+        title={p.locked ? "Enforced by the infrastructure — not a setting" : undefined}
+        style={{
+          flex: "none", width: 18, height: 18, borderRadius: 4, marginTop: 1,
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          border: p.on ? "none" : "2px solid #B9B9B9",
+          background: p.on ? "#C84C0E" : "transparent",
+          color: "#fff", font: "700 13px/1 Roboto, system-ui, sans-serif",
+        }}
+      >
+        {p.on ? "\u2713" : ""}
+      </span>
+      <div>
+        <div style={{ font: "500 14px/1.35 Roboto, system-ui, sans-serif" }}>{p.title}</div>
+        <div className="muted" style={{ marginTop: 2 }}>{p.sub}</div>
+      </div>
+    </div>
+  );
+}
+
 export function G1Consent() {
   return (
     <>
       <Title t="Consent rules, before the first worker" />
       <Lede>
-        The floor is infrastructure and already holds: enrolment consent is captured per programme as a record with an
-        artefact the worker can hear back; withdrawing stops new evidence collection and never touches what was
-        already paid. The words of the ask are deployment configuration (#59) — two deployments wording it
-        differently are both CREST.
+        These are set once for the instance and inherited by every project. A project can be stricter; it cannot be
+        looser. Here they are not settings at all: the checked rules are the floor the infrastructure itself enforces
+        — which is why they cannot be unticked — and the words of the ask are deployment configuration (#59).
       </Lede>
-      <CardTitled t="The floor — what every deployment enforces">
-        <KVR rows={[
-          ["before any record", "consent is captured before a worker's record is created, and stored as its own record"],
-          ["the artefact", "every captured consent has an artefact the worker can hear back — GET /v1/consents/{id}/artefact"],
-          ["withdrawal", "stops new evidence collection from that moment; it never unwinds a payment already made"],
-        ]} />
-      </CardTitled>
-      <CardTitled t="What the reference also draws here">
-        <KVR rows={[["Data Protection / Consent Officer", "Not yet appointed"]]} />
-        <OpenNote>
-          The officer's appointment has no record in this deployment — there is no endpoint that names one, and this
-          screen does not pretend otherwise. Editing consent scripts and message templates from a console is not
-          built; templates are deployment configuration (#59).
-        </OpenNote>
-      </CardTitled>
-      <WalkButtons back="/instance/covers" next="/instance/invite" />
+      <div style={{ maxWidth: 760 }}>
+        <ConsentRule
+          on
+          locked
+          title="A worker may withdraw consent at any time"
+          sub="Withdrawal stops future disclosure and new evidence collection. It does not delete credentials already issued, and never unwinds a payment already made."
+        />
+        <ConsentRule
+          on
+          locked
+          title="A worker may see every verification of their own record"
+          sub="Who checked, when, and what they were shown — every check reaches the worker's own audit trail (settled at G1, #9)."
+        />
+        <ConsentRule
+          on
+          locked
+          title="Disclosure is per share, never standing"
+          sub="A verifier gets one scoped view, not an open account — presentation consent is captured per share (#189)."
+        />
+        <ConsentRule
+          on={false}
+          title="Projects may request a broader default"
+          sub="Off — and not a switch: no mechanism exists for a project to widen disclosure below the instance rule, so there is nothing to turn on."
+        />
+        <div style={{ marginTop: 6 }}>
+          <div className="muted" style={{ font: "500 10.5px/1 Roboto, system-ui, sans-serif", letterSpacing: ".9px", textTransform: "uppercase", marginBottom: 6 }}>
+            Data protection / consent officer
+          </div>
+          <div style={{ border: "1px solid var(--line, #DDDDDD)", borderRadius: 8, padding: "10px 12px", font: "400 13.5px/1.4 Roboto, system-ui, sans-serif", color: "var(--muted, #787878)", fontStyle: "italic" }}>
+            Not yet appointed — no record names one; the appointment is recordless in this deployment
+          </div>
+          <div className="muted" style={{ marginTop: 5 }}>
+            This role owns these rules from here on. Instance Administrator sets them; Data Protection / Consent
+            Officer maintains them.
+          </div>
+        </div>
+      </div>
+      <Callout kind="teal">
+        Set before the first worker registers, deliberately. Retro-fitting consent onto records already collected under
+        a different rule has no clean answer.
+      </Callout>
+      <OpenNote>
+        Every captured consent has an artefact the worker can hear back —{" "}
+        <span className="mono">GET /v1/consents/{"{id}"}/artefact</span>. Editing consent scripts and message templates
+        from a console is not built; templates are deployment configuration (#59).
+      </OpenNote>
+      <div style={{ borderTop: "1px solid var(--line, #E4E4E4)", marginTop: 4, paddingTop: 14, display: "flex", justifyContent: "flex-end" }}>
+        <WalkButtons back="/instance/covers" next="/instance/invite" />
+      </div>
     </>
   );
 }
