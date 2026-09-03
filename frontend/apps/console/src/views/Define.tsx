@@ -76,7 +76,8 @@ import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, FIX, services } from "@crest/api";
 import {
-  Callout, Chip, GridTable, NextBlock, OpenNote, OptionCard, RefField, Sidecar, StepCounter,
+  Callout, Chip, GridTable, NextBlock, OpenNote, OptionCard, ProgressBar, RefField, Sidecar, StepCounter,
+  WizardContent,
 } from "@crest/ui";
 import { Card, CardTitled, Empty, KVR, Lede, LoadFrame, Mono, MonoShort, Title, useLoad, when } from "../ui";
 import { useConsole } from "../state";
@@ -213,21 +214,41 @@ function Buttons(props: { btns: Btn[] }) {
   );
 }
 
-// Frame draws one reference wizard frame: the step counter above the title,
-// the title, and the frame's own buttons at the foot.
+// counterProgress reads the "N of M" a wizard counter already carries
+// ("Sector · 1 of 9") so the progress track can share it rather than every
+// screen threading a second step/total pair through.
+const counterProgress = (counter?: string): { value: number; max: number } | null => {
+  const m = counter?.match(/(\d+)\s+of\s+(\d+)/i);
+  return m ? { value: Number(m[1]), max: Number(m[2]) } : null;
+};
+
+// Frame draws one reference wizard frame: the progress track and step
+// counter above the title, the title, and the frame's own buttons at the
+// foot — all inside the reference's ~820px wizard content pane.
 function Frame(props: {
   counter?: string; title: string; chip?: ReactNode; lede?: ReactNode;
   children: ReactNode; btns: Btn[];
+  // wide opts a caller out of the ~820px wizard content pane. Only the
+  // registry front door (/definework, a list screen, not a wizard step)
+  // uses it — every gated /define/* step keeps the reference's narrower
+  // wizard density.
+  wide?: boolean;
 }) {
-  return (
+  const progress = counterProgress(props.counter);
+  const body = (
     <>
-      {props.counter ? <StepCounter>{props.counter}</StepCounter> : null}
+      {progress ? (
+        <ProgressBar value={progress.value} max={progress.max} label={<StepCounter>{props.counter}</StepCounter>} />
+      ) : props.counter ? (
+        <StepCounter>{props.counter}</StepCounter>
+      ) : null}
       <Title t={props.title} extra={props.chip} />
       {props.lede ? <Lede>{props.lede}</Lede> : null}
       {props.children}
       <Buttons btns={props.btns} />
     </>
   );
+  return props.wide ? body : <WizardContent>{body}</WizardContent>;
 }
 
 type BodyProps = { d: Draft; reload: () => void };
@@ -398,6 +419,7 @@ export function Registry() {
         const open = drafts.filter((d) => d.state === "OPEN");
         return (
           <Frame
+            wide
             title="Work definitions"
             chip={<Chip kind="plain">{drafts.length} drafts</Chip>}
             lede={

@@ -13,7 +13,7 @@
 // the custodian party. Per-role backend permits are L1 work the traceability
 // manifest records as missing (p1_2 role assignment).
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { ApiError, loginAs, setSession, FIX } from "@crest/api";
+import { ApiError, api, loginAs, setSession, whoAmI, FIX } from "@crest/api";
 
 export const personas = [
   {
@@ -113,6 +113,13 @@ type State = {
   fail: (e: unknown) => void;
   clearErr: () => void;
   login: (idx: number) => Promise<PersonaKey>;
+  // The eSignet return leg: the callback handed the door a verified token;
+  // ask the registry who that makes us. Honest limit: this instance has no
+  // per-party role-permit read yet (that self-read is L1 work still on its
+  // own branch), so a real sign-in that is not the instance operator lands
+  // on the Org Admin view rather than a registry-derived one — the same gap
+  // the demo personas' header comment already names.
+  completeEsignet: (token: string) => Promise<"enrolled" | "stranger">;
   logout: () => void;
   traceClaim: string;
   setTraceClaim: (c: string) => void;
@@ -149,6 +156,30 @@ export function ConsoleProvider(props: { children: ReactNode }) {
     setPersona(p.key);
     return p.key;
   };
+  // See the completeEsignet type above for the honest limit this leans on.
+  const completeEsignet = async (token: string): Promise<"enrolled" | "stranger"> => {
+    setSession(token);
+    const w = await whoAmI();
+    if (!w.partyId) {
+      setSession(null);
+      return "stranger";
+    }
+    const inst = await api.get("parties", "/v1/instance").catch(() => null);
+    const operator = Boolean(inst && inst.instance && inst.instance.operatorPartyId === w.partyId);
+    const key: PersonaKey = operator ? "instance" : "orgadmin";
+    const role = operator ? "Instance Admin" : "Org Admin";
+    // The reference shows the signed-in person's own name. That is the
+    // party's displayName, read through the same self-read a person may
+    // always make of their own record (GET /v1/parties/{id}) — the literal
+    // stays only as the fallback an unreadable record leaves behind.
+    const who = await api
+      .get("parties", `/v1/parties/${encodeURIComponent(w.partyId)}`)
+      .then((p) => (p && p.displayName) || "Signed in via eSignet")
+      .catch(() => "Signed in via eSignet");
+    setMe({ partyId: w.partyId, who, role });
+    setPersona(key);
+    return "enrolled";
+  };
   const logout = () => {
     setSession(null);
     setMe(null);
@@ -165,6 +196,7 @@ export function ConsoleProvider(props: { children: ReactNode }) {
         fail: (e) => setErr(errText(e)),
         clearErr: () => setErr(null),
         login,
+        completeEsignet,
         logout,
         traceClaim,
         setTraceClaim,

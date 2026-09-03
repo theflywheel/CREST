@@ -218,6 +218,28 @@ export const StepCounter = (p: { children: ReactNode }) => (
   </span>
 );
 
+// The reference's thin progress track above a wizard frame's title, with the
+// step label ("Sector · 1 of 9", rendered by the caller's own StepCounter so
+// its pinned .eyebrow classname is untouched) right-aligned beside it.
+export function ProgressBar(props: { value: number; max: number; label?: ReactNode }) {
+  const pct = props.max > 0 ? Math.max(0, Math.min(100, (props.value / props.max) * 100)) : 0;
+  return (
+    <div className="progressbar-row">
+      <div className="progressbar" role="progressbar" aria-valuenow={props.value} aria-valuemin={0} aria-valuemax={props.max}>
+        <div className="fill" style={{ width: pct + "%" }} />
+      </div>
+      {props.label}
+    </div>
+  );
+}
+
+// The reference's ~820px wizard content pane. Registry/list screens
+// (#/definework and its siblings) legitimately use the full pane width and
+// must not get this wrapper — only the Define wizard's own step screens do.
+export function WizardContent(props: { children: ReactNode }) {
+  return <div className="wizard-content">{props.children}</div>;
+}
+
 // Grid-row list — the reference's table idiom (no <table> anywhere in the
 // Actor Journeys frames; tabular data is a grid row list with a header row).
 export function GridTable(props: { cols: string; head?: ReactNode[]; children: ReactNode }) {

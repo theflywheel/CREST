@@ -16,8 +16,8 @@
 // act on says who can (n5). The "one rail across all of J3" reading of F1 is
 // corrected in docs/design/j3-connective-tissue/README.md: it holds per
 // section, not across all 24 frames.
-import { useEffect } from "react";
-import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { ConsoleShell, ErrBar, type NavGroup, type NavItem } from "@crest/ui";
 import { useConsole, type PersonaKey } from "./state";
 import { Definition, Sources, Receipt } from "./views/Project";
@@ -249,6 +249,71 @@ const allowed = (key: PersonaKey, path: string) =>
   (key === "instance" && (G1_EXTRA.includes(path) || path.startsWith("/admissions/"))) ||
   NAV[key].some((g) => g.items.some((i) => i.to === path));
 
+// The eSignet return leg: the door's own callback route, handed either a
+// verified token or an error in the query string (services/core/parties'
+// /v1/auth/callback). A stranger (a verified token bound to no party) stays
+// on the sign-in door with the fact stated, rather than a dead end — this
+// console has no self-registration surface of its own to hand them to.
+function AuthReturn() {
+  const s = useConsole();
+  const nav = useNavigate();
+  const [params] = useSearchParams();
+  const [working, setWorking] = useState(true);
+  useEffect(() => {
+    const err = params.get("error");
+    const token = params.get("token");
+    if (err) {
+      s.fail(new Error("eSignet sign-in did not finish: " + err));
+      setWorking(false);
+      return;
+    }
+    if (!token) {
+      s.fail(new Error("the login returned neither a token nor an error"));
+      setWorking(false);
+      return;
+    }
+    s.completeEsignet(token)
+      .then((outcome) => {
+        if (outcome === "enrolled") {
+          nav("/org", { replace: true });
+        } else {
+          s.fail(new Error("that identity checked out, but no party in this registry is bound to it yet"));
+          setWorking(false);
+        }
+      })
+      .catch((e) => {
+        s.fail(e);
+        setWorking(false);
+      });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  if (working)
+    return (
+      <div className="console-shell">
+        <div className="console-body">
+          <main className="pane">
+            <div className="screen pane-narrow">
+              <span className="eyebrow">CREST Console</span>
+              <p className="body-2">Completing your sign-in…</p>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  return (
+    <SignIn
+      onSignedIn={async (i) => {
+        s.clearErr();
+        try {
+          const key = await s.login(i);
+          nav(homeOf(key));
+        } catch (e) {
+          s.fail(e);
+        }
+      }}
+    />
+  );
+}
+
 function Shell() {
   const s = useConsole();
   const loc = useLocation();
@@ -300,6 +365,9 @@ export function App() {
   const s = useConsole();
   return (
     <Routes>
+      {/* The eSignet return leg — reachable with no persona, like /onboard,
+          because this is where a session first gets one. */}
+      <Route path="/auth" element={<AuthReturn />} />
       {/* Programme onboarding (#155 phase D): reachable with no persona —
           applying is the open bootstrap by design (#20). */}
       <Route path="/onboard" element={<OnboardApply />} />
