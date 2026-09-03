@@ -39,6 +39,10 @@ import {
 import {
   G1Setup, G1Covers, G1Consent, G1Invite, G1Services, G1People, Admissions, AdmissionDetail,
 } from "./views/G1";
+import {
+  RateOwner, RateAuthor, RatePublish, RateStanding,
+  MechTest, MechRecon, MechStatement, MechBatching, MechActivate, MechQualify, MechLive,
+} from "./views/Funders";
 
 // ── The reference's three J3 rails ─────────────────────────────────────────
 const SETUP_RAIL: NavItem[] = [
@@ -72,7 +76,17 @@ const FINANCE_ROUTES = ["/finance", "/finance/connect", "/support"];
 const J3_ROUTES = [
   "/org", "/people", "/projects", "/projects/new", "/definition", "/paysetup", "/workers",
   "/validation", "/intake", "/sources", "/where", "/handover", "/compose", "/owners",
-  "/activate", "/partners", ...DASHBOARD_ROUTES, ...FINANCE_ROUTES,
+  "/activate", "/partners", "/rateowner", ...DASHBOARD_ROUTES, ...FINANCE_ROUTES,
+];
+
+// The funders wave (F-1, F-2): the reference draws these frames on the same
+// five-entry setup rail as J3, and its actors reach them by the walk's own
+// buttons. /rateowner is also in J3_ROUTES because f1_2's assigner is the
+// Org Admin.
+const FUNDERS_ROUTES = [
+  "/rateowner", "/rate", "/ratepublish", "/ratestanding",
+  "/mech/test", "/mech/recon", "/mech/statement", "/mech/batching",
+  "/mech/activate", "/mech/qualify", "/mech/live",
 ];
 
 function railFor(pathname: string): NavGroup[] {
@@ -109,8 +123,12 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
       ],
     },
   ],
-  rateowner: [{ caption: "Rate owner · F-1", items: [{ to: "/paysetup", label: "The rate" }] }],
-  payowner: [{ caption: "Payment mechanism · F-2", items: [{ to: "/paysetup", label: "Rail & mechanism" }] }],
+  // F-1 and F-2 navigate by the reference's own setup rail (railFor), exactly
+  // like the J3 actors: the funders frames all draw the same five entries, and
+  // the wave's screens are reached by each frame's own buttons. These entries
+  // are their default landing places only.
+  rateowner: [{ items: SETUP_RAIL }],
+  payowner: [{ items: SETUP_RAIL }],
   instance: [
     // The reference's own G-1 rail: Instance · Organisations · Consent & data ·
     // Platform services · People & roles (g1_1–g1_6, g4_1–g4_3).
@@ -170,13 +188,16 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
 };
 
 const isJ3 = (key: PersonaKey) => key === "orgadmin" || key === "configurator";
-const homeOf = (key: PersonaKey) => (isJ3(key) ? "/org" : NAV[key][0].items[0].to);
+const isFunder = (key: PersonaKey) => key === "rateowner" || key === "payowner";
+const homeOf = (key: PersonaKey) =>
+  isJ3(key) ? "/org" : isFunder(key) ? "/paysetup" : NAV[key][0].items[0].to;
 // The G-1 screens the rail does not name: the stand-up front door and the
 // invite frame are reached by the walk's own buttons, and an admission detail
 // is reached from the queue.
 const G1_EXTRA = ["/instance/setup", "/instance/invite"];
 const allowed = (key: PersonaKey, path: string) =>
   (isJ3(key) && J3_ROUTES.includes(path)) ||
+  (isFunder(key) && (J3_ROUTES.includes(path) || FUNDERS_ROUTES.includes(path))) ||
   (key === "instance" && (G1_EXTRA.includes(path) || path.startsWith("/admissions/"))) ||
   NAV[key].some((g) => g.items.some((i) => i.to === path));
 
@@ -217,7 +238,7 @@ function Shell() {
           </button>
         </>
       }
-      nav={isJ3(s.persona) ? railFor(loc.pathname) : NAV[s.persona]}
+      nav={isJ3(s.persona) || isFunder(s.persona) ? railFor(loc.pathname) : NAV[s.persona]}
     >
       <div className="screen" key={loc.pathname} style={{ display: "flex", flexDirection: "column", gap: 15 }}>
         {s.err ? <ErrBar>{s.err}</ErrBar> : null}
@@ -277,6 +298,20 @@ export function App() {
         <Route path="/definework" element={<DefineWork />} />
         <Route path="/ratify" element={<Ratify />} />
         <Route path="/paysetup" element={<PaySetup />} />
+        {/* The funders wave (F-1 f1_2–f1_5, F-2 f2_4–f2_10): rate ownership,
+            rates as versioned terms, and the mechanism whose activation gate
+            sits in front of disbursement only. */}
+        <Route path="/rateowner" element={<RateOwner />} />
+        <Route path="/rate" element={<RateAuthor />} />
+        <Route path="/ratepublish" element={<RatePublish />} />
+        <Route path="/ratestanding" element={<RateStanding />} />
+        <Route path="/mech/test" element={<MechTest />} />
+        <Route path="/mech/recon" element={<MechRecon />} />
+        <Route path="/mech/statement" element={<MechStatement />} />
+        <Route path="/mech/batching" element={<MechBatching />} />
+        <Route path="/mech/activate" element={<MechActivate />} />
+        <Route path="/mech/qualify" element={<MechQualify />} />
+        <Route path="/mech/live" element={<MechLive />} />
         <Route path="/instance" element={<Instance />} />
         {/* G-1 — setting up the instance (g1_1–g1_6): the reference's frames,
             read against the deployment's real self-description. */}

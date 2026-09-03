@@ -51,7 +51,7 @@ export const personas = [
   {
     key: "rateowner",
     id: FIX.org,
-    who: "Mutua",
+    who: "Nadia Okoth",
     role: "Rate Owner",
     ref: "F-1",
     what: "The rate on the unit the author defined",
@@ -59,7 +59,7 @@ export const personas = [
   {
     key: "payowner",
     id: FIX.org,
-    who: "Njeri",
+    who: "Daniel Mwangi",
     role: "Payment Mechanism Owner",
     ref: "F-2",
     what: "The rail beyond the boundary where CREST stops",

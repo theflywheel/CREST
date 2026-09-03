@@ -55,8 +55,26 @@ async function call(
   return doc;
 }
 
+// getText: for the endpoints whose body is not JSON — the reconciliation
+// file (f2_5) is CSV by contract, and parsing it as JSON would silently
+// return null where the caller needed the lines.
+async function callText(service: ServiceName, path: string): Promise<{ text: string; format: string | null }> {
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = "Bearer " + token;
+  if (onBehalfOf) headers["X-CREST-On-Behalf-Of"] = onBehalfOf;
+  const res = await fetch(services[service] + path, { headers });
+  const text = await res.text();
+  if (!res.ok) {
+    let doc: any = null;
+    try { doc = JSON.parse(text); } catch { /* not JSON */ }
+    throw new ApiError(res.status, doc && doc.code, (doc && doc.message) || text);
+  }
+  return { text, format: res.headers.get("X-CREST-Reconciliation-Format") };
+}
+
 export const api = {
   get: (svc: ServiceName, path: string) => call(svc, "GET", path),
+  getText: (svc: ServiceName, path: string) => callText(svc, path),
   post: (svc: ServiceName, path: string, body?: unknown) => call(svc, "POST", path, body),
   // The J3 configuration endpoints are PUTs by design: one record per key,
   // idempotent, re-answering replaces the answer rather than appending one.
