@@ -750,9 +750,22 @@ const (
 // definition is complete and usable with no rate attached, because
 // recognition is a use of its own (§7).
 type PaymentSetupLinkedRecordPayload struct {
+
+	// Who priced this version (F-1). The author prices a unit somebody
+	// else defined; they never redefine it — a rate record cannot touch
+	// the definition it is keyed to. Optional because a rate attached by
+	// seeding or an earlier deployment has no recorded author, and
+	// inventing one would be a lie.
+	AuthoredByPartyID  *string                                           `json:"authoredByPartyId,omitempty"`
 	EffectiveFrom      time.Time                                         `json:"effectiveFrom"`
 	PayerPartyID       string                                            `json:"payerPartyId"`
 	RatePerOutcomeUnit PaymentSetupLinkedRecordPayloadRatePerOutcomeUnit `json:"ratePerOutcomeUnit"`
+
+	// The LinkedRecord version this one replaces. A rate is terms, not a
+	// setting: published, named, never edited underneath anyone — a
+	// change is a new version that names what it supersedes, and payments
+	// read the version in force at the relevant time.
+	SupersedesVersion *int `json:"supersedesVersion,omitempty"`
 }
 
 type PaymentSetupLinkedRecordPayloadRatePerOutcomeUnit struct {

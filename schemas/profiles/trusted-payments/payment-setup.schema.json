@@ -15,7 +15,16 @@
       "additionalProperties": false
     },
     "payerPartyId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/did" },
-    "effectiveFrom": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" }
+    "effectiveFrom": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp" },
+    "authoredByPartyId": {
+      "$ref": "urn:crest:schema:primitives:common:1#/$defs/did",
+      "description": "Who priced this version (F-1). The author prices a unit somebody else defined; they never redefine it — a rate record cannot touch the definition it is keyed to. Optional because a rate attached by seeding or an earlier deployment has no recorded author, and inventing one would be a lie."
+    },
+    "supersedesVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The LinkedRecord version this one replaces. A rate is terms, not a setting: published, named, never edited underneath anyone — a change is a new version that names what it supersedes, and payments read the version in force at the relevant time."
+    }
   },
   "required": ["ratePerOutcomeUnit", "payerPartyId", "effectiveFrom"],
   "additionalProperties": false
