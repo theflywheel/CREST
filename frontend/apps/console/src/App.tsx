@@ -253,6 +253,9 @@ function Shell() {
   const s = useConsole();
   const loc = useLocation();
   useEffect(() => s.clearErr(), [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The onboarding surface swaps the api session to the organisation's own
+  // token; entering (or navigating) the shell puts the person back.
+  useEffect(() => s.assertSession(), [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
   // The eSignet return leg must render before the signed-out gate: the
   // callback bounces here with the token still in the route's query.
   if (loc.pathname === "/auth") return <AuthReturn />;

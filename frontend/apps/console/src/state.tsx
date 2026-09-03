@@ -115,6 +115,8 @@ type State = {
   login: (idx: number) => Promise<PersonaKey>;
   completeEsignet: (token: string) => Promise<"enrolled" | "stranger">;
   logout: () => void;
+  // Re-asserts the signed-in person's token on the api session (see provider).
+  assertSession: () => void;
   traceClaim: string;
   setTraceClaim: (c: string) => void;
   wizStep: number;
@@ -182,6 +184,12 @@ export function ConsoleProvider(props: { children: ReactNode }) {
     if (v) setSession(v.token);
     return v;
   });
+  // The person's own token, kept so the shell can re-assert it. The
+  // onboarding screens swap the api session to the ORGANISATION's token
+  // (ensureOrgSession) on purpose; walking back into the console must put
+  // the person back, or every view asks about a party the wire no longer
+  // authenticates as (party_not_proven).
+  const [personToken, setPersonToken] = useState<string | null>(stored ? stored.token : null);
   const [me, setMe] = useState<State["me"]>(stored ? stored.me : null);
   const [persona, setPersona] = useState<PersonaKey | null>(stored ? stored.persona : null);
   const [err, setErr] = useState<string | null>(null);
@@ -238,6 +246,7 @@ export function ConsoleProvider(props: { children: ReactNode }) {
     const p = personas[idx];
     const token = await loginAs(p.id);
     const who = { partyId: p.id, who: p.who, role: p.role };
+    setPersonToken(token);
     setMe(who);
     setPersona(p.key);
     store({ token, me: who, persona: p.key });
@@ -256,12 +265,17 @@ export function ConsoleProvider(props: { children: ReactNode }) {
       return "stranger" as const;
     }
     const who = { partyId: w.partyId, who: "Signed in via eSignet", role: "Org Admin" };
+    setPersonToken(token);
     setMe(who);
     setPersona("orgadmin");
     store({ token, me: who, persona: "orgadmin" });
     return "enrolled" as const;
   };
+  const assertSession = () => {
+    if (personToken) setSession(personToken);
+  };
   const logout = () => {
+    setPersonToken(null);
     setSession(null);
     store(null);
     setMe(null);
@@ -280,6 +294,7 @@ export function ConsoleProvider(props: { children: ReactNode }) {
         login,
         completeEsignet,
         logout,
+        assertSession,
         traceClaim,
         setTraceClaim,
         wizStep,
