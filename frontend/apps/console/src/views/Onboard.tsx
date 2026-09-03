@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, loginAs } from "@crest/api";
-import { Callout, Chip, ErrBar, GridTable, KV, Sidecar } from "@crest/ui";
+import { Callout, Chip, ErrBar, GridTable, KV, NextBlock, Sidecar, Stat } from "@crest/ui";
 
 const OKEY = "crest.console.onboarding";
 
@@ -638,9 +638,15 @@ export function OnboardStatus() {
   const nav = useNavigate();
   const ob = readOnboarding();
   const [reg, setReg] = useState<any | null>(null);
+  const [nProjects, setNProjects] = useState<number | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => {
-    if (ob) api.get("parties", `/v1/organisations/${ob.orgId}/registration`).then(setReg, (e: any) => setErr(String(e?.message || e)));
+    if (!ob) return;
+    api.get("parties", `/v1/organisations/${ob.orgId}/registration`).then(setReg, (e: any) => setErr(String(e?.message || e)));
+    // The projects card is a real read, made as the organisation itself.
+    ensureOrgSession(ob.orgId)
+      .then(() => api.get("parties", `/v1/projects?ownerPartyId=${encodeURIComponent(ob.orgId)}`))
+      .then((d: any) => setNProjects((d.projects || []).length), () => setNProjects(null));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   if (!ob)
     return (
@@ -651,12 +657,84 @@ export function OnboardStatus() {
       </OnboardFrame>
     );
   const state = reg?.state || "…";
+  const approved = state === "APPROVED";
+  const title = approved
+    ? "Approved"
+    : state === "REJECTED"
+      ? "Not approved"
+      : state === "TERMS_ACCEPTED"
+        ? "Waiting on the operator\u2019s decision"
+        : ob.name;
+  const termsName = reg?.termsId ? "Standard delivery" : "\u2014";
   return (
-    <OnboardFrame step={4} title={ob.name} who={ob.contactName}>
+    <OnboardFrame step={4} title={title} who={ob.contactName}>
       {err ? <ErrBar>{err}</ErrBar> : null}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Chip kind={state === "APPROVED" ? "ok" : state === "REJECTED" ? "err" : "warn"}>{state}</Chip>
+      {/* The reference's four cards (g2_13), each answered from a record.
+          The reference also counts organisations on the same terms; no
+          endpoint answers that to an applicant (the membership oracle #68
+          closed), so that card is deliberately absent rather than invented. */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Stat
+          n={termsName}
+          label={
+            <>
+              terms you are on{reg?.termsVersion ? <> · <Chip sm kind="info">version {reg.termsVersion}</Chip></> : null}
+            </>
+          }
+        />
+        <Stat
+          n={approved ? "Live" : state === "REJECTED" ? "Closed" : "Pending"}
+          label={approved ? "your connection" : state === "REJECTED" ? "with a recorded reason" : "the operator decides — never the organisation itself"}
+        />
+        <Stat n={nProjects === null ? "—" : String(nProjects)} label={nProjects ? "projects" : "projects yet — a configurator invites you"} />
       </div>
+      <div className="card" style={{ maxWidth: 720 }}>
+        <KV
+          rows={[
+            [
+              "Your key",
+              "This deployment issues none \u2014 your sign-in is your identity provider\u2019s, and there is no copied secret to lose",
+            ],
+            ["What approval lets you do", "Exactly what the terms said, and nothing beyond them"],
+            [
+              "If it is ever withdrawn",
+              "The registration is decided again, with a named decider and a reason \u2014 no middle state",
+            ],
+          ]}
+        />
+      </div>
+      {approved ? (
+        <NextBlock
+          happened={
+            <>
+              Your registration stands approved on {reg.termsId} v{reg.termsVersion}
+              {reg.decidedBy ? <> \u2014 decided by <span className="mono">{reg.decidedBy}</span></> : null}
+            </>
+          }
+          who="A project configurator, whenever one goes looking for a partner like you"
+          when="Any time, or never \u2014 you are findable from now on"
+          told="Nothing is pushed \u2014 an invitation appears on your organisation page (this deployment sends no email; a recorded gap)"
+          ifnot="Nothing chases this. You can also approach a project directly \u2014 your listing is what makes you findable."
+        />
+      ) : (
+        <NextBlock
+          happened={
+            state === "REJECTED" ? (
+              <>The application was refused{reg?.reason ? <> \u2014 \u201c{reg.reason}\u201d</> : null}</>
+            ) : (
+              <>Your acceptance of {reg?.termsId || "the terms"} v{reg?.termsVersion || ""} is on record; the application waits, granting nothing yet</>
+            )
+          }
+          who="The instance operator \u2014 approval is manual here, and never the organisation\u2019s own act"
+          when="When the operator opens the admissions queue; nothing decides by itself"
+          told="Nothing is pushed \u2014 this page is the read (this deployment sends no email; a recorded gap)"
+          ifnot="An undecided application sits indefinitely. The operator\u2019s queue lists it undecided-first, which is the only escalation that exists."
+        />
+      )}
+      <Callout kind="grey" title="One thing still not unlocked">
+        You still cannot put your own name behind a credential. That needs wider terms \u2014 a separate, reviewed
+        request \u2014 and most organisations never make one.
+      </Callout>
       <div className="pane-cols">
         <div>
           {reg ? (
@@ -678,21 +756,7 @@ export function OnboardStatus() {
             />
           ) : null}
         </div>
-        <div>
-          {state === "APPROVED" ? (
-            <Sidecar ok>
-              Approved — the organisation is now published to the registry log, and its authority can be granted and
-              checked. From here: define work in the console's admin view, attach a payment setup, and enrol workers
-              through the field door.
-            </Sidecar>
-          ) : (
-            <Sidecar>
-              An application that is not yet decided grants nothing. Where approval is manual, the instance operator
-              decides — never the organisation itself. What is checked before this is live is on the Certificates
-              step: recorded verdicts with named owners, never a simulation.
-            </Sidecar>
-          )}
-        </div>
+        <div />
       </div>
       <div className="btn-row" style={{ maxWidth: 560 }}>
         <button className="btn secondary" onClick={() => nav("/onboard/status")}>
