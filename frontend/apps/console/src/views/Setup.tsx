@@ -561,11 +561,17 @@ export function Workers() {
   const [err, setErr] = useState<string | null>(null);
   const [gen, setGen] = useState(0);
   const r = useLoad(async () => {
-    const comp = await api.get("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/composition`).catch(() => ({ choices: [] }));
+    const [comp, src] = await Promise.all([
+      api.get("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/composition`).catch(() => ({ choices: [] })),
+      api.get("evidence", "/v1/sources").catch(() => ({ sources: [] })),
+    ]);
     const rec = ((comp.choices || []) as Array<{ kind?: string; payload?: { value?: unknown } }>).find(
       (c) => (c.kind || "").replace(/^composition:/, "") === "worker-sourcing",
     );
-    return { sourcing: rec ? String(rec.payload?.value || "") : "" };
+    const sources = ((src.sources || []) as Array<{
+      systemRef?: string; adapterRef?: string; contextId?: string; expectedEvery?: string; state?: string;
+    }>).filter((x) => x.contextId === s.projectId);
+    return { sourcing: rec ? String(rec.payload?.value || "") : "", sources };
   }, [s.projectId, gen]);
   const record = async (v: string) => {
     setErr(null);
@@ -578,7 +584,7 @@ export function Workers() {
   };
   return (
     <LoadFrame r={r}>
-      {({ sourcing }) => (
+      {({ sourcing, sources }) => (
         <>
           <Title t="Where the workers come from" />
           <Lede>
@@ -614,10 +620,29 @@ export function Workers() {
               label="Source registry"
               hint="Whoever operates it holds Source-System Administrator (Source-System Administrator), and is accountable if a record there is wrong or stale."
             >
-              <input
-                name="sourceregistry"
-                placeholder="no source registry is connected to this deployment — the reference's Kenya CHW Registry is its demo world"
-              />
+              {sources.length ? (
+                <div>
+                  {sources.map((x, i) => (
+                    <div
+                      key={i}
+                      data-source={x.systemRef}
+                      style={{ padding: "10px 12px", border: "1px solid var(--line, #DDD9D3)", borderRadius: 8, marginBottom: 8 }}
+                    >
+                      <span style={{ font: "500 14px/1.4 Roboto,system-ui" }}>{x.systemRef || x.adapterRef}</span>
+                      <span className="muted" style={{ font: "400 13px/1.4 Roboto,system-ui" }}>
+                        {" "}
+                        — {x.adapterRef} · expected every {x.expectedEvery} · {x.state === "NEVER_SEEN" ? "no file has arrived yet" : x.state}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <input
+                  name="sourceregistry"
+                  readOnly
+                  placeholder="no source registry is registered on this project — POST /v1/sources declares one, with an owner and a cadence (#22)"
+                />
+              )}
             </RefField>
             <Callout kind="teal">
               Importing does not create identities. It links an existing identifier to a Crest identity, so a worker
