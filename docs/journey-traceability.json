@@ -275,7 +275,7 @@
    "status": "missing",
    "app": "",
    "route": "",
-   "note": "Coverage-by-place endpoint now exists: GET /v1/coverage?attribute=<key> groups registered parties by a self-declared attribute, with an optional caller-supplied denominator per place (population is deployment L2 data CREST does not own) -- no screen renders it yet",
+   "note": "Coverage-by-place headline: no geography endpoint",
    "gate": "—"
   },
   {
@@ -288,7 +288,7 @@
    "status": "missing",
    "app": "",
    "route": "",
-   "note": "Registry quality worklist endpoint now exists: GET /v1/quality-worklist joins identity-binding, enrolment-consent and open-hold facts per party into a row per named gap (no new quality score) -- no screen renders it yet",
+   "note": "Record-by-record quality worklist: not built (unclear rows are evidence-side, not registry quality)",
    "gate": "—"
   },
   {
@@ -314,7 +314,7 @@
    "status": "missing",
    "app": "",
    "route": "",
-   "note": "Registry reuse endpoint now exists: GET /v1/registry-reuse (evidence service) joins claims to units on unit_id and reports how many distinct submitting contexts claimed against the same worker -- no screen renders it yet",
+   "note": "Registry reuse / return-on-shared-registry metric: no endpoint",
    "gate": "—"
   },
   {
@@ -1029,7 +1029,7 @@
    "status": "missing",
    "app": "",
    "route": "",
-   "note": "Evidence receipt endpoint now exists: GET /v1/batches/{id}/receipt (evidence service) composes the existing batch, its units, their claims and the batch's unclear rows with queue position -- w6_1/w6_2 stay illustrative (no scoped-link or upload endpoint), so this receipts the one real ingestion door, POST /v1/batches; no screen renders it yet",
+   "note": "Receipt and where the returned evidence sits: not built",
    "gate": "—"
   },
   {
