@@ -155,52 +155,83 @@ export function G1Setup() {
   );
 }
 
-// g1_2 — what this instance covers. Read-only by design.
+// g1_2 — what this instance covers. The reference's form layout, read-only by
+// design: the values are deploy-time L1 configuration (the layering test), so
+// each "field" is a read — real where the self-description publishes it,
+// honestly named as unpublished configuration where it does not (#70).
+function CoverField(p: { label: string; value: React.ReactNode; caption?: React.ReactNode; muted?: boolean; wide?: boolean }) {
+  return (
+    <div style={{ gridColumn: p.wide ? "1 / -1" : undefined }}>
+      <div className="muted" style={{ font: "500 10.5px/1 Roboto, system-ui, sans-serif", letterSpacing: ".9px", textTransform: "uppercase", marginBottom: 6 }}>
+        {p.label}
+      </div>
+      <div
+        style={{
+          border: "1px solid var(--line, #DDDDDD)",
+          borderRadius: 8,
+          padding: "10px 12px",
+          background: "var(--card, transparent)",
+          font: "400 13.5px/1.4 Roboto, system-ui, sans-serif",
+          ...(p.muted ? { color: "var(--muted, #787878)", fontStyle: "italic" } : {}),
+        }}
+      >
+        {p.value}
+      </div>
+      {p.caption ? <div className="muted" style={{ marginTop: 5 }}>{p.caption}</div> : null}
+    </div>
+  );
+}
+
 export function G1Covers() {
   const r = useLoad(loadInstance);
   return (
     <LoadFrame r={r}>
-      {({ inst, issuer }) => {
-        const reg = inst.registry || {};
-        return (
-          <>
-            <Title t="What this instance covers" />
-            <Lede>
-              The reference draws these as editable fields. They are deploy-time L1 configuration — the layering test:
-              two deployments disagreeing on every one of them are both CREST, so the values live in the environment
-              the services start with, and this screen reads them back rather than offering an edit that would change
-              nothing.
-            </Lede>
-            <CardTitled t="Published self-description — read live">
-              <KVR rows={[
-                ["Instance name", inst.name || "—"],
-                ["Instance id", <Mono>{inst.instanceId}</Mono>],
-                ["Operator", inst.operatorPartyId ? <MonoShort id={inst.operatorPartyId} /> : "not configured"],
-                ["Issuer", inst.issuerId ? <Mono>{inst.issuerId}</Mono> : (issuer ? <Mono>{issuer.id || issuer.issuer}</Mono> : "not configured")],
-                ["Registry", reg.url ? <><Mono>{reg.url}</Mono>{reg.namespace ? <> · <Mono>{reg.namespace}</Mono></> : null}</> : "Postgres fallback — no external registry"],
-              ]} />
-            </CardTitled>
-            <CardTitled t="What the reference also draws here">
-              <KVR rows={[
-                ["Jurisdiction", "deploy-time configuration — not part of the published self-description"],
-                ["Identity anchor", "the deployment's OIDC issuer configuration (§4.1); which anchor is not published"],
-                ["Data residency", "where the deployment's stores run — infrastructure placement, not an API fact"],
-                ["Worker-facing languages", "programme configuration (L2); the worker faces carry the words"],
-              ]} />
-              <OpenNote>
-                These four are the reference's remaining fields. They are real decisions of a real deployment, but{" "}
-                <span className="mono">GET /v1/instance</span> (#70) does not publish them, so this screen names the
-                gap instead of inventing values.
-              </OpenNote>
-            </CardTitled>
-            <OpenNote>
-              The reference's button says "Save and continue". There is nothing to save — changing any value above is
-              a deployment change, made where the deployment is defined.
-            </OpenNote>
+      {({ inst }) => (
+        <>
+          <Title t="What this instance covers" />
+          <Lede>
+            A name, a jurisdiction, and the languages a worker can be spoken to in. All three are hard to change later
+            — and here none is editable at all: they are deploy-time configuration, read back rather than offered as
+            an edit that would change nothing. The identity block itself is on the Self-description view.
+          </Lede>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 20px", maxWidth: 780 }}>
+            <CoverField label="Instance name" value={inst.name || "—"} />
+            <CoverField label="Jurisdiction" value="deploy-time configuration — not published" muted />
+            <CoverField
+              label="Identity anchor"
+              value="the deployment's OIDC issuer (§4.1) — which anchor is not published"
+              muted
+              caption="Which external system identity binds to. Not operated by CREST."
+            />
+            <CoverField
+              label="Data residency"
+              value="where the deployment's stores run — placement, not an API fact"
+              muted
+              caption="Personal data never leaves this instance."
+            />
+            <CoverField
+              label="Worker-facing languages"
+              value="programme configuration (L2) — the worker faces carry the words"
+              muted
+              wide
+              caption="A worker who cannot be addressed in a language they read is a worker who cannot meaningfully consent."
+            />
+          </div>
+          <Callout kind="grey">
+            Changing the identity anchor after workers exist would orphan every identity bound to the old one. There is
+            no migration path designed for this.
+          </Callout>
+          <OpenNote>
+            The four muted fields are the reference's remaining decisions. They are real decisions of a real
+            deployment, but <span className="mono">GET /v1/instance</span> (#70) does not publish them, so this screen
+            names the gap instead of inventing values — and the reference's "Save and continue" has nothing to save,
+            so the button walks on.
+          </OpenNote>
+          <div style={{ borderTop: "1px solid var(--line, #E4E4E4)", marginTop: 4, paddingTop: 14, display: "flex", justifyContent: "flex-end", gap: 10 }}>
             <WalkButtons back="/instance/setup" next="/instance/consent" />
-          </>
-        );
-      }}
+          </div>
+        </>
+      )}
     </LoadFrame>
   );
 }
