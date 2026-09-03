@@ -139,8 +139,11 @@ for (const [personaIdx, personaName, who, views] of [
   [1, "Dr. Alice Mutua (configurator, P-2)", "Dr. Alice Mutua", J3_VIEWS],
   [2, "Amina Yusuf (definition author, P-3)", "Amina Yusuf", ["definework", "definition"]],
   [3, "Prof. Ndegwa (definition approver, P-3)", "Prof. Ndegwa", ["ratify", "definition"]],
-  [4, "Mutua (rate owner, F-1)", "Mutua", ["paysetup"]],
-  [5, "Njeri (payment mechanism owner, F-2)", "Njeri", ["paysetup"]],
+  [4, "Nadia Okoth (rate owner, F-1)", "Nadia Okoth",
+    ["paysetup", "rateowner", "rate", "ratepublish", "ratestanding"]],
+  [5, "Daniel Mwangi (payment mechanism owner, F-2)", "Daniel Mwangi",
+    ["paysetup", "mech/test", "mech/recon", "mech/statement", "mech/batching",
+      "mech/activate", "mech/qualify", "mech/live"]],
   [6, "Instance administrator (G-1)", "Instance administrator",
     ["instance", "instance/setup", "instance/covers", "instance/consent", "instance/invite",
       "instance/services", "instance/people", "admissions", "status"]],
@@ -1360,4 +1363,322 @@ test("qualification arrival: the anchor lands and earned strength re-derives", a
     expect(before).toContain("weakest assurance");
   }
   await assertAlive(page, errors, "qualification arrival");
+});
+
+// ── The funders wave: a rate is terms, and the gate sits in front of ────────
+// disbursement (reference f1_2–f1_5, f2_4–f2_10; PR #191's backend, driven
+// end to end through the console).
+//
+// The payment invariants this walk proves, named:
+//  - Every confirmation-window exit releases payment (W4): the worker's
+//    confirmation below happens while the mechanism is CONFIGURED and not
+//    live, and the exit still creates its instruction — HELD with
+//    mechanism_not_live, never missing. The gate chose the instruction's
+//    state; it could not stop the release.
+//  - Every held payment has a reason with an owner (W10): the held row is
+//    asserted to carry both, on the invariant screen (f2_9).
+//  - A rate is terms, not a setting: publication is a new version, no edit
+//    affordance exists, and only the assigned owner may author (refusal
+//    asserted).
+//
+// The walk runs in its own fresh project so a second run on the same stack
+// finds the same starting state: a mechanism is per context, and activation
+// is one-way.
+const PAYSVC = (() => {
+  const base = process.env.BASE_URL || "http://localhost:59110";
+  const local = new URL(base).port === "59110";
+  const host = new URL(base).hostname;
+  return {
+    payments: local ? `http://${host}:59006` : base.replace(/\/$/, "") + "/api/crest-payments",
+    evidence: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-evidence",
+  };
+})();
+const DEFN = "crest:definition:01JCREST00000000000000DEFN";
+
+test("console: the funders walk — rate as terms, held with an owner, released by the last gate", async ({ page, request }) => {
+  test.setTimeout(300000);
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+  const me = FIX.org;
+
+  // ── F-1 · f1_2: only one person can assign — the Org Admin records it. ──
+  await page.goto("/console/");
+  await settle(page);
+  await page.click('[data-persona="orgadmin"]');
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await signedInAs(page, "Peter Otieno");
+  await page.evaluate(() => { location.hash = "#/rateowner"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("A request to put someone on payment");
+  await expect(page.locator("body")).toContainText("Anyone can ask. Only one person can assign.");
+  await page.fill('[name="rateownerparty"]', me);
+  await page.click("#assign-owner");
+  await expect(page.locator("body")).toContainText("owner assigned", { timeout: 20000 });
+  // The assignment is a record with the assigner's name and date, kept.
+  await expect(page.locator("[data-assignment]").first()).toContainText("assigned by");
+
+  // A party who is NOT the assigned owner cannot author a rate — the
+  // service's refusal, not a hidden button.
+  const notOwner = await asPartyOn(request, PAYSVC.payments, FIX.custodian, "POST",
+    `/v1/definitions/${DEFN}/rates`,
+    { authorPartyId: FIX.custodian, amountMinor: 100, currency: "KES", payerPartyId: FIX.custodian });
+  expect(notOwner.status(), "only the assigned rate owner authors").toBe(403);
+  expect((await notOwner.json()).code).toBe("not_rate_owner");
+
+  // ── f1_3 / f1_4: the owner prices a unit somebody else defined. ──
+  await page.click("#logout");
+  await settle(page);
+  await page.click('[data-persona="rateowner"]');
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await signedInAs(page, "Nadia Okoth");
+  await page.evaluate(() => { location.hash = "#/rate"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("What one unit pays");
+  // The unit is read-only by construction: shown, and no control can name it.
+  await expect(page.locator("body")).toContainText("Unit of work");
+  await expect(page.locator("body")).toContainText("bednets");
+  await expect(page.locator('input[name="unitofwork"]')).toHaveCount(0);
+  await page.fill('[name="rateamount"]', "175.00");
+  await page.click("#rate-continue");
+  await settle(page);
+  expect(page.url()).toContain("#/ratepublish");
+  await expect(page.locator("body")).toContainText("What the worker will see");
+  // A rate is terms, not a setting: the seeded v1 is listed, and NO edit
+  // affordance of any kind exists on the published versions.
+  await expect(page.locator('[data-rateversion="1"]')).toBeVisible();
+  await expect(page.locator("button", { hasText: /edit|change|update/i })).toHaveCount(0);
+  await expect(page.locator("body")).toContainText("There is no edit here and never will be");
+  const versionsBefore = await page.locator("[data-rateversion]").count();
+  await page.click("#publish-rate");
+  await page.waitForURL(/#\/ratestanding/, { timeout: 20000 });
+  await settle(page);
+
+  // ── f1_5: half done is a real state, derived — and this project has no
+  // mechanism, so the standing is not-configured, said plainly. ──
+  await expect(page.locator("body")).toContainText("The rate is live. The money still cannot move.");
+  await expect(page.locator('[data-standing="not-configured"]')).toBeVisible();
+  await expect(page.locator("body")).toContainText("Hand this to someone else");
+  // Supersession is a new version: the publish added one, naming its parent.
+  await page.evaluate(() => { location.hash = "#/ratepublish"; });
+  await settle(page);
+  const versionsAfter = await page.locator("[data-rateversion]").count();
+  expect(versionsAfter, "publication is a new version, never a rewrite").toBe(versionsBefore + 1);
+  await expect(page.locator("[data-rateversion]").last()).toContainText("supersedes v" + versionsBefore);
+  await assertAlive(page, errors, "F-1 rate walk");
+
+  // ── The fresh project this run's mechanism will govern. ──
+  let r = await asParty(request, me, "POST", "/v1/projects", {
+    name: "Funders walk " + stamp, ownerPartyId: me,
+    configuration: { coverage: "Funders wave walk" },
+  });
+  expect(r.status(), "the walk's own project").toBe(201);
+  const projBody = await r.json();
+  const projId = (projBody.project || projBody).id;
+  expect(projId).toMatch(/^crest:context:/);
+  // The supervisor may submit evidence on it — the same grant shape the
+  // fixture world holds for the seeded project.
+  r = await asParty(request, me, "POST", "/v1/authorizations", {
+    id: "crest:authorization:" + fakeUlid(),
+    partyId: SPVR,
+    terms: { id: TERM, version: 1 },
+    scope: { kind: "context", contextId: projId },
+    functions: ["submit-work-evidence"],
+    period: { start: "2026-01-01T00:00:00Z", end: "2027-12-31T00:00:00Z" },
+    authorityPartyId: me, approvedByPartyId: me,
+    approvedAt: "2026-09-01T00:00:00Z", state: "ACTIVE",
+  });
+  expect(r.status(), "the supervisor's grant on the walk's project").toBe(201);
+
+  // ── F-2: the mechanism owner configures — and no further. ──
+  await page.click("#logout");
+  await settle(page);
+  await page.click('[data-persona="payowner"]');
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await signedInAs(page, "Daniel Mwangi");
+  // Work on the walk's project: chosen from the list the registry serves,
+  // never typed into the browser.
+  await page.evaluate(() => { location.hash = "#/where"; });
+  await settle(page);
+  await page.locator(`[data-context="${projId}"]`).click();
+  await settle(page);
+  await page.evaluate(() => { location.hash = "#/mech/test"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Send one real payment");
+  await page.click("#mech-create");
+  await expect(page.locator("body")).toContainText(/configured, not live/i, { timeout: 20000 });
+
+  // f2_8, refused readably: activation before the acts is a readable list of
+  // unmet conditions, each naming the act that satisfies it — never a bare no.
+  await page.evaluate(() => { location.hash = "#/mech/activate"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Before payment goes live");
+  await page.click("#activate-mech");
+  await expect(page.locator("body")).toContainText("Refused, readably", { timeout: 20000 });
+  for (const cond of ["test-disbursement-succeeded", "reconciliation-file-agreed",
+    "batching-choice-recorded", "qualification-verified"]) {
+    await expect(page.locator(`[data-cond="${cond}"]`)).toBeVisible();
+  }
+
+  // ── W4, driven for real: work is confirmed while the mechanism is NOT
+  // live, and the exit still releases its payment obligation. ──
+  await bindParty(request, FIX.workerA);
+  const supTok = await mintToken(request, SPVR);
+  const csv = "activity,outcome_value,outcome_unit,worker_id_kind,worker_id," +
+    "period_start,period_end,geography,household_id,beneficiary_count,source_record_ref\n" +
+    `bednet-distribution,3,bednets-distributed,phone,+15550100011,2026-09-01,2026-09-01,Riverside,funders-HH-${stamp},3,funders-${stamp}\n`;
+  const batch = await request.fetch(PAYSVC.evidence +
+    `/v1/batches?contextId=${encodeURIComponent(projId)}&definitionId=${encodeURIComponent(DEFN)}` +
+    `&submittedBy=${encodeURIComponent(SPVR)}&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch&systemRef=funders-walk`, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + supTok, "Content-Type": "text/csv" },
+    data: csv,
+  });
+  expect([200, 201], "the batch lands").toContain(batch.status());
+  const claimId = (await batch.json()).claimIds[0];
+  expect(claimId).toBeTruthy();
+
+  // The window opens through the outbox — poll, then the worker confirms.
+  await expect.poll(async () =>
+    (await asPartyOn(request, PAYSVC.payments, FIX.workerA, "GET", `/v1/windows/${claimId}`)).status(),
+  { timeout: 60000 }).toBe(200);
+  r = await asPartyOn(request, PAYSVC.payments, FIX.workerA, "POST", `/v1/claims/${claimId}/confirm`, {});
+  expect(r.status(), "the worker's confirmation exit").toBe(200);
+
+  // The exit released the obligation; the not-live mechanism turned it into a
+  // HELD instruction with a reason and a named owner — never a missing one.
+  let instruction;
+  await expect.poll(async () => {
+    const res = await asPartyOn(request, PAYSVC.payments, me, "GET", `/v1/instructions/by-claim/${claimId}`);
+    if (res.status() !== 200) return "no instruction yet";
+    instruction = await res.json();
+    return instruction.state;
+  }, { timeout: 60000 }).toBe("HELD");
+  expect(instruction.held.code).toBe("mechanism_not_live");
+  expect(instruction.held.ownerPartyId).toBe(me);
+
+  // ── f2_9, THE INVARIANT SCREEN: the boundary, on its face. ──
+  await page.evaluate(() => { location.hash = "#/mech/qualify"; });
+  await settle(page);
+  await expect(page.locator("#stepcounter")).toContainText("Payment set up · 3 of 4");
+  await expect(page.locator("body")).toContainText("Before any real money moves");
+  // The reference's callout, verbatim.
+  await expect(page.locator("body")).toContainText("Why this is the third step and not the first");
+  await expect(page.locator("body")).toContainText(
+    "A partner who turns out not to fit can discover it in an afternoon instead of after a document round.");
+  // The boundary: confirmation exits released; only disbursement waits.
+  await expect(page.locator("body")).toContainText(
+    "confirm, dispute, auto-confirm, supervisor-assisted, all four");
+  await expect(page.locator("body")).toContainText("Only disbursement waits on this gate");
+  const heldRow = page.locator(`[data-heldinstruction="${instruction.id}"]`);
+  await expect(heldRow).toBeVisible();
+  await expect(heldRow).toContainText("HELD");
+  await expect(heldRow).toContainText("owner");
+  await expect(heldRow).toContainText("…" + me.slice(-6));
+
+  // Verifying nothing is refused before anything is submitted (f2_9).
+  const mechR = await asPartyOn(request, PAYSVC.payments, me, "GET",
+    `/v1/mechanisms/by-context/${encodeURIComponent(projId)}`);
+  const mechId = (await mechR.json()).mechanism.id;
+  r = await asPartyOn(request, PAYSVC.payments, FIX.custodian, "POST",
+    `/v1/mechanisms/${mechId}/records`,
+    { kind: "qualification-verified", actorPartyId: FIX.custodian });
+  expect(r.status(), "a verification of nothing verifies nothing").toBe(409);
+
+  // Submit for verification — the screen's own act.
+  await page.click("#submit-qual");
+  await page.waitForURL(/#\/mech\/live/, { timeout: 20000 });
+  await settle(page);
+  await expect(page.locator("#stepcounter")).toContainText("Payment set up · 4 of 4");
+  // The reference's honest-gap callout, verbatim (f2_10).
+  await expect(page.locator("body")).toContainText("What is not watched");
+  await expect(page.locator("body")).toContainText("That is a gap, not a design.");
+
+  // Verification is another party's recorded act — the custodian's, via the
+  // same door a real reviewer would use.
+  r = await asPartyOn(request, PAYSVC.payments, FIX.custodian, "POST",
+    `/v1/mechanisms/${mechId}/records`,
+    { kind: "qualification-verified", actorPartyId: FIX.custodian });
+  expect(r.status(), "the verification, recorded by a different party").toBe(201);
+
+  // ── f2_4: one real payment through the rail, recorded either way. ──
+  await page.evaluate(() => { location.hash = "#/mech/test"; });
+  await settle(page);
+  // A test that names no destination is refused loudly, not smoothed over.
+  await page.fill('[name="testdest"]', "");
+  await page.click("#send-test");
+  await expect(page.locator(".errbar")).toContainText(/destination|required/i, { timeout: 20000 });
+  await page.fill('[name="testdest"]', "test-account-4412");
+  await page.fill('[name="testamount"]', "10.00");
+  await page.click("#send-test");
+  await expect(page.locator('[data-test-result="SUCCEEDED"]')).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('[data-test-result="SUCCEEDED"]')).toContainText("rail ref");
+
+  // ── f2_5: the file where every line ties to an instruction. ──
+  await page.evaluate(() => { location.hash = "#/mech/recon"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("crest-recon-csv-v1");
+  await expect(page.locator("#recon-preview")).toContainText("instruction_id");
+  await expect(page.locator("#recon-preview")).toContainText("claim_id");
+  await page.click("#agree-recon");
+  await expect(page.locator("body")).toContainText("reconciliation-agreement — by", { timeout: 20000 });
+
+  // ── f2_6: the advisory statement carries its limits on itself. ──
+  await page.evaluate(() => { location.hash = "#/mech/statement"; });
+  await settle(page);
+  await expect(page.locator("[data-limit]").first()).toContainText(/advisory only/i);
+  await expect(page.locator("body")).toContainText(
+    "a held payment appears here with its reason and owner; it is not missing, it is explained");
+  await page.click("#agree-statement");
+  await expect(page.locator("body")).toContainText("statement-agreement — by", { timeout: 20000 });
+
+  // ── f2_7: the batching choice pays with the worker's waiting time, so a
+  // choice with the trade-off unstated is refused. ──
+  await page.evaluate(() => { location.hash = "#/mech/batching"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Batching is paid for by the worker");
+  // The reference's dispute-hold field exists — and this deployment answers
+  // it honestly instead of pretending: a dispute never withholds the money.
+  await expect(page.locator("body")).toContainText("Hold payment if a dispute is open");
+  await expect(page.locator("body")).toContainText("a dispute contests the record, not the money");
+  await page.fill('[name="batchwindow"]', "daily-17:00");
+  await page.click("#record-batching");
+  await expect(page.locator(".errbar")).toContainText(/trade-off/i, { timeout: 20000 });
+  await page.fill('[name="batchtradeoff"]',
+    "workers paid once daily at 17:00 wait up to a day for confirmed work " + stamp);
+  await page.click("#record-batching");
+  await expect(page.locator("[data-batching]")).toContainText("chosen by", { timeout: 20000 });
+  await expect(page.locator("[data-batching]")).toContainText("wait up to a day");
+
+  // ── f2_8 → f2_10: every condition now reads a recorded act; activation
+  // flips ACTIVE and releases what the gate was holding. ──
+  await page.evaluate(() => { location.hash = "#/mech/activate"; });
+  await settle(page);
+  for (const cond of ["test-disbursement-succeeded", "reconciliation-file-agreed",
+    "batching-choice-recorded", "qualification-verified"]) {
+    await expect(page.locator(`[data-cond="${cond}"]`)).toHaveAttribute("data-satisfied", "true");
+  }
+  await page.click("#activate-mech");
+  await page.waitForURL(/#\/mech\/live/, { timeout: 20000 });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Verified — real payments can now run");
+  await expect(page.locator("body")).toContainText(/live/);
+  await expect(page.locator("body")).toContainText("went live");
+  // What the last gate opened: the very instruction the walk watched being
+  // held is now released, re-priced at its own release moment, with money on it.
+  const released = page.locator(`[data-released="${instruction.id}"]`);
+  await expect(released).toBeVisible({ timeout: 20000 });
+  await expect(released).toContainText(/RELEASED|SETTLED/);
+  await expect(released).toContainText("KES");
+  await expect(released).toContainText("opened by this activation");
+  // …and the service agrees: the held state is gone, the amount is real
+  // (3 units at the version in force at release: v-latest, 175.00 → 525.00).
+  r = await asPartyOn(request, PAYSVC.payments, me, "GET", `/v1/instructions/by-claim/${claimId}`);
+  const after = await r.json();
+  expect(after.state === "RELEASED" || after.state === "SETTLED").toBeTruthy();
+  expect(after.held).toBeFalsy();
+  expect(after.amountMinor).toBe(52500);
+  await assertAlive(page, errors, "the funders walk");
 });
