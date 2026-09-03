@@ -20,7 +20,7 @@ import { useEffect } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { ConsoleShell, ErrBar, type NavGroup, type NavItem } from "@crest/ui";
 import { useConsole, type PersonaKey } from "./state";
-import { Definition, Sources } from "./views/Project";
+import { Definition, Sources, Receipt } from "./views/Project";
 import { Status, Stp, Quality, Payments, Trace, Reports } from "./views/Dashboard";
 import { PaySetup, Instance, Portfolio } from "./views/Admin";
 import { Ratify, Ratified } from "./views/Ratify";
@@ -29,7 +29,7 @@ import {
   Evidence, Source, TemplateScreen, Adaptors, Mapping, Connect, DryRun, Live, Validation as DefValidation,
   Payment as DefPayment, Roles as DefRoles, Tranches, Rules as DefRules, Extend, OpenQuestions, Anatomy, Handoff,
 } from "./views/Define";
-import { Find, Dupes, Unclear, Recoveries, Review, Cases, SupportTraceNote } from "./views/Custodian";
+import { Find, Dupes, Unclear, Recoveries, Review, Cases, SupportTraceNote, Coverage, QualityWorklist, RegistryReuse } from "./views/Custodian";
 import { OnboardApply, OnboardTerms, OnboardStatus, OnboardChecks } from "./views/Onboard";
 import {
   OnboardStandalone, OnboardWider, OnboardDocuments, OnboardReview, OnboardInvited, OnboardProject,
@@ -192,6 +192,7 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
         { to: "/trace", label: "Proof" },
         { to: "/definition", label: "Definition" },
         { to: "/sources", label: "Sources" },
+        { to: "/receipt", label: "Evidence receipt" },
       ],
     },
   ],
@@ -200,7 +201,10 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
       caption: "Registry custodian · G-4",
       items: [
         { to: "/find", label: "Find a worker" },
+        { to: "/coverage", label: "Coverage" },
+        { to: "/registry-quality", label: "Quality" },
         { to: "/dupes", label: "Duplicates" },
+        { to: "/reuse", label: "Reuse" },
         { to: "/unclear", label: "Unclear rows" },
         { to: "/recover", label: "Recoveries" },
         { to: "/review", label: "Overdue reviews" },
@@ -386,6 +390,11 @@ export function App() {
         <Route path="/mech/qualify" element={<MechQualify />} />
         <Route path="/mech/live" element={<MechLive />} />
         <Route path="/instance" element={<Instance />} />
+        {/* w6_3, the project-side receipt for what a batch brought in
+            (#197's GET /v1/batches/{id}/receipt) — lives beside Definition
+            and Sources, the project's other reads, not in the verify door's
+            external panel shell where w6_1/w6_2 stay. */}
+        <Route path="/receipt" element={<Receipt />} />
         {/* G-1 — setting up the instance (g1_1–g1_6): the reference's frames,
             read against the deployment's real self-description. */}
         <Route path="/instance/setup" element={<G1Setup />} />
@@ -400,6 +409,13 @@ export function App() {
         <Route path="/admissions/:pid" element={<AdmissionDetail />} />
         <Route path="/portfolio" element={<Portfolio />} />
         <Route path="/find" element={<Find />} />
+        {/* g4_4/g4_5/g4_7: coverage, the quality worklist, and registry reuse
+            — real reads over services/core/parties and services/core/evidence
+            (#197), not the completeness-chart shape the reference frames
+            deliberately avoid. */}
+        <Route path="/coverage" element={<Coverage />} />
+        <Route path="/registry-quality" element={<QualityWorklist />} />
+        <Route path="/reuse" element={<RegistryReuse />} />
         <Route path="/dupes" element={<Dupes />} />
         <Route path="/unclear" element={<Unclear />} />
         <Route path="/recover" element={<Recoveries />} />

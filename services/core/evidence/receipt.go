@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/theflywheel/crest/pkg/httpx"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -172,6 +173,9 @@ func openUnclearIDs(ctx context.Context, q store.Querier) ([]string, error) {
 
 // getBatchReceipt is w6_3's endpoint: GET /v1/batches/{id}/receipt.
 func (h *handlers) getBatchReceipt(w http.ResponseWriter, r *http.Request) {
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	batchID := r.PathValue("id")
 	b, err := getBatch(r.Context(), h.d.DB.Q(), batchID)
 	if err != nil {

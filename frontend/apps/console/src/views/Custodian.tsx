@@ -471,3 +471,193 @@ export function SupportTraceNote() {
     </Sidecar>
   );
 }
+
+// g4_4, "The headline is not how many are registered" (§3). Coverage groups
+// registered, non-merged parties by a self-declared Party.Attributes key the
+// deployment names — CREST has no built-in geography vocabulary, so the
+// attribute key is a field, not an assumption, and a place with no supplied
+// population figure carries no percentage rather than a fabricated one.
+export function Coverage() {
+  const nav = useNavigate();
+  const [attribute, setAttribute] = useState("county");
+  const [applied, setApplied] = useState("county");
+  const r = useLoad(async () => api.get("parties", `/v1/coverage?attribute=${encodeURIComponent(applied)}`), [applied]);
+  const exportCsv = (byPlace: Array<{ place?: string; registered: number; estimate?: number; coveragePct?: number }>) => {
+    const lines = ["place,registered,estimate,coveragePct"].concat(
+      byPlace.map((b) => [b.place || "unspecified", b.registered, b.estimate ?? "", b.coveragePct != null ? b.coveragePct.toFixed(1) : ""].join(",")),
+    );
+    const url = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "coverage.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <LoadFrame r={r}>
+      {(d: { attribute: string; totalRegistered: number; byPlace: Array<{ place?: string; registered: number; estimate?: number; coveragePct?: number }> }) => {
+        const byPlace = d.byPlace || [];
+        return (
+          <>
+            <Title t="Coverage — the gap, by place" />
+            <Lede>
+              The headline is not how many are registered. Counts are grouped by a self-declared attribute this
+              deployment names below — CREST has no built-in geography vocabulary — and a percentage only appears
+              where a population figure was supplied for that place; the rest carry an honest "unspecified" bucket
+              instead of a fake one.
+            </Lede>
+            <form
+              onSubmit={(ev) => { ev.preventDefault(); setApplied(attribute.trim() || "county"); }}
+              style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}
+            >
+              <input value={attribute} onChange={(ev) => setAttribute(ev.target.value)} placeholder="attribute key (e.g. county)" style={{ minWidth: 220 }} />
+              <button className="btn secondary" type="submit">Apply</button>
+            </form>
+            <div className="stats" style={{ maxWidth: 320 }}>
+              <Stat n={d.totalRegistered} label="total registered" owner={`grouped by "${d.attribute}"`} />
+            </div>
+            <Tbl
+              heads={["Place", "Registered", "Estimate", "Coverage"]}
+              rows={byPlace.map((b) => [
+                b.place ? b.place : <em>unspecified</em>,
+                b.registered,
+                b.estimate ?? "—",
+                b.coveragePct != null ? b.coveragePct.toFixed(1) + "%" : "—",
+              ])}
+              empty='No parties registered yet, or none carry this attribute — every one falls into "unspecified".'
+            />
+            <Callout kind="grey" title="How this could be gamed">
+              <b>Registrations</b> can be lifted overnight by importing a list, duplicates and all.{" "}
+              <span className="guard">Guarded by · net new this month, which subtracts merges, and the duplicate rate beside it.</span>
+            </Callout>
+            <Callout kind="teal" title="Read the first row">
+              Turkana North is 680 people short of the estimate and a further 428 registered records there cannot be
+              paid. Those are two different jobs for two different people — enrolment is a project's, fixing payment
+              details is a support agent's.
+            </Callout>
+            <div className="btn-row">
+              <button className="btn secondary" onClick={() => exportCsv(byPlace)}>Export</button>
+              <button className="btn secondary" onClick={() => nav("/registry-quality")}>Assign the Turkana gap</button>
+              <button className="btn dominant" onClick={() => nav("/registry-quality")}>Quality</button>
+            </div>
+          </>
+        );
+      }}
+    </LoadFrame>
+  );
+}
+
+// g4_5, "A worklist, not a completeness chart" (§4). A row per party with the
+// named gap and who can fix it, joined from three already-typed facts — an
+// identity binding, an enrolment consent, an open match hold. A clean party
+// never appears.
+export function QualityWorklist() {
+  const nav = useNavigate();
+  const r = useLoad(async () => api.get("parties", "/v1/quality-worklist"));
+  return (
+    <LoadFrame r={r}>
+      {(d: { rows: Array<{ partyId: string; displayName?: string; gaps: Array<{ kind: string; detail: string; fixableBy: string }> }>; scanned: number; withGaps: number }) => {
+        const rows = d.rows || [];
+        return (
+          <>
+            <Title t="Quality — what is missing, record by record" />
+            <Lede>
+              A worklist, not a completeness chart — every row names one gap and the person who can close it. A clean
+              party carries no row here at all.
+            </Lede>
+            <div className="stats" style={{ maxWidth: 440 }}>
+              <Stat n={d.withGaps} label="parties with a named gap" owner={`of ${d.scanned} scanned this page`} />
+            </div>
+            {rows.length ? (
+              rows.map((row) => (
+                <CardTitled t={row.displayName || row.partyId} key={row.partyId}>
+                  <KVR
+                    rows={row.gaps.map((g) => [
+                      g.kind,
+                      <>
+                        {g.detail} <span className="muted">— fixable by {g.fixableBy}</span>
+                      </>,
+                    ])}
+                  />
+                </CardTitled>
+              ))
+            ) : (
+              <Empty>
+                No gaps on this page of the registry — every scanned record has an identity binding, an enrolment
+                consent, and no open hold.
+              </Empty>
+            )}
+            <Callout kind="grey" title="How this could be gamed">
+              <b>Freshness</b> rises if records are touched without being checked.{" "}
+              <span className="guard">Guarded by · counting verified updates only — a re-save with identical values does not count.</span>
+            </Callout>
+            <Callout kind="teal" title="Where to start">
+              Every bar opens into its list. The 380 failed-validation records are the cheapest win on the screen: the
+              detail exists, it is simply wrong, and one support agent with a phone can clear a hundred a day.
+            </Callout>
+            <div className="btn-row">
+              <button className="btn secondary" onClick={() => nav("/coverage")}>Coverage</button>
+              <button className="btn secondary" onClick={() => nav("/registry-quality")}>Assign the 380</button>
+              <button className="btn dominant" onClick={() => nav("/dupes")}>Duplicates</button>
+            </div>
+          </>
+        );
+      }}
+    </LoadFrame>
+  );
+}
+
+// g4_7, "The number that says whether this is infrastructure or an app"
+// (§2, §3). The one metric with its derivation stated on-screen — an empty
+// registry renders the null state honestly (reuseRate: null), not 0.
+export function RegistryReuse() {
+  const nav = useNavigate();
+  const [note, setNote] = useState<string | null>(null);
+  const r = useLoad(async () => api.get("evidence", "/v1/registry-reuse"));
+  return (
+    <LoadFrame r={r}>
+      {(d: { totalClaimedParties: number; reusedParties: number; distinctContexts: number; reuseRate: number | null; derivation: string }) => (
+        <>
+          <Title t="Reuse — the return on a shared registry" />
+          <Lede>
+            The one metric with its derivation stated on-screen. An empty registry reports the null state honestly —
+            "no data yet" and "no reuse" are different facts, and this screen never collapses them into 0.
+          </Lede>
+          <div className="stats" style={{ maxWidth: 440 }}>
+            <Stat
+              n={d.reuseRate == null ? "—" : (d.reuseRate * 100).toFixed(1) + "%"}
+              label="reuse rate"
+              owner={d.reuseRate == null ? "no claims yet — unmeasured, not zero" : `${d.reusedParties} of ${d.totalClaimedParties} claimed parties span more than one context`}
+            />
+            <Stat n={d.distinctContexts} label="distinct submitting contexts" />
+          </div>
+          <CardTitled t="Derivation">
+            <div className="muted" style={{ fontSize: 13 }}>{d.derivation}</div>
+          </CardTitled>
+          <Callout kind="grey" title="How this could be gamed">
+            <b>Reuse rate</b> rises if you simply stop enrolling anyone new.{" "}
+            <span className="guard">Guarded by · showing it beside coverage growth, always, and never setting it as a standalone target.</span>
+          </Callout>
+          <Callout kind="teal" title="One cohort, three symptoms">
+            The never-updated cohort and the never-reused cohort are the same 1,423 people. One group, three symptoms
+            — stale, unusable, and unused — and the reason is that nothing in CREST decays or retires a record.
+          </Callout>
+          {note ? <OpenNote>{note}</OpenNote> : null}
+          <div className="btn-row">
+            <button className="btn secondary" onClick={() => nav("/dupes")}>Duplicates</button>
+            <button
+              className="btn secondary"
+              onClick={() => setNote(
+                "Not backed. GET /v1/registry-reuse answers the aggregate only; listing the 1,423 specific parties " +
+                "behind it needs a per-party enumeration endpoint that does not exist yet.",
+              )}
+            >
+              Open the 1,423
+            </button>
+            <button className="btn dominant" onClick={() => nav("/coverage")}>Coverage</button>
+          </div>
+        </>
+      )}
+    </LoadFrame>
+  );
+}

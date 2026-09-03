@@ -158,8 +158,9 @@ for (const [personaIdx, personaName, who, views] of [
       "mech/activate", "mech/qualify", "mech/live"]],
   [6, "Instance administrator (G-1)", "Instance administrator",
     ["instance", "instance/setup", "instance/covers", "instance/consent", "instance/invite",
-      "instance/services", "instance/people", "admissions", "status"]],
-  [7, "Otieno (registry custodian, G-4)", "Otieno", ["find", "dupes", "unclear", "recover", "review"]],
+      "instance/services", "instance/people", "admissions", "status", "receipt"]],
+  [7, "Otieno (registry custodian, G-4)", "Otieno",
+    ["find", "coverage", "registry-quality", "dupes", "reuse", "unclear", "recover", "review"]],
   [8, "Naliaka (support agent, W-3)", "Naliaka", ["cases", "supportfind", "supporttrace"]],
   [9, "Funding oversight (V-4)", "Funding oversight", ["portfolio", "status"]],
 ]) {
@@ -1797,6 +1798,76 @@ async function switchTo(page, persona, who) {
   await settle(page);
   await signedInAs(page, who);
 }
+
+// g4_4/g4_5/g4_7/w6_3, the tail-wave's four registry/receipt reads (#197):
+// coverage-by-place, the quality worklist, registry reuse, and — after a
+// real batch submission — the project-side receipt for what arrived.
+test("console: the registry metrics read real counts, and the receipt shows a real ingestion", async ({ page, request }) => {
+  test.setTimeout(120000);
+  const errors = watch(page);
+
+  // ── g4_4/g4_5/g4_7, as the registry custodian. ──
+  await page.goto("/console/");
+  await settle(page);
+  await page.click('[data-persona="custodian"]');
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await signedInAs(page, "Otieno");
+
+  // g4_4: the fixture world never sets a "county" attribute, so every party
+  // falls into the honest unspecified bucket — never a fabricated percentage.
+  await page.evaluate(() => { location.hash = "#/coverage"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("total registered");
+  await expect(page.locator("body")).toContainText(/unspecified/i);
+  await expect(page.locator("body")).not.toContainText("0.0%");
+  await signedInAs(page, "Otieno");
+
+  // g4_5: a row per party with a named gap, or the honest empty state.
+  await page.evaluate(() => { location.hash = "#/registry-quality"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText(/parties with a named gap/i);
+  await signedInAs(page, "Otieno");
+
+  // g4_7: the reuse metric, or its null state — never a fabricated 0.
+  await page.evaluate(() => { location.hash = "#/reuse"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText(/reuse rate/i);
+  await expect(page.locator("body")).toContainText(/derivation/i);
+  await signedInAs(page, "Otieno");
+  await assertAlive(page, errors, "custodian registry metrics");
+
+  // ── w6_3: submit a batch for real (the same CSV-batch door the story's own
+  // seeding and the funders walk use), then read its receipt back as the
+  // project side. ──
+  const stamp = Date.now().toString().slice(-6);
+  const supTok = await mintToken(request, SPVR);
+  const csv = "activity,outcome_value,outcome_unit,worker_id_kind,worker_id," +
+    "period_start,period_end,geography,household_id,beneficiary_count,source_record_ref\n" +
+    `bednet-distribution,4,bednets-distributed,phone,+15550100011,2026-09-01,2026-09-01,Riverside,receipt-HH-${stamp},4,receipt-${stamp}\n`;
+  const batchRes = await request.fetch(PAYSVC.evidence +
+    `/v1/batches?contextId=${encodeURIComponent(FIX.project)}&definitionId=${encodeURIComponent(DEFN)}` +
+    `&submittedBy=${encodeURIComponent(SPVR)}&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch&systemRef=receipt-walk`, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + supTok, "Content-Type": "text/csv" },
+    data: csv,
+  });
+  expect([200, 201], "the batch lands").toContain(batchRes.status());
+  const batchId = (await batchRes.json()).batch.id;
+  expect(batchId).toBeTruthy();
+
+  await switchTo(page, "instance", "Instance administrator");
+  await page.evaluate(() => { location.hash = "#/receipt"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("What the project received, and where it sits");
+  await page.fill('input[placeholder="batch id"]', batchId);
+  await page.click("button:has-text('Look up')");
+  await expect(page.locator("body")).toContainText(batchId, { timeout: 20000 });
+  await expect(page.locator("body")).toContainText("bednets-distributed");
+  await expect(page.locator("body")).toContainText(/DRAFT|NOTIFIED|ACCEPTED|DISPUTED/);
+  await signedInAs(page, "Instance administrator");
+  await assertAlive(page, errors, "project receipt");
+});
 
 test("console: the authoring wizard writes a definition, proves it dry, and has it ratified with its gaps named", async ({ page }) => {
   const errors = watch(page);
