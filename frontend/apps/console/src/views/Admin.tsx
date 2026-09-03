@@ -110,9 +110,14 @@ export function PaySetup() {
 // There is no GET list of authorizations by party, so grants are shown as
 // live permits() answers for the functions this deployment's terms name.
 export function Org() {
+  // The signed-in party, not the fixture organisation: a real eSignet session
+  // must see its own standing record. Fixture sessions bind me.partyId to
+  // FIX.org anyway, so the seeded world reads identically.
+  const { me } = useConsole();
+  const orgId = me?.partyId || FIX.org;
   const r = useLoad(async () => {
     const [org, overdue] = await Promise.all([
-      api.get("parties", `/v1/parties/${encodeURIComponent(FIX.org)}`),
+      api.get("parties", `/v1/parties/${encodeURIComponent(orgId)}`),
       api.get("parties", "/v1/authorizations/overdue").catch(() => ({ authorizations: [] })),
     ]);
     const checks: Array<[string, string | null, string]> = [
@@ -122,7 +127,7 @@ export function Org() {
     ];
     const permits = await Promise.all(
       checks.map(([fn, ctx]) => {
-        const q = new URLSearchParams({ partyId: FIX.org, function: fn });
+        const q = new URLSearchParams({ partyId: orgId, function: fn });
         if (ctx) q.set("contextId", ctx);
         return api.get("parties", "/v1/authorizations/permits?" + q).catch(() => null);
       }),
@@ -138,7 +143,7 @@ export function Org() {
             <Title t={"Organisation — " + (p.displayName || "…")} />
             <CardTitled t="Profile">
               <KVR rows={[
-                ["party", <Mono>{p.id || FIX.org}</Mono>],
+                ["party", <Mono>{p.id || orgId}</Mono>],
                 ["kind", p.kind || ""],
                 ["contact routes", (p.contactRoutes || []).length ? (p.contactRoutes as Array<{ kind: string; value?: string }>).map((rt, i) => <span key={i}>{i ? " · " : ""}{rt.kind} <Mono>{rt.value || ""}</Mono></span>) : "—"],
                 ["registered", when(p.createdAt)],
