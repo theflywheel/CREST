@@ -17,9 +17,9 @@
 // corrected in docs/design/j3-connective-tissue/README.md: it holds per
 // section, not across all 24 frames.
 import { useEffect } from "react";
-import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { ConsoleShell, ErrBar, type NavGroup, type NavItem } from "@crest/ui";
-import { useConsole, type PersonaKey } from "./state";
+import { useConsole, personas, type PersonaKey } from "./state";
 import { Definition, Sources, Receipt } from "./views/Project";
 import { Status, Stp, Quality, Payments, Trace, Reports } from "./views/Dashboard";
 import { PaySetup, Instance, Portfolio } from "./views/Admin";
@@ -252,6 +252,7 @@ const allowed = (key: PersonaKey, path: string) =>
 function Shell() {
   const s = useConsole();
   const loc = useLocation();
+  const nav = useNavigate();
   useEffect(() => s.clearErr(), [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
   // The onboarding surface swaps the api session to the organisation's own
   // token; entering (or navigating) the shell puts the person back.
@@ -271,7 +272,24 @@ function Shell() {
       who={
         <>
           <span className="who-label">
-            {s.me.who} · {s.me.role}
+            {s.me.who} ·{" "}
+            <select
+              id="view-as"
+              value={s.persona}
+              onChange={(e) => {
+                const key = e.target.value as PersonaKey;
+                s.viewAs(key);
+                nav(key === "orgadmin" || key === "configurator" ? "/org" : "/instance/covers");
+              }}
+              title="The lens decides which screens the rail offers; the registry still authorizes by who you are (p1_2)"
+              style={{ background: "transparent", color: "inherit", border: "1px solid currentColor", borderRadius: 6, padding: "2px 6px", font: "inherit" }}
+            >
+              {personas.map((p) => (
+                <option key={p.key} value={p.key} style={{ color: "#222" }}>
+                  {p.role}
+                </option>
+              ))}
+            </select>
           </span>
           <button id="logout" onClick={s.logout}>
             Switch person

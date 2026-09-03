@@ -117,6 +117,9 @@ type State = {
   logout: () => void;
   // Re-asserts the signed-in person's token on the api session (see provider).
   assertSession: () => void;
+  // Switch the role lens (UI navigation only — the backend still authorizes
+  // by token and party; honest limit p1_2).
+  viewAs: (key: PersonaKey) => void;
   traceClaim: string;
   setTraceClaim: (c: string) => void;
   wizStep: number;
@@ -280,6 +283,18 @@ export function ConsoleProvider(props: { children: ReactNode }) {
     store({ token, me: who, persona: "orgadmin" });
     return "enrolled" as const;
   };
+  // The role lens, switchable in the appbar. Honest limit p1_2 restated: the
+  // backend authorizes by token and party regardless; the persona only decides
+  // which screens the rail offers. Until per-party role permits exist, a real
+  // signed-in person may look through any lens — switching asserts nothing.
+  const viewAs = (key: PersonaKey) => {
+    if (!me) return;
+    const role = personas.find((p) => p.key === key)?.role || key;
+    const who = { ...me, role };
+    setMe(who);
+    setPersona(key);
+    if (personToken) store({ token: personToken, me: who, persona: key });
+  };
   const assertSession = () => {
     if (personToken) setSession(personToken);
   };
@@ -304,6 +319,7 @@ export function ConsoleProvider(props: { children: ReactNode }) {
         completeEsignet,
         logout,
         assertSession,
+        viewAs,
         traceClaim,
         setTraceClaim,
         wizStep,
