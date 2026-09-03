@@ -71,9 +71,13 @@ type issuedCredential struct {
 }
 
 type releaseRequest struct {
-	ClaimID    string    `json:"claimId"`
-	UnitID     string    `json:"unitId"`
-	PartyID    string    `json:"partyId"`
+	ClaimID string `json:"claimId"`
+	UnitID  string `json:"unitId"`
+	PartyID string `json:"partyId"`
+	// The window's context rides along so the instruction knows which
+	// project's mechanism governs its DISBURSEMENT (f2_9). It has no say in
+	// whether the release happens — all four exits release, always (W4).
+	ContextID  string    `json:"contextId"`
 	ReleasedBy string    `json:"releasedBy"`
 	ReleasedAt time.Time `json:"releasedAt"`
 }
@@ -170,7 +174,7 @@ func (e *exiter) exit(ctx context.Context, claimID, route string) (exitResult, e
 		// it impossible rather than unlikely.
 		return store.Enqueue(ctx, tx, topicPaymentRelease, releaseRequest{
 			ClaimID: w.ClaimID, UnitID: w.UnitID, PartyID: w.PartyID,
-			ReleasedBy: route, ReleasedAt: now,
+			ContextID: w.ContextID, ReleasedBy: route, ReleasedAt: now,
 		})
 	})
 	if err != nil {

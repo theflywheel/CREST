@@ -12,10 +12,14 @@ const topicRailSend = "rail.send"
 
 // Instruction is what should be paid.
 type Instruction struct {
-	ID          string    `json:"id"`
-	ClaimID     string    `json:"claimId"`
-	UnitID      string    `json:"unitId"`
-	PartyID     string    `json:"partyId"`
+	ID      string `json:"id"`
+	ClaimID string `json:"claimId"`
+	UnitID  string `json:"unitId"`
+	PartyID string `json:"partyId"`
+	// ContextID is which project's mechanism governs disbursement (f2_9).
+	// Empty on instructions released before it was recorded; those predate
+	// the mechanism gate and are not gated by it.
+	ContextID   string    `json:"contextId,omitempty"`
 	AmountMinor int64     `json:"amountMinor"`
 	Currency    string    `json:"currency"`
 	ReleasedBy  string    `json:"releasedBy"`
@@ -64,12 +68,12 @@ func insertInstruction(ctx context.Context, tx store.Querier, in Instruction) (b
 		code, reason, owner = &in.Held.Code, &in.Held.Explanation, &in.Held.OwnerPartyID
 	}
 	affected, err := tx.Exec(ctx, `
-		INSERT INTO instructions (id, claim_id, unit_id, party_id, amount_minor, currency,
-		                          released_by, released_at, state, held_code, held_reason,
-		                          held_owner, doc, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+		INSERT INTO instructions (id, claim_id, unit_id, party_id, context_id, amount_minor,
+		                          currency, released_by, released_at, state, held_code,
+		                          held_reason, held_owner, doc, created_at)
+		VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		ON CONFLICT (claim_id) DO NOTHING`,
-		in.ID, in.ClaimID, in.UnitID, in.PartyID, in.AmountMinor, in.Currency,
+		in.ID, in.ClaimID, in.UnitID, in.PartyID, in.ContextID, in.AmountMinor, in.Currency,
 		in.ReleasedBy, in.ReleasedAt, in.State, code, reason, owner, doc, in.CreatedAt)
 	if err != nil {
 		return false, err
