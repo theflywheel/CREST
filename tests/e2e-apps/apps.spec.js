@@ -554,12 +554,12 @@ test("console: the J3 handover is real, and so is everything after it", async ({
   await page.waitForURL(/#\/compose/, { timeout: 20000 });
   await settle(page);
 
-  // p2_1/p2_3/p2_5 — one composition choice, recorded with its decider.
-  await page.fill('[name="choice"]', "worker-sourcing");
-  await page.fill('[name="value"]', "register-and-import-" + stamp);
-  await page.locator("#composeform button").click();
-  await expect(page.locator("body")).toContainText("register-and-import-" + stamp, { timeout: 20000 });
-  await expect(page.locator("body")).toContainText("worker-sourcing");
+  // p2_1 — one capability answered, recorded with its decider: a switch flip
+  // writes the same composition choice the old free-text form used to take.
+  const cap = page.locator('[data-capability="Set up payment"]');
+  await expect(cap).toHaveAttribute("aria-pressed", "true");
+  await cap.click();
+  await expect(cap).toHaveAttribute("aria-pressed", "false", { timeout: 20000 });
 
   // p2_6 — a role grant on this project, listed with its grantor and date.
   await page.evaluate(() => { location.hash = "#/owners"; });
@@ -672,10 +672,10 @@ async function mintToken(request, partyId) {
 const CONSOLE_PERSONAS = {
   orgadmin: ["org", "Peter Otieno", "Org Admin"],
   configurator: ["org", "Dr. Alice Mutua", "Project Configurator"],
-  author: ["org", "Amina Yusuf", "Work Definition Author"],
+  author: ["specifier", "Amina Yusuf", "Work Definition Author"],
   approver: ["org", "Prof. Ndegwa", "Work Definition Approver"],
-  rateowner: ["org", "Mutua", "Rate Owner"],
-  payowner: ["org", "Njeri", "Payment Mechanism Owner"],
+  rateowner: ["org", "Nadia Okoth", "Rate Owner"],
+  payowner: ["org", "Daniel Mwangi", "Payment Mechanism Owner"],
   instance: ["org", "Instance administrator", "Instance Admin"],
   custodian: ["custodian", "Otieno", "Registry Custodian"],
   support: ["custodian", "Naliaka", "Support Agent"],
@@ -812,7 +812,7 @@ test("console: the G-2 onboarding journey is real, screen by screen", async ({ p
   await settle(page);
   await expect(page.locator("#stepcounter")).toContainText("Registration · 3 of 4");
   await expect(page.locator("body")).toContainText("Read the third row");
-  await expect(page.locator("body")).toContainText(/No check verdict has been recorded yet/i);
+  await expect(page.locator("body")).toContainText(/a check is a verdict with a named owner/i);
   await page.click("#submitchecks");
   await page.waitForURL(/#\/onboard\/status/, { timeout: 20000 });
   await settle(page);
@@ -975,7 +975,7 @@ test("console: G-1 walks the instance, and a person decides the admission", asyn
   // g1_1 — the front door: what the deployment IS, and no fake wizard.
   await page.evaluate(() => { location.hash = "#/instance/setup"; });
   await settle(page);
-  await expect(page.locator("body")).toContainText("Let's set up CREST");
+  await expect(page.locator("body")).toContainText(/Let.s set up CREST/);
   await expect(page.locator("body")).toContainText("crest:instance:local");
   await expect(page.locator("body")).toContainText(/compose locally, Railway in the cloud/i);
   await assertAlive(page, errors, "g1_1 setup front door");
