@@ -55,10 +55,17 @@ const loadInstance = async () => {
 // g1_1 — the stand-up front door. In CREST an instance is stood up at deploy
 // time; this frame states what this deployment already IS, read live.
 export function G1Setup() {
-  const r = useLoad(loadInstance);
+  const r = useLoad(async () => {
+    const base = await loadInstance();
+    // The fourth step of the reference's wizard, answered from the record:
+    // has any organisation been admitted? Operator-only read; a refusal
+    // renders as unknown rather than invented.
+    const regs = await api.get("parties", "/v1/registrations").catch(() => null);
+    return { ...base, regs: regs ? regs.registrations || regs || [] : null };
+  });
   return (
     <LoadFrame r={r}>
-      {({ inst }) => (
+      {({ inst, regs }) => (
         <>
           <Title t={"Let's set up CREST — " + (inst.name || "this deployment")} />
           <Lede>
@@ -68,6 +75,60 @@ export function G1Setup() {
             <span className="mono">GET /v1/instance</span>, none of them editable from a console because none of them
             is stored anywhere a console could edit.
           </Lede>
+          <CardTitled t="The reference's four steps — already decided, read from the record">
+            {(() => {
+              const approved = Array.isArray(regs) ? regs.filter((x: any) => x.state === "APPROVED").length : null;
+              const undecided = Array.isArray(regs) ? regs.filter((x: any) => x.state !== "APPROVED" && x.state !== "REJECTED").length : null;
+              const steps: Array<[string, string, boolean | null, string]> = [
+                [
+                  "Name the instance",
+                  "What it covers, and in which languages",
+                  Boolean(inst.name),
+                  inst.name ? `named \u201c${inst.name}\u201d at deploy time` : "not named — CREST_INSTANCE_* configuration",
+                ],
+                [
+                  "Set the consent rules",
+                  "Before a single worker registers",
+                  true,
+                  "the floor is enforced by the infrastructure itself; scripts and templates are programme configuration (#59)",
+                ],
+                [
+                  "Appoint an Instance Administrator",
+                  "So organisations can be admitted",
+                  Boolean(inst.operatorPartyId),
+                  inst.operatorPartyId ? "" : "not appointed — CREST_OPERATOR_PARTY_ID names the party",
+                ],
+                [
+                  "Admit the first organisation",
+                  "Which registers itself, then asks for terms",
+                  approved === null ? null : approved > 0,
+                  approved === null
+                    ? "the queue answers the operator only"
+                    : approved > 0
+                      ? `${approved} admitted${undecided ? ` \u00b7 ${undecided} waiting on your decision` : ""}`
+                      : undecided
+                        ? `none yet \u2014 ${undecided} waiting on your decision in the queue`
+                        : "none yet \u2014 the door is open",
+                ],
+              ];
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {steps.map(([t, sub, done, note], i) => (
+                    <div key={i} style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
+                      <Chip sm kind={done === null ? "plain" : done ? "ok" : "warn"}>
+                        {done === null ? "?" : done ? "\u2713" : "\u2013"}
+                      </Chip>
+                      <div>
+                        <b>{t}</b>
+                        {i === 2 && inst.operatorPartyId ? <> \u2014 <MonoShort id={inst.operatorPartyId} /></> : null}
+                        <div className="muted">{sub}{note ? ` \u00b7 ${note}` : ""}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </CardTitled>
           <CardTitled t="What this deployment already is">
             <KVR rows={[
               ["instance", <Mono>{inst.instanceId}</Mono>],
