@@ -334,15 +334,6 @@ export function NewProject() {
           </button>
         </div>
       </form>
-      <Callout kind="green" title="What is deliberately not on this screen">
-        Nothing about registration, payment or validation is chosen on this screen. Those are compositability choices,
-        and they belong to whoever configures the project, not to whoever creates it.
-      </Callout>
-      <Callout kind="teal" title="What happens next">
-        The project is created DRAFT and the handover sits unanswered. The person you named sees what arrived and can
-        accept it or hand it back with a reason — and until they accept, they can read the project and change nothing
-        in it.
-      </Callout>
       <Actions back={["Back", () => nav("/people")]} />
     </>
   );
