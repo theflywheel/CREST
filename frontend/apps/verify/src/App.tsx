@@ -9,6 +9,7 @@ import { ConsoleShell, ErrBar, type NavGroup } from "@crest/ui";
 import { useVerify } from "./state";
 import { V11, V12, V13 } from "./screens/V1";
 import { V21, V22, V23, Person } from "./screens/V2";
+import { Requests } from "./screens/Requests";
 import { W61, W62 } from "./screens/Panel";
 
 const NAV: NavGroup[] = [
@@ -27,6 +28,7 @@ const NAV: NavGroup[] = [
       { to: "/v2_2", label: "Verified, with the disclosure list" },
       { to: "/v2_3", label: "Batch — checking many" },
       { to: "/person", label: "Resolve a person" },
+      { to: "/requests", label: "Ask to see more" },
     ],
   },
   {
@@ -38,7 +40,7 @@ const NAV: NavGroup[] = [
   },
 ];
 
-const ORG_ROUTES = new Set(["/v2_1", "/v2_2", "/v2_3", "/person"]);
+const ORG_ROUTES = new Set(["/v2_1", "/v2_2", "/v2_3", "/person", "/requests"]);
 const PANEL_ROUTES = new Set(["/w6_1", "/w6_2"]);
 
 function ConsoleScreen(props: { children: React.ReactNode }) {
@@ -100,6 +102,7 @@ export function App() {
       <Route path="/v2_2" element={<ConsoleScreen><V22 /></ConsoleScreen>} />
       <Route path="/v2_3" element={<ConsoleScreen><V23 /></ConsoleScreen>} />
       <Route path="/person" element={<ConsoleScreen><Person /></ConsoleScreen>} />
+      <Route path="/requests" element={<ConsoleScreen><Requests /></ConsoleScreen>} />
       <Route path="/w6_1" element={<PanelScreen><W61 /></PanelScreen>} />
       <Route path="/w6_2" element={<PanelScreen><W62 /></PanelScreen>} />
       <Route path="*" element={<Navigate to="/v1_1" replace />} />

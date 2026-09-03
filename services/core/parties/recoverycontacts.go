@@ -77,7 +77,14 @@ func (h *recoveryContactHandlers) nominate(w http.ResponseWriter, r *http.Reques
 	if !httpx.ReadJSON(w, r, &body) {
 		return
 	}
-	if _, ok := identity.Authorize(w, r, h.d.Log, partyID, "",
+	// ?contextId= names the programme an assisted nomination happens under, so
+	// a context-scoped act-for-party grant (the only kind a field agent holds,
+	// by design — an instance-wide one would be a grant to be anybody) can
+	// satisfy the check, exactly as consent capture threads it. Without it the
+	// comment above — the agent writing the worker's stated choice — was a
+	// promise the authorization model could not actually honour; found by the
+	// w1_4 end-to-end walk. The worker acting for themselves needs no context.
+	if _, ok := identity.Authorize(w, r, h.d.Log, partyID, r.URL.Query().Get("contextId"),
 		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}

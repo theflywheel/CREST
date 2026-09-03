@@ -11,9 +11,10 @@ type Flash = { route: string; node: ReactNode } | null;
 
 type Session = {
   me: string | null;
+  meLabel: string | null;
   err: string | null;
   flash: Flash;
-  login: () => Promise<void>;
+  login: (partyId?: string, label?: string) => Promise<void>;
   completeEsignet: (token: string) => Promise<"enrolled" | "stranger">;
   signUp: (name: string, phone: string, consentPurpose: string) => Promise<string>;
   logout: () => void;
@@ -33,7 +34,7 @@ export function describeError(e: unknown): string {
 
 const SKEY = "crest.worker.session";
 
-function readStored(): { token: string; me: string } | null {
+function readStored(): { token: string; me: string; label?: string } | null {
   try {
     const raw = sessionStorage.getItem(SKEY);
     return raw ? JSON.parse(raw) : null;
@@ -41,7 +42,7 @@ function readStored(): { token: string; me: string } | null {
     return null;
   }
 }
-function store(v: { token: string; me: string } | null) {
+function store(v: { token: string; me: string; label?: string } | null) {
   try {
     v ? sessionStorage.setItem(SKEY, JSON.stringify(v)) : sessionStorage.removeItem(SKEY);
   } catch {
@@ -53,16 +54,22 @@ export function SessionProvider(props: { children: ReactNode }) {
   const stored = readStored();
   if (stored) setSession(stored.token);
   const [me, setMe] = useState<string | null>(stored ? stored.me : null);
+  const [meLabel, setMeLabel] = useState<string | null>(stored ? stored.label || null : null);
   const [err, setErr] = useState<string | null>(null);
   const [flash, setFlash] = useState<Flash>(null);
   const pendingToken = useRef<string>("");
 
-  // The dev login: mock-OIDC minting a token for the story's Grace. Rendered
-  // only on the local stack; a real deployment logs in through eSignet.
-  const login = useCallback(async () => {
-    const token = await loginAs(FIX.workerA);
-    store({ token, me: FIX.workerA });
-    setMe(FIX.workerA);
+  // The dev login: mock-OIDC minting a token for a fixture person (the
+  // story's Grace by default). Any party id is accepted on the local stack —
+  // the confirmer screens (w4_1–w4_3) need the door to hold OTHER identities
+  // than Grace, because a recovery confirmer is by definition somebody else.
+  // A real deployment logs in through eSignet only.
+  const login = useCallback(async (partyId?: string, label?: string) => {
+    const who = partyId || FIX.workerA;
+    const token = await loginAs(who);
+    store({ token, me: who, label });
+    setMe(who);
+    setMeLabel(label || null);
     setErr(null);
   }, []);
 
@@ -127,6 +134,7 @@ export function SessionProvider(props: { children: ReactNode }) {
     setSession(null);
     store(null);
     setMe(null);
+    setMeLabel(null);
     setFlash(null);
     setErr(null);
   }, []);
@@ -134,8 +142,8 @@ export function SessionProvider(props: { children: ReactNode }) {
   const clearErr = useCallback(() => setErr(null), []);
 
   const value = useMemo(
-    () => ({ me, err, flash, login, completeEsignet, signUp, logout, setFlash, fail, clearErr }),
-    [me, err, flash, login, completeEsignet, signUp, logout, fail, clearErr],
+    () => ({ me, meLabel, err, flash, login, completeEsignet, signUp, logout, setFlash, fail, clearErr }),
+    [me, meLabel, err, flash, login, completeEsignet, signUp, logout, fail, clearErr],
   );
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;
 }
