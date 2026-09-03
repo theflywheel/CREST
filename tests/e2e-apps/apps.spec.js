@@ -377,8 +377,12 @@ test("console: the story shows through", async ({ page }) => {
   await settle(page);
   await page.click('[data-p="1"]');
   await settle(page);
+  // The switch ends with its own navigate(homeOf) — wait for it to land
+  // before setting a hash, or the two writes race and homeOf wins.
+  await page.waitForFunction(() => location.hash.length > 2);
   // Sources: the story registered riverside-dhis2, and #117 is named on it.
   await page.evaluate(() => { location.hash = "#/sources"; });
+  await page.waitForFunction(() => location.hash === "#/sources");
   await settle(page);
   await expect(page.locator("body")).toContainText("riverside-dhis2");
   await expect(page.locator("body")).toContainText("#117");
