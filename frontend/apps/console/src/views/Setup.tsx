@@ -426,54 +426,84 @@ function RoleHolders() {
   const nav = useNavigate();
   const s = useConsole();
   const r = useLoad(async () => {
-    const out = await api.get("parties", `/v1/organisations/${encodeURIComponent(s.me!.partyId)}/roles`);
+    const me = s.me!.partyId;
+    const [out, reg] = await Promise.all([
+      api.get("parties", `/v1/organisations/${encodeURIComponent(me)}/roles`),
+      api.get("parties", `/v1/organisations/${encodeURIComponent(me)}/registration`).catch(() => null),
+    ]);
+    // The vacancy row is derived, not invented: the functions this
+    // organisation's terms authorise, minus the ones somebody already holds.
+    let vacant: string[] = [];
+    if (reg && reg.termsId) {
+      const t = await api.get("parties", "/v1/terms").catch(() => null);
+      const hit = t && (t.terms || []).find((x: { id: string; permissions?: string[] }) => x.id === reg.termsId);
+      const held = new Set(
+        ((out.roles || []) as Array<{ functions?: string[] }>).flatMap((a) => a.functions || []),
+      );
+      vacant = ((hit && hit.permissions) || []).filter((p: string) => !held.has(p));
+    }
     return {
       roles: (out.roles || []) as Array<{
         partyId?: string; displayName?: string; partyKind?: string; functions?: string[];
         grantedByPartyId?: string; grantedAt?: string; until?: string; state?: string;
       }>,
-      grantableBy: out.grantableBy as string | undefined,
+      vacant,
     };
   });
   return (
     <LoadFrame r={r}>
-      {({ roles }) => (
+      {({ roles, vacant }) => (
         <>
           <Title t="Putting named people into roles" />
           <Lede>An invitation goes to a work email. The person holds the role only once they have accepted it.</Lede>
-          <CardTitled t="Who holds a role under this organisation">
-            <Tbl
-              heads={["Holder", "Functions", "Granted by", "Since", "Until", "State"]}
-              rows={roles.map((a) => [
-                <>
-                  {a.displayName || <MonoShort id={a.partyId} />}
-                  {a.partyKind ? <span className="muted"> · {a.partyKind}</span> : null}
-                </>,
-                (a.functions || []).join(", "),
-                <MonoShort id={a.grantedByPartyId || ""} />,
-                when(a.grantedAt),
-                when(a.until),
-                <Chip kind={a.state === "ACTIVE" ? "ok" : a.state === "REVOKED" ? "err" : "warn"}>{a.state}</Chip>,
-              ])}
-              empty="Nobody holds a role granted by this organisation. An empty list here is a true answer, not a blank screen: it means a role still has to be granted."
+          <div style={{ maxWidth: 780 }}>
+            <HomeRow
+              label={s.me!.who}
+              sub="Org Admin — you"
+              right={<Chip kind="ok">Active</Chip>}
             />
-            <p className="muted" style={{ marginTop: 8 }}>
-              Revoked and expired grants stay listed with their state, because a console showing only live grants
-              cannot answer “who used to be able to do this, and who took it away”.
-            </p>
-          </CardTitled>
-          <Callout kind="green" title="Why acceptance is the thing that matters">
-            A role assignment that took effect without the person ever appearing would let an organisation attribute a
-            signature to someone who had never logged in. Requiring acceptance keeps the person and the authority
-            attached.
-          </Callout>
-          <OpenNote>
-            Two halves of the reference's frame are still unbuilt, and neither is faked here: an invitation to a work
-            email (there is no notification service) and the invited-versus-active distinction that goes with it.
-            Project-scoped roles are granted on the project's own Owners screen, where the grant carries this
-            organisation as its authority.
-          </OpenNote>
-          <Actions back={["Back", () => nav("/org")]} go={["Create a project", () => nav("/projects/new")]} />
+            {roles.map((a, i) => (
+              <HomeRow
+                key={i}
+                label={a.displayName || <MonoShort id={a.partyId} />}
+                sub={
+                  <>
+                    {(a.functions || []).join(", ")}
+                    {a.grantedAt ? <> · granted {when(a.grantedAt)}</> : null}
+                  </>
+                }
+                right={
+                  <Chip kind={a.state === "ACTIVE" ? "ok" : a.state === "REVOKED" ? "err" : "warn"}>
+                    {a.state === "ACTIVE" ? "Active" : a.state}
+                  </Chip>
+                }
+              />
+            ))}
+            {vacant.length ? (
+              <HomeRow
+                muted
+                label="Not yet assigned"
+                sub={vacant.join(" · ")}
+                right={<CountBadge n={vacant.length} />}
+              />
+            ) : null}
+            {roles.length === 0 ? (
+              <p className="muted" style={{ marginTop: 10 }}>
+                Nobody else holds a role granted by this organisation yet — a true answer, not a blank screen. The
+                reference's invited-but-not-yet-active rows are not drawn because there is no invitation service to
+                stand behind them; a person appears here once a grant exists.
+              </p>
+            ) : null}
+            <div style={{ height: 14 }} />
+            <Callout kind="teal" title="">
+              A vacant role is not a blocked project. A work definition can be ratified with fields marked as
+              assigned-but-unfilled, and a project with no Evidence Validator simply cannot use manual review until
+              one exists.
+            </Callout>
+            <div style={{ borderTop: "1px solid var(--line, #E5E1DC)", marginTop: 16, paddingTop: 14, display: "flex", justifyContent: "flex-end" }}>
+              <Actions back={["Back", () => nav("/org")]} go={["Create a project", () => nav("/projects/new")]} />
+            </div>
+          </div>
         </>
       )}
     </LoadFrame>
