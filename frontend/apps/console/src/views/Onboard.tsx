@@ -282,6 +282,37 @@ export function OnboardApply() {
 }
 
 /* g2_11 — the terms, by exact version */
+// g2_11's own presentation rule: terms read in the organisation's language,
+// not in permission slugs. The map is UI copy (L3) over the deployment's
+// function vocabulary — the slugs stay the record; these words are how the
+// record is read. A slug with no entry falls back to itself rather than hide.
+const PLAIN_PERMISSION: Record<string, string> = {
+  "submit-work-evidence": "Send records of work done",
+  "specify-definition": "Say what work is and what counts as done",
+  "ratify-definition": "Approve a work definition somebody else drafted",
+  "attest-work": "Attest that work happened, so it can be counted",
+  "act-for-party": "Act for a worker who cannot act for themselves",
+  "resolve-unclear-evidence": "Review what could not be checked automatically",
+  "issue-credentials": "Issue a credential in your own organisation\u2019s name",
+};
+// What no set of terms grants — true of the platform, not of this version.
+const NEVER_GRANTED = [
+  "Move money, or hand it to a bank \u2014 only the payments application touches a rail",
+  "Vouch for another organisation, which no terms grant",
+];
+function ableAndNot(t: any, all: any[]) {
+  const held: string[] = t.permissions || [];
+  const able = held.map((p) => PLAIN_PERMISSION[p] || p);
+  const elsewhere = new Set(
+    all.filter((o) => !(o.id === t.id && o.version === t.version)).flatMap((o) => o.permissions || []),
+  );
+  const notAble = Object.keys(PLAIN_PERMISSION)
+    .filter((p) => !held.includes(p))
+    .map((p) => PLAIN_PERMISSION[p] + (elsewhere.has(p) ? " \u2014 that needs wider terms" : ""))
+    .concat(NEVER_GRANTED);
+  return { able, notAble };
+}
+
 export function OnboardTerms() {
   const nav = useNavigate();
   const ob = readOnboarding();
@@ -356,14 +387,26 @@ export function OnboardTerms() {
               This deployment has published no terms yet — the operator publishes them; nothing to accept until then.
             </p>
           ) : (
-            <div className="card" style={{ maxWidth: 560 }}>
-              <KV
-                rows={[
-                  ["Terms", t.name],
-                  ["Version", String(t.version)],
-                  ["Grants, on approval", (t.permissions || []).join(" · ") || "—"],
-                ]}
-              />
+            <div className="card" style={{ maxWidth: 720 }}>
+              <div style={{ font: "500 15px/1.4 Roboto, system-ui, sans-serif" }}>{t.name}</div>
+              <p className="muted" style={{ margin: "4px 0 12px" }}>
+                Version {t.version}, published{" "}
+                {new Date(t.publishedAt).toLocaleDateString(undefined, { year: "numeric", month: "long" })}
+              </p>
+              {(() => {
+                const { able, notAble } = ableAndNot(t, terms || []);
+                const rows = Math.max(able.length, notAble.length);
+                return (
+                  <GridTable cols="1fr 1fr" head={["You would be able to", "You would not be able to"]}>
+                    {Array.from({ length: rows }, (_, i) => (
+                      <div className="g-row" key={i}>
+                        <span>{able[i] || ""}</span>
+                        <span className="muted">{notAble[i] || ""}</span>
+                      </div>
+                    ))}
+                  </GridTable>
+                );
+              })()}
               <div className="btn-row" style={{ marginTop: 10 }}>
                 <button className="btn secondary" id="acceptterms" disabled={busy} onClick={accept}>
                   {busy ? "Recording acceptance…" : `Accept v${t.version} for ${ob.name}`}
