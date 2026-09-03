@@ -34,7 +34,13 @@ export const personas = [
   },
   {
     key: "author",
-    id: FIX.org,
+    // The specifier party, not the organisation. The author drafts and the
+    // approver signs, and the definitions service refuses a version whose
+    // ratifier is its author — so if both personas signed in as the same
+    // party, every ratification this console produced would be refused and
+    // the separation would be a claim no test could make. The fixture world
+    // already records this party as the seeded definition's author.
+    id: FIX.specifier,
     who: "Amina Yusuf",
     role: "Work Definition Author",
     ref: "P-3",
