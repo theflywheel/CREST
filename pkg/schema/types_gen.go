@@ -460,8 +460,32 @@ type Definition struct {
 
 	// An Authorization must carry one of these functions to submit
 	// evidence against this definition.
-	AuthorisedAttesterFunctions []string  `json:"authorisedAttesterFunctions"`
-	CreatedAt                   time.Time `json:"createdAt"`
+	AuthorisedAttesterFunctions []string `json:"authorisedAttesterFunctions"`
+
+	// Descriptive taxonomy facts about the defined activity — sector,
+	// category, performer role (P-3 authoring). L1 holds the map, never
+	// the vocabulary: which keys exist and which values are legal is
+	// deployment configuration, per the layering test and the
+	// Party.attributes precedent (#168). Small bounded strings only; never
+	// provenance, never anything the strength function reads.
+	Classification map[string]any `json:"classification,omitempty"`
+
+	// How a completed instance is counted. Generic across domains — a
+	// visit, a paid period, a measured result; a training session or an
+	// assessment count the same way — so the shape is L1 while every
+	// value inside it is this deployment's own vocabulary. Optional
+	// because the seeded pre-authoring definitions never carried it; a
+	// definition without it counts by outcomeUnit alone.
+	Counting  *DefinitionCounting `json:"counting,omitempty"`
+	CreatedAt time.Time           `json:"createdAt"`
+
+	// The honest escape hatch (p3_14): typed, labelled fields the
+	// authoring form did not have, keyed by the author's own name for
+	// them. L1 holds the slot; what goes in it is deployment content.
+	// Never identity data, never provenance, never money — payment
+	// structure is a LinkedRecord by reference (§7), and a value here is
+	// read by nothing in the infrastructure.
+	Extensions map[string]any `json:"extensions,omitempty"`
 
 	// Three projections of one record, never three documents (§7).
 	Faces DefinitionFaces `json:"faces"`
@@ -470,6 +494,14 @@ type Definition struct {
 	// The unit a Unit's outcome is counted in. Comes from here, never from
 	// a source system.
 	OutcomeUnit string `json:"outcomeUnit"`
+
+	// Named at ratification by the ratifier: fields the approver judged
+	// acceptable to leave unresolved (p3_15). RATIFIED-with-pending is a
+	// real recorded state, not a blocked one — but only the ratifier may
+	// declare it, it is append-only in the event record, and an ACTIVE
+	// version carries it forever so a verifier can see what was open when
+	// it was signed.
+	PendingFields []string `json:"pendingFields,omitempty"`
 
 	// Must differ from authoredByPartyId. Separation of duties is an L1
 	// rule enforced in the definitions service, not left to product UI
@@ -503,6 +535,47 @@ type Definition struct {
 type DefinitionActivity struct {
 	Code  string `json:"code"`
 	Label string `json:"label"`
+}
+
+// How a completed instance is counted. Generic across domains — a visit,
+// a paid period, a measured result; a training session or an assessment
+// count the same way — so the shape is L1 while every value inside it is
+// this deployment's own vocabulary. Optional because the seeded
+// pre-authoring definitions never carried it; a definition without it
+// counts by outcomeUnit alone.
+type DefinitionCounting struct {
+	AggregationLevel *string `json:"aggregationLevel,omitempty"`
+
+	// The counting fork (p3_3): discrete attested events, elapsed periods
+	// of engagement, or a measured result.
+	Basis       DefinitionCountingBasis `json:"basis"`
+	Description *string                 `json:"description,omitempty"`
+	Frequency   *string                 `json:"frequency,omitempty"`
+
+	// Present only when basis is outcome: what result is paid for and how
+	// it is measured. Descriptive programme facts, not inputs to the
+	// strength function.
+	Outcome *DefinitionCountingOutcome `json:"outcome,omitempty"`
+}
+
+// The counting fork (p3_3): discrete attested events, elapsed periods of
+// engagement, or a measured result.
+type DefinitionCountingBasis string
+
+const (
+	DefinitionCountingBasisEvent      DefinitionCountingBasis = "event"
+	DefinitionCountingBasisTimePeriod DefinitionCountingBasis = "time-period"
+	DefinitionCountingBasisOutcome    DefinitionCountingBasis = "outcome"
+)
+
+// Present only when basis is outcome: what result is paid for and how it
+// is measured. Descriptive programme facts, not inputs to the strength
+// function.
+type DefinitionCountingOutcome struct {
+	Baseline   *string `json:"baseline,omitempty"`
+	Indicator  string  `json:"indicator"`
+	MeasuredBy *string `json:"measuredBy,omitempty"`
+	Target     *string `json:"target,omitempty"`
 }
 
 // Three projections of one record, never three documents (§7).
@@ -705,6 +778,31 @@ const (
 	PartyKindOrganisation PartyKind = "organisation"
 )
 
+// The author's recorded hand-over of pricing to a rate owner (p3_pay →
+// F-1). A definition is signed with nothing pricing it, and that is a
+// complete state (§7); this record is the invitation, not the authority.
+// The authority is the RateOwnerAssignment the payments service keeps —
+// an accepted handoff composes with it, it never substitutes for it, and
+// nothing on this record can touch the definition or a rate.
+type PaymentHandoffLinkedRecordPayload struct {
+
+	// The version whose pricing is being handed over. Named explicitly
+	// because a rate owner invited against v1 has not been invited against
+	// v2.
+	DefinitionVersion int       `json:"definitionVersion"`
+	InvitedAt         time.Time `json:"invitedAt"`
+
+	// Who recorded the handoff. Required: an ownerless invitation records
+	// nothing.
+	InvitedByPartyID string `json:"invitedByPartyId"`
+
+	// Who is being asked to own the rate. Optional: a handoff can be
+	// recorded before anyone is named, which is the honest state p3_pay
+	// shows — signed, unpriced, and visibly waiting.
+	InvitedPartyID *string `json:"invitedPartyId,omitempty"`
+	Note           *string `json:"note,omitempty"`
+}
+
 // What should be paid, keyed to a Unit by event_id only — never inside
 // the credential (§8). Released on every T=7 exit, including dispute: a
 // dispute contests the record, it does not withhold the money (W4).
@@ -773,6 +871,41 @@ type PaymentSetupLinkedRecordPayloadRatePerOutcomeUnit struct {
 	// Minor units. Money is never a float.
 	AmountMinor int    `json:"amountMinor"`
 	Currency    string `json:"currency"`
+}
+
+// The author's intended payment shape for a definition (p3_11–p3_13,
+// p3_20): tranches, preconditions, deductions, and who holds which project
+// role. Structure, never price — a tranche is a share of a rate somebody
+// else will publish, because pricing belongs to the assigned rate owner
+// (F-1) and the rate itself is the payment-setup record. A LinkedRecord by
+// reference like every other payment fact (§7): the definition stays
+// complete and usable if this record never exists.
+type PaymentStructureLinkedRecordPayload struct {
+	AuthoredByPartyID string                                              `json:"authoredByPartyId"`
+	Deductions        []PaymentStructureLinkedRecordPayloadDeductionsItem `json:"deductions,omitempty"`
+	DefinitionVersion int                                                 `json:"definitionVersion"`
+	Preconditions     []string                                            `json:"preconditions,omitempty"`
+
+	// The four project roles (p3_20) — e.g. author, rate-owner,
+	// mechanism-owner, validator — mapped to a party id or a role name.
+	// Descriptive: authority to act comes from Authorizations and the
+	// RateOwnerAssignment, never from this map.
+	Roles    map[string]any                                    `json:"roles,omitempty"`
+	Tranches []PaymentStructureLinkedRecordPayloadTranchesItem `json:"tranches,omitempty"`
+}
+
+type PaymentStructureLinkedRecordPayloadDeductionsItem struct {
+	Label string `json:"label"`
+	Rule  string `json:"rule"`
+}
+
+type PaymentStructureLinkedRecordPayloadTranchesItem struct {
+	Condition *string `json:"condition,omitempty"`
+	Label     string  `json:"label"`
+
+	// A proportion of the eventual rate, as the author wrote it ("60%",
+	// "balance"). Never an amount of money.
+	Share *string `json:"share,omitempty"`
 }
 
 type Period struct {

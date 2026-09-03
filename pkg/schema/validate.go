@@ -42,11 +42,13 @@ const (
 	IDEvidenceRecord = "urn:crest:schema:evidence:work-evidence-record:1"
 	// Reference data rather than a primitive — §3 files the skill list beside
 	// credential shapes and adapters, not beside Party and Definition.
-	IDSkill         = "urn:crest:schema:reference:skill:1"
-	IDWorkEventCred = "urn:crest:schema:credentials:work-event-credential:1"
-	IDPaymentSetup  = "urn:crest:schema:profiles:trusted-payments:payment-setup:1"
-	IDPaymentInstr  = "urn:crest:schema:profiles:trusted-payments:payment-instruction:1"
-	IDCompensation  = "urn:crest:schema:profiles:trusted-payments:compensation:1"
+	IDSkill            = "urn:crest:schema:reference:skill:1"
+	IDWorkEventCred    = "urn:crest:schema:credentials:work-event-credential:1"
+	IDPaymentSetup     = "urn:crest:schema:profiles:trusted-payments:payment-setup:1"
+	IDPaymentInstr     = "urn:crest:schema:profiles:trusted-payments:payment-instruction:1"
+	IDCompensation     = "urn:crest:schema:profiles:trusted-payments:compensation:1"
+	IDPaymentHandoff   = "urn:crest:schema:profiles:trusted-payments:payment-handoff:1"
+	IDPaymentStructure = "urn:crest:schema:profiles:trusted-payments:payment-structure:1"
 )
 
 var (

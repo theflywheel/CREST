@@ -49,6 +49,7 @@ type schema struct {
 	// express "minLength 1", and pretending otherwise would be worse than the
 	// runtime validation that does express it.
 	MinLength *int     `json:"minLength"`
+	MaxLength *int     `json:"maxLength"`
 	MinItems  *int     `json:"minItems"`
 	MaxItems  *int     `json:"maxItems"`
 	Minimum   *float64 `json:"minimum"`
