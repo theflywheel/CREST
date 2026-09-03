@@ -281,3 +281,28 @@ func TestSetSection(t *testing.T) {
 		t.Fatal("an unparseable section body was accepted")
 	}
 }
+
+// A draft that has never been submitted has no definition id, and the two
+// endpoints that compile without writing — validate and dry-run — stand a
+// placeholder in for one. That placeholder is schema-checked along with the
+// rest of the preview, so if it does not satisfy the id pattern, `validate`
+// reports a schema problem on EVERY new draft: an open question naming no
+// section a person could go back to, because there is no field for it.
+//
+// The consequence is worse than a spurious row. `submit` mints a real id and
+// so never sees the violation, meaning validate refuses drafts submit would
+// accept — and the property this whole design rests on is that the two run the
+// same compile and cannot disagree. That is what this test defends, and the
+// original placeholder ("crest:definition:PREVIEW") failed it, invisibly,
+// because every unit test called compile with a real id.
+func TestPreviewIDLetsACompleteDraftReadAsReady(t *testing.T) {
+	d, problems := compile(fullDraft(), previewDefinitionID, 1,
+		"did:crest:party:01ARZ3NDEKTSV4RRFFQ69G5FAA", testTime)
+	if len(problems) != 0 {
+		t.Fatalf("a complete draft has problems under the preview id: %+v", problems)
+	}
+	if err := schema.Validate(schema.IDDefinition, d); err != nil {
+		t.Fatalf("the preview id is not schema-valid, so validate would report a problem "+
+			"no author can fix and submit would never see: %v", err)
+	}
+}

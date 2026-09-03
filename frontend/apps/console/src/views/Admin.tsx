@@ -1,16 +1,20 @@
-// Define work (J4), Payment set up (J5), Organisation view (J1), Instance
-// view (J2) and the Funder portfolio (J11), ported 1:1 from
-// apps/console/views-admin.js. Real data where a service answers, the
-// reference's own honesty labels where none does.
+// Payment set up (J5), Organisation view (J1), Instance view (J2) and the
+// Funder portfolio (J11), ported 1:1 from apps/console/views-admin.js. Real
+// data where a service answers, the reference's own honesty labels where none
+// does.
+//
+// Define work (J4) used to live here as a read-only walkthrough of the seeded
+// definition, labelled "authoring writes are not built". They are now: the
+// real P-3 wizard is views/Define.tsx, which writes drafts and submits
+// versions, so the read-only stand-in has been removed rather than left
+// alongside as a second screen answering the same question differently.
 import { api, FIX } from "@crest/api";
 import { Chip, OpenNote, NextBlock } from "@crest/ui";
 import { useNavigate } from "react-router-dom";
 import {
   short, money, when, Mono, MonoShort, KVR, Title, Lede, Empty, Tbl,
-  CardTitled, TierChip, ILLUSTRATIVE, SIMULATED, useLoad, LoadFrame,
+  CardTitled, ILLUSTRATIVE, SIMULATED, useLoad, LoadFrame,
 } from "../ui";
-import { useConsole } from "../state";
-import type { ReactNode } from "react";
 
 type LinkedRecord = {
   id: string;
@@ -27,139 +31,6 @@ async function loadDefinition() {
     api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}/linked-records`).catch(() => ({ linkedRecords: [] })),
   ]);
   return { d, worker, lr: (lr.linkedRecords || []) as LinkedRecord[] };
-}
-
-// The registry has no GET /v1/definitions list (POST only), so the registry
-// screen shows the one definition the fixture world seeds, read for real.
-export function DefineWork() {
-  const s = useConsole();
-  const r = useLoad(loadDefinition);
-  return (
-    <LoadFrame r={r}>
-      {({ d, worker, lr }) => {
-        const wkr = (worker && worker.worker) || (d.faces && d.faces.worker) || {};
-        const plat = (d.faces && d.faces.platform) || {};
-        const pays = lr.find((x) => x.type === "payment-setup");
-        const tierRows = (d.tierMap || []).map(
-          (rule: { tier: number; sourceClassIn?: string[]; captureMethodIn?: string[]; minIdentityAssurance?: string; requiresFields?: string[] }) =>
-            [
-              "Tier " + rule.tier,
-              <>
-                <TierChip t={rule.tier} /> source in {(rule.sourceClassIn || []).join(" / ")}; captured by{" "}
-                {(rule.captureMethodIn || []).join(" / ")}; identity ≥ {rule.minIdentityAssurance || "any"}
-                {(rule.requiresFields || []).length ? "; needs " + rule.requiresFields!.join(", ") : ""}
-              </>,
-            ] as [ReactNode, ReactNode],
-        );
-        const steps: Array<[string, ReactNode]> = [
-          ["Scope", <>
-            <KVR rows={[
-              ["activity", <>{d.activity?.label || ""} <Mono>{d.activity?.code || ""}</Mono></>],
-              ["skill code", <Mono>{d.skillCode || ""}</Mono>],
-              ["project", <Mono>{FIX.project}</Mono>],
-            ]} />
-            <p className="muted" style={{ marginTop: 8 }}>The skill code is the part of the record that travels; the activity code is this deployment's own word for it.</p>
-          </>],
-          ["Counting basis", <>
-            <KVR rows={[["one unit is", d.outcomeUnit || ""]]} />
-            <p className="muted" style={{ marginTop: 8 }}>Everything downstream — the rate, the credential, the funnel — counts in this unit.</p>
-          </>],
-          ["What is counted", <>
-            <KVR rows={[
-              ["required fields", (plat.requiredFields || []).length ? (plat.requiredFields as string[]).map((f, i) => <span key={f}>{i ? " · " : ""}<Mono>{f}</Mono></span>) : "—"],
-              ["record schema", <Mono>{plat.schemaRef || ""}</Mono>],
-            ]} />
-            <p className="muted" style={{ marginTop: 8 }}>A record providing only the mandatory core is still valid Tier-1-capable evidence; these fields only decide how strong.</p>
-          </>],
-          ["Parties", <KVR rows={[
-            ["authored by", <MonoShort id={d.authoredByPartyId || ""} />],
-            ["ratified by", <><MonoShort id={d.ratifiedByPartyId || ""} /> — two people by construction</>],
-            ["who may attest", (d.authorisedAttesterFunctions || []).length ? (d.authorisedAttesterFunctions as string[]).map((f) => <Chip key={f} kind="info">{f}</Chip>) : "—"],
-          ]} />],
-          ["Evidence tiers", <>
-            <KVR rows={tierRows} />
-            <p className="muted" style={{ marginTop: 8 }}>Read top to bottom; the first rule whose conditions all hold wins. The floor has no requirements at all — that is what keeps the weakest worker payable.</p>
-          </>],
-          ["Source", <>
-            <KVR rows={[
-              ["source systems", (plat.sourceSystems || []).length ? (plat.sourceSystems as string[]).map((f, i) => <span key={f}>{i ? " · " : ""}<Mono>{f}</Mono></span>) : "—"],
-              ["worker tier ceiling", wkr.tierCeiling != null ? String(wkr.tierCeiling) : "—"],
-            ]} />
-            <div style={{ marginTop: 10 }}>
-              <OpenNote>Adaptor mapping (p3_24–p3_28) and extension fields (p3_14) have no write side. Authoring writes are not built; this shows the signed definition v{d.version} as the wizard would have captured it.</OpenNote>
-            </div>
-          </>],
-          ["Template — the worker's own words", <>
-            <div className="consent-quote">{wkr.summary || ""}</div>
-            <div style={{ marginTop: 10 }}>
-              {(wkr.evidenceInPlainLanguage || []).length ? (
-                (wkr.evidenceInPlainLanguage as string[]).map((l) => (
-                  <div key={l} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-                    <Chip kind="ok">counts</Chip>
-                    <span className="body-2">{l}</span>
-                  </div>
-                ))
-              ) : (
-                <div className="muted">The definition carries no worker-language evidence list.</div>
-              )}
-            </div>
-          </>],
-          ["Validation", <KVR rows={[
-            ["a row missing a required field", "lands in the unclear queue with a reason — never a silent drop"],
-            ["who decides whose work it was", "the custodian, holding resolve-unclear-evidence — never the submitter"],
-          ]} />],
-          ["Payment", pays ? (
-            <>
-              <KVR rows={[
-                ["rate per " + (d.outcomeUnit || "unit"), money(pays.payload!.ratePerOutcomeUnit.amountMinor, pays.payload!.ratePerOutcomeUnit.currency)],
-                ["payer", <MonoShort id={pays.payload!.payerPartyId} />],
-                ["effective from", when(pays.payload!.effectiveFrom)],
-                ["record", <><Mono>{pays.id}</Mono> · v{pays.version} · {pays.state}</>],
-              ]} />
-              <p className="muted" style={{ marginTop: 8 }}>Attached by reference — the definition is complete without it. See Payment set up for the full journey.</p>
-            </>
-          ) : (
-            <Empty>No payment-setup record is attached. The work is recognised, and recognition is a use of its own.</Empty>
-          )],
-          ["Ratify", <KVR rows={[
-            ["the fact", "two linked signed records: the definition, and its ratification — author and ratifier are different parties or the service refuses (409)"],
-            ["authored by", <MonoShort id={d.authoredByPartyId || ""} />],
-            ["ratified by", <MonoShort id={d.ratifiedByPartyId || ""} />],
-            ["activated", when(d.activatedAt)],
-          ]} />],
-        ];
-        const idx = Math.min(Math.max(s.wizStep || 0, 0), steps.length - 1);
-        return (
-          <>
-            <Title t="Define work — the wizard, read against the real definition" extra={<Chip kind={d.state === "ACTIVE" ? "ok" : "info"}>{"v" + d.version + " · " + d.state}</Chip>} />
-            <Lede>
-              The design draws a 28-screen authoring journey. This walkthrough shows each step with the values the
-              seeded definition actually carries — real data, authoring labeled.
-            </Lede>
-            <CardTitled t="Definition registry">
-              <Tbl
-                heads={["Definition", "Activity", "Version", "State"]}
-                rows={[[<Mono>{d.id}</Mono>, d.activity?.label || "", "v" + d.version, <Chip kind={d.state === "ACTIVE" ? "ok" : "info"}>{d.state}</Chip>]]}
-              />
-              <p className="muted" style={{ marginTop: 8 }}>
-                The definitions service has no list endpoint (POST-only registry, checked against its OpenAPI); this is
-                the one definition the fixture world seeds, read for real.
-              </p>
-            </CardTitled>
-            <OpenNote>Authoring writes are not built; this shows the signed definition v{d.version} as the wizard would have captured it.</OpenNote>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {steps.map(([name], i) => (
-                <button key={name} className={"btn" + (i === idx ? "" : " secondary")} style={{ width: "auto", padding: "9px 14px", fontSize: 12.5 }} onClick={() => s.setWizStep(i)}>
-                  {i + 1} · {name}
-                </button>
-              ))}
-            </div>
-            <CardTitled t={"Step " + (idx + 1) + " of " + steps.length + " — " + steps[idx][0]}>{steps[idx][1]}</CardTitled>
-          </>
-        );
-      }}
-    </LoadFrame>
-  );
 }
 
 export function PaySetup() {

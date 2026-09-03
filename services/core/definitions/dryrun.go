@@ -79,7 +79,9 @@ func (h *draftHandlers) dryRun(w http.ResponseWriter, r *http.Request) {
 
 	defID := draft.DefinitionID
 	if defID == "" {
-		defID = "crest:definition:DRY-RUN"
+		// The same schema-valid placeholder validate uses: a dry run compiles
+		// a draft that may have no definition id, and must not mint one.
+		defID = previewDefinitionID
 	}
 	now := h.d.Clock.Now()
 	compiled, problems := compile(draft.Doc, defID, draft.BaseVersion+1, draft.CreatedBy, now)
