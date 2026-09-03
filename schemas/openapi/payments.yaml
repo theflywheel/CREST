@@ -172,6 +172,155 @@ paths:
                   withoutAReason: { type: integer, description: Expected to be 0. }
         "500": { $ref: "#/components/responses/Internal" }
 
+  # ── The funders wave (F-1, F-2) ──────────────────────────────────────────
+  # Rate ownership, rates as versioned terms, and the payment mechanism whose
+  # activation gate sits in front of DISBURSEMENT only (f2_9): none of these
+  # endpoints can stop a window exit creating its instruction (W4).
+
+  /v1/definitions/{id}/rate-owner:
+    post:
+      operationId: assignRateOwner
+      summary: Assign who may author rates for a definition (f1_2)
+      description: >
+        Anyone can ask; only this recorded act assigns. The record carries
+        assigner, assignee and date; a re-assignment supersedes the current
+        one and keeps it as history. Party-authorized as the assigner.
+      responses:
+        "201": { description: The assignment record. }
+        "400": { description: Assignee or assigner missing. }
+        "404": { description: No such definition. }
+    get:
+      operationId: getRateOwner
+      summary: The current rate owner and the assignment history
+      responses:
+        "200": { description: "`current` (nullable) and `history`." }
+
+  /v1/definitions/{id}/rates:
+    post:
+      operationId: publishRate
+      summary: Publish a rate as versioned terms (f1_3, f1_4)
+      description: >
+        Only the assigned rate owner may publish, and publication is a new
+        payment-setup LinkedRecord version on the definition - named, carrying
+        its author, naming what it supersedes, never edited. There is no
+        update route, deliberately. The rate values are L2; the publication
+        act is the record. The author prices the unit; nothing here can touch
+        the definition itself.
+      responses:
+        "201": { description: The stored LinkedRecord version. }
+        "403": { description: The caller is not the assigned rate owner. }
+        "404": { description: No such definition. }
+    get:
+      operationId: listRates
+      summary: Every published version, and the one in force at a moment
+      description: >
+        `?at=` (RFC3339, default now) answers which version prices a payment
+        released then - the version in force at the relevant time, so a later
+        publication never reprices work already done.
+      responses:
+        "200": { description: "`rates`, and `inForce` when one applies." }
+
+  /v1/mechanisms:
+    post:
+      operationId: createMechanism
+      summary: Record a payment mechanism for a context (f2_8)
+      description: >
+        Created CONFIGURED, never ACTIVE: configured is not the same as live,
+        and the gap between them is a real recorded state (f1_5). One per
+        context. The owner named here is who a held payment lands with (W10).
+      responses:
+        "201": { description: Mechanism, standing, and readable conditions. }
+        "409": { description: The context already has a mechanism. }
+
+  /v1/mechanisms/{id}:
+    get:
+      operationId: getMechanism
+      summary: The mechanism, its standing, and its activation conditions
+      responses:
+        "200": { description: Satisfied and unsatisfied conditions alike. }
+        "404": { description: No such mechanism. }
+
+  /v1/mechanisms/by-context/{contextId}:
+    get:
+      operationId: getMechanismByContext
+      summary: A context's mechanism, or the honest absence of one
+      responses:
+        "200":
+          description: >
+            Always 200: `standing` is `not-configured`, `configured-not-live`
+            (f1_5's half-done state) or `live`.
+
+  /v1/mechanisms/{id}/test-disbursements:
+    post:
+      operationId: testDisbursement
+      summary: Prove the whole path once with one real payment (f2_4)
+      description: >
+        Sends one payment through the configured rail and records the result
+        either way; only a SUCCEEDED test satisfies the proving condition.
+        A FAILED test is still a 201 - the test happened, and its failure
+        carries a reason with an owner.
+      responses:
+        "201": { description: The recorded test with its result. }
+        "404": { description: No such mechanism. }
+
+  /v1/mechanisms/{id}/records:
+    post:
+      operationId: addMechanismRecord
+      summary: File one recorded set-up act
+      description: >
+        kind is reconciliation-agreement (f2_5), statement-agreement (f2_6),
+        batching-choice (f2_7, refuses a choice whose trade-off is unstated),
+        qualification-submitted or qualification-verified (f2_9, f2_10;
+        verification of nothing is refused). Payload values are L2, stored
+        opaquely; the actor and moment are the record.
+      responses:
+        "201": { description: The record. }
+        "400": { description: Unknown kind, or a batching choice with no trade-off. }
+        "409": { description: Verifying a qualification nobody submitted. }
+
+  /v1/mechanisms/{id}/activate:
+    post:
+      operationId: activateMechanism
+      summary: The last gate, and what it opens (f2_8, f2_10)
+      description: >
+        Refuses with every condition readable while any is unmet. On success
+        the mechanism goes ACTIVE and every instruction held under
+        mechanism_not_live for its context is re-priced at its own release
+        moment and sent - activation is what lets disbursement flow; the
+        obligations were already created by their window exits (f2_9, W4).
+      responses:
+        "200": { description: "ACTIVE, plus `releasedInstructionIds`." }
+        "409": { description: Gates unmet; the conditions are in the body. }
+        "404": { description: No such mechanism. }
+
+  /v1/reconciliation/file:
+    get:
+      operationId: reconciliationFile
+      summary: The export that makes a mismatch findable (f2_5)
+      description: >
+        Format crest-recon-csv-v1 (also stated in the
+        X-CREST-Reconciliation-Format header): CSV, one line per payment
+        instruction, tied back by instruction id, claim id and rail reference.
+        Columns are append-only - added, never renamed or removed.
+      responses:
+        "200":
+          description: The file.
+          content:
+            text/csv: {}
+
+  /v1/statements:
+    get:
+      operationId: statement
+      summary: One party's advisory monthly statement (f2_6)
+      description: >
+        `?partyId=&month=YYYY-MM`. Advisory, and it says so on itself: every
+        statement carries a `limits` list stating that the rail's own
+        statement is authoritative and that held payments appear with their
+        reason and owner rather than going missing.
+      responses:
+        "200": { description: Instructions, totals by currency, limits. }
+        "400": { description: partyId or month missing or malformed. }
+
   # Every CREST service carries these two, added by pkg/httpx.Server.
   /healthz: { $ref: "#/components/pathItems/healthz" }
   /readyz: { $ref: "#/components/pathItems/readyz" }

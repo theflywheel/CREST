@@ -25,6 +25,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 		d:           d,
 		evidence:    client.New(config.Str("EVIDENCE_URL", "http://evidence:8080")),
 		definitions: client.New(config.Str("DEFINITIONS_URL", "http://definitions:8080")),
+		rail:        client.New(config.Str("RAIL_URL", "http://mock-rail:8080")),
 		payerOwner:  config.Str("HELD_PAYMENT_OWNER", "did:crest:party:programme-operations"),
 	}
 
@@ -38,12 +39,17 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	// judgement as record reads on evidence.
 	mux.HandleFunc("GET /v1/instructions/by-claim/{claimId}", h.byClaim)
 	mux.HandleFunc("GET /v1/reconciliation", h.reconciliation)
+
+	// The funders wave (F-1, F-2): rate ownership, rates as terms, and the
+	// mechanism whose activation gate sits in front of disbursement only.
+	fundersRoutes(mux, d, h)
 }
 
 type handlers struct {
 	d           service.Deps
 	evidence    *client.Client
 	definitions *client.Client
+	rail        *client.Client
 	payerOwner  string
 }
 
@@ -57,6 +63,7 @@ func (h *handlers) release(w http.ResponseWriter, r *http.Request) {
 		ClaimID    string    `json:"claimId"`
 		UnitID     string    `json:"unitId"`
 		PartyID    string    `json:"partyId"`
+		ContextID  string    `json:"contextId"`
 		ReleasedBy string    `json:"releasedBy"`
 		ReleasedAt time.Time `json:"releasedAt"`
 	}
@@ -86,12 +93,28 @@ func (h *handlers) release(w http.ResponseWriter, r *http.Request) {
 		ClaimID:    req.ClaimID,
 		UnitID:     req.UnitID,
 		PartyID:    req.PartyID,
+		ContextID:  req.ContextID,
 		ReleasedBy: req.ReleasedBy,
 		ReleasedAt: req.ReleasedAt,
 		CreatedAt:  now,
 	}
 
-	amount, currency, held := h.amountFor(r.Context(), req.UnitID)
+	// Priced at the release moment: the rate version in force when the window
+	// exited, not whatever was published since (f1_4).
+	amount, currency, held := h.amountFor(r.Context(), req.UnitID, req.ReleasedAt)
+	// The computed amount stays on the instruction even when it is held: for a
+	// mechanism hold what is owed is known, only its sending waits. Rate holds
+	// leave it zero because zero-priced is the thing they refuse to assert.
+	in.AmountMinor, in.Currency = amount, currency
+	if held == nil {
+		// f2_9, exactly: the mechanism's gate sits in front of DISBURSEMENT,
+		// not in front of this instruction existing. The window exit already
+		// released the obligation (W4) — the only question the gate answers
+		// is whether the money moves now or is held with the mechanism's
+		// owner named against it (W10). The amount is kept on the hold: what
+		// is owed is known, only its sending waits.
+		held = h.mechanismHold(r.Context(), req.ContextID)
+	}
 	switch {
 	case held != nil:
 		// The payment is held, and it is held *with an explanation attached*.
@@ -101,8 +124,6 @@ func (h *handlers) release(w http.ResponseWriter, r *http.Request) {
 		in.Held = held
 	default:
 		in.State = "RELEASED"
-		in.AmountMinor = amount
-		in.Currency = currency
 	}
 
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
@@ -126,12 +147,36 @@ func (h *handlers) release(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, in)
 }
 
-// amountFor works out what is owed: the definition's rate multiplied by the
-// unit's outcome. Anything missing is a hold with a reason, never a zero.
+// mechanismHold is f2_9's gate applied where it belongs: at disbursement.
+// A context with no mechanism record predates this surface and is not gated;
+// a context whose mechanism is not ACTIVE holds the money with the
+// mechanism's owner named. A read failure holds too, with the deployment's
+// payer owner — never a silent release past a gate that could not be read.
+func (h *handlers) mechanismHold(ctx context.Context, contextID string) *HeldReason {
+	if contextID == "" {
+		return nil // released before instructions carried a context; not gated
+	}
+	m, err := mechanismByContext(ctx, h.d.DB.Q(), contextID)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return holdForMechanism(nil)
+	case err != nil:
+		return &HeldReason{
+			Code:         "mechanism_unreadable",
+			Explanation:  "whether this project's payment mechanism is live could not be read, so the money is held rather than sent past an unreadable gate",
+			OwnerPartyID: h.payerOwner,
+		}
+	}
+	return holdForMechanism(&m)
+}
+
+// amountFor works out what is owed at a moment: the rate version in force at
+// `at` multiplied by the unit's outcome. Anything missing is a hold with a
+// reason, never a zero.
 //
 // A zero-amount instruction would satisfy every count and pay nobody, which is
 // precisely the silent failure W10 exists to prevent.
-func (h *handlers) amountFor(ctx context.Context, unitID string) (int64, string, *HeldReason) {
+func (h *handlers) amountFor(ctx context.Context, unitID string, at time.Time) (int64, string, *HeldReason) {
 	var unit schema.Unit
 	if err := h.evidence.Get(ctx, "/internal/units/"+url.PathEscape(unitID), &unit); err != nil {
 		return 0, "", &HeldReason{
@@ -165,15 +210,31 @@ func (h *handlers) amountFor(ctx context.Context, unitID string) (int64, string,
 		}
 	}
 
-	var setup schema.PaymentSetupLinkedRecordPayload
-	raw, _ := json.Marshal(out.LinkedRecords[0].Payload)
-	if err := json.Unmarshal(raw, &setup); err != nil {
+	// A rate is versioned terms (f1_4): several versions can be attached, and
+	// the one that prices this unit is the version in force at the release
+	// moment — never the latest, which could reprice work already done.
+	versions := make([]rateVersion, 0, len(out.LinkedRecords))
+	for _, lr := range out.LinkedRecords {
+		var p schema.PaymentSetupLinkedRecordPayload
+		raw, mErr := json.Marshal(lr.Payload)
+		if mErr != nil || json.Unmarshal(raw, &p) != nil {
+			return 0, "", &HeldReason{
+				Code:         "rate_unreadable",
+				Explanation:  "a rate attached to this definition is not in a shape payments understands",
+				OwnerPartyID: h.payerOwner,
+			}
+		}
+		versions = append(versions, rateVersion{Version: lr.Version, Payload: p})
+	}
+	inForce, ok := rateInForceAt(versions, at)
+	if !ok {
 		return 0, "", &HeldReason{
-			Code:         "rate_unreadable",
-			Explanation:  "the rate attached to this definition is not in a shape payments understands",
+			Code:         "no_rate_in_force",
+			Explanation:  "a rate is published for this work but none of its versions was in force when this payment was released",
 			OwnerPartyID: h.payerOwner,
 		}
 	}
+	setup := inForce.Payload
 
 	// Money in minor units, and the multiplication rounded once, explicitly.
 	// A float that reaches an amount field is a rounding argument waiting to
