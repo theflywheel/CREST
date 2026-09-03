@@ -11,6 +11,10 @@ export type Reg = {
   rosterId: string;
   at: number;
   partyId?: string;
+  // How identity was taken at this assisted enrolment — a provenance fact
+  // recorded on the enrolment (w1_4's no-document route is
+  // "confidence-check"); absent means the default "field-visit".
+  method?: string;
 };
 
 const QKEY = "crest.enrolment.queue";

@@ -14,6 +14,9 @@ export function Profile() {
     ["/profile/checks", "Who checked me", "Every look at your record leaves a line"],
     ["/profile/messages", "Messages to me", "Everything the system ever sent you, kept"],
     ["/profile/recovery", "If I lose this phone", "The people who can confirm it is you"],
+    ["/shares", "Requests to see my record", "Who is asking, and why — you decide, per share"],
+    ["/vouch", "Vouch for someone", "People who named you a recovery contact"],
+    ["/added", "My identity anchor", "What an anchor changes — derived, never stored"],
   ];
   return (
     <div className="pane-narrow" style={{ display: "flex", flexDirection: "column", gap: 15 }}>
@@ -187,24 +190,127 @@ export function Messages() {
   );
 }
 
-/* w1_7 — recovery contacts */
+/* w1_7 — "Who can confirm it is you?": recovery-contact nomination.
+   Party-linked picks, never phone numbers — a number is re-issued and lost
+   with the handset, the exact failure recovery exists for. Nomination is
+   ROUTING: it decides who is asked, and never widens who may confirm (that
+   stays the 2-of-3 rule with its distinct-authority constraint). */
 export function Recovery() {
+  const s = useSession();
+  const [bump, setBump] = useState(0);
+  const [pick, setPick] = useState("");
+  const out = useLoad(
+    () => api.get("parties", `/v1/parties/${encodeURIComponent(s.me!)}/recovery-contacts`).catch(() => null),
+    [bump],
+  );
+  if (out === undefined) return null;
+  const contacts: any[] = (out && out.contacts) || [];
+  const live = contacts.filter((c) => !c.revokedAt);
+  const nominate = async (contactPartyId: string) => {
+    try {
+      await api.post("parties", `/v1/parties/${encodeURIComponent(s.me!)}/recovery-contacts`, { contactPartyId });
+      setPick("");
+      setBump((b) => b + 1);
+    } catch (e) {
+      s.fail(e);
+    }
+  };
+  const revoke = async (contactPartyId: string) => {
+    try {
+      await api.post(
+        "parties",
+        `/v1/parties/${encodeURIComponent(s.me!)}/recovery-contacts/${encodeURIComponent(contactPartyId)}/revoke`,
+      );
+      setBump((b) => b + 1);
+    } catch (e) {
+      s.fail(e);
+    }
+  };
   return (
     <div className="pane-narrow" style={{ display: "flex", flexDirection: "column", gap: 15 }}>
-      <h2 className="scr-title m">If I lose this phone</h2>
+      <h2 className="scr-title m">Who can confirm it is you?</h2>
       <p className="body-2">
-        You named people when you enrolled — people who can confirm it is you, so a lost phone never means a lost
-        record.
+        Choose three people. If you lose your phone, any two of them can vouch for you and a new key is issued to you.
+        A contact is a person on the registry — never a phone number, because numbers are lost with the handset.
       </p>
-      <OpenNote>
-        <b>The nomination endpoint is not yet public.</b> The parties service runs recoveries (a custodian opens one, a
-        nominated contact confirms), but exposes no read API for a worker's own nominated contacts — so this screen
-        will not pretend to know who yours are. When the endpoint lands, they appear here by name.
-      </OpenNote>
-      <Sidecar ok>
-        Losing the phone loses nothing. Your credentials are re-issued to you after recovery; your work record was
-        never only on the phone.
+      {live.map((c) => (
+        <ContactRow key={c.contactPartyId} c={c} onRevoke={() => revoke(c.contactPartyId)} />
+      ))}
+      {live.length < 3 ? (
+        <div className="card quiet" data-slot="open">
+          <span className="eyebrow">
+            {live.length === 2 ? "Add a third contact · Recommended" : `Add a contact (${live.length} of 3 named)`}
+          </span>
+          <form
+            style={{ display: "flex", gap: 8, marginTop: 8 }}
+            onSubmit={(ev) => {
+              ev.preventDefault();
+              if (pick.trim()) nominate(pick.trim());
+            }}
+          >
+            <input
+              name="contactpartyid"
+              placeholder="did:crest:party:… — the person's registry id"
+              value={pick}
+              onChange={(e) => setPick(e.target.value)}
+              style={{ flex: 1 }}
+            />
+            <button className="btn" id="nominate" type="submit">
+              Nominate
+            </button>
+          </form>
+          <p className="muted" style={{ marginTop: 6 }}>
+            In a pilot you would pick from people you know on this programme; on this stack, paste their party id.
+          </p>
+        </div>
+      ) : null}
+      <Sidecar>
+        These contacts can confirm your identity. They can never see your work history or your payments.
       </Sidecar>
+      <Sidecar ok>
+        Naming someone routes the request to them — it never by itself makes their voice count. A confirmation counts
+        only with an authority standing behind it, and two must come from different authorities.
+      </Sidecar>
+      {contacts.some((c) => c.revokedAt) ? (
+        <div className="card quiet">
+          <span className="eyebrow">No longer nominated</span>
+          {contacts
+            .filter((c) => c.revokedAt)
+            .map((c) => (
+              <div className="muted" key={c.contactPartyId + c.revokedAt}>
+                <span className="mono">{short(c.contactPartyId)}</span> · revoked {when(c.revokedAt)} — the row stays:
+                who you trusted, and when you stopped, is what a later dispute is answered from.
+              </div>
+            ))}
+        </div>
+      ) : null}
+      <div className="btn-row">
+        <Link className="btn" to="/home" id="recovery-finish">
+          Finish
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function ContactRow(props: { c: any; onRevoke: () => void }) {
+  const party = useLoad(() =>
+    api.get("parties", `/v1/parties/${encodeURIComponent(props.c.contactPartyId)}`).catch(() => null),
+  );
+  const name = party === undefined ? "…" : (party && party.displayName) || short(props.c.contactPartyId);
+  return (
+    <div className="card" data-contact={props.c.contactPartyId}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+        <span>
+          <div style={{ font: "500 14px/1.4 Roboto" }}>{name}</div>
+          <div className="muted">
+            nominated {when(props.c.nominatedAt)} · <span className="mono">{short(props.c.contactPartyId)}</span>
+          </div>
+        </span>
+        <button className="btn secondary" data-revoke={props.c.contactPartyId} onClick={props.onRevoke}>
+          Revoke
+        </button>
+      </div>
     </div>
   );
 }

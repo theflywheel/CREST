@@ -9,7 +9,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { ConsoleShell, ErrBar, Chip, Sidecar, type NavGroup } from "@crest/ui";
 import { useField } from "./state";
 import { useQueue, useOnline } from "./queue";
-import { Registrations, Register, Consent, Hold, Registered } from "./screens/Enrol";
+import { Registrations, Register, Consent, Confidence, Hold, Registered } from "./screens/Enrol";
 import { ToConfirm, ConfirmSaw, AssistedDone, Differ, DifferDone, Roster, Handoff } from "./screens/Attest";
 
 const NAV: NavGroup[] = [
@@ -18,6 +18,7 @@ const NAV: NavGroup[] = [
     items: [
       { to: "/registrations", label: "Registrations" },
       { to: "/register", label: "New worker" },
+      { to: "/confidence", label: "No document — confidence check" },
     ],
   },
   {
@@ -115,6 +116,7 @@ export function App() {
         <Route path="/" element={<Navigate to="/registrations" replace />} />
         <Route path="/registrations" element={<Registrations />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/confidence" element={<Confidence />} />
         <Route path="/consent" element={<Consent />} />
         <Route path="/hold" element={<Hold />} />
         <Route path="/registered" element={<Registered />} />

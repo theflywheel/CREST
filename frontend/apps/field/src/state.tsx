@@ -67,7 +67,10 @@ export function FieldProvider(props: { children: ReactNode }) {
       party: { kind: "person", displayName: r.name, contactRoutes: routes },
       enrolledBy: FIX.supervisor,
       contextId: FIX.project,
-      method: "field-visit",
+      // The method is a provenance fact about the enrolment, never a stored
+      // judgement: "confidence-check" is w1_4's no-document route, and the
+      // worker's assurance stays derived from identityBindings either way.
+      method: r.method || "field-visit",
     });
     const partyId: string = out.party.id;
     if (r.rosterId) {
