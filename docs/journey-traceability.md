@@ -8,11 +8,11 @@ script's MAPPING and re-run. Assessment context: `docs/JOURNEY_GAP_ASSESSMENT.md
 
 | Status | Screens | Share |
 |---|---:|---:|
-| implemented | 44 | 30% |
+| implemented | 53 | 37% |
 | compressed | 25 | 17% |
 | semantically-different | 8 | 5% |
 | illustrative | 13 | 9% |
-| missing | 53 | 37% |
+| missing | 44 | 30% |
 | **total** | **143** | |
 
 ## The fidelity gate
@@ -26,7 +26,7 @@ red, which is the check that stops this table claiming coverage the
 screens do not have. Nothing here is evidence that an asserted screen
 passed — only the gate run is that.
 
-In scope today (J3 — `p1_*`, `p2_*` — and G-2 — `g2_*` — plus the design screens `n1`–`n5`): **48** screens — **32** asserted, **0** quarantined, **16** skipped with a reason.
+In scope today (J3 — `p1_*`, `p2_*` — G-2 — `g2_*` — G-1 — `g1_*`, `g4_1`–`g4_3` — the workers wave — `w1_4/7/15/17/19/20`, `w4_1`–`w4_3` — plus the design screens `n1`–`n5`): **57** screens — **41** asserted, **0** quarantined, **16** skipped with a reason.
 
 ## G-1 — Instance Administrator (8 screens)
 
@@ -164,10 +164,10 @@ In scope today (J3 — `p1_*`, `p2_*` — and G-2 — `g2_*` — plus the design
 | `w1_1` | Enrol | Two enrollment pathways, neither a fallback | **implemented** | worker `#/` | — | The entry screen presents the two enrollment pathways as equals: self-enroll (identity via eSignet) and assisted enrollment (the field door), neither a fallback |
 | `w1_2` | Enrol | Phone number and OTP | **semantically-different** | worker `#/auth` | — | The reference's phone+OTP anchor is replaced by the eSignet OIDC leg — a national-identity anchor, not a phone anchor; phone is collected at signup as a contact route, unverified |
 | `w1_3` | Enrol | National ID, if there is one | **compressed** | worker `#/` | — | National ID is the eSignet path itself; CREST sees only the pairwise subject (never the ID number). The optional photograph-the-card route does not exist |
-| `w1_4` | Enrol | No document? A confidence check instead | **missing** | — | — | No-document confidence-check route: self path requires eSignet; the no-document worker's route is assisted enrollment (named on the entry screen) |
+| `w1_4` | Enrol | No document? A confidence check instead | **implemented** | field `#/confidence` | **asserted** | method=confidence-check as enrolment provenance; IA-0 until anchored, derived never stored; recovery contact nominated on the spot (agent acting for the worker, contextId threaded) |
 | `w1_5` | Consent | Enrollment consent, captured once | **implemented** | worker `#/auth` | — | Enrollment consent is its own step BEFORE the record is created; acceptance is recorded via POST /v1/parties/{id}/consents (moment=enrolment, captureMethod=screen) immediately after party creation — the party post never fires without it |
 | `w1_6` | Consent | The Crest ID and the physical card | **compressed** | worker `#/auth` | — | The Crest ID (party did) is shown on completion; the physical card is the field door's (labelled illustrative there) |
-| `w1_7` | Recovery | Nominate three people, two must agree | **missing** | — | — | Recovery-contact nomination at enrolment: recoveries exist server-side (POST /v1/recoveries) but nomination has no worker-facing write |
+| `w1_7` | Recovery | Nominate three people, two must agree | **implemented** | worker `#/profile/recovery` | **asserted** | POST/GET/revoke /v1/parties/{id}/recovery-contacts; party-linked, never a phone number; nomination is routing, quorum stays 2-of-distinct-authorities |
 | `w1_8` | Work | The wallet, not a dashboard | **implemented** | worker `#/home` | — | The wallet-not-dashboard home: real credential and payment counts |
 | `w1_9` | Work | What will and will not count as evidence | **implemented** | worker `#/work` | — | Definition worker-face: what will and will not count, from GET /v1/definitions/{id} |
 | `w1_10` | Claim | A draft credential, and seven days to check it | **implemented** | worker `#/work` | — | Open windows with closes-at; confirm exits the window (POST confirm) — a draft credential and seven days to check it |
@@ -177,12 +177,12 @@ In scope today (J3 — `p1_*`, `p2_*` — and G-2 — `g2_*` — plus the design
 | `w1_23` | Month | A month, not a job at a time | **compressed** | worker `#/pay` | — | Month view folded into the payment list |
 | `w1_24` | Waiting | Why money has not arrived, and whose problem it is | **implemented** | worker `#/pay/:idx` | — | Why money has not arrived and whose problem it is: held reason + owner |
 | `w1_14` | Work | Declining work | **illustrative** | worker `#/work/declined` | — | Declining work: labelled — no decline endpoint |
-| `w1_15` | Verify | Consent, per share, every time | **missing** | — | — | Per-share consent: no share/presentation flow exists |
+| `w1_15` | Verify | Consent, per share, every time | **implemented** | worker `#/shares/:id` | **asserted** | Per-line consent against the resolved disclosureList; approve-subset or decline-with-reason via POST .../decision; collect-before-decision is the service's 409, asserted; one surface serves w1_15+w1_19 (two idioms of one moment); real 72h TTL shown, not the reference's 24h |
 | `w1_16` | Qualify | Deferred at registration, due now | **illustrative** | worker `#/wallet/deferred` | — | Deferred qualification: labelled — no endpoint |
-| `w1_17` | Qualify | One action, and everything already earned changes state | **missing** | — | — | Qualification arrival changing earned state: not built |
+| `w1_17` | Qualify | One action, and everything already earned changes state | **implemented** | worker `#/added` | **asserted** | Derived assurance + live /v1/verify re-check; the weakest-assurance caveat flips off when the anchor binds, credential untouched |
 | `w1_18` | Wallet | What a scan gives away, before anything is asked | **implemented** | worker `#/wallet/:idx/show` | — | Offline presentation: the credential rendered as a QR (scannable without CREST), the what-a-scan-gives-away disclosure list, and the signed JSON behind a toggle |
-| `w1_19` | Consent | Who is asking, and why, before you decide | **missing** | — | — | Who-is-asking pre-consent: no presentation-request flow |
-| `w1_20` | Consent | The worker sees the same list the verifier does | **missing** | — | — | Worker sees the verifier's list: no presentation flow |
+| `w1_19` | Consent | Who is asking, and why, before you decide | **implemented** | worker `#/shares` | **asserted** | Requester (proven party id — party reads are self-only #102, no name directory faked) and purpose shown before any disclosure list; GET /v1/presentation-requests as the subject |
+| `w1_20` | Consent | The worker sees the same list the verifier does | **implemented** | worker `#/shares/:id/sent` | **asserted** | Both faces read one record and one resolved list; verifier's collect surface at verify #/requests; history callout carries live counts, reference's twelve/nine named as example |
 ## W-2 — Registering Agent (5 screens)
 
 | Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
@@ -212,9 +212,9 @@ In scope today (J3 — `p1_*`, `p2_*` — and G-2 — `g2_*` — plus the design
 
 | Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
 |---|---|---|---|---|---|---|
-| `w4_1` | Recover | A request arrives by SMS | **missing** | — | — | Confirmer SMS request: no confirmer-facing channel (recoveries administered from the custodian console only) |
-| `w4_2` | Recover | Two of three, and the old key dies | **missing** | — | — | Two-of-three quorum progress: POST /v1/recoveries/{id}/confirmations exists server-side; no confirmer UI |
-| `w4_3` | Recover | A refusal, and no defined path after it | **missing** | — | — | Refusal path: not built |
+| `w4_1` | Recover | A request arrives by SMS | **implemented** | worker `#/vouch` | **asserted** | GET /v1/recoveries?confirmerPartyId=; SMS delivery honestly absent (#150/§16), channel is deployment config |
+| `w4_2` | Recover | Two of three, and the old key dies | **implemented** | worker `#/vouch/:id` | **asserted** | Live quorum read; completion appends a recovery-class binding, old bindings stay; third-nominee notification gap stated |
+| `w4_3` | Recover | A refusal, and no defined path after it | **implemented** | worker `#/vouch/:id/refused` | **asserted** | Reference's unresolved questions quoted, then the defined path: POST .../refusals (owner + required reason), recovery OPEN, opener owns ?refused=true next step |
 ## V-1 — Verifier (3 screens)
 
 | Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |

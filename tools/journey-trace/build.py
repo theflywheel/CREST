@@ -146,10 +146,10 @@ MAPPING = {
     "w1_1": m("implemented", "worker", "#/", "The entry screen presents the two enrollment pathways as equals: self-enroll (identity via eSignet) and assisted enrollment (the field door), neither a fallback"),
     "w1_2": m("semantically-different", "worker", "#/auth", "The reference's phone+OTP anchor is replaced by the eSignet OIDC leg — a national-identity anchor, not a phone anchor; phone is collected at signup as a contact route, unverified"),
     "w1_3": m("compressed", "worker", "#/", "National ID is the eSignet path itself; CREST sees only the pairwise subject (never the ID number). The optional photograph-the-card route does not exist"),
-    "w1_4": m("missing", note="No-document confidence-check route: self path requires eSignet; the no-document worker's route is assisted enrollment (named on the entry screen)"),
+    "w1_4": m("implemented", "field", "#/confidence", "method=confidence-check as enrolment provenance; IA-0 until anchored, derived never stored; recovery contact nominated on the spot (agent acting for the worker, contextId threaded)"),
     "w1_5": m("implemented", "worker", "#/auth", "Enrollment consent is its own step BEFORE the record is created; acceptance is recorded via POST /v1/parties/{id}/consents (moment=enrolment, captureMethod=screen) immediately after party creation — the party post never fires without it"),
     "w1_6": m("compressed", "worker", "#/auth", "The Crest ID (party did) is shown on completion; the physical card is the field door's (labelled illustrative there)"),
-    "w1_7": m("missing", note="Recovery-contact nomination at enrolment: recoveries exist server-side (POST /v1/recoveries) but nomination has no worker-facing write"),
+    "w1_7": m("implemented", "worker", "#/profile/recovery", "POST/GET/revoke /v1/parties/{id}/recovery-contacts; party-linked, never a phone number; nomination is routing, quorum stays 2-of-distinct-authorities"),
     "w1_8": m("implemented", "worker", "#/home", "The wallet-not-dashboard home: real credential and payment counts"),
     "w1_9": m("implemented", "worker", "#/work", "Definition worker-face: what will and will not count, from GET /v1/definitions/{id}"),
     "w1_10": m("implemented", "worker", "#/work", "Open windows with closes-at; confirm exits the window (POST confirm) — a draft credential and seven days to check it"),
@@ -159,12 +159,12 @@ MAPPING = {
     "w1_23": m("compressed", "worker", "#/pay", "Month view folded into the payment list"),
     "w1_24": m("implemented", "worker", "#/pay/:idx", "Why money has not arrived and whose problem it is: held reason + owner"),
     "w1_14": m("illustrative", "worker", "#/work/declined", "Declining work: labelled — no decline endpoint"),
-    "w1_15": m("missing", note="Per-share consent: no share/presentation flow exists"),
+    "w1_15": m("implemented", "worker", "#/shares/:id", "Per-line consent against the resolved disclosureList; approve-subset or decline-with-reason via POST .../decision; collect-before-decision is the service's 409, asserted; one surface serves w1_15+w1_19 (two idioms of one moment); real 72h TTL shown, not the reference's 24h"),
     "w1_16": m("illustrative", "worker", "#/wallet/deferred", "Deferred qualification: labelled — no endpoint"),
-    "w1_17": m("missing", note="Qualification arrival changing earned state: not built"),
+    "w1_17": m("implemented", "worker", "#/added", "Derived assurance + live /v1/verify re-check; the weakest-assurance caveat flips off when the anchor binds, credential untouched"),
     "w1_18": m("implemented", "worker", "#/wallet/:idx/show", "Offline presentation: the credential rendered as a QR (scannable without CREST), the what-a-scan-gives-away disclosure list, and the signed JSON behind a toggle"),
-    "w1_19": m("missing", note="Who-is-asking pre-consent: no presentation-request flow"),
-    "w1_20": m("missing", note="Worker sees the verifier's list: no presentation flow"),
+    "w1_19": m("implemented", "worker", "#/shares", "Requester (proven party id — party reads are self-only #102, no name directory faked) and purpose shown before any disclosure list; GET /v1/presentation-requests as the subject"),
+    "w1_20": m("implemented", "worker", "#/shares/:id/sent", "Both faces read one record and one resolved list; verifier's collect surface at verify #/requests; history callout carries live counts, reference's twelve/nine named as example"),
     # ---- W-2 Registering Agent (field) ----
     "w2_1": m("compressed", "field", "#/registrations", "The day's list: real registrations plus the on-device offline queue"),
     "w2_2": m("compressed", "field", "#/register", "Phone-or-roster enrollment via POST /v1/enrolments/assisted; ID scan does not exist and no raw ID is ever persisted (identity assertion labelled illustrative in Enrol.tsx)"),
@@ -182,9 +182,9 @@ MAPPING = {
     "w3_4": m("semantically-different", "field", "#/roster", "The roster is closed in CREST's evidence intake (POST /v1/evidence/batches), not in the delivery platform; the boundary is stated on the screen"),
     "w3_5": m("compressed", "field", "#/handoff", "The ingestion handoff: accepted rows became claims, unclear rows went to the custodian — real queues, though the provenance-preserving source handoff is CREST-side only"),
     # ---- W-5 Recovery Confirmer ----
-    "w4_1": m("missing", note="Confirmer SMS request: no confirmer-facing channel (recoveries administered from the custodian console only)"),
-    "w4_2": m("missing", note="Two-of-three quorum progress: POST /v1/recoveries/{id}/confirmations exists server-side; no confirmer UI"),
-    "w4_3": m("missing", note="Refusal path: not built"),
+    "w4_1": m("implemented", "worker", "#/vouch", "GET /v1/recoveries?confirmerPartyId=; SMS delivery honestly absent (#150/§16), channel is deployment config"),
+    "w4_2": m("implemented", "worker", "#/vouch/:id", "Live quorum read; completion appends a recovery-class binding, old bindings stay; third-nominee notification gap stated"),
+    "w4_3": m("implemented", "worker", "#/vouch/:id/refused", "Reference's unresolved questions quoted, then the defined path: POST .../refusals (owner + required reason), recovery OPEN, opener owns ?refused=true next step"),
     # ---- V-1 Verifier ----
     "v1_1": m("illustrative", "verify", "#/v1_1", "Verifier pass: no pass-issuance endpoint (V1.tsx names it)"),
     "v1_2": m("semantically-different", "verify", "#/v1_2", "The check is real (POST /v1/verify) but 'scan' is a JSON textarea or fixture lookup, not camera/QR/offline scanning"),
@@ -365,7 +365,8 @@ def main():
         "screens do not have. Nothing here is evidence that an asserted screen",
         "passed — only the gate run is that.",
         "",
-        f"In scope today (J3 — `p1_*`, `p2_*` — and G-2 — `g2_*` — plus the design screens `n1`–`n5`): "
+        f"In scope today (J3 — `p1_*`, `p2_*` — G-2 — `g2_*` — G-1 — `g1_*`, `g4_1`–`g4_3` — "
+        f"the workers wave — `w1_4/7/15/17/19/20`, `w4_1`–`w4_3` — plus the design screens `n1`–`n5`): "
         f"**{in_scope}** screens — **{asserted}** asserted, "
         f"**{quarantined}** quarantined, "
         f"**{in_scope - asserted - quarantined}** skipped with a reason.",

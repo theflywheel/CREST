@@ -90,6 +90,9 @@ const DOORS = { console: "/console/", field: "/enrolment/", worker: "/worker/", 
 const FLOW_FIX = {
   org: "did:crest:party:01JCREST000000000000000RGN",
   custodian: "did:crest:party:01JCREST00000000000000CSTD",
+  supervisor: "did:crest:party:01JCREST00000000000000SPVR",
+  workerA: "did:crest:party:01JCREST00000000000000WRKA",
+  chandra: "did:crest:party:01JCREST00000000000000WRKC",
   project: "crest:context:01JCREST00000000000000PRJC",
 };
 
@@ -99,6 +102,7 @@ const FLOW_API = (() => {
   const host = new URL(base).hostname;
   return {
     parties: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-registry",
+    verification: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-verification",
     oidc: local ? `http://${host}:59103` : base.replace(/\/$/, "") + "/api/crest-mock-oidc",
   };
 })();
@@ -113,13 +117,17 @@ async function flowMintToken(request, partyId) {
   return d.accessToken || d.access_token || d.token;
 }
 
-async function flowAsParty(request, partyId, method, path, body) {
+async function flowAsPartyOn(request, svcBase, partyId, method, path, body) {
   const token = await flowMintToken(request, partyId);
-  return request.fetch(FLOW_API.parties + path, {
+  return request.fetch(svcBase + path, {
     method,
     headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
     data: body === undefined ? undefined : body,
   });
+}
+
+async function flowAsParty(request, partyId, method, path, body) {
+  return flowAsPartyOn(request, FLOW_API.parties, partyId, method, path, body);
 }
 
 // A run must be re-runnable on the same stack (the G-2 walk learned this):
@@ -156,9 +164,144 @@ async function flowInvite(request, orgId) {
   if (r.status() !== 201) throw new Error(`the project's invitation was refused (${r.status()})`);
 }
 
+// ── The workers wave's flow arrivals ───────────────────────────────────────
+// Every one drives real writes — a presentation request through the
+// verification service, a recovery through the registry, a dev sign-in that
+// appends a real identity binding — exactly the acts apps.spec.js's walks
+// prove end to end. This is arrival machinery, not a second proof.
+
+// The worker door's dev login (local stacks only; eSignet is the real way in).
+async function flowWorkerLogin(page, who) {
+  await page.goto("/worker/");
+  await settle(page);
+  if (who === "grace") await page.click("#login-grace");
+  else if (who === "supervisor") await page.click("#login-supervisor");
+  else {
+    await page.fill("#login-partyid", who);
+    await page.click("#login-party-go");
+  }
+  const ok = await page
+    .locator("#logout")
+    .waitFor({ state: "visible", timeout: 20000 })
+    .then(() => true, () => false);
+  if (!ok) return "the worker door's dev login did not complete within 20s";
+  await settle(page);
+  return "";
+}
+
+async function flowLand(page, hash) {
+  await page.evaluate((h) => { location.hash = h; }, hash);
+  await settle(page);
+  await page.waitForTimeout(200);
+}
+
+// The verifier org asks to see more — the same request the presentation walk
+// mints through the verify door, here through the service door directly.
+async function flowMintShare(request) {
+  const r = await flowAsPartyOn(request, FLOW_API.verification, FLOW_FIX.org, "POST",
+    "/v1/presentation-requests", {
+      subjectPartyId: FLOW_FIX.workerA,
+      requestedByPartyId: FLOW_FIX.org,
+      purpose: "Fidelity gate — hiring check " + flowStamp(),
+    });
+  if (r.status() !== 201)
+    throw new Error(`the verifier's presentation request was refused (${r.status()})`);
+  return (await r.json()).request.id;
+}
+
+async function flowWorkerArrive(page, request, mode) {
+  if (mode === "share-pending") {
+    // w1_19/w1_15 — a REQUESTED share, opened by its subject, with two lines
+    // left ticked (the reference frame's own decision moment).
+    const reqId = await flowMintShare(request);
+    const p = await flowWorkerLogin(page, "grace");
+    if (p) return p;
+    await flowLand(page, `#/shares/${encodeURIComponent(reqId)}`);
+    const boxes = page.locator("[data-dis] input[type=checkbox]");
+    const n = await boxes.count();
+    if (n < 2)
+      return `the story gives the worker only ${n} disclosure line(s); the reference frame decides over two ticked`;
+    for (let i = 2; i < n; i++) await boxes.nth(i).uncheck();
+    await page.waitForTimeout(150);
+    return "";
+  }
+
+  if (mode === "share-decided") {
+    // w1_20 — the sent view of a share the subject decided with her own
+    // bearer-checked voice: an approved strict subset where the list allows.
+    const reqId = await flowMintShare(request);
+    const g = await flowAsPartyOn(request, FLOW_API.verification, FLOW_FIX.workerA, "GET",
+      `/v1/presentation-requests/${encodeURIComponent(reqId)}`);
+    const list = ((await g.json()) || {}).disclosureList || [];
+    if (!list.length) return "the disclosure list resolved empty — nothing to decide over";
+    const keep = list.slice(0, Math.max(1, list.length - 1)).map((d) => d.credentialId);
+    const d = await flowAsPartyOn(request, FLOW_API.verification, FLOW_FIX.workerA, "POST",
+      `/v1/presentation-requests/${encodeURIComponent(reqId)}/decision`,
+      { approve: true, approvedCredentialIds: keep });
+    if (!d.ok()) return `the subject's decision was refused (${d.status()})`;
+    const p = await flowWorkerLogin(page, "grace");
+    if (p) return p;
+    await flowLand(page, `#/shares/${encodeURIComponent(reqId)}/sent`);
+    return "";
+  }
+
+  if (mode.startsWith("recovery-")) {
+    // w4_1–w4_3 — an OPEN recovery routed to the signed-in nominee. The
+    // nomination is the worker's own act; the opening is the custodian's (the
+    // worker cannot authenticate, which is the premise). A party holds one
+    // live recovery at a time, so a leftover OPEN one is reused, exactly as
+    // the recovery walk does.
+    await flowAsParty(request, FLOW_FIX.workerA, "POST",
+      `/v1/parties/${FLOW_FIX.workerA}/recovery-contacts`,
+      { contactPartyId: FLOW_FIX.supervisor }); // an existing nomination is fine
+    let recId;
+    const opened = await flowAsParty(request, FLOW_FIX.custodian, "POST", "/v1/recoveries", {
+      partyId: FLOW_FIX.workerA, openedByPartyId: FLOW_FIX.custodian,
+      reason: "lost phone — fidelity gate " + flowStamp(),
+    });
+    if (opened.status() === 201) {
+      recId = (await opened.json()).id;
+    } else {
+      const l = await flowAsParty(request, FLOW_FIX.supervisor, "GET",
+        `/v1/recoveries?confirmerPartyId=${FLOW_FIX.supervisor}`);
+      const open = (((await l.json()) || {}).recoveries || [])
+        .find((x) => x.partyId === FLOW_FIX.workerA && !x.completedAt);
+      if (!open) return `no recovery could be opened (${opened.status()}) and none is open to reuse`;
+      recId = open.id;
+    }
+    if (mode === "recovery-refused") {
+      // A refusal already on the record (an earlier run's) serves the screen
+      // just as well — the write is permanent by design, so no status check.
+      await flowAsParty(request, FLOW_FIX.supervisor, "POST",
+        `/v1/recoveries/${encodeURIComponent(recId)}/refusals`,
+        { refuserPartyId: FLOW_FIX.supervisor, reason: "fidelity gate — could not be sure it was them" });
+    }
+    const p = await flowWorkerLogin(page, "supervisor");
+    if (p) return p;
+    await flowLand(page,
+      mode === "recovery-confirmer" ? "#/vouch"
+        : mode === "recovery-progress" ? `#/vouch/${encodeURIComponent(recId)}`
+          : `#/vouch/${encodeURIComponent(recId)}/refused`);
+    return "";
+  }
+
+  if (mode === "anchor-arrival") {
+    // w1_17 — the moment belongs to the story's unanchored worker: her first
+    // dev sign-in APPENDS the identity binding (the same first-login path an
+    // eSignet anchor takes), and #/added reads the derived result live.
+    const p = await flowWorkerLogin(page, FLOW_FIX.chandra);
+    if (p) return p;
+    await flowLand(page, "#/added");
+    return "";
+  }
+
+  return `unknown flow arrival "flow:${mode}"`;
+}
+
 // Drives the onboarding flow to the named depth. Returns "" on success or a
 // note saying what actually happened, like every other arrival.
 async function flowArrive(page, request, mode) {
+  if (/^(share-|recovery-|anchor-)/.test(mode)) return flowWorkerArrive(page, request, mode);
   const stamp = flowStamp();
 
   // g2_1 — register. Anonymous by design (#20); a unique organisation per

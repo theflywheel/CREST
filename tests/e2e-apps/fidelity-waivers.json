@@ -61,6 +61,36 @@
    "callouts:Two other published sets apply to organisations like yours: , for a partner that sends records but defines nothing, and , which adds the money side and asks for more at the certificate stage. Submit-only Full delivery with payment": "EXTRACTION ARTIFACT, not a copy gap: extract-spec.py collects a node's own text before its children's, so the bolded terms-set names the reference sets inside this callout ('Submit-only' and 'Full delivery with payment') comes out moved after the sentence it belongs in. No faithful screen can contain that word order; the fix is in the extractor (same defect the p2_14 waiver records), and this waiver names it rather than hiding it. Recorded now, while the screen itself sits quarantined behind #179, so the debt is already counted when the quarantine lifts.",
    "callouts:What these screens call a is the object the PRD calls a . Terms is the word an organisation reads; policy is the word the registry uses. One object, one version number, one approval. set of terms policy": "EXTRACTION ARTIFACT, not a copy gap: extract-spec.py collects a node's own text before its children's, so the bolded term names the reference sets inside this callout ('set of terms' and 'policy') comes out moved after the sentence it belongs in. No faithful screen can contain that word order; the fix is in the extractor (same defect the p2_14 waiver records), and this waiver names it rather than hiding it. Recorded now, while the screen itself sits quarantined behind #179, so the debt is already counted when the quarantine lifts."
   },
+  "w1_19": {
+    "appbar": "The spec's appbar reads 'CREST Console' because the reference sets this frame in a console mock; the worker door is the same shell honestly named for whoever holds it — 'CREST · Worker'. The product name differs by door, not by omission.",
+    "callouts:They can already see your record is real, that you do community health visits, and that it is system-backed. This request is only about the four lines above.": "Live-count prose, one word: the screen carries the callout's title and first sentence verbatim, then 'only about the N lines above' with the live disclosure list's real length — the reference's 'four' is its worked example, and the count Grace's record produces depends on how many credentials the walks have issued her. Asserting 'four' would assert the fixture, not the design."
+  },
+  "w1_15": {
+    "layout": "The reference draws this consent moment as a phone frame; the worker door is deliberately a desktop console (appbar + sidebar at the gate's 1280px viewport) that keeps the phone experience under 720px. One decision surface serves w1_15+w1_19 — the two reference frames draw the same moment in two idioms — and the ledger records the console surface, so the phone-frame check is waived rather than the door redrawn."
+  },
+  "w1_20": {
+    "appbar": "Same as w1_19: the reference mocks a console appbar; the worker door names itself 'CREST · Worker'.",
+    "callouts:You can open this again any time from your record. Twelve people have asked to see something in the last year; you agreed to nine of them.": "Live-count prose: the screen carries the callout's title and first sentence verbatim, then the worker's real asked/agreed counts, and names the reference's twelve/nine on-screen as the worked example it is. Asserting those numbers would fake a history the record does not hold."
+  },
+  "w1_7": {
+    "layout": "The reference's phone frame is served in the worker door's console idiom (appbar + sidebar at the gate's viewport, phone under 720px) — same waiver as w1_15, same reason.",
+    "counter:Step 5 of 5": "The reference places nomination as step 5 of the phone enrolment flow; the implementation is the worker's standing profile surface (#/profile/recovery), reachable any time — a stepper counter here would fake a flow position the screen does not have. The enrolment-time nomination the counter belongs to is real in the field door's confidence route (w1_4's 'Add a recovery contact now')."
+  },
+  "w4_1": {
+    "layout": "The reference draws the confirmer's request as an SMS on a phone; this deployment has no SMS channel (#150, Blueprint §16) and the same request is delivered in-app in the worker door's console idiom, with the channel gap stated on the screen itself."
+  },
+  "w4_2": {
+    "layout": "Same as w4_1: the reference's phone/SMS frame, served in-app in the worker door's console idiom, the channel gap stated on-screen."
+  },
+  "w4_3": {
+    "layout": "Same as w4_1: the reference's phone/SMS frame, served in-app in the worker door's console idiom."
+  },
+  "w1_4": {
+    "layout": "The reference draws assisted enrolment on the agent's phone; the field door is a console shell (appbar + sidebar at the gate's viewport) that becomes the phone experience under 720px — the same cross-idiom placement p2_20's waivers record for this door."
+  },
+  "w1_17": {
+    "appbar": "Same as w1_19: the reference mocks a console appbar; the worker door names itself 'CREST · Worker'."
+  },
   "p2_20": {
    "appbar": "The reference frames evidence intake as a console screen for the Project Configurator; the implementation puts it in the FIELD door (docs/journey-traceability.md records the surface as field `#/roster`), whose appbar reads 'CREST · Field'. Cross-door placement is real fidelity debt — the row-by-row check itself is the part that is implemented.",
    "rail": "The reference's five-entry J3 console rail now exists (p1_*/p2_* setup frames render it), but this screen is not in the console at all: the field door carries its own agent nav. Closing this waiver means building the configurator's own console-side intake-file frame, not renaming anything.",
