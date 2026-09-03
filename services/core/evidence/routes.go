@@ -47,6 +47,10 @@ func routes(mux *http.ServeMux, d service.Deps) {
 
 	mux.HandleFunc("POST /v1/batches", hs.submitBatch)
 	mux.HandleFunc("GET /v1/batches/{id}", hs.getBatch)
+	// w6_3: the project-side receipt for what a batch brought in. See receipt.go.
+	mux.HandleFunc("GET /v1/batches/{id}/receipt", hs.getBatchReceipt)
+	// g4_7: registry reuse. See reuse.go.
+	mux.HandleFunc("GET /v1/registry-reuse", hs.registryReuse)
 	// Record reads by id stay open (#102): the ids are unguessable ULIDs and
 	// carrying one is how a printed artefact or a support escalation names a
 	// record — capability semantics, the same judgement as a credential id.
