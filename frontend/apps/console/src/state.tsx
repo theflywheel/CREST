@@ -173,8 +173,15 @@ function store(v: Stored | null) {
 }
 
 export function ConsoleProvider(props: { children: ReactNode }) {
-  const stored = readStored();
-  if (stored) setSession(stored.token);
+  // Restored ONCE. Re-asserting the stored token on every render fought the
+  // onboarding screens, which deliberately swap the session to the
+  // organisation's own token (ensureOrgSession) — a provider re-render midway
+  // put the person's token back and the org's reads failed party_not_proven.
+  const [stored] = useState(() => {
+    const v = readStored();
+    if (v) setSession(v.token);
+    return v;
+  });
   const [me, setMe] = useState<State["me"]>(stored ? stored.me : null);
   const [persona, setPersona] = useState<PersonaKey | null>(stored ? stored.persona : null);
   const [err, setErr] = useState<string | null>(null);

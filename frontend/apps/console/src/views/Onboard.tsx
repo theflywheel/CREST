@@ -675,6 +675,14 @@ export function OnboardStatus() {
           closed), so that card is deliberately absent rather than invented. */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <Stat
+          n={<span className="mono" style={{ fontSize: 16 }}>{ob.orgId.slice(-8)}</span>}
+          label="your identifier — the party id, permanent"
+        />
+        <Stat
+          n={(reg?.attributes && reg.attributes.sector) || "\u2014"}
+          label="how projects find you — your declared sector"
+        />
+        <Stat
           n={termsName}
           label={
             <>
@@ -686,8 +694,41 @@ export function OnboardStatus() {
           n={approved ? "Live" : state === "REJECTED" ? "Closed" : "Pending"}
           label={approved ? "your connection" : state === "REJECTED" ? "with a recorded reason" : "the operator decides — never the organisation itself"}
         />
-        <Stat n={nProjects === null ? "—" : String(nProjects)} label={nProjects ? "projects" : "projects yet — a configurator invites you"} />
       </div>
+      <div className="pane-cols">
+        <Callout kind="green" title="What you have">
+          {[
+            [true, approved ? "A permanent listing, and an identifier" : "An identifier — the listing goes live with approval"],
+            [Boolean(reg?.acceptedAt), "Terms you chose" + (approved ? " and were approved for" : ", awaiting the decision")],
+            [approved, "A working connection"],
+            [
+              Boolean(reg?.attributes?.contactPerson),
+              reg?.attributes?.contactPerson
+                ? `A named contact who answers for your data — ${reg.attributes.contactPerson}`
+                : "A named contact — still needed",
+            ],
+          ].map(([ok, label], i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", marginBottom: 6 }}>
+              <Chip sm kind={ok ? "ok" : "plain"}>{ok ? "\u2713" : "\u2013"}</Chip>
+              <span className="body-2">{label as string}</span>
+            </div>
+          ))}
+        </Callout>
+        <Callout kind="grey" title="What you do not have">
+          <div style={{ marginBottom: 8 }}>
+            <b>Any project ({nProjects === null ? "\u2014" : nProjects})</b>
+            <div className="muted">A project configurator grants this — you cannot</div>
+          </div>
+          <div>
+            <b>The right to put your name behind a credential</b>
+            <div className="muted">That is a separate request, and most never make it</div>
+          </div>
+        </Callout>
+      </div>
+      <Callout kind="teal" title="Terms and projects are different things">
+        Your terms say what you <b>may</b> do. A project says what you <b>will</b> do, and it can grant less than your
+        terms allow but never more.
+      </Callout>
       <div className="card" style={{ maxWidth: 720 }}>
         <KV
           rows={[
