@@ -301,12 +301,67 @@ export function Handover() {
 // Choice names and values are L2 with no enum in CREST. Where the project's
 // own configuration declares a vocabulary, this renders it; where it does not,
 // it takes a typed answer and says why there is no list.
+// The reference's p2_1 five capabilities, in its own words. The five names are
+// programme vocabulary (L2) — the infrastructure carries no enum of them; they
+// are recorded through the same composition endpoint any deployment's
+// vocabulary goes through, one named answer per capability.
+const CAPABILITIES = [
+  ["register-workers", "Register workers",
+    "Run CREST enrollment, or map identifiers from a registry you already have."],
+  ["define-work", "Define work", "What counts as done, what proves it, who checks it."],
+  ["set-up-payment", "Set up payment",
+    "Configure a rate and decide how the money reaches the worker. Off means credentials still issue, with no rate attached."],
+  ["validate", "Validate",
+    "Check evidence received from another system, or uploaded as a spreadsheet, against the definition before a credential issues. CREST never records the work itself."],
+  ["carry-forward", "Carry forward", "A worker keeps their verified history after this project ends."],
+] as const;
+
+// One capability row: the reference's orange checkbox, title and sub-line.
+function CapabilityRow(props: {
+  on: boolean;
+  recorded: boolean;
+  title: string;
+  sub: string;
+  onFlip: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "12px 0" }}>
+      <button
+        onClick={props.onFlip}
+        aria-pressed={props.on}
+        data-capability={props.title}
+        title={props.recorded ? "Recorded — click to flip it" : "Not yet recorded — the project does this until a record narrows it. Click to record an answer."}
+        style={{
+          width: 18,
+          height: 18,
+          marginTop: 2,
+          flexShrink: 0,
+          borderRadius: 4,
+          border: props.on ? "none" : "2px solid var(--muted, #8A857E)",
+          background: props.on ? "#C84C0E" : "transparent",
+          color: "#fff",
+          font: "700 13px/18px system-ui",
+          cursor: "pointer",
+          padding: 0,
+        }}
+      >
+        {props.on ? "✓" : ""}
+      </button>
+      <div>
+        <div style={{ font: "500 15px/1.4 Roboto,system-ui" }}>{props.title}</div>
+        <div className="muted" style={{ font: "400 13px/1.5 Roboto,system-ui", marginTop: 2 }}>
+          {props.sub}
+          {props.recorded ? null : <span> · not yet recorded — on until an answer narrows it</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Compose() {
   const s = useConsole();
   const nav = useNavigate();
   const [gen, setGen] = useState(0);
-  const [choice, setChoice] = useState("");
-  const [value, setValue] = useState("");
   const [err, setErr] = useState<unknown>(null);
   const r = useLoad(async () => {
     const [p, comp] = await Promise.all([
@@ -322,8 +377,6 @@ export function Compose() {
     setErr(null);
     try {
       await api.put("parties", proj(s.projectId, `/composition/${encodeURIComponent(name)}`), { value: v });
-      setChoice("");
-      setValue("");
       setGen((g) => g + 1);
     } catch (e) {
       setErr(e);
@@ -332,87 +385,47 @@ export function Compose() {
   return (
     <LoadFrame r={r}>
       {({ project, choices }) => {
-        const declared = ((project.configuration || {}) as { compositionChoices?: Array<{ name: string; options?: string[]; question?: string }> })
-          .compositionChoices;
+        // A capability is on until a recorded answer narrows it: turning one
+        // off narrows what the project does, and an unanswered choice is the
+        // absence of a record, not a no.
+        const answered = new Map(choices.map((c) => [c.kind, c.payload]));
         return (
           <>
             <Title t="What this project needs from CREST" extra={ownershipChip(project.ownership)} />
             <Lede>
-              Five choices, answered separately — and separately is the point: answering one never overwrites another,
-              and every answer carries the name of whoever gave it and the date they did.
+              Five independent choices. None is a degraded version of another, and a project that answers no to most
+              of them is still a valid project.
             </Lede>
-            <CardTitled t="Answered so far">
-              <Tbl
-                heads={["Choice", "Answer", "Decided by", "When"]}
-                rows={choices.map((c) => [
-                  <Mono>{c.kind || ""}</Mono>,
-                  typeof c.payload === "object" ? <Mono>{JSON.stringify(c.payload)}</Mono> : String(c.payload),
-                  <MonoShort id={c.recordedBy || ""} />,
-                  when(c.recordedAt),
-                ])}
-                empty="Nothing is answered yet. An unanswered choice is the absence of a record, not a null — so this list is short rather than full of blanks."
-              />
-            </CardTitled>
             {err ? <WriteRefusal err={err} owner={project.ownerPartyId} /> : null}
-            {declared && declared.length ? (
-              <CardTitled t="This deployment's choices">
-                {declared.map((d) => (
-                  <div key={d.name} style={{ marginBottom: 10 }}>
-                    <RefField label={d.question || d.name}>
-                      <select
-                        data-choice={d.name}
-                        defaultValue=""
-                        onChange={(e) => e.target.value && record(d.name, e.target.value)}
-                      >
-                        <option value="">—</option>
-                        {(d.options || []).map((o) => (
-                          <option key={o} value={o}>
-                            {o}
-                          </option>
-                        ))}
-                      </select>
-                    </RefField>
-                  </div>
-                ))}
-              </CardTitled>
-            ) : (
-              <CardTitled t="Record a choice">
-                <form
-                  id="composeform"
-                  style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}
-                  onSubmit={(ev) => {
-                    ev.preventDefault();
-                    record(choice.trim(), value.trim());
-                  }}
-                >
-                  <RefField label="Choice">
-                    <input name="choice" required value={choice} onChange={(e) => setChoice(e.target.value)} placeholder="worker-sourcing" />
-                  </RefField>
-                  <RefField label="Answer">
-                    <input name="value" required value={value} onChange={(e) => setValue(e.target.value)} placeholder="register-and-import" />
-                  </RefField>
-                  <button className="btn inline">Record it</button>
-                </form>
-                <p className="muted" style={{ marginTop: 8 }}>
-                  There is no list to pick from because there is no list to have: choice names and their values are
-                  this deployment's vocabulary (L2), and CREST carries no enum of postures or origins anywhere. A
-                  deployment declares its own on the project's <span className="mono">configuration</span>, and this
-                  screen renders whatever it finds there.
-                </p>
-              </CardTitled>
-            )}
-            <Callout kind="teal" title="What infrastructure contributes here">
-              Not the vocabulary — two deployments could reasonably disagree about every one of these words and both
-              still be CREST. What infrastructure contributes is that somebody's name and a timestamp are attached to
-              every answer, and that answering one choice never overwrites another.
-            </Callout>
-            <div className="btn-row" style={{ maxWidth: 560 }}>
-              <button className="btn secondary" onClick={() => nav("/handover")}>
-                Back
-              </button>
-              <button className="btn dominant" onClick={() => nav("/owners")}>
-                Continue
-              </button>
+            <div style={{ maxWidth: 820 }}>
+              {CAPABILITIES.map(([key, title, sub]) => {
+                const rec = answered.get(key);
+                const on = rec === undefined ? true : rec !== "off";
+                return (
+                  <CapabilityRow
+                    key={key}
+                    on={on}
+                    recorded={rec !== undefined}
+                    title={title}
+                    sub={sub}
+                    onFlip={() => record(key, on ? "off" : "on")}
+                  />
+                );
+              })}
+              <div style={{ height: 10 }} />
+              <Callout kind="teal" title="">
+                A project with a mature worker registry and its own bank relationship can adopt the trust layer alone
+                — register off, pay off, validate on. The credential is never contingent on a payment component being
+                present, connected or resolved.
+              </Callout>
+              <div style={{ borderTop: "1px solid var(--line, #E5E1DC)", marginTop: 16, paddingTop: 14, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button className="btn secondary" style={{ width: "auto", padding: "10px 22px" }} onClick={() => nav("/handover")}>
+                  Back
+                </button>
+                <button className="btn dominant" style={{ width: "auto", padding: "10px 22px" }} onClick={() => nav("/workers")}>
+                  Continue
+                </button>
+              </div>
             </div>
           </>
         );
