@@ -293,11 +293,11 @@ const PLAIN_PERMISSION: Record<string, string> = {
   "attest-work": "Attest that work happened, so it can be counted",
   "act-for-party": "Act for a worker who cannot act for themselves",
   "resolve-unclear-evidence": "Review what could not be checked automatically",
-  "issue-credentials": "Issue a credential in your own organisation\u2019s name",
+  "issue-credentials": "Issue a credential in your own organisation’s name",
 };
 // What no set of terms grants — true of the platform, not of this version.
 const NEVER_GRANTED = [
-  "Move money, or hand it to a bank \u2014 only the payments application touches a rail",
+  "Move money, or hand it to a bank — only the payments application touches a rail",
   "Vouch for another organisation, which no terms grant",
 ];
 function ableAndNot(t: any, all: any[]) {
@@ -308,7 +308,7 @@ function ableAndNot(t: any, all: any[]) {
   );
   const notAble = Object.keys(PLAIN_PERMISSION)
     .filter((p) => !held.includes(p))
-    .map((p) => PLAIN_PERMISSION[p] + (elsewhere.has(p) ? " \u2014 that needs wider terms" : ""))
+    .map((p) => PLAIN_PERMISSION[p] + (elsewhere.has(p) ? " — that needs wider terms" : ""))
     .concat(NEVER_GRANTED);
   return { able, notAble };
 }
@@ -551,13 +551,13 @@ export function OnboardChecks() {
                   vChip(verdict("register")),
                 ],
                 [
-                  "Your organisation\u2019s certificate",
+                  "Your organisation’s certificate",
                   "So the systems you connect can be recognised as yours — a declared reference, read by a person",
                   vChip(verdict("certificate")),
                 ],
                 [
                   "A named data contact",
-                  "Required before you hold anybody\u2019s identity number or photograph",
+                  "Required before you hold anybody’s identity number or photograph",
                   contact ? (
                     <Chip sm kind="ok">
                       named · {String(contact)}
@@ -663,9 +663,9 @@ export function OnboardStatus() {
     : state === "REJECTED"
       ? "Not approved"
       : state === "TERMS_ACCEPTED"
-        ? "Waiting on the operator\u2019s decision"
+        ? "Waiting on the operator’s decision"
         : ob.name;
-  const termsName = reg?.termsId ? "Standard delivery" : "\u2014";
+  const termsName = reg?.termsId ? "Standard delivery" : "—";
   return (
     <OnboardFrame step={4} title={title} who={ob.contactName}>
       {err ? <ErrBar>{err}</ErrBar> : null}
@@ -679,7 +679,7 @@ export function OnboardStatus() {
           label="your identifier — the party id, permanent"
         />
         <Stat
-          n={(reg?.attributes && reg.attributes.sector) || "\u2014"}
+          n={(reg?.attributes && reg.attributes.sector) || "—"}
           label="how projects find you — your declared sector"
         />
         <Stat
@@ -709,14 +709,14 @@ export function OnboardStatus() {
             ],
           ].map(([ok, label], i) => (
             <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", marginBottom: 6 }}>
-              <Chip sm kind={ok ? "ok" : "plain"}>{ok ? "\u2713" : "\u2013"}</Chip>
+              <Chip sm kind={ok ? "ok" : "plain"}>{ok ? "✓" : "–"}</Chip>
               <span className="body-2">{label as string}</span>
             </div>
           ))}
         </Callout>
         <Callout kind="grey" title="What you do not have">
           <div style={{ marginBottom: 8 }}>
-            <b>Any project ({nProjects === null ? "\u2014" : nProjects})</b>
+            <b>Any project ({nProjects === null ? "—" : nProjects})</b>
             <div className="muted">A project configurator grants this — you cannot</div>
           </div>
           <div>
@@ -734,12 +734,12 @@ export function OnboardStatus() {
           rows={[
             [
               "Your key",
-              "This deployment issues none \u2014 your sign-in is your identity provider\u2019s, and there is no copied secret to lose",
+              "This deployment issues none — your sign-in is your identity provider’s, and there is no copied secret to lose",
             ],
             ["What approval lets you do", "Exactly what the terms said, and nothing beyond them"],
             [
               "If it is ever withdrawn",
-              "The registration is decided again, with a named decider and a reason \u2014 no middle state",
+              "The registration is decided again, with a named decider and a reason — no middle state",
             ],
           ]}
         />
@@ -749,32 +749,32 @@ export function OnboardStatus() {
           happened={
             <>
               Your registration stands approved on {reg.termsId} v{reg.termsVersion}
-              {reg.decidedBy ? <> \u2014 decided by <span className="mono">{reg.decidedBy}</span></> : null}
+              {reg.decidedBy ? <> — decided by <span className="mono">{reg.decidedBy}</span></> : null}
             </>
           }
           who="A project configurator, whenever one goes looking for a partner like you"
-          when="Any time, or never \u2014 you are findable from now on"
-          told="Nothing is pushed \u2014 an invitation appears on your organisation page (this deployment sends no email; a recorded gap)"
-          ifnot="Nothing chases this. You can also approach a project directly \u2014 your listing is what makes you findable."
+          when="Any time, or never — you are findable from now on"
+          told="Nothing is pushed — an invitation appears on your organisation page (this deployment sends no email; a recorded gap)"
+          ifnot="Nothing chases this. You can also approach a project directly — your listing is what makes you findable."
         />
       ) : (
         <NextBlock
           happened={
             state === "REJECTED" ? (
-              <>The application was refused{reg?.reason ? <> \u2014 \u201c{reg.reason}\u201d</> : null}</>
+              <>The application was refused{reg?.reason ? <> — “{reg.reason}”</> : null}</>
             ) : (
               <>Your acceptance of {reg?.termsId || "the terms"} v{reg?.termsVersion || ""} is on record; the application waits, granting nothing yet</>
             )
           }
-          who="The instance operator \u2014 approval is manual here, and never the organisation\u2019s own act"
+          who="The instance operator — approval is manual here, and never the organisation’s own act"
           when="When the operator opens the admissions queue; nothing decides by itself"
-          told="Nothing is pushed \u2014 this page is the read (this deployment sends no email; a recorded gap)"
-          ifnot="An undecided application sits indefinitely. The operator\u2019s queue lists it undecided-first, which is the only escalation that exists."
+          told="Nothing is pushed — this page is the read (this deployment sends no email; a recorded gap)"
+          ifnot="An undecided application sits indefinitely. The operator’s queue lists it undecided-first, which is the only escalation that exists."
         />
       )}
       <Callout kind="grey" title="One thing still not unlocked">
-        You still cannot put your own name behind a credential. That needs wider terms \u2014 a separate, reviewed
-        request \u2014 and most organisations never make one.
+        You still cannot put your own name behind a credential. That needs wider terms — a separate, reviewed
+        request — and most organisations never make one.
       </Callout>
       <div className="pane-cols">
         <div>

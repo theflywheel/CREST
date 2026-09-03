@@ -84,7 +84,7 @@ export function G1Setup() {
                   "Name the instance",
                   "What it covers, and in which languages",
                   Boolean(inst.name),
-                  inst.name ? `named \u201c${inst.name}\u201d at deploy time` : "not named — CREST_INSTANCE_* configuration",
+                  inst.name ? `named “${inst.name}” at deploy time` : "not named — CREST_INSTANCE_* configuration",
                 ],
                 [
                   "Set the consent rules",
@@ -105,10 +105,10 @@ export function G1Setup() {
                   approved === null
                     ? "the queue answers the operator only"
                     : approved > 0
-                      ? `${approved} admitted${undecided ? ` \u00b7 ${undecided} waiting on your decision` : ""}`
+                      ? `${approved} admitted${undecided ? ` · ${undecided} waiting on your decision` : ""}`
                       : undecided
-                        ? `none yet \u2014 ${undecided} waiting on your decision in the queue`
-                        : "none yet \u2014 the door is open",
+                        ? `none yet — ${undecided} waiting on your decision in the queue`
+                        : "none yet — the door is open",
                 ],
               ];
               return (
@@ -116,12 +116,12 @@ export function G1Setup() {
                   {steps.map(([t, sub, done, note], i) => (
                     <div key={i} style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
                       <Chip sm kind={done === null ? "plain" : done ? "ok" : "warn"}>
-                        {done === null ? "?" : done ? "\u2713" : "\u2013"}
+                        {done === null ? "?" : done ? "✓" : "–"}
                       </Chip>
                       <div>
                         <b>{t}</b>
-                        {i === 2 && inst.operatorPartyId ? <> \u2014 <MonoShort id={inst.operatorPartyId} /></> : null}
-                        <div className="muted">{sub}{note ? ` \u00b7 ${note}` : ""}</div>
+                        {i === 2 && inst.operatorPartyId ? <> — <MonoShort id={inst.operatorPartyId} /></> : null}
+                        <div className="muted">{sub}{note ? ` · ${note}` : ""}</div>
                       </div>
                     </div>
                   ))}
