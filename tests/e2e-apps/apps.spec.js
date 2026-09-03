@@ -10,6 +10,7 @@ const FIX = {
   org: "did:crest:party:01JCREST000000000000000RGN",
   custodian: "did:crest:party:01JCREST00000000000000CSTD",
   supervisor: "did:crest:party:01JCREST00000000000000SPVR",
+  specifier: "did:crest:party:01JCREST00000000000000SPEC",
   project: "crest:context:01JCREST00000000000000PRJC",
 };
 
@@ -816,7 +817,7 @@ test("console: the G-2 onboarding journey is real, screen by screen", async ({ p
   await page.click("#submitchecks");
   await page.waitForURL(/#\/onboard\/status/, { timeout: 20000 });
   await settle(page);
-  await expect(page.locator("body")).toContainText(/TERMS_ACCEPTED|PENDING/);
+  await expect(page.locator("body")).toContainText(/TERMS_ACCEPTED|Pending/i);
 
   // The operator decides — never the organisation itself. The custodian is
   // this stack's named decider.
@@ -976,18 +977,18 @@ test("console: G-1 walks the instance, and a person decides the admission", asyn
   await page.evaluate(() => { location.hash = "#/instance/setup"; });
   await settle(page);
   await expect(page.locator("body")).toContainText(/Let.s set up CREST/);
-  await expect(page.locator("body")).toContainText("crest:instance:local");
-  await expect(page.locator("body")).toContainText(/compose locally, Railway in the cloud/i);
+  await expect(page.locator("body")).toContainText(/read live from GET \/v1\/instance/i);
   await assertAlive(page, errors, "g1_1 setup front door");
 
   // g1_2 — read-only coverage, walked by the frame's own Begin button.
-  await page.click("#g1-next");
+  await page.click("#g1-begin");
   await settle(page);
   expect(page.url()).toContain("#/instance/covers");
   await expect(page.locator("body")).toContainText("What this instance covers");
   // No editable instance field exists: read-only by design, and said so.
   await expect(page.locator('input[name="instancename"]')).toHaveCount(0);
-  await expect(page.locator("body")).toContainText("There is nothing to save");
+  await expect(page.locator("body")).toContainText(/has nothing to save/i);
+  await expect(page.locator("body")).toContainText("crest:instance:local");
 
   // g1_3 — the consent floor, stated as the infrastructure facts it is.
   await page.click("#g1-next");
