@@ -57,8 +57,9 @@ export function PaySetup() {
           <>
             <Title t="Payment set up" />
             <Lede>
-              The rate is a versioned linked record keyed to the definition — it can change without touching what the
-              work is, and an old version is never overwritten.
+              Payment set up is two separate halves: how much, and how it reaches the worker. They can be one person
+              or two, and neither blocks the credential — work already done is already validated. The rate is a
+              versioned linked record keyed to the definition; an old version is never overwritten.
             </Lede>
             {pays ? (
               <CardTitled t="The rate (f1_3 / f1_4)">

@@ -46,6 +46,7 @@ import {
 } from "./views/G1";
 import {
   RateOwner, RateAuthor, RatePublish, RateStanding,
+  MechWhere, MechRails, MechConnect,
   MechTest, MechRecon, MechStatement, MechBatching, MechActivate, MechQualify, MechLive,
 } from "./views/Funders";
 
@@ -90,6 +91,7 @@ const J3_ROUTES = [
 // Org Admin.
 const FUNDERS_ROUTES = [
   "/rateowner", "/rate", "/ratepublish", "/ratestanding",
+  "/mech/where", "/mech/rails", "/mech/connect",
   "/mech/test", "/mech/recon", "/mech/statement", "/mech/batching",
   "/mech/activate", "/mech/qualify", "/mech/live",
 ];
@@ -395,6 +397,9 @@ export function App() {
         <Route path="/instance/covers" element={<G1Covers />} />
         <Route path="/instance/consent" element={<G1Consent />} />
         <Route path="/instance/invite" element={<G1Invite />} />
+        <Route path="/mech/where" element={<MechWhere />} />
+        <Route path="/mech/rails" element={<MechRails />} />
+        <Route path="/mech/connect" element={<MechConnect />} />
         <Route path="/instance/services" element={<G1Services />} />
         <Route path="/instance/people" element={<G1People />} />
         {/* G-4 admission review (g4_1–g4_3): the real queue and the real

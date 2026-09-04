@@ -1564,12 +1564,17 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   await expect(page.locator("body")).toContainText("The rate is live. The money still cannot move.");
   await expect(page.locator('[data-standing="not-configured"]')).toBeVisible();
   await expect(page.locator("body")).toContainText("Hand this to someone else");
+  // f1_5's outstanding items, each owed by exactly one party.
+  await expect(page.locator("body")).toContainText("What is now owed, and by whom");
+  await expect(page.locator("body")).toContainText("None of these escalates on its own.");
   // Supersession is a new version: the publish added one, naming its parent.
   await page.evaluate(() => { location.hash = "#/ratepublish"; });
   await settle(page);
   const versionsAfter = await page.locator("[data-rateversion]").count();
   expect(versionsAfter, "publication is a new version, never a rewrite").toBe(versionsBefore + 1);
   await expect(page.locator("[data-rateversion]").last()).toContainText("supersedes v" + versionsBefore);
+  // f1_4 — terms are what make a dispute possible, on the frame.
+  await expect(page.locator("body")).toContainText("Published terms are what make a dispute possible.");
   await assertAlive(page, errors, "F-1 rate walk");
 
   // ── The fresh project this run's mechanism will govern. ──
@@ -1606,10 +1611,39 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   await settle(page);
   await page.locator(`[data-context="${projId}"]`).click();
   await settle(page);
+
+  // ── f2_1: one question, and it is the composition record — where CREST
+  // stops, answered by the mechanism owner through the same payment-posture
+  // choice the Configurator's screen writes. ──
+  await page.evaluate(() => { location.hash = "#/mech/where"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("One question. Everything after it follows from the answer.");
+  await expect(page.locator("body")).toContainText("It is a choice about where CREST stops.");
+  await page.locator('.optcard:has-text("At a payment instruction")').click();
+  await page.waitForURL(/#\/mech\/rails/, { timeout: 20000 });
+  await settle(page);
+
+  // ── f2_2: rails, chosen as a set and recorded; choosing creates the
+  // mechanism this walk's records hang off. ──
+  await expect(page.locator("body")).toContainText("One project is rarely one rail.");
+  await page.locator('.optcard:has-text("Bank or FSP")').click();
+  await page.locator('.optcard:has-text("An implementing partner")').click();
+  await page.click("#save-rails");
+  await expect(page.locator("body")).toContainText("rails-chosen — by", { timeout: 20000 });
+  await expect(page.locator("body")).toContainText(/configured, not live/i);
+
+  // ── f2_3: the connection names the provider; the secret never passes
+  // through the console. ──
+  await page.evaluate(() => { location.hash = "#/mech/connect"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("this only establishes that CREST can talk to your provider");
+  await expect(page.locator("body")).toContainText("held by the platform operator — never entered here");
+  await page.click("#save-connect");
+  await expect(page.locator("body")).toContainText("provider-connected — by", { timeout: 20000 });
+
   await page.evaluate(() => { location.hash = "#/mech/test"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("Send one real payment");
-  await page.click("#mech-create");
   await expect(page.locator("body")).toContainText(/configured, not live/i, { timeout: 20000 });
 
   // f2_8, refused readably: activation before the acts is a readable list of

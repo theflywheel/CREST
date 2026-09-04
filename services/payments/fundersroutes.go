@@ -443,11 +443,12 @@ func (f *fundersHandlers) addRecord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch body.Kind {
-	case recordReconciliationAgreement, recordStatementAgreement,
+	case recordRailsChosen, recordProviderConnected,
+		recordReconciliationAgreement, recordStatementAgreement,
 		recordBatchingChoice, recordQualificationSubmitted, recordQualificationVerified:
 	default:
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body",
-			"kind is one of the recorded set-up acts: reconciliation-agreement, statement-agreement, batching-choice, qualification-submitted, qualification-verified")
+			"kind is one of the recorded set-up acts: rails-chosen, provider-connected, reconciliation-agreement, statement-agreement, batching-choice, qualification-submitted, qualification-verified")
 		return
 	}
 	actor, ok := identity.Authorize(w, r, f.d.Log, body.ActorPartyID, "",
