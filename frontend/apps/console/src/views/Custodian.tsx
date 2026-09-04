@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "@crest/api";
-import { Callout, Chip, OpenNote, Sidecar } from "@crest/ui";
+import { Callout, Chip, NextBlock, OpenNote, Sidecar } from "@crest/ui";
 import {
   short, when, agoDays, Mono, MonoShort, Stat, KVR, Title, Lede, Empty,
   Tbl, Card, CardTitled, useLoad, LoadFrame,
@@ -146,47 +146,103 @@ function HoldForm(props: { h: Hold; onDone: () => void }) {
   );
 }
 
+// g4_6 — the queue, and the rule for closing one. Every figure on the frame is
+// derived from the holds themselves plus the registry's registered count; a
+// hold carries no confidence score, so the column says "needs a person"
+// rather than inventing one.
 export function Dupes() {
+  const nav = useNavigate();
   const [gen, setGen] = useState(0);
+  const [note, setNote] = useState<string | null>(null);
   const r = useLoad(async () => {
-    const [out, metrics] = await Promise.all([
+    const [out, metrics, cov] = await Promise.all([
       api.get("parties", "/v1/holds"),
       api.get("parties", "/v1/holds/metrics").catch(() => null),
+      api.get("parties", "/v1/coverage?attribute=county").catch(() => null),
     ]);
-    return { list: ((out.holds || []) as Hold[]).filter((h) => !h.resolvedAt), metrics };
+    const all = (out.holds || []) as Hold[];
+    return {
+      list: all.filter((h) => !h.resolvedAt),
+      resolved: all.filter((h) => h.resolvedAt),
+      metrics,
+      registered: cov && typeof cov.totalRegistered === "number" ? (cov.totalRegistered as number) : null,
+    };
   }, [gen]);
   return (
     <LoadFrame r={r}>
-      {({ list, metrics }) => (
-        <>
-          <Title t="Duplicates — the queue, and the rule for closing one" />
-          <Lede>
-            Two records collide on an identifier. The queue shows existence, never the identifier itself. Probable
-            matches hold; they never auto-merge — a merge needs the worker's own confirmation.
-          </Lede>
-          <div className="stats" style={{ maxWidth: 440 }}>
-            <Stat n={list.length} label="open holds" owner="owner: registry custodian" />
-            <Stat n={metrics ? (metrics.mergesWithoutConfirmation ?? metrics.merges_without_confirmation ?? 0) : "—"} label="merges_without_confirmation — a monitored metric, not an aspiration; must be 0" />
-          </div>
-          {list.length ? (
-            list.map((h) => (
-              <CardTitled t={"Collision on " + (h.keyKind || "identifier")} key={h.id}>
-                <KVR rows={[
-                  ["why it is here", h.reason || ""],
-                  ["candidates", (h.candidates || []).map((c, i) => <span key={c}>{i ? " · " : ""}<MonoShort id={c} /></span>)],
-                  ["opened", when(h.createdAt)],
-                ]} />
-                <HoldForm h={h} onDone={() => setGen((g) => g + 1)} />
-              </CardTitled>
-            ))
-          ) : (
-            <Empty>
-              No open holds. When two records collide on an identifier, the hold appears here and waits for you —
-              nothing is guessed in the meantime.
-            </Empty>
-          )}
-        </>
-      )}
+      {({ list, resolved, metrics, registered }) => {
+        const ages = list.map((h) => agoDays(h.createdAt)).filter((d): d is number => d !== null);
+        const oldestDays = ages.length ? Math.max(...ages) : null;
+        const days = resolved
+          .map((h) => (new Date(h.resolvedAt!).getTime() - new Date(h.createdAt || h.resolvedAt!).getTime()) / 86400000)
+          .filter((d) => Number.isFinite(d))
+          .sort((a, b) => a - b);
+        const medianResolve = days.length ? days[Math.floor(days.length / 2)] : null;
+        const mwc = metrics ? (metrics.mergesWithoutConfirmation ?? metrics.merges_without_confirmation ?? 0) : "—";
+        return (
+          <>
+            <Title t="Duplicates — the queue, and the rule for closing one" />
+            <Lede>
+              {list.length} suspected pair(s) open. Two records collide on an identifier; the queue shows existence,
+              never the identifier itself. Probable matches hold; they never auto-merge — a merge needs the worker's own
+              confirmation.
+            </Lede>
+            <div className="stats">
+              <Stat n={list.length} label="open pairs" owner={oldestDays !== null ? "oldest " + oldestDays + " days" : "owner: registry custodian"} />
+              <Stat
+                n={registered ? ((list.length / registered) * 100).toFixed(1) + "%" : "—"}
+                label="duplicate rate"
+                owner={registered ? "open pairs against " + registered + " registered" : "no registered count answered"}
+              />
+              <Stat
+                n={medianResolve !== null ? Math.round(medianResolve) + " d" : "—"}
+                label="median time to resolve"
+                owner={days.length ? "over " + days.length + " closed hold(s)" : "nothing closed yet"}
+              />
+              <Stat n={mwc} label="merged without confirmation" owner="keep it here — a monitored metric, not an aspiration; must be 0" />
+            </div>
+            {list.length ? (
+              list.map((h) => (
+                <CardTitled t={"Pair · " + (h.candidates || []).map(short).join(" · ")} key={h.id}>
+                  <KVR rows={[
+                    ["matched on", (h.keyKind || "identifier") + (h.reason ? " · " + h.reason : "")],
+                    ["confidence", "needs a person — a hold records the collision, not a score"],
+                    ["candidates", (h.candidates || []).map((c, i) => <span key={c}>{i ? " · " : ""}<MonoShort id={c} /></span>)],
+                    ["opened", when(h.createdAt)],
+                  ]} />
+                  <HoldForm h={h} onDone={() => setGen((g) => g + 1)} />
+                </CardTitled>
+              ))
+            ) : (
+              <Empty>
+                No open holds. When two records collide on an identifier, the hold appears here and waits for you —
+                nothing is guessed in the meantime.
+              </Empty>
+            )}
+            <Callout kind="grey" title="How this could be gamed">
+              <b>Duplicate rate</b> falls if pairs are closed as different without being looked at.{" "}
+              <span className="guard">Guarded by · median time to resolve, and merges-without-confirmation held at zero.</span>
+            </Callout>
+            <Callout kind="teal" title="Why the weakest pair must stay open">
+              A pair matched on nothing but a common name in one place is a genuine coincidence, not a duplicate — two
+              people with the same name in one sub-county. Closing it as the same person would delete somebody's work
+              history, which is why low confidence must never auto-merge.
+            </Callout>
+            {note ? <OpenNote>{note}</OpenNote> : null}
+            <div className="btn-row">
+              <button className="btn secondary" onClick={() => nav("/registry-quality")}>Quality</button>
+              <button
+                className="btn secondary"
+                data-act="bulk"
+                onClick={() => setNote("Not backed. Each hold is closed one at a time, with a named decision; there is no bulk review, because a merge needs the worker's own confirmation and a batch cannot carry one.")}
+              >
+                Bulk review
+              </button>
+              <button className="btn dominant" onClick={() => nav("/reuse")}>Reuse</button>
+            </div>
+          </>
+        );
+      }}
     </LoadFrame>
   );
 }
@@ -497,7 +553,11 @@ export function Coverage() {
   return (
     <LoadFrame r={r}>
       {(d: { attribute: string; totalRegistered: number; byPlace: Array<{ place?: string; registered: number; estimate?: number; coveragePct?: number }> }) => {
-        const byPlace = d.byPlace || [];
+        const gapOf = (b: { registered: number; estimate?: number }) =>
+          b.estimate != null ? Math.max(0, b.estimate - b.registered) : null;
+        const byPlace = [...(d.byPlace || [])].sort((a, b) => (gapOf(b) ?? -1) - (gapOf(a) ?? -1));
+        const totalGap = byPlace.reduce((t, b) => t + (gapOf(b) ?? 0), 0);
+        const withEstimate = byPlace.filter((b) => b.estimate != null).length;
         return (
           <>
             <Title t="Coverage — the gap, by place" />
@@ -505,7 +565,8 @@ export function Coverage() {
               The headline is not how many are registered. Counts are grouped by a self-declared attribute this
               deployment names below — CREST has no built-in geography vocabulary — and a percentage only appears
               where a population figure was supplied for that place; the rest carry an honest "unspecified" bucket
-              instead of a fake one.
+              instead of a fake one. The denominator is whatever establishment list this deployment supplies, which is
+              an estimate — it is passed on the read and never stored.
             </Lede>
             <form
               onSubmit={(ev) => { ev.preventDefault(); setApplied(attribute.trim() || "county"); }}
@@ -514,19 +575,30 @@ export function Coverage() {
               <input value={attribute} onChange={(ev) => setAttribute(ev.target.value)} placeholder="attribute key (e.g. county)" style={{ minWidth: 220 }} />
               <button className="btn secondary" type="submit">Apply</button>
             </form>
-            <div className="stats" style={{ maxWidth: 320 }}>
-              <Stat n={d.totalRegistered} label="total registered" owner={`grouped by "${d.attribute}"`} />
+            <div className="stats" style={{ maxWidth: 640 }}>
+              <Stat n={d.totalRegistered} label="registered" owner={`grouped by "${d.attribute}"`} />
+              <Stat
+                n={withEstimate ? totalGap : "—"}
+                label="people missing"
+                owner={withEstimate ? `short of the estimate, across ${withEstimate} place(s) with one` : "no estimate supplied for any place"}
+              />
             </div>
-            <Tbl
-              heads={["Place", "Registered", "Estimate", "Coverage"]}
-              rows={byPlace.map((b) => [
-                b.place ? b.place : <em>unspecified</em>,
-                b.registered,
-                b.estimate ?? "—",
-                b.coveragePct != null ? b.coveragePct.toFixed(1) + "%" : "—",
-              ])}
-              empty='No parties registered yet, or none carry this attribute — every one falls into "unspecified".'
-            />
+            <CardTitled t="Worst gaps first — this is the work list">
+              <Tbl
+                heads={["Place", "Universe", "Registered", "Coverage", "Gap to close"]}
+                rows={byPlace.map((b) => {
+                  const g = gapOf(b);
+                  return [
+                    b.place ? b.place : <em>unspecified</em>,
+                    b.estimate ?? "—",
+                    b.registered,
+                    b.coveragePct != null ? b.coveragePct.toFixed(1) + "%" : "—",
+                    g !== null ? g + " people" : "—",
+                  ];
+                })}
+                empty='No parties registered yet, or none carry this attribute — every one falls into "unspecified".'
+              />
+            </CardTitled>
             <Callout kind="grey" title="How this could be gamed">
               <b>Registrations</b> can be lifted overnight by importing a list, duplicates and all.{" "}
               <span className="guard">Guarded by · net new this month, which subtracts merges, and the duplicate rate beside it.</span>
@@ -559,16 +631,29 @@ export function QualityWorklist() {
     <LoadFrame r={r}>
       {(d: { rows: Array<{ partyId: string; displayName?: string; gaps: Array<{ kind: string; detail: string; fixableBy: string }> }>; scanned: number; withGaps: number }) => {
         const rows = d.rows || [];
+        const byKind = rows.reduce<Record<string, number>>((m, row) => {
+          for (const g of row.gaps) m[g.kind] = (m[g.kind] || 0) + 1;
+          return m;
+        }, {});
         return (
           <>
             <Title t="Quality — what is missing, record by record" />
             <Lede>
-              A worklist, not a completeness chart — every row names one gap and the person who can close it. A clean
-              party carries no row here at all.
+              {d.scanned} scanned. The number that matters is how many are usable — a worklist, not a completeness
+              chart: every row names one gap and the person who can close it. A clean party carries no row here at all.
             </Lede>
-            <div className="stats" style={{ maxWidth: 440 }}>
-              <Stat n={d.withGaps} label="parties with a named gap" owner={`of ${d.scanned} scanned this page`} />
+            <div className="stats" style={{ maxWidth: 640 }}>
+              <Stat n={d.scanned - d.withGaps} label="Usable" owner="no named gap on this page of the registry" />
+              <Stat n={d.withGaps} label="Registered but with a gap" owner="On the books, counted in every enrolment report, and still owed a fix." />
             </div>
+            <CardTitled t="What is missing, counted">
+              <KVR
+                rows={Object.entries(byKind)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([kind, n]) => [kind, String(n)])}
+              />
+              {Object.keys(byKind).length ? null : <div className="muted">Nothing is missing on this page.</div>}
+            </CardTitled>
             {rows.length ? (
               rows.map((row) => (
                 <CardTitled t={row.displayName || row.partyId} key={row.partyId}>
@@ -624,16 +709,22 @@ export function RegistryReuse() {
             The one metric with its derivation stated on-screen. An empty registry reports the null state honestly —
             "no data yet" and "no reuse" are different facts, and this screen never collapses them into 0.
           </Lede>
-          <div className="stats" style={{ maxWidth: 440 }}>
+          <div className="stats">
             <Stat
               n={d.reuseRate == null ? "—" : (d.reuseRate * 100).toFixed(1) + "%"}
-              label="reuse rate"
-              owner={d.reuseRate == null ? "no claims yet — unmeasured, not zero" : `${d.reusedParties} of ${d.totalClaimedParties} claimed parties span more than one context`}
+              label="Reuse rate"
+              owner={d.reuseRate == null ? "no claims yet — unmeasured, not zero" : `Claimed parties already known to another context: ${d.reusedParties} of ${d.totalClaimedParties}`}
             />
+            <Stat n={d.totalClaimedParties ? d.totalClaimedParties - d.reusedParties : "—"} label="used by one project only" owner="Claimed by a single context — enrolled for one campaign, used once, never again, never retired." />
+            <Stat n={d.totalClaimedParties ? d.reusedParties : "—"} label="used by two or more" owner="claimed across more than one context" />
             <Stat n={d.distinctContexts} label="distinct submitting contexts" />
           </div>
           <CardTitled t="Derivation">
             <div className="muted" style={{ fontSize: 13 }}>{d.derivation}</div>
+            <p className="muted" style={{ marginTop: 8 }}>
+              The reference also splits "two or three" from "four or more" and ages each record; that needs a per-party
+              distribution this read does not return, so neither is drawn.
+            </p>
           </CardTitled>
           <Callout kind="grey" title="How this could be gamed">
             <b>Reuse rate</b> rises if you simply stop enrolling anyone new.{" "}
@@ -644,6 +735,13 @@ export function RegistryReuse() {
             — stale, unusable, and unused — and the reason is that nothing in CREST decays or retires a record.
           </Callout>
           {note ? <OpenNote>{note}</OpenNote> : null}
+          <NextBlock
+            happened="You reviewed the registry"
+            who="The projects you assign gaps to"
+            when="Nothing here assigns anything yet — the work list is what you carry to a project"
+            told="Nothing is pushed to you; this console is the read"
+            ifnot="An assigned gap that nobody works is not escalated. Re-check this screen next month."
+          />
           <div className="btn-row">
             <button className="btn secondary" onClick={() => nav("/dupes")}>Duplicates</button>
             <button

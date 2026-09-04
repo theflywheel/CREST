@@ -1988,7 +1988,7 @@ test("console: the registry metrics read real counts, and the receipt shows a re
   // falls into the honest unspecified bucket — never a fabricated percentage.
   await page.evaluate(() => { location.hash = "#/coverage"; });
   await settle(page);
-  await expect(page.locator("body")).toContainText("total registered");
+  await expect(page.locator("body")).toContainText("Worst gaps first — this is the work list");
   await expect(page.locator("body")).toContainText(/unspecified/i);
   await expect(page.locator("body")).not.toContainText("0.0%");
   await signedInAs(page, "Otieno");
@@ -1996,7 +1996,8 @@ test("console: the registry metrics read real counts, and the receipt shows a re
   // g4_5: a row per party with a named gap, or the honest empty state.
   await page.evaluate(() => { location.hash = "#/registry-quality"; });
   await settle(page);
-  await expect(page.locator("body")).toContainText(/parties with a named gap/i);
+  await expect(page.locator("body")).toContainText(/Registered but with a gap/i);
+  await expect(page.locator("body")).toContainText("What is missing, counted");
   await signedInAs(page, "Otieno");
 
   // g4_7: the reuse metric, or its null state — never a fabricated 0.
@@ -2474,3 +2475,103 @@ test("console: a clone submits as the next version, and ratifying names nothing 
 
   await assertAlive(page, errors, "the clone-and-ratify walk");
 });
+
+// ── The oversight pack (J9 project view, J10 funder view, J11 registry view):
+// the reference's anatomy and explanatory copy on the ten console dashboards,
+// over live reads. Fixture figures from the reference (Turkana, KES, 84.4%)
+// are deliberately NOT asserted — a screen that carried them would be lying.
+test("console: the oversight dashboards carry the p2_11–16, v4_1–2 and g4_4–7 pack's copy", async ({ page, request }) => {
+  test.setTimeout(150000);
+  const errors = watch(page);
+  const body = page.locator("body");
+
+  // J9 — the Project Configurator's five frames.
+  await consoleSignIn(page, request, "configurator");
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await signedInAs(page, "Dr. Alice Mutua");
+  await page.evaluate(() => { location.hash = "#/quality"; });
+  await settle(page);
+  await expect(body).toContainText("system recorded");
+  await expect(body).toContainText("The one action on this screen");
+  await expect(body).toContainText("There is a system holding this data already");
+  await page.evaluate(() => { location.hash = "#/payments"; });
+  await settle(page);
+  await expect(body).toContainText("The row that crosses a boundary");
+  await expect(body).toContainText("One list, two dashboards, and neither of you can close it alone.");
+  await page.click('[data-act="unowned"]');
+  await expect(body).toContainText(/Cleared but never instructed, or held with nobody holding — \d+/);
+  await page.evaluate(() => { location.hash = "#/trace"; });
+  await settle(page);
+  await expect(body).toContainText("One row worth acting on");
+  await expect(body).toContainText("the single most common way a worker quietly loses money");
+  await page.click('[data-act="bundle"]');
+  await expect(body).toContainText("no bundle endpoint exists");
+  await page.evaluate(() => { location.hash = "#/reports"; });
+  await settle(page);
+  await expect(body).toContainText("Validated work value");
+  await page.evaluate(() => { location.hash = "#/stp"; });
+  await settle(page);
+  await expect(body).toContainText(/Why the other \d+ fell out — ranked/);
+  await expect(body).toContainText("What changed this month");
+  await expect(body).toContainText("Unspent against allocation");
+  await expect(body).toContainText("Off by default");
+  await expect(body).toContainText("Turns an aggregate report into a list of named people and their earnings");
+  await expect(body).toContainText("Needs a governance decision, not a checkbox");
+  await expect(body).toContainText("Your project is configured and running");
+  await page.click('[data-act="preview"]');
+  await expect(body).toContainText("what is on this screen is the preview");
+  await signedInAs(page, "Dr. Alice Mutua");
+  await assertAlive(page, errors, "J9 project dashboards");
+
+  // J10 — the funder's portfolio (v4_1) and the drill beneath it (v4_2).
+  await switchTo(page, request, "funder", "Funding oversight");
+  await page.evaluate(() => { location.hash = "#/portfolio"; });
+  await settle(page);
+  await expect(body).toContainText("the number that matters");
+  await expect(body).toContainText("Not the largest number, the worst ratio");
+  await expect(body).toContainText("Stuck");
+  await page.locator('[data-act="open-project"]').first().click();
+  await expect(body).toContainText("What was delivered, on");
+  await expect(body).toContainText("What is deliberately absent");
+  await expect(body).toContainText("Nothing on this screen names a worker, and nothing needs to.");
+  await expect(body).toContainText("Follow the tier column");
+  await expect(body).toContainText("An unanswered query is not escalated anywhere.");
+  // The drill groups real claims by the unit's geography and definition: the
+  // story's place and outcome unit are live reads, never the reference's Loima.
+  await expect(body).toContainText("Where the work happened");
+  await expect(body).toContainText("Riverside");
+  await expect(body).toContainText("bednets-distributed");
+  await expect(body).not.toContainText("Loima");
+  await page.click('[data-act="query"]');
+  await expect(body).toContainText("has no object and no endpoint yet");
+  await page.click('[data-act="individual"]');
+  await expect(body).toContainText("Deliberately absent from this view");
+  await signedInAs(page, "Funding oversight");
+  await assertAlive(page, errors, "J10 funder portfolio");
+
+  // J11 — the registry custodian's four frames.
+  await switchTo(page, request, "custodian", "Otieno");
+  await page.evaluate(() => { location.hash = "#/coverage"; });
+  await settle(page);
+  await expect(body).toContainText("Gap to close");
+  await expect(body).toContainText("people missing");
+  await page.evaluate(() => { location.hash = "#/dupes"; });
+  await settle(page);
+  await expect(body).toContainText("open pairs");
+  await expect(body).toContainText("median time to resolve");
+  await expect(body).toContainText("merged without confirmation");
+  await expect(body).toContainText("Duplicate rate falls if pairs are closed as different without being looked at.");
+  await expect(body).toContainText("which is why low confidence must never auto-merge");
+  await page.click('[data-act="bulk"]');
+  await expect(body).toContainText("a batch cannot carry one");
+  await page.evaluate(() => { location.hash = "#/reuse"; });
+  await settle(page);
+  await expect(body).toContainText("used by one project only");
+  await expect(body).toContainText("used by two or more");
+  await expect(body).toContainText("You reviewed the registry");
+  await expect(body).toContainText("An assigned gap that nobody works is not escalated.");
+  await signedInAs(page, "Otieno");
+  await assertAlive(page, errors, "J11 registry dashboards");
+});
+  await expect(body).toContainText("never again, never retired");
