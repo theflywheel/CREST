@@ -1056,13 +1056,6 @@ function PartiesBody({ d }: BodyProps) {
     <Frame
       counter="Parties · 5 of 9"
       title="Who is involved?"
-      lede={
-        <>
-          Three different relationships, and the definition only fixes one of them. Who performs the work is part of
-          what the work <i>is</i>. Who pays and who validates are attached separately, because both can change
-          without the work changing.
-        </>
-      }
       btns={[
         { label: "Back", to: "/define/unit", role: "secondary" },
         {
@@ -1079,30 +1072,26 @@ function PartiesBody({ d }: BodyProps) {
       ]}
     >
       <ClosedNote d={d} />
-      <Card>
-        <div style={grid()}>
-          <RefField label="Who does the work" hint="Recorded as classification.performerRole — L2.">
-            <input name="performerRole" value={role} onChange={(e) => setRole(e.target.value)} placeholder="Community health worker" />
-          </RefField>
-          <RefField label="Party type">
-            <select name="partyType" value={kind} onChange={(e) => setKind(e.target.value)}>
-              {["Individual", "Group", "Organisation"].map((k) => (
-                <option key={k} value={k}>
-                  {k}
-                </option>
-              ))}
-            </select>
-          </RefField>
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <RefField
-            label="Who may attest evidence"
-            hint="Authorization functions, comma-separated. This one IS infrastructure: evidence submitted without one of these is refused."
-          >
-            <input name="attesterFunctions" value={fns} onChange={(e) => setFns(e.target.value)} />
-          </RefField>
-        </div>
-      </Card>
+      <div style={grid()}>
+        <RefField label="Who does the work" hint="Recorded as classification.performerRole — L2.">
+          <input name="performerRole" value={role} onChange={(e) => setRole(e.target.value)} placeholder="Community health worker" />
+        </RefField>
+        <RefField label="Party type">
+          <select name="partyType" value={kind} onChange={(e) => setKind(e.target.value)}>
+            {["Individual", "Group", "Organisation"].map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+        </RefField>
+      </div>
+      <RefField
+        label="Who may attest evidence"
+        hint="Authorization functions, comma-separated. This one IS infrastructure: evidence submitted without one of these is refused."
+      >
+        <input name="attesterFunctions" value={fns} onChange={(e) => setFns(e.target.value)} />
+      </RefField>
       <CardTitled t="Who sits between, and where each is recorded">
         <KVR
           rows={[
@@ -1117,11 +1106,20 @@ function PartiesBody({ d }: BodyProps) {
           survives, so disputing who did the work never destroys the record that it was done.
         </p>
       </CardTitled>
-      <Callout kind="teal" title="What infrastructure contributes here">
-        The attester list, and only that. Whether "Community health worker" is the right phrase is this deployment's
-        business; whether a party holding no authorization can put evidence against this definition is not — the
-        service refuses it, and this list is what it checks against.
-      </Callout>
+      <div className="proposal">
+        <div className="p-head">
+          <span className="p-t">Intermediary party — proposed</span>
+          <Chip kind="warn">Not built</Chip>
+        </div>
+        <div className="p-s">
+          Where a worker is engaged through a contractor or an implementing partner, that party sits between the fund
+          source and the worker. Nothing records it today.
+        </div>
+      </div>
+      <Sidecar warm>
+        Whether a fund split applies to every single unit or to the aggregate pay cycle is a proposed field,{" "}
+        <Mono>fundSplitLevel</Mono>. It changes what a worker is owed when only one payer confirms.
+      </Sidecar>
     </Frame>
   );
 }
@@ -1168,13 +1166,6 @@ function EvidenceBody({ d }: BodyProps) {
     <Frame
       counter="Evidence · 6 of 9"
       title="What counts as proof?"
-      lede={
-        <>
-          Not a single answer but a map: several kinds of evidence, each strong enough for a different tier. Read top
-          to bottom, the first rule whose conditions all hold wins, and the floor at the bottom has no requirements at
-          all — which is what keeps a worker with nothing but a supervisor's word payable.
-        </>
-      }
       btns={[
         { label: "Back", to: "/define/parties", role: "secondary" },
         {
@@ -1312,13 +1303,16 @@ function EvidenceBody({ d }: BodyProps) {
           </div>
         ) : null}
       </CardTitled>
-      <Callout kind="green" title="What is deliberately absent">
-        A tier. Nothing on this screen writes a strength onto a record, and nothing downstream stores one. What is
-        stored is provenance — which class of system a record came from, how the fact was captured, how well the
-        worker's identity is known — and the tier is computed from that at the moment somebody asks. A stored tier
-        would freeze a judgement verifiers should be free to make differently, and could never be raised when a
-        worker's identity assurance later improves.
-      </Callout>
+      <div className="proposal">
+        <div className="p-head">
+          <span className="p-t">Paired proof — proposed</span>
+          <Chip kind="warn">Not built</Chip>
+        </div>
+        <div className="p-s">
+          A before-and-after photo is one requirement, not two. Proof types are flat labels today and cannot express
+          that.
+        </div>
+      </div>
     </Frame>
   );
 }
@@ -1372,9 +1366,8 @@ function SourceBody({ d }: BodyProps) {
       title="Where does this evidence come from?"
       lede={
         <>
-          This is a provenance choice, not a convenience one. What kind of system a record comes from, and how the
-          fact was captured in it, are the two facts the strength function reads — so this screen sets the ceiling on
-          how strong any record from this source can ever be.
+          Pick how records of this work will reach CREST. Every option is somewhere else: CREST reads or receives,
+          and never records. You can add more than one later, and the lowest-trust source in use caps the tier.
         </>
       }
       btns={[
@@ -1384,6 +1377,28 @@ function SourceBody({ d }: BodyProps) {
       ]}
     >
       <ClosedNote d={d} />
+      {/* The frame's four arrival routes. The first two are the forward
+          buttons below; the third is stated so nobody wonders whether it is
+          hidden — CREST attesting its own capture would break provenance. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        <OptionCard
+          t="A system CREST connects to"
+          s="An adaptor pulls records in on a schedule. Nobody retypes anything, which is the only way the strongest tier is reachable."
+        />
+        <OptionCard
+          t="A spreadsheet the team uploads"
+          s="You get a template generated from this definition. Sensible where the work happens outside any system."
+        />
+        <OptionCard
+          t="A worker typing it into CREST"
+          unavailable
+          s="Does not exist. CREST has no screen on which work is recorded, because evidence CREST captured itself would be CREST vouching for its own record."
+        />
+        <OptionCard
+          t="A supervisor confirming in the delivery platform's own app"
+          s="A named person vouches for it. Already covered by the attestation rule on the previous step."
+        />
+      </div>
       <Card>
         <div style={grid()}>
           <RefField label="Source class" hint="Attached by the adaptor, never asserted by the source itself.">

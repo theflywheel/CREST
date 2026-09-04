@@ -137,6 +137,12 @@ button.card{text-align:left;width:100%}
 .sidecar .ico{flex:none;width:15px;height:15px;margin-top:2px}
 .sidecar .ico circle{fill:none;stroke:var(--info);stroke-width:1.6}
 .sidecar .ico line{stroke:var(--info);stroke-width:1.6;stroke-linecap:round}
+
+/* ————— the reference's dashed "proposed, not built" card ————— */
+.proposal{border:1px dashed var(--warning);background:var(--warning-bg);border-radius:9px;padding:13px 14px}
+.proposal .p-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:6px}
+.proposal .p-t{font:500 13.5px/1.3 Roboto;color:var(--warning-text)}
+.proposal .p-s{font:400 12.5px/1.5 Roboto;color:var(--text-1)}
 .sidecar.ok .ico circle,.sidecar.ok .ico line{stroke:var(--success)}
 
 /* ————— "What happens next" block ————— */
