@@ -541,7 +541,6 @@ function SectorBody({ d }: BodyProps) {
     <Frame
       counter="Sector · 1 of 9"
       title="What sector is this work in?"
-      chip={stateChip(d)}
       lede={
         <>
           Sector first, because it scopes everything after it: the categories offered next, the vocabulary the
@@ -600,7 +599,6 @@ function CountingBody({ d }: BodyProps) {
     <Frame
       counter="Counting basis · 2 of 9"
       title="How is this work counted?"
-      chip={stateChip(d)}
       lede={
         <>
           This is the fork the rest of the definition hangs off. It decides what one unit of work <i>is</i>, and
@@ -664,7 +662,6 @@ function CategoryBody({ d }: BodyProps) {
     <Frame
       counter="Category · 3 of 9"
       title="What kind of work is it?"
-      chip={stateChip(d)}
       lede={
         <>
           Scoped to the sector answered on the first screen{sector ? <> — <Mono>{sector}</Mono></> : null}. The
@@ -750,7 +747,6 @@ function UnitBody({ d }: BodyProps) {
     <Frame
       counter="Unit · 4 of 9"
       title="What exactly is counted?"
-      chip={stateChip(d)}
       lede={
         <>
           The unit of work is the single most load-bearing string in the definition: it is what a record counts, what
@@ -836,7 +832,6 @@ function CascadeBody({ d }: BodyProps) {
   return (
     <Frame
       title="Is this work part of a cascade?"
-      chip={stateChip(d)}
       lede={
         <>
           Training cascades are relationships between definitions, not fields on one. A level-2 worker's definition
@@ -903,7 +898,6 @@ function PeriodBody({ d }: BodyProps) {
     <Frame
       counter="Period · 3 of 7"
       title="What period is this paid for?"
-      chip={stateChip(d)}
       lede={
         <>
           On this branch the unit is the period itself. Nobody counts anything: the question is whether the post was
@@ -980,7 +974,6 @@ function OutcomeBody({ d }: BodyProps) {
     <Frame
       counter="Outcome · 3 of 7"
       title="What result is being paid for?"
-      chip={stateChip(d)}
       lede={
         <>
           On this branch the unit is a measured result, and the proof is population-level: a district statistic, not
@@ -1059,7 +1052,6 @@ function PartiesBody({ d }: BodyProps) {
     <Frame
       counter="Parties · 5 of 9"
       title="Who is involved?"
-      chip={stateChip(d)}
       lede={
         <>
           Three different relationships, and the definition only fixes one of them. Who performs the work is part of
@@ -1172,7 +1164,6 @@ function EvidenceBody({ d }: BodyProps) {
     <Frame
       counter="Evidence · 6 of 9"
       title="What counts as proof?"
-      chip={stateChip(d)}
       lede={
         <>
           Not a single answer but a map: several kinds of evidence, each strong enough for a different tier. Read top
@@ -1375,7 +1366,6 @@ function SourceBody({ d }: BodyProps) {
     <Frame
       counter="Source · 7 of 9"
       title="Where does this evidence come from?"
-      chip={stateChip(d)}
       lede={
         <>
           This is a provenance choice, not a convenience one. What kind of system a record comes from, and how the
@@ -1489,7 +1479,6 @@ function TemplateBody({ d }: BodyProps) {
   return (
     <Frame
       title="Your spreadsheet template"
-      chip={stateChip(d)}
       lede={
         <>
           Nobody writes this file's header by hand. The columns are derived from the definition version itself — the
@@ -1709,7 +1698,6 @@ function MappingBody({ d }: BodyProps) {
     <Frame
       counter="Connection · 2 of 5"
       title="Map their fields onto yours"
-      chip={stateChip(d)}
       lede={
         <>
           The source system's vocabulary is its own, and asking a partner to rename their columns is not an
@@ -1806,7 +1794,6 @@ function ConnectBody({ d }: BodyProps) {
     <Frame
       counter="Connection · 3 of 5"
       title="Connect to the system"
-      chip={stateChip(d)}
       lede={
         <>
           Where the system is, what it is called, and the name of the place a secret will live. Not the secret. A
@@ -2159,7 +2146,6 @@ function ValidationBody({ d }: BodyProps) {
     <Frame
       counter="Validation · 8 of 9"
       title="Who decides how this is validated?"
-      chip={stateChip(d)}
       lede={
         <>
           Validation is somebody's job, and naming them is the point of this screen. An unowned validation posture is
@@ -2232,7 +2218,6 @@ function PaymentBody({ d }: BodyProps) {
     <Frame
       counter="Payment · 9 of 9"
       title="What does this pay?"
-      chip={stateChip(d)}
       lede={
         <>
           The author does not have to answer this, and usually should not. Pricing is a separate authority with a
@@ -2297,7 +2282,6 @@ function RolesBody({ d }: BodyProps) {
   return (
     <Frame
       title="Who holds which role"
-      chip={stateChip(d)}
       lede={
         <>
           Four roles, four different parties, and the reason they are separate is that each is a place a decision can
@@ -2360,7 +2344,6 @@ function TranchesBody({ d }: BodyProps) {
   return (
     <Frame
       title="Payment tranches"
-      chip={stateChip(d)}
       lede={
         <>
           Work that pays in stages — some on completion, some on a later check. Each tranche is a share of a rate
@@ -2456,7 +2439,6 @@ function RulesBody({ d }: BodyProps) {
   return (
     <Frame
       title="Before it counts, and what reduces it"
-      chip={stateChip(d)}
       lede={
         <>
           Two different kinds of rule, and confusing them is expensive. A precondition decides whether the work counts
@@ -2559,7 +2541,6 @@ function ExtendBody({ d }: BodyProps) {
   return (
     <Frame
       title="When the form does not have what you need"
-      chip={stateChip(d)}
       lede={
         <>
           Two kinds of extension, and only one of them is this screen. A field an institution needs on its own records
