@@ -511,6 +511,7 @@ export function Registry() {
                         {when(d.updatedAt)}
                       </div>
                     </div>
+                    {d.id === currentDraftId() ? <Chip kind="brand" sm>open · this session</Chip> : null}
                     {stateChip(d)}
                     {d.state === "OPEN" && d.id !== currentDraftId() ? (
                       <button
@@ -523,6 +524,19 @@ export function Registry() {
                         }}
                       >
                         Resume
+                      </button>
+                    ) : null}
+                    {d.state === "OPEN" && d.id === currentDraftId() ? (
+                      // The draft this session already holds: Resume would be
+                      // a no-op, so the row carries the way back into the
+                      // wizard instead of hiding its button.
+                      <button
+                        className="btn secondary"
+                        data-continue={d.id}
+                        style={{ width: "auto", minWidth: 0, padding: "4px 9px", fontSize: 11.5 }}
+                        onClick={() => nav("/define/sector")}
+                      >
+                        Continue
                       </button>
                     ) : null}
                   </div>

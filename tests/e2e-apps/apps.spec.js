@@ -1915,6 +1915,10 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await page.evaluate(() => { location.hash = "#/definework"; });
   await settle(page);
   await expect(page.locator("[data-authoring]")).toContainText("definition-draft");
+  // The current draft's own row does not hide its button: it says it is open
+  // in this session and carries Continue back into the wizard.
+  await expect(page.locator("[data-continue]")).toHaveCount(1);
+  await expect(page.locator("body")).toContainText("open · this session");
   await page.evaluate(() => { location.hash = "#/define/sector"; });
   await settle(page);
 
