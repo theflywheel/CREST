@@ -109,6 +109,15 @@ test("enrolment app: every route", async ({ page, request }) => {
   await page.evaluate(() => { location.hash = "#/roster"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("outcome_value");
+  // J8 / W-4 (w3_1/w3_5): the worklist names the auto-resolve rule, and the
+  // handoff draws the attestation chain with its no-person-signs close.
+  await page.evaluate(() => { location.hash = "#/toconfirm"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("auto-confirms");
+  await page.evaluate(() => { location.hash = "#/handoff"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Only where the project configured a manual step");
+  await expect(page.locator("body")).toContainText("Many projects will have no human here at all");
   // w2_1 — the day's two real counters, from this device's own state.
   await page.evaluate(() => { location.hash = "#/registrations"; });
   await settle(page);
@@ -492,6 +501,17 @@ test("verify app: a real check, refusals shown, batch bounded", async ({ page })
     await settle(page);
     await assertAlive(page, errors, "verify " + r);
   }
+
+  // J8 / P-10: the attestation pack's copy on the institutional panels.
+  await page.evaluate(() => { location.hash = "#/w6_1"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Your institute holds no standing account");
+  await expect(page.locator("body")).toContainText("what makes it worth more than the worker's own word");
+  await expect(page.locator("body")).toContainText("the project contact is named on your invitation");
+  await page.evaluate(() => { location.hash = "#/w6_2"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Tier count is baked into every credential already issued");
+  await expect(page.locator("body")).toContainText("Deciding late is expensive");
 
   // Resolve a person: the whole chain, by party id.
   await page.evaluate(() => { location.hash = "#/person"; });
