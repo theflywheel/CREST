@@ -186,6 +186,12 @@ button.card{text-align:left;width:100%}
 .optcard .o-ex{font:400 12.2px/1.5 Roboto;color:var(--text-2);opacity:.75;margin-top:4px}
 .optcard .o-next{font:400 12.2px/1.5 Roboto;color:var(--text-2);margin-top:8px}
 .optcard.on .o-next{color:var(--p1)}
+
+/* ————— honest suggestion (category matcher) ————— */
+.suggest{display:flex;align-items:flex-start;gap:12px;border-radius:8px;padding:12px 14px;background:var(--success-bg)}
+.suggest .s-t{font:500 13px/1.4 Roboto;color:var(--success)}
+.suggest .s-s{font:400 12.3px/1.5 Roboto;color:var(--text-2);margin-top:2px}
+.suggest .s-use{margin-left:auto;flex:none;border:none;background:none;cursor:pointer;font:500 12.5px/1.4 Roboto;color:var(--success);padding:2px 4px}
 .optcols{display:flex;flex-direction:column;gap:10px}
 
 /* ————— error banner ————— */

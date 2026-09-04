@@ -665,18 +665,14 @@ function CategoryBody({ d }: BodyProps) {
   const s = useConsole();
   const v = useVocab(s.projectId);
   const [cat, setCat] = useState(d.doc.scope?.category || "");
+  const [desc, setDesc] = useState("");
+  const [showAll, setShowAll] = useState(false);
   const sector = d.doc.scope?.sector || "";
   return (
     <Frame
       counter="Category · 3 of 9"
       title="What kind of work is it?"
-      lede={
-        <>
-          Scoped to the sector answered on the first screen{sector ? <> — <Mono>{sector}</Mono></> : null}. The
-          categories a deployment offers here are its own; CREST has no taxonomy of work and could not usefully have
-          one.
-        </>
-      }
+      lede={<>Showing categories typical for {sector ? <Mono>{sector}</Mono> : "this sector"}. None of these is a restriction.</>}
       btns={[
         { label: "Back", to: "/define/counting", role: "secondary" },
         {
@@ -688,47 +684,74 @@ function CategoryBody({ d }: BodyProps) {
       ]}
     >
       <ClosedNote d={d} />
-      <Card>
-        <LoadFrame r={v}>
-          {(vocab) => {
-            // Scoped, honestly: a deployment that declares categories per
-            // sector gets the sector's own list; one that declares a flat list
-            // gets that; one that declares nothing gets a typed answer and the
-            // reason there is no list.
-            const perSector = sector ? vocab["categories:" + sector] : undefined;
-            const scoped = perSector || vocab.categories;
+      <LoadFrame r={v}>
+        {(vocab) => {
+          // A deployment that declares categories per sector gets the sector's
+          // own list; one that declares a flat list gets that; one that
+          // declares nothing gets a typed answer.
+          const perSector = sector ? vocab["categories:" + sector] : undefined;
+          const flat = vocab.categories;
+          const scoped = perSector || flat;
+          const hasWider = !!(perSector && flat && flat.some((e) => !perSector.includes(e)));
+          const declared = showAll && flat ? Array.from(new Set([...(perSector || []), ...flat])) : scoped;
+          if (!declared || !declared.length)
             return (
-              <>
-                <Vocab
-                  name="category"
-                  label="Category"
-                  declared={scoped}
-                  value={cat}
-                  onChange={setCat}
-                  placeholder="community-outreach"
-                  hint="Recorded on the version as classification.category."
-                />
-                {scoped && scoped.length ? (
-                  <p className="muted" style={{ fontSize: 12.3 }}>
-                    {perSector ? (
-                      <>
-                        Scoped to <Mono>{sector}</Mono>: this deployment declares a category list for that sector.
-                      </>
-                    ) : (
-                      <>This deployment declares one category list for every sector, so the sector does not narrow it.</>
-                    )}
-                  </p>
-                ) : null}
-              </>
+              <Vocab
+                name="category"
+                label="Category"
+                value={cat}
+                onChange={setCat}
+                placeholder="community-outreach"
+                hint="Recorded on the version as classification.category."
+              />
             );
-          }}
-        </LoadFrame>
-      </Card>
-      <Callout kind="green" title="What this screen never does">
-        Offer a category CREST invented. An empty picker here is an honest report that this deployment has not
-        declared its vocabulary yet — not a defect, and not something to paper over with a plausible-looking list,
-        because a category nobody chose would end up on a worker's record.
-      </Callout>
+          // The reference frame: the card grid, a "none of these fit?" row,
+          // a free-text description, and an honest suggestion drawn only from
+          // the deployment's own declared words — never one CREST invented.
+          const stop = new Set(["and", "the", "out", "for", "how", "are", "per", "with", "that", "many"]);
+          const words = Array.from(
+            new Set(desc.toLowerCase().split(/[^a-z0-9-]+/).filter((w) => w.length > 2 && !stop.has(w))),
+          );
+          let best: { val: string; hit: string[] } | null = null;
+          for (const entry of declared) {
+            const low = entry.toLowerCase();
+            const hit = words.filter((w) => low.includes(w));
+            if (hit.length && (!best || hit.length > best.hit.length))
+              best = { val: (entry.split("|")[0] || "").trim(), hit };
+          }
+          return (
+            <>
+              <Vocab name="category" label="" value={cat} onChange={setCat} declared={declared} />
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="muted" style={{ fontSize: 12.5 }}>None of these fit?</span>
+                {hasWider && !showAll ? (
+                  <button type="button" className="fchip" data-showall onClick={() => setShowAll(true)}>
+                    Show all categories
+                  </button>
+                ) : null}
+              </div>
+              <input
+                name="categoryDesc"
+                value={desc}
+                placeholder="Describe the work in your own words"
+                onChange={(e) => setDesc(e.target.value)}
+                style={{ width: "100%", border: "1px solid var(--divider)", borderRadius: 6, padding: "12px 13px", font: "400 13.3px/1.4 Roboto" }}
+              />
+              {best && best.val !== cat ? (
+                <div className="suggest" data-suggest={best.val}>
+                  <div>
+                    <div className="s-t">Suggested: {best.val}</div>
+                    <div className="s-s">Matched on {best.hit.map((w) => `“${w}”`).join(", ")} — from this deployment's own list</div>
+                  </div>
+                  <button type="button" className="s-use" data-use onClick={() => setCat(best!.val)}>
+                    Use this
+                  </button>
+                </div>
+              ) : null}
+            </>
+          );
+        }}
+      </LoadFrame>
     </Frame>
   );
 }
