@@ -574,12 +574,6 @@ function SectorBody({ d }: BodyProps) {
           )}
         </LoadFrame>
       </Card>
-      <Callout kind="green" title="What this screen never does">
-        Constrain what CREST will accept. The sector is not a permission, a schema or a rate: it is a word this
-        deployment uses to organise its own definitions. Another deployment could use an entirely different set and
-        still be running CREST — which is exactly why it is configuration and not a field the infrastructure
-        interprets.
-      </Callout>
     </Frame>
   );
 }
