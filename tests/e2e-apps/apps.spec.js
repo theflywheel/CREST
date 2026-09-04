@@ -2028,12 +2028,12 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   //    rest named as absent because that is what the service returns. ──
   await expect(page.locator("#stepcounter")).toContainText("Connection · 1 of 5");
   await expect(page.locator("body")).toContainText("csv-batch@1");
-  await expect(page.locator(".optcard.na")).not.toHaveCount(0);
+  await expect(page.locator(".g-row.dim")).not.toHaveCount(0);
   await expect(page.locator("body")).toContainText("not-implemented");
   // The reference's primary button names a class CREST does not have, so it
   // carries the gap instead of pretending.
   await expect(page.locator(".open-note")).toContainText(/DIGIT HCM is not an implemented adaptor class/i);
-  await page.click('.optcard:has-text("csv-batch@1")');
+  await page.click('button.g-row:has-text("csv-batch@1")');
   await page.waitForTimeout(400);
   await step(page, "Start a new one", "define/mapping");
 

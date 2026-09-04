@@ -254,6 +254,11 @@ input:focus-visible,textarea:focus-visible,select:focus-visible,button:focus-vis
 a.g-row,button.g-row{width:100%;text-align:left;background:#fff;border:none;color:inherit;text-decoration:none;cursor:pointer}
 a.g-row:hover,button.g-row:hover{background:var(--paper-2)}
 .gt-wrap{overflow-x:auto;border-radius:8px}
+.grid-tbl .g-strong{font:500 13px/1.45 Roboto;color:var(--text-1)}
+button.g-row.on{background:var(--p1-bg)}
+button.g-row.on .g-strong{color:var(--p1)}
+.grid-tbl .g-row.dim{color:var(--text-2)}
+.grid-tbl .g-row.dim .g-strong{color:var(--text-2)}
 
 /* ————— stats ————— */
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}

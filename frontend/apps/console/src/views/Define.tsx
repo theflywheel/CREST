@@ -1595,14 +1595,17 @@ function AdaptorsBody({ d }: BodyProps) {
     [],
   );
   const src = d.doc.sources || {};
-  const pick = (ref: string) =>
-    save(d.id, "sources", {
+  const [sel, setSel] = useState(src.connections?.[0]?.adapterRef || "");
+  const pick = (ref: string) => {
+    setSel(ref);
+    return save(d.id, "sources", {
       ...src,
       connections: [
         { ...(src.connections?.[0] || { systemRef: "" }), adapterRef: ref },
         ...(src.connections || []).slice(1),
       ],
     });
+  };
   return (
     <LoadFrame r={r}>
       {(list) => {
@@ -1613,20 +1616,15 @@ function AdaptorsBody({ d }: BodyProps) {
           <Frame
             counter="Connection · 1 of 5"
             title="Choose a class adaptor"
-            chip={<Chip kind="info">{real.length} implemented</Chip>}
-            lede={
-              <>
-                An adaptor is per class of system, configured per deployment — not per partner. This is the catalogue
-                the service actually reports, including what it does not have, because a library screen padded with
-                logos is a promise the first partner conversation has to walk back.
-              </>
-            }
+            lede="Pick the one that matches the system on the other side. If nothing matches, build a new adaptor from a sample of their data."
             btns={[
               { label: "Back", to: "/define/source", role: "secondary" },
               { label: "Start a new one", to: "/define/mapping", role: "secondary" },
               {
                 label: "Use DIGIT HCM",
                 role: "primary",
+                onClick: () =>
+                  document.querySelector(".open-note")?.scrollIntoView({ behavior: "smooth", block: "center" }),
                 note: (
                   <>
                     <b>DIGIT HCM is not an implemented adaptor class.</b>{" "}
@@ -1640,38 +1638,46 @@ function AdaptorsBody({ d }: BodyProps) {
             ]}
           >
             <ClosedNote d={d} />
-            <CardTitled t="Implemented" chip={<Chip kind="ok">available</Chip>}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-                {real.map((a) => (
-                  <OptionCard
-                    key={a.class}
-                    t={a.ref ? `${a.class} · ${a.ref}` : a.class}
-                    s={a.note || ""}
-                    on={src.connections?.[0]?.adapterRef === a.ref}
-                    onPick={() => pick(a.ref || a.class)}
-                    tag={<Chip kind="ok" sm>use this</Chip>}
-                  />
-                ))}
-              </div>
+            <CardTitled t="Built and tested" chip={<Chip kind="ok">{real.length} available</Chip>}>
+              <GridTable cols="1.2fr 2fr auto" head={["Adaptor", "What it reads", "Status"]}>
+                {real.map((a) => {
+                  const on = sel === (a.ref || a.class);
+                  return (
+                    <button
+                      key={a.class}
+                      type="button"
+                      className={"g-row" + (on ? " on" : "")}
+                      aria-pressed={on}
+                      data-pick={a.ref || a.class}
+                      onClick={() => pick(a.ref || a.class)}
+                    >
+                      <span className="g-strong">{a.ref ? `${a.class} · ${a.ref}` : a.class}</span>
+                      <span>{a.note || ""}</span>
+                      <Chip kind="ok" sm>{on ? "selected" : "available"}</Chip>
+                    </button>
+                  );
+                })}
+              </GridTable>
               {real.length ? null : <Empty>The service reports no implemented adaptor class.</Empty>}
             </CardTitled>
-            <CardTitled t="Named, and absent" chip={<Chip kind="warn">{absent.length} not implemented</Chip>}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            <CardTitled t="Named, not built" chip={<Chip kind="warn">{absent.length} not implemented</Chip>}>
+              <GridTable cols="1.2fr 2fr auto" head={["Adaptor", "Why it is not here yet", "Status"]}>
                 {absent.map((a) => (
-                  <OptionCard key={a.class} t={a.class} s={a.note || ""} unavailable />
+                  <div key={a.class} className="g-row dim">
+                    <span className="g-strong">{a.class}</span>
+                    <span>{a.note || ""}</span>
+                    <Chip kind="warn" sm>not-implemented</Chip>
+                  </div>
                 ))}
-              </div>
-              <p className="muted" style={{ marginTop: 8 }}>
-                These stay on the screen precisely so nobody wonders whether they were hidden. Each says
-                "not-implemented" because that is the word the service returns for it, not a judgement this screen
-                made.
+              </GridTable>
+            </CardTitled>
+            <CardTitled t="Start a new adaptor from a sample payload" chip={<Chip kind="info">open to anyone</Chip>}>
+              <p className="muted" style={{ margin: 0 }}>
+                Start a new one opens the mapping screen: name the source system's columns against CREST's canonical
+                fields. The result is a per-source mapping on this definition — honestly not yet a reusable adaptor
+                others inherit.
               </p>
             </CardTitled>
-            <Callout kind="green" title="What is deliberately absent">
-              A per-partner integration list. One implemented class covers every system that can produce a delimited
-              export, which is the lowest common denominator a programme with no API can always reach — and it is why
-              the tier map's floor exists at all.
-            </Callout>
           </Frame>
         );
       }}
