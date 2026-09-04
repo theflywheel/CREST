@@ -435,13 +435,6 @@ export function Registry() {
         return (
           <Frame
             title="Work definitions"
-            lede={
-              <>
-                {total === 1 ? "One" : total} on this deployment. A definition is never edited once active —
-                publishing a change creates a new version, and every version a credential has pinned resolves
-                forever.
-              </>
-            }
             btns={[
               {
                 label: "Clone a version",
