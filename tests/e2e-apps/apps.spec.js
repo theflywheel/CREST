@@ -1941,7 +1941,8 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   //    the basis before it navigates. ──
   await expect(page.locator("#stepcounter")).toContainText("Counting basis · 2 of 9");
   await expect(page.locator(".optcard")).toHaveCount(3);
-  await expect(page.locator("body")).toContainText("counting.basis = outcome");
+  // The reference frame: three plain cards; the outcome branch offered by name.
+  await expect(page.locator("body")).toContainText(/Paid on a result, often measured across a population/i);
   // The two branch screens the fork offers, visited and then left — the draft
   // records whichever branch the walk continues on.
   await step(page, "Time-based instead", "define/period");

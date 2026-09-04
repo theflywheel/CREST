@@ -131,6 +131,8 @@ button.card{text-align:left;width:100%}
 /* ————— honest sidecar ————— */
 .sidecar{display:flex;gap:10px;align-items:flex-start;border-radius:7px;padding:11px 13px;background:var(--info-bg)}
 .sidecar.ok{background:var(--success-bg)}
+.sidecar.warm{background:var(--warning-bg);border:1px solid #EA8D0022}
+.sidecar.warm .ico circle,.sidecar.warm .ico line{stroke:var(--warning)}
 .sidecar .txt{font:400 12.5px/1.55 Roboto;color:var(--text-1)}
 .sidecar .ico{flex:none;width:15px;height:15px;margin-top:2px}
 .sidecar .ico circle{fill:none;stroke:var(--info);stroke-width:1.6}
@@ -178,6 +180,12 @@ button.card{text-align:left;width:100%}
 .optcard .o-na{font:500 11px/1.4 Roboto;color:var(--text-2);background:var(--generic-bg);border-radius:12px;padding:3px 9px}
 .optcard .o-s{font:400 12.2px/1.5 Roboto;color:var(--text-2);margin-top:4px}
 .optcard.na .o-s{color:var(--text-2)}
+.optcard.on{background:#FDF4EF}
+.optcard.on .o-t{color:var(--p1)}
+.optcard .o-sel{margin-left:auto;font:400 12px/1.4 Roboto;color:var(--p1)}
+.optcard .o-ex{font:400 12.2px/1.5 Roboto;color:var(--text-2);opacity:.75;margin-top:4px}
+.optcard .o-next{font:400 12.2px/1.5 Roboto;color:var(--text-2);margin-top:8px}
+.optcard.on .o-next{color:var(--p1)}
 .optcols{display:flex;flex-direction:column;gap:10px}
 
 /* ————— error banner ————— */

@@ -85,9 +85,9 @@ const sideIco = (
   </svg>
 );
 
-export function Sidecar(props: { ok?: boolean; children: ReactNode }) {
+export function Sidecar(props: { ok?: boolean; warm?: boolean; children: ReactNode }) {
   return (
-    <div className={"sidecar" + (props.ok ? " ok" : "")}>
+    <div className={"sidecar" + (props.ok ? " ok" : "") + (props.warm ? " warm" : "")}>
       {sideIco}
       <span className="txt">{props.children}</span>
     </div>
@@ -190,6 +190,8 @@ export function OptionCard(props: {
   unavailable?: boolean;
   onPick?: () => void;
   tag?: ReactNode;
+  ex?: ReactNode;
+  next?: ReactNode;
 }) {
   const cls = "optcard" + (props.on ? " on" : "") + (props.unavailable ? " na" : "");
   const body = (
@@ -198,8 +200,11 @@ export function OptionCard(props: {
         <span className="o-t">{props.t}</span>
         {props.unavailable ? <span className="o-na">not available</span> : null}
         {props.tag}
+        {props.on && !props.unavailable ? <span className="o-sel">Selected</span> : null}
       </div>
       <div className="o-s">{props.s}</div>
+      {props.ex ? <div className="o-ex">{props.ex}</div> : null}
+      {props.next ? <div className="o-next">{props.next}</div> : null}
     </>
   );
   if (props.unavailable || !props.onPick) return <div className={cls}>{body}</div>;

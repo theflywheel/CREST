@@ -617,13 +617,7 @@ function CountingBody({ d }: BodyProps) {
     <Frame
       counter="Counting basis · 2 of 9"
       title="How is this work counted?"
-      lede={
-        <>
-          This is the fork the rest of the definition hangs off. It decides what one unit of work <i>is</i>, and
-          therefore what a record has to say to prove one happened, and what a rate owner will be pricing. Choosing
-          again later does not adjust the definition — it makes a different one.
-        </>
-      }
+      lede="This decides what we ask you next. Get it right and the rest of the form gets shorter."
       btns={[
         { label: "Back", to: "/define/sector", role: "secondary" },
         { label: "Time-based instead", to: "/define/period", role: "secondary", onClick: () => write("time-period") },
@@ -633,37 +627,33 @@ function CountingBody({ d }: BodyProps) {
       <ClosedNote d={d} />
       <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
         <OptionCard
-          t="A countable event"
-          s="One record per thing done — a household visited, a bednet handed over, a session run. The unit is the event, and evidence names it individually."
+          t="Event"
+          s="Discrete things that happen and can be counted"
+          ex="A bednet handed over, a household visited, a dose given"
+          next="Next: category, then unit of work"
           on={basis === "event"}
           onPick={() => setBasis("event")}
-          tag={<Chip kind="ok" sm>counting.basis = event</Chip>}
         />
         <OptionCard
-          t="A period of engagement"
-          s="Paid for holding the post, not for a count — the daily centre run, the month attended. The unit is the period, and evidence proves engagement across it."
+          t="Time"
+          s="Paid for a period, not for a countable output"
+          ex="A monthly honorarium, a daily wage, a retainer"
+          next="Next: frequency. No category, no unit — they do not apply"
           on={basis === "time-period"}
           onPick={() => setBasis("time-period")}
-          tag={<Chip kind="info" sm>counting.basis = time-period</Chip>}
         />
         <OptionCard
-          t="A measured result"
-          s="Paid on a population-level indicator moving — coverage, completion, reduction. The unit is the result, and no individual record can prove it alone."
+          t="Outcome"
+          s="Paid on a result, often measured across a population"
+          ex="Coverage rate, treatment completion, learning gain"
+          next="Next: outcome indicator and aggregation level"
           on={basis === "outcome"}
           onPick={() => setBasis("outcome")}
-          tag={<Chip kind="warn" sm>counting.basis = outcome</Chip>}
         />
       </div>
-      <Callout kind="teal" title="Why this one is different">
-        The other answers in this wizard are descriptions. This one is structural: an outcome-based definition cannot
-        be evidenced by a per-event record, and an event-based one cannot be evidenced by a district statistic.
-        Getting it wrong is not a wording problem discovered in review — it is a definition whose evidence can never
-        satisfy it, and the worker is the one who finds out.
-      </Callout>
-      <Sidecar>
-        The three branch screens are all reachable from here: an event goes on to the category and unit screens, a
-        period to the period screen, and a result to the outcome screen. The buttons below write the basis before
-        they navigate, so the branch you land on is the branch the draft records.
+      <Sidecar warm>
+        A peer mental-health worker paid partly on retainer and partly per session is still an open question. Either
+        counting basis holds two values, or it is honestly two linked work definitions.
       </Sidecar>
     </Frame>
   );
