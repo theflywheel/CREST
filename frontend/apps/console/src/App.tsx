@@ -39,7 +39,7 @@ import {
   Projects as OrgHome, NewProject, People, Workers, Validation, Intake, SpreadsheetArrived, Finance as FinanceConnect, Navigation,
 } from "./views/Setup";
 import {
-  Where, Handover, Compose, Owners, Activate, FinanceCode, SupportOwner, Partners,
+  Where, Handover, Compose, Owners, Activate, FinanceCode, SupportOwner, Partners, Vocabulary,
 } from "./views/J3";
 import {
   G1Setup, G1Covers, G1Consent, G1Invite, G1Services, G1People, Admissions, AdmissionDetail,
@@ -80,7 +80,7 @@ const FINANCE_ROUTES = ["/finance", "/finance/connect", "/support"];
 // frame's own buttons rather than by the rail.
 const J3_ROUTES = [
   "/org", "/people", "/projects", "/projects/new", "/definition", "/paysetup", "/workers",
-  "/validation", "/intake", "/intake/file", "/sources", "/where", "/handover", "/compose", "/owners",
+  "/validation", "/intake", "/intake/file", "/sources", "/where", "/handover", "/compose", "/vocabulary", "/owners",
   "/activate", "/partners", "/rateowner", ...DASHBOARD_ROUTES, ...FINANCE_ROUTES,
 ];
 
@@ -324,6 +324,7 @@ export function App() {
         <Route path="/where" element={<Where />} />
         <Route path="/handover" element={<Handover />} />
         <Route path="/compose" element={<Compose />} />
+        <Route path="/vocabulary" element={<Vocabulary />} />
         <Route path="/owners" element={<Owners />} />
         <Route path="/activate" element={<Activate />} />
         <Route path="/partners" element={<Partners />} />

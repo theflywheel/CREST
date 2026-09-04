@@ -425,12 +425,144 @@ export function Compose() {
                 — register off, pay off, validate on. The credential is never contingent on a payment component being
                 present, connected or resolved.
               </Callout>
+              <p className="muted" style={{ marginTop: 10 }}>
+                Define work runs on this deployment's own words.{" "}
+                <a href="#/vocabulary" data-to-vocabulary>Declare the definition vocabulary →</a>
+              </p>
               <div style={{ borderTop: "1px solid var(--line, #E5E1DC)", marginTop: 16, paddingTop: 14, display: "flex", justifyContent: "flex-end", gap: 10 }}>
                 <button className="btn secondary" style={{ width: "auto", padding: "10px 22px" }} onClick={() => nav("/handover")}>
                   Back
                 </button>
                 <button className="btn dominant" style={{ width: "auto", padding: "10px 22px" }} onClick={() => nav("/workers")}>
                   Continue
+                </button>
+              </div>
+            </div>
+          </>
+        );
+      }}
+    </LoadFrame>
+  );
+}
+
+// ── the definition vocabulary, declared through the product ────────────────
+// The sector/category words the authoring wizard offers are L2: CREST carries
+// no enum of them, and until now the only way to declare them was the
+// project-creation payload — configuration by seed, which is exactly what a
+// self-servable deployment cannot depend on. This screen writes them as a
+// composition choice (PUT /v1/projects/{id}/composition/definition-vocabulary),
+// the same accountable write path every other configuration-level fact uses:
+// the record carries who declared the words and when, and the wizard renders
+// whatever it finds — never a list CREST invented.
+//
+// Line format: one entry per line, optionally "value | short descriptor".
+// The value is what gets recorded on a definition; the descriptor only helps
+// the author choose.
+const splitLines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
+const vocabArea = {
+  width: "100%", minHeight: 120, border: "1px solid var(--divider)", borderRadius: 6,
+  padding: "10px 12px", font: "400 13.3px/1.6 Roboto",
+} as const;
+
+export function Vocabulary() {
+  const s = useConsole();
+  const [gen, setGen] = useState(0);
+  const [err, setErr] = useState<unknown>(null);
+  const [saved, setSaved] = useState(false);
+  const [sectors, setSectors] = useState<string | null>(null);
+  const [cats, setCats] = useState<string | null>(null);
+  const r = useLoad(async () => {
+    const [p, comp] = await Promise.all([
+      api.get("parties", proj(s.projectId)),
+      api.get("parties", proj(s.projectId, "/composition")).catch(() => ({ choices: [] })),
+    ]);
+    const project = (p.project || p) as Project;
+    const rec = ((comp.choices || []) as Array<{ kind?: string; payload?: { value?: unknown }; recordedBy?: string; recordedAt?: string }>).find(
+      (c) => (c.kind || "").replace(/^composition:/, "") === "definition-vocabulary",
+    );
+    const declared = ((rec?.payload as { value?: unknown } | undefined)?.value || {}) as Record<string, string[]>;
+    return { project, rec, declared };
+  }, [s.projectId, gen]);
+  const record = async (v: Record<string, string[]>) => {
+    setErr(null);
+    setSaved(false);
+    try {
+      await api.put("parties", proj(s.projectId, "/composition/definition-vocabulary"), { value: v });
+      setSectors(null);
+      setCats(null);
+      setSaved(true);
+      setGen((g) => g + 1);
+    } catch (e) {
+      setErr(e);
+    }
+  };
+  return (
+    <LoadFrame r={r}>
+      {({ project, rec, declared }) => {
+        const sVal = sectors ?? (declared.sectors || []).join("\n");
+        const cVal = cats ?? (declared.categories || []).join("\n");
+        return (
+          <>
+            <Title t="Definition vocabulary" extra={ownershipChip(project.ownership)} />
+            <Lede>
+              The words the authoring wizard offers for sector and category. They are this deployment's own — CREST
+              carries no list of them — and whatever is declared here renders as a picker on the author's screens;
+              where nothing is declared, the author types instead.
+            </Lede>
+            {err ? <WriteRefusal err={err} owner={project.ownerPartyId} /> : null}
+            <div style={{ maxWidth: 820, display: "flex", flexDirection: "column", gap: 15 }}>
+              <Card>
+                <RefField
+                  label="Sectors"
+                  hint={<>One per line. Optionally add a short descriptor after a pipe: <Mono>Health | Community health, campaigns, facility work</Mono>. The value before the pipe is what a definition records.</>}
+                >
+                  <textarea
+                    name="vocab-sectors"
+                    style={vocabArea}
+                    value={sVal}
+                    placeholder={"Health | Community health, campaigns, facility work\nSanitation | Waste, drainage, public toilets"}
+                    onChange={(e) => setSectors(e.target.value)}
+                  />
+                </RefField>
+              </Card>
+              <Card>
+                <RefField
+                  label="Categories"
+                  hint="One per line, same format. This flat list is offered for every sector; per-sector lists can be declared through the same record as categories:<sector>."
+                >
+                  <textarea
+                    name="vocab-categories"
+                    style={vocabArea}
+                    value={cVal}
+                    placeholder={"Community outreach | Door-to-door, campaigns\nFacility support | In-facility assistance"}
+                    onChange={(e) => setCats(e.target.value)}
+                  />
+                </RefField>
+              </Card>
+              {rec ? (
+                <p className="muted">
+                  Declared by <MonoShort id={rec.recordedBy || ""} /> · {when(rec.recordedAt)}
+                  {saved ? " · saved" : ""}
+                </p>
+              ) : (
+                <p className="muted">
+                  Nothing declared yet — the wizard currently takes typed answers.{saved ? " · saved" : ""}
+                </p>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button
+                  className="btn dominant"
+                  data-btn="Declare vocabulary"
+                  style={{ width: "auto", padding: "10px 22px" }}
+                  onClick={() =>
+                    record({
+                      ...declared,
+                      sectors: splitLines(sVal),
+                      categories: splitLines(cVal),
+                    })
+                  }
+                >
+                  Declare vocabulary
                 </button>
               </div>
             </div>

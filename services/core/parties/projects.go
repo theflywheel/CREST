@@ -168,6 +168,26 @@ func isNamedConfigurator(c schema.Context, callerPartyID string) bool {
 		callerPartyID == c.Ownership.PartyID
 }
 
+// grantAdmitsRead is the read half of the project gate for role holders: a
+// party holding an ACTIVE authorization scoped to this context may view it.
+// The grant is a recorded relationship — an authority named them into the
+// context — and what a project read returns (composition choices, declared
+// vocabulary, activation state) is exactly what their role runs on. It admits
+// reads only; the callers list is expected to be pre-filtered to active
+// grants, and a grant scoped to a different context (or to no context) admits
+// nothing.
+func grantAdmitsRead(held []schema.Authorization, contextID string) bool {
+	if contextID == "" {
+		return false
+	}
+	for _, a := range held {
+		if a.Scope.ContextID != nil && *a.Scope.ContextID == contextID {
+			return true
+		}
+	}
+	return false
+}
+
 // acknowledgedConfigurator is the gate on every write a named party makes to a
 // context they were handed.
 //

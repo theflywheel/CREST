@@ -94,6 +94,12 @@ h1{font:300 38px/1.15 Roboto;letter-spacing:-.9px}
 .def-row .sub{font:400 12.3px/1.45 Roboto;color:var(--text-2);margin-top:2px}
 .def-row.dim .t{color:var(--text-2)}
 .def-row.dim .sub{color:var(--text-3,#9a9a9a)}
+.vocab-cards{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+.vcard{display:flex;flex-direction:column;gap:4px;text-align:left;padding:14px 16px;border:1px solid var(--divider);border-radius:8px;background:#fff;cursor:pointer;font:inherit}
+.vcard .v-t{font:500 14.5px/1.4 Roboto;color:var(--text-1)}
+.vcard .v-s{font:400 12.3px/1.45 Roboto;color:var(--text-2)}
+.vcard.on{border-color:var(--p1);background:var(--p1-bg)}
+.vcard.on .v-t{color:var(--p1)}
 .progressbar-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .progressbar-row .progressbar{flex:1}
 

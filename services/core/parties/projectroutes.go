@@ -167,6 +167,19 @@ func (h *projectHandlers) gateProject(w http.ResponseWriter, r *http.Request,
 	if named && (!write || acknowledgedConfigurator(c, caller.PartyID)) {
 		return caller.PartyID, true
 	}
+	// A person granted a role scoped to this project may READ it. The grant is
+	// a recorded relationship — an authority named them into this context — and
+	// the facts a project read returns (its composition choices, its declared
+	// vocabulary, its activation state) are exactly the facts their role runs
+	// on. Without this, a definition author cannot read the vocabulary their
+	// own wizard is supposed to offer. Writes are untouched: configuring stays
+	// with the owner and the acknowledged configurator.
+	if !write && caller.PartyID != "" {
+		held, err := activeAuthorizationsHeldBy(r.Context(), h.d.DB.Q(), caller.PartyID, h.d.Clock.Now())
+		if err == nil && grantAdmitsRead(held, c.ID) {
+			return caller.PartyID, true
+		}
+	}
 	// A named configurator who has not accepted is told what is missing rather
 	// than being handed a bare refusal: the thing standing in their way is one
 	// button on the screen they are already looking at.

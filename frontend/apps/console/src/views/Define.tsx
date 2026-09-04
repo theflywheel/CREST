@@ -313,21 +313,29 @@ const ClosedNote = (p: { d: Draft }) =>
     </OpenNote>
   );
 
-// The L2 vocabulary read. Where the project's own configuration declares a
-// list this renders it; where it does not, the screen says why there is no
-// list and takes a typed answer (the Compose precedent).
+// The L2 vocabulary read. Two places a deployment can declare its words, both
+// its own: the project-creation payload (configuration.definitionVocabulary)
+// and — the self-serve path — the definition-vocabulary composition choice the
+// configurator writes through /vocabulary. The composition record wins because
+// it is the one with a decider and a timestamp attached, and it is the one
+// that can change after the project exists. Where neither declares anything,
+// the screen says why there is no list and takes a typed answer (the Compose
+// precedent).
 const useVocab = (projectId: string) =>
-  useLoad<Record<string, string[]>>(
-    () =>
-      api
-        .get("parties", `/v1/projects/${encodeURIComponent(projectId)}`)
-        .then((p) => {
-          const cfg = ((p.project || p).configuration || {}) as Record<string, unknown>;
-          return (cfg.definitionVocabulary || {}) as Record<string, string[]>;
-        })
-        .catch(() => ({}) as Record<string, string[]>),
-    [projectId],
-  );
+  useLoad<Record<string, string[]>>(async () => {
+    const pp = `/v1/projects/${encodeURIComponent(projectId)}`;
+    const [p, comp] = await Promise.all([
+      api.get("parties", pp).catch(() => null),
+      api.get("parties", `${pp}/composition`).catch(() => ({ choices: [] })),
+    ]);
+    const cfg = p ? (((p.project || p).configuration || {}) as Record<string, unknown>) : {};
+    const base = (cfg.definitionVocabulary || {}) as Record<string, string[]>;
+    const rec = ((comp.choices || []) as Array<{ kind?: string; payload?: { value?: unknown } }>).find(
+      (c) => (c.kind || "").replace(/^composition:/, "") === "definition-vocabulary",
+    );
+    const declared = ((rec?.payload as { value?: unknown } | undefined)?.value || {}) as Record<string, string[]>;
+    return { ...base, ...declared };
+  }, [projectId]);
 
 function Vocab(props: {
   label: string; hint?: ReactNode; declared?: string[]; value: string;
@@ -338,14 +346,30 @@ function Vocab(props: {
     <>
       <RefField label={props.label} hint={props.hint}>
         {has ? (
-          <select name={props.name} value={props.value} onChange={(e) => props.onChange(e.target.value)}>
-            <option value="">—</option>
-            {props.declared!.map((o) => (
-              <option key={o} value={o}>
-                {o}
-              </option>
-            ))}
-          </select>
+          // The reference's card grid. A declared entry is "value" or
+          // "value | descriptor": the value is what the definition records,
+          // the descriptor only helps the author choose.
+          <div className="vocab-cards" data-vocab={props.name}>
+            {props.declared!.map((entry) => {
+              const bar = entry.indexOf("|");
+              const val = (bar >= 0 ? entry.slice(0, bar) : entry).trim();
+              const hint = bar >= 0 ? entry.slice(bar + 1).trim() : "";
+              const on = props.value === val;
+              return (
+                <button
+                  key={entry}
+                  type="button"
+                  className={"vcard" + (on ? " on" : "")}
+                  data-pick={val}
+                  aria-pressed={on}
+                  onClick={() => props.onChange(val)}
+                >
+                  <span className="v-t">{val}</span>
+                  {hint ? <span className="v-s">{hint}</span> : null}
+                </button>
+              );
+            })}
+          </div>
         ) : (
           <input
             name={props.name}
