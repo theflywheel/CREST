@@ -2124,7 +2124,10 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await expect(page.locator("#stepcounter")).toContainText("Payment · 9 of 9");
   await choose(page, "rateSetter", "Someone else will — invite sent");
   await choose(page, "mechanismSetter", "I'll set this");
-  await expect(page.locator('[data-callout="green"]')).toContainText(/There is no currency field on this screen/i);
+  // No amount anywhere: the frame's split is two records joined by reference,
+  // and the money question is the payment record's, not the definition's.
+  await expect(page.locator("body")).toContainText(/stronger evidence to release money than it requires to issue/i);
+  await expect(page.locator('input[name="rateamount"], input[name="currency"]')).toHaveCount(0);
   await step(page, "Continue", "define/roles");
 
   // ── p3_20 · the four project roles. ──
@@ -2132,7 +2135,7 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await page.locator('[data-role="mechanismSetter"]').fill(P3.approver);
   await page.locator('[data-role="validator"]').fill("District health office");
   await page.locator('[data-role="approver"]').fill(P3.approver);
-  await expect(page.locator("body")).toContainText(/Naming somebody here does not grant them anything/i);
+  await expect(page.locator("body")).toContainText(/the authority itself lives in the service that enforces it/i);
   await step(page, "Continue", "define/tranches");
 
   // ── p3_12 · stacked pay. Shares of a rate nobody has published yet. ──
@@ -2157,7 +2160,7 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await choose(page, "exttype", "string");
   await fill(page, "extvalue", "MGN/2026/WD/0841");
   await page.click("#extensionform button[type=submit]");
-  await expect(page.locator("body")).toContainText(/it is a design finding/i);
+  await expect(page.locator("body")).toContainText(/is a design finding/i);
   await step(page, "Continue", "define/open");
 
   // ── p3_18 · nothing left undecided, and the submit that follows from it. ──

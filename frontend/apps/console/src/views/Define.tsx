@@ -113,7 +113,7 @@ type Doc = {
     summary?: string; evidenceInPlainLanguage?: string[]; tierCeiling?: number;
     checkIntensity?: string; tierMap?: TierRule[];
   };
-  validation?: { authorisedIssuers?: string[]; specifierPartyId?: string; posture?: string; delayDays?: number };
+  validation?: { authorisedIssuers?: string[]; specifierPartyId?: string; posture?: string; delayDays?: number; decidedBy?: string };
   sources?: { sourceSystems?: string[]; requiredFields?: string[]; schemaRef?: string; connections?: Connection[] };
   cascade?: { roleLevel?: string; trainedByDefinitionId?: string; trainedByVersion?: number };
   extensions?: Record<string, { label: string; valueType: string; value: string }>;
@@ -2181,14 +2181,14 @@ function ValidationBody({ d }: BodyProps) {
   const [who, setWho] = useState(v.posture || "");
   const [delay, setDelay] = useState(v.delayDays != null ? String(v.delayDays) : "");
   const [spec, setSpec] = useState(v.specifierPartyId || "");
+  const [decidedBy, setDecidedBy] = useState(v.decidedBy || "author");
   return (
     <Frame
       counter="Validation · 8 of 9"
       title="Who decides how this is validated?"
-      lede={
+      chip={
         <>
-          Validation is somebody's job, and naming them is the point of this screen. An unowned validation posture is
-          the state in which a disputed record has no route to an answer.
+          <Chip kind="warn">Recommended, not built</Chip> <Chip kind="info">Symmetric with payment delegation</Chip>
         </>
       }
       btns={[
@@ -2203,11 +2203,26 @@ function ValidationBody({ d }: BodyProps) {
               specifierPartyId: spec.trim() || undefined,
               posture: who.trim() || undefined,
               delayDays: delay.trim() ? Number(delay.trim()) : undefined,
+              decidedBy,
             }),
         },
       ]}
     >
       <ClosedNote d={d} />
+      <div style={grid()}>
+        <OptionCard
+          t="I'll set it now"
+          s="You pick who validates, the timing and the intensity"
+          on={decidedBy === "author"}
+          onPick={() => setDecidedBy("author")}
+        />
+        <OptionCard
+          t="Someone else will"
+          s="Invite them. The field stays pending until they act."
+          on={decidedBy === "delegate"}
+          onPick={() => setDecidedBy("delegate")}
+        />
+      </div>
       <Card>
         <div style={grid()}>
           <RefField label="Who validates" hint="Recorded as classification.validationPosture — L2.">
@@ -2230,15 +2245,22 @@ function ValidationBody({ d }: BodyProps) {
           </RefField>
         </div>
       </Card>
-      <Callout kind="teal" title="The one line here that is not decoration">
-        The issuer list. Name an issuer this deployment does not sign with and every credential issued against this
-        definition fails verification — correctly, because that is the check doing its job. It is the difference
-        between a policy field and an infrastructure one, on the same screen, and the hint says which is which.
+      <RefField label="Validator party types">
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {["External Evidence Contact", "Supervisor", "Collective or community body", "External verifier"].map((t) => (
+            <Chip key={t} kind="plain">{t}</Chip>
+          ))}
+        </div>
+      </RefField>
+      <Callout kind="green">
+        A village water-point committee approving a mechanic broke the flat taxonomy: the validator list assumed
+        institutional hierarchy only, even though a matching validation tier already existed.
       </Callout>
-      <Callout kind="green" title="What a validation delay does not do">
-        Hold anyone's money. A validation that happens thirty days after payment is a check on the programme, not a
-        gate in front of the worker — and nothing on this screen can turn it into one.
-      </Callout>
+      <Sidecar>
+        Validation timing is now independent of payment timing. Paid immediately, validated 30 days later is a real
+        pattern the coupled version could not express — a validation that happens after payment is a check on the
+        programme, not a gate in front of the worker.
+      </Sidecar>
     </Frame>
   );
 }
@@ -2257,12 +2279,7 @@ function PaymentBody({ d }: BodyProps) {
     <Frame
       counter="Payment · 9 of 9"
       title="What does this pay?"
-      lede={
-        <>
-          The author does not have to answer this, and usually should not. Pricing is a separate authority with a
-          separate record; what this screen records is who will hold it — a delegation, not a price.
-        </>
-      }
+      lede="Optional. A definition is fully valid for issuing credentials with no rate attached at all."
       btns={[
         { label: "Back", to: "/define/validation", role: "secondary" },
         { label: "Rate structures", to: "/define/tranches", role: "secondary", onClick: persist },
@@ -2270,6 +2287,12 @@ function PaymentBody({ d }: BodyProps) {
       ]}
     >
       <ClosedNote d={d} />
+      {/* The frame's two-record split: the definition and the payment setup
+          are separate records with separate owners, joined by reference. */}
+      <div style={grid()}>
+        <OptionCard t="Work definition" s="Owns the unit of work and the minimum evidence tier" />
+        <OptionCard t="Payment set up" s="Owns the rate and the calculation once validated" />
+      </div>
       <Card>
         <div style={grid(250)}>
           <RefField label="Who sets the rate">
@@ -2296,11 +2319,16 @@ function PaymentBody({ d }: BodyProps) {
           a use of its own, and a worker's record of what they did does not depend on anyone having priced it yet.
         </p>
       </Card>
-      <Callout kind="green" title="What is deliberately absent">
-        An amount. There is no currency field on this screen and no way to type a number of shillings, because the
-        definition links to payment by reference and never embeds it. The rate is a versioned record with its own
-        owner, and this screen's most useful answer is the name of that owner.
-      </Callout>
+      <Sidecar>
+        A project can require stronger evidence to release money than it requires to issue the credential. A tier may
+        be enough for the credential to exist and count toward a history, and still not enough to pay against.
+      </Sidecar>
+      <Sidecar warm>
+        Worth clarifying in the spec: §8 says minimum_tier_for_payment must never be lower than the definition's
+        tier_ceiling, but the reference's numbering makes the strongest tier 1. Read numerically that makes the two
+        always equal and the field pointless. The prose intent is the opposite. The direction needs stating
+        explicitly before anyone builds it.
+      </Sidecar>
     </Frame>
   );
 }
@@ -2362,12 +2390,15 @@ function RolesBody({ d }: BodyProps) {
           ))}
         </div>
       </CardTitled>
-      <Callout kind="teal" title="Where the authority actually lives">
-        Not here. This screen writes names onto a payment-structure record attached to the definition; the rate
-        owner's authority is a <Mono>RateOwnerAssignment</Mono> in the payments service, and the approver's is the
-        ratification refusal in this one. Naming somebody here does not grant them anything — which is why the
-        handoff screen after signing exists at all.
+      <Callout kind="green">
+        Two roles held by the same person remain distinct roles — a Ministry may delegate issuing to district offices
+        while keeping specification central. This screen writes names onto a payment-structure record; the authority
+        itself lives in the service that enforces it, which is why the handoff screen after signing exists at all.
       </Callout>
+      <Sidecar warm>
+        A standing role invite covers every definition in the project. A one-off validation delegation would cover
+        exactly one. Which of the two validation delegation should use is undecided.
+      </Sidecar>
     </Frame>
   );
 }
@@ -2383,6 +2414,11 @@ function TranchesBody({ d }: BodyProps) {
   return (
     <Frame
       title="Payment tranches"
+      chip={
+        <>
+          <Chip kind="err">Proposed</Chip> <Chip kind="plain">Built nowhere</Chip>
+        </>
+      }
       lede={
         <>
           Work that pays in stages — some on completion, some on a later check. Each tranche is a share of a rate
@@ -2454,10 +2490,21 @@ function TranchesBody({ d }: BodyProps) {
           </button>
         </form>
       </CardTitled>
-      <Callout kind="green" title="What is deliberately absent">
-        Money. A share is a proportion of a rate that does not exist yet, and the definition stays complete without
-        it — payment structure is a linked record attached by reference, never a field on the definition.
-      </Callout>
+      <RefField label="Rate structure types">
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {["Flat", "Volume band", "Geography", "Tenure", "Quality", "Rate table — per item", "Externally indexed"].map(
+            (t) => (
+              <Chip key={t} kind="plain">{t}</Chip>
+            ),
+          )}
+        </div>
+      </RefField>
+      <Sidecar warm>
+        Also unresolved here: gig-delivery surge pricing and market-price-indexed procurement both need a rate that
+        varies over time or against an external index. Neither is expressible today. And triggers are bare category
+        labels with no threshold — a response-time bonus needs a value and a unit attached to the trigger, not just a
+        name.
+      </Sidecar>
       <Sidecar>
         A tranche's condition is a release condition, not a hold. Every confirmation-window exit still creates its
         payment obligation; what a tranche decides is how that obligation is split across stages, and a stage that has
@@ -2555,12 +2602,10 @@ function RulesBody({ d }: BodyProps) {
           </button>
         </form>
       </CardTitled>
-      <Callout kind="teal" title="Why the two are kept apart">
-        A precondition that fails means there is no unit to pay for, and the worker needs to know that before they do
-        the work. A deduction that applies means the work counted and the money is smaller, and the worker needs to
-        know <i>why</i> when the amount arrives. Filed as the same kind of rule, the second becomes a payment that is
-        quietly short with nothing attached explaining it.
-      </Callout>
+      <Sidecar>
+        A precondition is not evidence. It answers "was this work allowed to happen" rather than "did it happen", and
+        the two need different fields. Checked before the shift, not after.
+      </Sidecar>
       <Sidecar>
         Neither is a reason to withhold. A deduction reduces an amount and names itself while doing it; it never turns
         into a payment held with no explanation, because every held payment has to carry a reason with an owner.
@@ -2580,20 +2625,26 @@ function ExtendBody({ d }: BodyProps) {
   return (
     <Frame
       title="When the form does not have what you need"
-      lede={
-        <>
-          Two kinds of extension, and only one of them is this screen. A field an institution needs on its own records
-          goes here, namespaced, typed and read by nothing in the infrastructure. A field <i>CREST</i> is missing is a
-          different thing entirely — it is a design finding, and the answer to it is a change to the primitive, not a
-          row in this table.
-        </>
-      }
       btns={[
         { label: "Back", to: "/define/rules", role: "secondary" },
         { label: "Continue", to: "/define/open", role: "primary", onClick: () => save(d.id, "extensions", fields) },
       ]}
     >
       <ClosedNote d={d} />
+      <div style={grid()}>
+        <OptionCard
+          t="A new value in an existing slot"
+          tag={<Chip kind="ok" sm>Live today</Chip>}
+          s="A category name, a deduction reason, a party label"
+          ex="Free and immediate. No approval, no core change. Repeated independent use of the same value is the signal it should graduate into shared vocabulary."
+        />
+        <OptionCard
+          t="A genuinely new field"
+          tag={<Chip kind="warn" sm>This screen</Chip>}
+          s="A contractor reference, an accreditation number"
+          ex="Added under a namespaced key. No approval either — but only a screen built to read that key will understand it."
+        />
+      </div>
       <CardTitled t="Institution extension fields" chip={<Chip kind="info">{Object.keys(fields).length}</Chip>}>
         <GridTable cols="1.4fr 1.2fr .6fr 1.2fr auto" head={["Field key", "Label", "Type", "Value", ""]}>
           {Object.keys(fields).length ? (
@@ -2673,11 +2724,10 @@ function ExtendBody({ d }: BodyProps) {
         into a pilot wearing a passing test. That case is a design finding, raised against the blueprint and corrected
         there.
       </Callout>
-      <Callout kind="green" title="What the infrastructure does with these">
-        Nothing. It stores them, type-checks them at submit, and hands them back. No strength rule reads them, no
-        payment rule reads them, and no verifier is asked to understand them — which is exactly what makes the
-        extension point safe to offer.
-      </Callout>
+      <Sidecar>
+        Neither path sends the author somewhere else to file a request. The promotion of a repeated key into shared
+        vocabulary happens later, and invisibly to them.
+      </Sidecar>
     </Frame>
   );
 }
@@ -2925,13 +2975,7 @@ function HandoffBody({ d }: BodyProps) {
                 <Chip kind="warn">unpriced</Chip>
               )
             }
-            lede={
-              <>
-                This is not an error and not a half-finished state. A definition is complete with no rate attached —
-                recognition is a use of its own. What it is not is <i>payable</i>, and somebody has to be asked to
-                make it so.
-              </>
-            }
+            lede="Payment is optional, and it is not your role — but nobody has been given it."
             btns={[
               { label: "Back", to: "/ratified", role: "secondary" },
               {
@@ -2966,6 +3010,21 @@ function HandoffBody({ d }: BodyProps) {
                 ]}
               />
             </Card>
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              <OptionCard
+                t="Hand payment set up to someone else"
+                s="Send an invitation. They arrive with the project and the unit already explained."
+              />
+              <OptionCard t="Set it up myself" s="Only if you also hold the Rate Owner role on this project." />
+              <OptionCard
+                t="Leave payment unset"
+                s="A valid end state. The project recognises and credentials work without paying for it."
+              />
+            </div>
+            <Sidecar>
+              This is the third way into payment set up. The Project Configurator can assign owners up front, this
+              screen can hand it off after the fact, or an owner can be invited directly.
+            </Sidecar>
             <CardTitled t="Invite whoever will own the rate">
               <div style={grid()}>
                 <RefField label="Invited party">
