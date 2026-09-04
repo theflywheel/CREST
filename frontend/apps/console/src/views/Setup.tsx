@@ -324,7 +324,7 @@ export function NewProject() {
         </RefField>
         <RefField
           label="Project Configurator (Project Configurator)"
-          hint="Naming somebody is a proposal, not an assignment: the project waits at PENDING until they answer"
+          hint="Naming somebody is a proposal, not an assignment: the project waits at PENDING until they answer. The same person may also hold Work Definition Author on this project — in small organisations one person often holds both; the roles stay separate."
         >
           <input name="configurator" value={configurator} onChange={(e) => setConfigurator(e.target.value)} placeholder="did:crest:party:…" />
         </RefField>
@@ -334,6 +334,26 @@ export function NewProject() {
           </button>
         </div>
       </form>
+      {/* p1_3's two undecided rows: creation leaves both open on purpose. */}
+      <div style={{ maxWidth: 780 }}>
+        <HomeRow
+          muted
+          label="What this project uses CREST for"
+          sub="Not decided — the Configurator chooses"
+          right={<Chip kind="plain">Open</Chip>}
+        />
+        <HomeRow
+          muted
+          label="Work definition"
+          sub="Cannot exist until the project is composed"
+          right={<Chip kind="warn">Blocked</Chip>}
+        />
+        <div style={{ height: 12 }} />
+        <Callout kind="green" title="">
+          Nothing about registration, payment or validation is chosen on this screen. Those are compositability
+          choices, and they belong to whoever configures the project, not to whoever creates it.
+        </Callout>
+      </div>
       <Actions back={["Back", () => nav("/people")]} />
     </>
   );

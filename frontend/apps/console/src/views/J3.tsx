@@ -22,7 +22,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "@crest/api";
-import { Callout, Chip, OpenNote, RefField, StepCounter as StepBar } from "@crest/ui";
+import { Callout, Chip, DisLi, OpenNote, OptionCard, RefField, Sidecar, StepCounter as StepBar } from "@crest/ui";
 import {
   Card, CardTitled, KVR, Lede, LoadFrame, Mono, MonoShort, Stat, Title, Tbl, useLoad, when, short,
 } from "../ui";
@@ -429,6 +429,61 @@ export function Compose() {
                 Define work runs on this deployment's own words.{" "}
                 <a href="#/vocabulary" data-to-vocabulary>Declare the definition vocabulary →</a>
               </p>
+              {/* p2_5 — the payment posture, narrowed past on/off. Three
+                  genuinely different postures, recorded through the same
+                  composition endpoint as every other choice; the value names
+                  are this deployment's records, not a CREST enum. */}
+              {(() => {
+                const posture = answered.get("payment-posture") as string | undefined;
+                const approval = answered.get("manual-payment-approval");
+                const POSTURES: Array<[string, string, string]> = [
+                  ["track-money-movement", "Track money movement",
+                    "CREST calculates what is owed and follows the instruction through to confirmation on a rail."],
+                  ["calculation-only", "Calculation only",
+                    "CREST produces a versioned statement of what is owed. Somebody else pays it, outside CREST entirely."],
+                  ["no-rate", "No rate at all",
+                    "Credentials issue with no payment attached. Used where the value is recognition or credentialing."],
+                ];
+                return (
+                  <div style={{ borderTop: "1px solid var(--line, #E5E1DC)", marginTop: 18, paddingTop: 16 }}>
+                    <div style={{ font: "500 16px/1.4 Roboto,system-ui" }}>Payment, calculation only, or neither</div>
+                    <p className="muted" style={{ margin: "4px 0 12px" }}>
+                      Three genuinely different postures. The third is not a failure state.
+                      {posture === undefined ? " Nothing is recorded yet — a posture is a record, not a default." : ""}
+                    </p>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+                      {POSTURES.map(([v, t, sub]) => (
+                        <OptionCard key={v} t={t} s={sub} on={posture === v} onPick={() => record("payment-posture", v)} />
+                      ))}
+                    </div>
+                    <p className="muted" style={{ margin: "12px 0 0" }}>
+                      Pay rate is set separately — not part of ratifying the definition. A Work Definition must be
+                      complete and usable with no pay information attached.
+                    </p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+                      <span style={{ font: "500 14px/1.4 Roboto,system-ui" }}>Manual payment approval</span>
+                      <Chip kind={approval === "on" ? "warn" : "plain"} sm>{approval === "on" ? "On" : "Off"}</Chip>
+                      <button
+                        className="btn secondary"
+                        data-flip-approval
+                        style={{ width: "auto", minWidth: 0, padding: "4px 10px", fontSize: 12 }}
+                        onClick={() => record("manual-payment-approval", approval === "on" ? "off" : "on")}
+                      >
+                        {approval === "on" ? "Turn it off" : "Turn it on"}
+                      </button>
+                    </div>
+                    <p className="muted" style={{ margin: "4px 0 0" }}>
+                      On would send every payment to a payment approver before release.
+                    </p>
+                    <div style={{ marginTop: 12 }}>
+                      <Sidecar>
+                        Pay rate is a separate object from the work definition, deliberately. Payment is one CREST use
+                        case among several, and a definition can never be gated on deciding whether anyone gets paid.
+                      </Sidecar>
+                    </div>
+                  </div>
+                );
+              })()}
               <div style={{ borderTop: "1px solid var(--line, #E5E1DC)", marginTop: 16, paddingTop: 14, display: "flex", justifyContent: "flex-end", gap: 10 }}>
                 <button className="btn secondary" style={{ width: "auto", padding: "10px 22px" }} onClick={() => nav("/handover")}>
                   Back
@@ -661,6 +716,10 @@ export function Owners() {
               configurator, who must not be able to grant themselves anything.
             </p>
           </CardTitled>
+          <Sidecar>
+            The rate and the mechanism are separate roles on purpose. Deciding how much someone is paid and deciding
+            how the money reaches them are different decisions, often in different departments.
+          </Sidecar>
           <div className="btn-row" style={{ maxWidth: 560 }}>
             <button className="btn secondary" onClick={() => nav("/compose")}>
               Back
@@ -792,6 +851,11 @@ export function Activate() {
               Activate project
             </button>
           </div>
+          <Sidecar warm>
+            A project can activate with a rate still unset and roles still unaccepted. What it cannot do is issue a
+            credential before a signed work definition exists — that one is never optional, whatever else a project
+            chooses.
+          </Sidecar>
           <Callout kind="teal" title="A refusal that names what is missing">
             “Cannot activate” without saying what is missing is a dead end, and this system does not leave people at
             dead ends: a refused activation answers with every condition and which of them are unmet, and they are
@@ -841,6 +905,23 @@ export function FinanceCode() {
               CREST does not invent account codes. The code arrives from a finance system that already had it, and is
               stored exactly as that system wrote it.
             </Lede>
+            {/* p2_8's two ways in. Pulling the chart of accounts live needs a
+                finance integration this deployment does not have, and the card
+                stays on screen saying so rather than disappearing. */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, maxWidth: 820, marginBottom: 14 }}>
+              <OptionCard
+                t="Pull from the finance system"
+                tag={<Chip kind="ok" sm>recommended</Chip>}
+                unavailable
+                s="Reads the chart of accounts live. Codes come back spelled and structured as finance holds them, with closed codes marked. No finance integration exists on this deployment yet."
+              />
+              <OptionCard
+                t="Enter the codes by hand"
+                tag={<Chip kind="warn" sm>discouraged</Chip>}
+                on
+                s="Available where no integration exists. Nothing validates what you type, and a mistake surfaces at reconciliation."
+              />
+            </div>
             <CardTitled t="Linked now">
               <KVR
                 rows={[
@@ -931,6 +1012,56 @@ export function SupportOwner() {
               First line sits with the project, because the project is where the answer is. The instance keeps only
               genuine platform faults.
             </Lede>
+            {/* p2_10's three lines. The first is this project's record below;
+                the second and third are instance facts with no record behind
+                them yet, described in the deployment's own general words. */}
+            <CardTitled t="Three lines, three scopes">
+              <Tbl
+                heads={["Line", "Who", "Handles", "Scope"]}
+                rows={[
+                  [
+                    <b>first · in this project</b>,
+                    p.partyId ? <MonoShort id={p.partyId} /> : <span className="muted">nobody named yet</span>,
+                    "Payment not arrived, evidence stuck, wrong record, lost access",
+                    "This project only",
+                  ],
+                  [
+                    "second · at the instance",
+                    "Platform operations",
+                    "The console is down, an adaptor is failing for every project, a key needs rotating",
+                    "All projects",
+                  ],
+                  [
+                    "escalates to · governance",
+                    "Data protection / consent officer",
+                    "A disclosure complaint, a consent dispute",
+                    "Instance-wide",
+                  ],
+                ]}
+              />
+            </CardTitled>
+            <Card>
+              <DisLi
+                on={!!p.partyId}
+                t="A named support agent is assigned"
+                s={p.partyId ? <MonoShort id={p.partyId} /> : "nobody is named — a worker's question reaches nobody"}
+              />
+              <DisLi
+                on={!!p.contactRoute?.value}
+                t="Contact route published to workers"
+                s={p.contactRoute?.value ? `${p.contactRoute.kind || ""} ${p.contactRoute.value}` : "no contact route recorded"}
+              />
+              <DisLi
+                on={!!p.escalatesToPartyId}
+                t="Escalation path recorded"
+                s={p.escalatesToPartyId ? <MonoShort id={p.escalatesToPartyId} /> : "escalation has not been arranged"}
+              />
+              <DisLi
+                on={false}
+                t="Response expectation agreed"
+                s="Not set — no service standard exists yet"
+              />
+            </Card>
             <CardTitled t="First line for this project">
               <KVR
                 rows={[
@@ -1035,7 +1166,10 @@ export function Partners() {
       {({ partners, grants }) => (
         <>
           <Title t="Find a partner for this project" />
-          <Lede>Approved organisations, filtered by what their own terms already allow.</Lede>
+          <Lede>
+            Searching every organisation admitted to this deployment, filtered by what their own terms already
+            allow. You are not creating anything here, and nothing you do on this screen reaches them.
+          </Lede>
           <Callout kind="teal" title="What onboarding already did, once">
             These organisations registered and were approved independently of this project, some of them years ago.
             Nothing about their identity, their documents or their terms is re-examined here, and this project cannot
@@ -1082,6 +1216,10 @@ export function Partners() {
             />
           </CardTitled>
           <Title t="What a partner may do on this project" />
+          <Lede>
+            Their terms are the ceiling. Anything you grant here is inside it, and you cannot widen it from this
+            screen or any other.
+          </Lede>
           {err ? <WriteRefusal err={err} /> : null}
           {note ? <Callout kind="green" title="Recorded">{note}</Callout> : null}
           <form

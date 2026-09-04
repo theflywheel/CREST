@@ -514,6 +514,9 @@ test("console: the J3 handover is real, and so is everything after it", async ({
   // p1_3 — create a project and name a configurator. Naming is a proposal.
   await page.evaluate(() => { location.hash = "#/projects/new"; });
   await settle(page);
+  // p1_3 — creation decides nothing compositional, and says so on its face.
+  await expect(page.locator("body")).toContainText("belong to whoever configures the project, not to whoever creates it");
+  await expect(page.locator("body")).toContainText("Cannot exist until the project is composed");
   await page.fill('[name="projectname"]', "Bednet campaign " + stamp);
   await page.fill('[name="coverage"]', "Ward 4, Ward 7 · Kisumu County");
   await page.fill('[name="configurator"]', me);
@@ -560,6 +563,13 @@ test("console: the J3 handover is real, and so is everything after it", async ({
   await cap.click();
   await expect(cap).toHaveAttribute("aria-pressed", "false", { timeout: 20000 });
 
+  // p2_5 — the payment posture, recorded as a composition choice: picking a
+  // card narrows it, and the record survives a reload.
+  await expect(page.locator("body")).toContainText("Three genuinely different postures. The third is not a failure state.");
+  await page.locator('.optcard:has-text("Calculation only")').click();
+  await expect(page.locator('.optcard:has-text("Calculation only")')).toHaveAttribute("aria-pressed", "true", { timeout: 20000 });
+  await expect(page.locator("body")).toContainText("Pay rate is a separate object from the work definition");
+
   // p2_6 — a role grant on this project, listed with its grantor and date.
   await page.evaluate(() => { location.hash = "#/owners"; });
   await settle(page);
@@ -568,12 +578,16 @@ test("console: the J3 handover is real, and so is everything after it", async ({
   await page.locator("#grantform button").click();
   await expect(page.locator("body")).toContainText("submit-work-evidence", { timeout: 20000 });
   await expect(page.locator("body")).toContainText("ACTIVE");
+  // p2_6 — the rate and the mechanism are separate on purpose, on the frame.
+  await expect(page.locator("body")).toContainText("separate roles on purpose");
 
   // p2_17 — the directory is a join over approvals somebody else made, so the
   // approved programme organisation is in it.
   await page.evaluate(() => { location.hash = "#/partners"; });
   await settle(page);
   await expect(page.locator(`[data-pick="${me}"]`)).toBeVisible();
+  // p2_18 — the terms are the ceiling, and the frame says so before the form.
+  await expect(page.locator("body")).toContainText("Their terms are the ceiling.");
 
   // p2_18 — a grant with no end date is refused: "the grant lapses by itself"
   // is the screen's whole subject, so an endless one is not a grant.
@@ -598,10 +612,17 @@ test("console: the J3 handover is real, and so is everything after it", async ({
   await page.fill('[name="supportvalue"]', "+254700000" + stamp.slice(-3));
   await page.locator("#supportform button").click();
   await expect(page.locator("body")).toContainText("+254700000" + stamp.slice(-3), { timeout: 20000 });
+  // p2_10 — the checklist is derived from the record, and the one item no
+  // contract exists for stays off with the true reason on its face.
+  await expect(page.locator('.li:has-text("Contact route published to workers"):not(.off)')).toBeVisible();
+  await expect(page.locator('.li.off:has-text("Response expectation agreed")')).toContainText("no service standard exists yet");
 
   // p2_8 — the code is stored verbatim, with who linked it.
   await page.evaluate(() => { location.hash = "#/finance"; });
   await settle(page);
+  // p2_8 — both ways in stay on screen; the pull card says why it cannot run.
+  await expect(page.locator('.optcard.na:has-text("Pull from the finance system")')).toContainText("not available");
+  await expect(page.locator('.optcard:has-text("Enter the codes by hand")')).toContainText("a mistake surfaces at reconciliation");
   await page.fill('[name="financesystem"]', "IFMIS · Kenya Treasury");
   await page.fill('[name="financecode"]', "4402-11-A" + stamp.slice(-2));
   await page.locator("#financeform button").click();
@@ -610,6 +631,8 @@ test("console: the J3 handover is real, and so is everything after it", async ({
   // p2_7 — a gate is declared, refuses activation by name, then is satisfied.
   await page.evaluate(() => { location.hash = "#/activate"; });
   await settle(page);
+  // p2_7 — what stays optional and what never is, on the frame.
+  await expect(page.locator("body")).toContainText("before a signed work definition exists");
   await page.fill('[name="gatename"]', "rate-published");
   await page.locator("#gateform button").click();
   await expect(page.locator("body")).toContainText("rate-published", { timeout: 20000 });
