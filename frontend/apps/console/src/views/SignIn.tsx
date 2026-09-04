@@ -55,13 +55,6 @@ export function SignIn() {
         </p>
       </div>
 
-      <div className="card" style={{ maxWidth: 700, borderLeft: "4px solid #00703C" }}>
-        <span className="eyebrow">What this screen never does</span>
-        <p className="body-2" style={{ marginTop: 8 }}>
-          It never asks which role you want, and never offers a role you do not hold. A role is granted in the
-          registry and read back here — picking your own would make authority a matter of self-declaration.
-        </p>
-      </div>
     </AppbarOnly>
   );
 }

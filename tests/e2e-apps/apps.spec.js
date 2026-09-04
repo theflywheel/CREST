@@ -203,10 +203,8 @@ test("console door: eSignet is the way in, and no role can be picked", async ({ 
   await expect(page.locator("#signin-title")).toContainText("Sign in to CREST Console");
   await expect(page.locator("#signin-esignet")).toBeVisible();
   await expect(page.locator("body")).toContainText("CREST never sees a credential of yours");
-  // The rule this screen sets, verbatim from the design spec.
-  await expect(page.locator("body")).toContainText(
-    "It never asks which role you want, and never offers a role you do not hold.");
-  // No role selector of any kind: no select, no radio, nothing named "role".
+  // The rule stands without stating itself: no role selector of any kind —
+  // no select, no radio, nothing named "role".
   await expect(page.locator("select")).toHaveCount(0);
   await expect(page.locator('input[type="radio"]')).toHaveCount(0);
   await expect(page.locator('[name*="role" i]')).toHaveCount(0);
