@@ -842,11 +842,9 @@ function CascadeBody({ d }: BodyProps) {
   return (
     <Frame
       title="Is this work part of a cascade?"
-      lede={
+      chip={
         <>
-          Training cascades are relationships between definitions, not fields on one. A level-2 worker's definition
-          names the definition that trained them, and that reference is a linked record — so the cascade can be
-          walked without the core object growing a limb for it.
+          <Chip kind="err">Proposed</Chip> <Chip kind="plain">Built nowhere</Chip>
         </>
       }
       btns={[
@@ -882,11 +880,14 @@ function CascadeBody({ d }: BodyProps) {
           <Mono>trained-by</Mono>. The service refuses a definition that names itself as its own prerequisite.
         </p>
       </Card>
-      <Callout kind="green" title="What this screen never does">
-        Make the cascade a permission. Naming a training definition records a relationship; it does not by itself
-        stop anyone from working or being paid. Whether an untrained worker's evidence is accepted is an
-        evidence-rules question and a programme decision, answered on its own screens and not smuggled in here.
-      </Callout>
+      <Sidecar>
+        Each level is a separate work definition with its own evidence rules and its own rate. The reference is what
+        makes the cascade auditable — a verifier can walk up the chain.
+      </Sidecar>
+      <Sidecar warm>
+        Undecided: whether a level-three definition can exist with no level two above it, and whether a trainer's own
+        credential should carry the outcomes of the people they trained.
+      </Sidecar>
       <Sidecar>
         The reference sends this screen's Continue on to the time-based period screen. On this draft the counting
         basis is <Mono>{basis}</Mono>, so Continue goes to that branch's next screen instead — writing the period
@@ -908,12 +909,12 @@ function PeriodBody({ d }: BodyProps) {
     <Frame
       counter="Period · 3 of 7"
       title="What period is this paid for?"
-      lede={
+      chip={
         <>
-          On this branch the unit is the period itself. Nobody counts anything: the question is whether the post was
-          held across the period, which makes attendance and engagement the evidence rather than a tally.
+          <Chip kind="info">Time-based</Chip> <Chip kind="ok">No category or unit required</Chip>
         </>
       }
+      lede="There is no countable unit here, and the form no longer pretends there is."
       btns={[
         { label: "Back", to: "/define/counting", role: "secondary" },
         { label: "Outcome-based", to: "/define/outcome", role: "secondary" },
@@ -959,11 +960,9 @@ function PeriodBody({ d }: BodyProps) {
           </RefField>
         </div>
       </Card>
-      <Callout kind="teal" title="What changes on this branch">
-        The evidence question. An event-based definition asks "did this thing happen, and who did it"; a period-based
-        one asks "was this post held across these dates". A period's proof is usually an attendance or roster system
-        rather than a per-item export, which is why the source screens later on will look different from the event
-        branch's.
+      <Callout kind="green">
+        Under the flat taxonomy this role had to be filed under a category built for countable campaign work. That is
+        the failure this fork removes.
       </Callout>
     </Frame>
   );
@@ -984,11 +983,9 @@ function OutcomeBody({ d }: BodyProps) {
     <Frame
       counter="Outcome · 3 of 7"
       title="What result is being paid for?"
-      lede={
+      chip={
         <>
-          On this branch the unit is a measured result, and the proof is population-level: a district statistic, not
-          a worker's record. That is the whole difficulty of it, and this screen's job is to make the difficulty
-          explicit rather than let it surface at payment time.
+          <Chip kind="info">Outcome-based</Chip> <Chip kind="warn">Proposal, not built</Chip>
         </>
       }
       btns={[
@@ -1035,18 +1032,15 @@ function OutcomeBody({ d }: BodyProps) {
           </RefField>
         </div>
       </Card>
-      <Callout kind="teal" title="Population-level proof, and what it costs">
-        An indicator moving is evidence about a district, not about a person. So a claim on this definition cannot be
-        proved by one worker's record, and the group the result is attributed to has to be decided before anyone is
-        paid — that is the aggregation level above, and leaving it open is how a cooperative bonus becomes an
-        argument with no record to settle it.
-      </Callout>
-      <Callout kind="green" title="What CREST will not do here">
-        Compute the indicator. Baseline, target and the measuring system are recorded as descriptive programme facts
-        and read by nothing in the infrastructure — no strength rule, no payment rule. CREST holds what was declared
-        and who declared it; whether 80% was reached is the measuring system's answer, and attributing it is the
-        programme's.
-      </Callout>
+      <Sidecar warm>
+        Who measures the outcome, and whether the cooperative can contest that measurement, is not specified
+        anywhere. It is the same question a worker-level dispute answers — at population scale. An indicator moving
+        is evidence about a district, not about a person.
+      </Sidecar>
+      <Sidecar warm>
+        If the group is paid as a group, how the payment splits back to individuals is a genuinely open question. It
+        needs a formula, not another field.
+      </Sidecar>
     </Frame>
   );
 }
