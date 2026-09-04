@@ -413,20 +413,33 @@ export function Registry() {
     setCurrentDraftId(d.id);
     nav("/define/sector");
   };
+  const [filter, setFilter] = useState<"all" | "active" | "draft">("all");
   return (
     <LoadFrame r={r}>
       {({ drafts, def }) => {
         const open = drafts.filter((d) => d.state === "OPEN");
+        const activeCount = def ? 1 : 0;
+        const total = drafts.length + activeCount;
+        const showActive = filter !== "draft";
+        const showDrafts = filter !== "active";
+        const fchip = (key: "all" | "active" | "draft", label: string, n: number) => (
+          <button
+            key={key}
+            className={"fchip" + (filter === key ? " on" : "")}
+            data-filter={key}
+            onClick={() => setFilter(key)}
+          >
+            {label} {n}
+          </button>
+        );
         return (
           <Frame
-            wide
             title="Work definitions"
-            chip={<Chip kind="plain">{drafts.length} drafts</Chip>}
             lede={
               <>
-                Two registers, and they are different kinds of thing. Below the line are immutable definition
-                versions — what credentials pin and verifiers resolve. Above it are drafts: the only mutable object
-                this service has, and the only place authoring happens.
+                {total === 1 ? "One" : total} on this deployment. A definition is never edited once active —
+                publishing a change creates a new version, and every version a credential has pinned resolves
+                forever.
               </>
             }
             btns={[
@@ -439,76 +452,82 @@ export function Registry() {
               { label: "Define new work", role: "primary", onClick: () => start() },
             ]}
           >
-            <CardTitled t="Drafts" chip={open.length ? <Chip kind="info">{open.length} open</Chip> : undefined}>
-              <GridTable cols="1.5fr 1fr .9fr .8fr 1.1fr" head={["Draft", "Author", "State", "Sections", "Updated"]}>
-                {drafts.length ? (
-                  drafts.slice(0, 12).map((d) => (
-                    <div className="g-row" key={d.id}>
-                      <span>
-                        <MonoShort id={d.id} />
-                      </span>
-                      <span>
-                        <MonoShort id={d.createdByPartyId} />
-                      </span>
-                      <span>{stateChip(d)}</span>
-                      <span>{Object.keys(d.doc || {}).length} of 9</span>
-                      <span>
-                        {when(d.updatedAt)}{" "}
-                        {d.state === "OPEN" && d.id !== currentDraftId() ? (
-                          <button
-                            className="btn secondary"
-                            data-resume={d.id}
-                            style={{ width: "auto", padding: "4px 9px", fontSize: 11.5 }}
-                            onClick={() => {
-                              setCurrentDraftId(d.id);
-                              setGen((g) => g + 1);
-                            }}
-                          >
-                            Resume
-                          </button>
-                        ) : null}
-                      </span>
+            <div className="fchips">
+              {fchip("all", "All", total)}
+              {fchip("active", "Active", activeCount)}
+              {fchip("draft", "Draft", drafts.length)}
+            </div>
+            <div className="def-list">
+              {showActive && def ? (
+                <div className="def-row">
+                  <div style={{ flex: 1 }}>
+                    <div className="t">{def.activity?.label || def.id}</div>
+                    <div className="sub">
+                      <MonoShort id={def.id} /> v{def.version} · published · what credentials pin and verifiers
+                      resolve
                     </div>
-                  ))
-                ) : (
-                  <div className="g-row">
-                    <span style={{ gridColumn: "1 / -1", color: "var(--text-2)" }}>
-                      No draft has been started on this deployment. An unstarted definition is the absence of a
-                      record, not an empty one.
-                    </span>
                   </div>
-                )}
-              </GridTable>
-              {currentDraftId() ? (
-                <p className="muted" style={{ marginTop: 8 }} data-authoring>
-                  This session is authoring <Mono>{currentDraftId()}</Mono>.
-                </p>
+                  <Chip kind="ok">Active</Chip>
+                </div>
               ) : null}
-            </CardTitled>
-            <CardTitled t="Published versions" chip={def ? <Chip kind="ok">{def.state}</Chip> : undefined}>
-              {def ? (
-                <KVR
-                  rows={[
-                    ["definition", <Mono>{def.id}</Mono>],
-                    ["activity", def.activity?.label || "—"],
-                    ["version", "v" + def.version],
-                  ]}
-                />
-              ) : (
-                <Empty>No definition version could be read.</Empty>
+              {showDrafts &&
+                drafts.slice(0, 12).map((d) => (
+                  <div className="def-row" key={d.id}>
+                    <div style={{ flex: 1 }}>
+                      <div className="t">{d.doc?.activity?.label || <MonoShort id={d.id} />}</div>
+                      <div className="sub">
+                        <MonoShort id={d.id} /> · by <MonoShort id={d.createdByPartyId} /> ·{" "}
+                        {Object.keys(d.doc || {}).length} of 9 sections · {when(d.updatedAt)}
+                      </div>
+                    </div>
+                    {stateChip(d)}
+                    {d.state === "OPEN" && d.id !== currentDraftId() ? (
+                      <button
+                        className="btn secondary"
+                        data-resume={d.id}
+                        style={{ width: "auto", minWidth: 0, padding: "4px 9px", fontSize: 11.5 }}
+                        onClick={() => {
+                          setCurrentDraftId(d.id);
+                          setGen((g) => g + 1);
+                        }}
+                      >
+                        Resume
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              {(showDrafts && drafts.length) || (showActive && def) ? null : (
+                <div className="def-row">
+                  <span className="sub">
+                    Nothing here. An unstarted definition is the absence of a record, not an empty one.
+                  </span>
+                </div>
               )}
-              <p className="muted" style={{ marginTop: 8 }}>
-                The definitions service has no list endpoint for published versions — it is a POST-only registry by
-                design — so this reads the one version the fixture world seeds. Cloning it opens a draft prefilled
-                from that version, and the version itself is untouched by anything the clone does.
-              </p>
-            </CardTitled>
-            <Callout kind="teal" title="What infrastructure contributes here">
-              The separation between the two registers. A draft can be half-finished for weeks and rewritten every
-              day; a version cannot be changed at all, because credentials name it. One function translates the
-              first into the second, and it is the same function the review screen runs — so the review can never
-              disagree with the submission it precedes.
-            </Callout>
+            </div>
+            {currentDraftId() ? (
+              <Callout kind="blue" title="Authoring in progress">
+                <span data-authoring>
+                  This session is authoring <Mono>{currentDraftId()}</Mono>
+                </span>
+                {open.length > 1 ? (
+                  <> — {open.length} drafts are open; a draft can sit half-finished for weeks, because only a
+                  submitted version is immutable.</>
+                ) : (
+                  <>. A draft is the only mutable object this service has; submitting compiles it into the next
+                  immutable version.</>
+                )}
+              </Callout>
+            ) : (
+              <Callout kind="blue" title="Two registers">
+                Drafts are the only mutable object this service has, and the only place authoring happens.
+                Versions cannot be changed at all, because credentials name them.
+              </Callout>
+            )}
+            <p className="muted" style={{ fontSize: 12.3 }}>
+              The definitions service has no list endpoint for published versions — it is a POST-only registry by
+              design — so the Active row reads the one version the fixture world seeds. Cloning it opens a draft
+              prefilled from that version, and the version itself is untouched by anything the clone does.
+            </p>
           </Frame>
         );
       }}

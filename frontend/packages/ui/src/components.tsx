@@ -159,7 +159,7 @@ export function DisLi(props: { on: boolean; t: ReactNode; s: ReactNode }) {
 // screen never does", plus the untitled-eyebrow grey variant the dashboard
 // frames use for "How this could be gamed". Title is an uppercase eyebrow,
 // body is the reference's own sentence — quoted verbatim by the callers.
-export function Callout(props: { kind?: "teal" | "green" | "grey"; title?: ReactNode; children: ReactNode }) {
+export function Callout(props: { kind?: "teal" | "green" | "grey" | "blue"; title?: ReactNode; children: ReactNode }) {
   return (
     <div className={"callout " + (props.kind || "teal")} data-callout={props.kind || "teal"}>
       {props.title ? <div className="c-title">{props.title}</div> : null}

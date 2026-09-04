@@ -84,6 +84,14 @@ h1{font:300 38px/1.15 Roboto;letter-spacing:-.9px}
 /* ————— wizard progress bar ————— */
 .progressbar{width:100%;height:5px;border-radius:3px;background:var(--divider);overflow:hidden}
 .progressbar .fill{height:100%;background:var(--p1);border-radius:3px;transition:width .25s var(--ease)}
+.fchips{display:flex;gap:8px;flex-wrap:wrap}
+.fchip{border:none;cursor:pointer;padding:5px 12px;border-radius:14px;background:var(--generic-bg);color:var(--text-1);font:500 11.5px/1.4 Roboto}
+.fchip.on{background:var(--p1-bg);color:var(--p1);font-weight:600}
+.def-list{display:flex;flex-direction:column}
+.def-row{display:flex;align-items:center;gap:14px;padding:14px 2px}
+.def-row+.def-row{border-top:1px solid var(--generic-bg)}
+.def-row .t{font:500 14.5px/1.4 Roboto;color:var(--text-1)}
+.def-row .sub{font:400 12.3px/1.45 Roboto;color:var(--text-2);margin-top:2px}
 .progressbar-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .progressbar-row .progressbar{flex:1}
 
@@ -142,6 +150,8 @@ button.card{text-align:left;width:100%}
 .callout.green .c-title{color:var(--success)}
 .callout.grey{border:1px solid #78787822;background:var(--paper-2)}
 .callout.grey .c-title{color:var(--text-2)}
+.callout.blue{border:1px solid #0B4B6622;background:#EAF3FA}
+.callout.blue .c-title{color:var(--p2)}
 .callout .guard{color:var(--p2)}
 
 /* ————— reference field (uppercase label, bordered value) ————— */
