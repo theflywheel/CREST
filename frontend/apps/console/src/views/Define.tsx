@@ -1612,6 +1612,7 @@ function AdaptorsBody({ d }: BodyProps) {
         const real = list.filter((a) => a.status === "available");
         const absent = list.filter((a) => a.status !== "available");
         const digit = list.find((a) => a.class === "digit-hcm");
+        const selClass = list.find((a) => (a.ref || a.class) === sel)?.class;
         return (
           <Frame
             counter="Connection · 1 of 5"
@@ -1620,9 +1621,14 @@ function AdaptorsBody({ d }: BodyProps) {
             btns={[
               { label: "Back", to: "/define/source", role: "secondary" },
               { label: "Start a new one", to: "/define/mapping", role: "secondary" },
+              // A selected row makes the way forward the primary button; the
+              // reference's DIGIT HCM button stays, demoted, with its refusal.
+              ...(selClass
+                ? [{ label: `Continue with ${selClass}`, to: "/define/mapping", role: "primary" as const }]
+                : []),
               {
                 label: "Use DIGIT HCM",
-                role: "primary",
+                role: (selClass ? "secondary" : "primary") as "primary" | "secondary",
                 onClick: () =>
                   document.querySelector(".open-note")?.scrollIntoView({ behavior: "smooth", block: "center" }),
                 note: (
