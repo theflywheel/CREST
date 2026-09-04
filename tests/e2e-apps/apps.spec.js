@@ -1967,8 +1967,9 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await fill(page, "frequency", "Per campaign day");
   await fill(page, "countingModel", "Individually countable — one record per unit");
   await page.click('.optcard:has-text("Per individual event")');
-  await expect(page.locator("body")).toContainText("The field the rate will price");
-  await expect(page.locator('[data-callout="teal"]:has-text("The field the rate will price")'))
+  // The reference's blue note: the rate references the unit by ID, and the
+  // screen echoes the unit it will reference.
+  await expect(page.locator('.sidecar:has-text("referenced by ID by any rate")'))
     .toContainText("bednets-distributed");
   await step(page, "Continue", "define/cascade");
 

@@ -565,13 +565,7 @@ function SectorBody({ d }: BodyProps) {
     <Frame
       counter="Sector · 1 of 9"
       title="What sector is this work in?"
-      lede={
-        <>
-          Sector first, because it scopes everything after it: the categories offered next, the vocabulary the
-          worker's own screen will use, the systems that plausibly hold the evidence. It is recorded as a
-          classification value and read by nothing in the infrastructure.
-        </>
-      }
+      lede="This scopes what we ask you next. It never limits what you can choose."
       btns={[
         { label: "Back", to: "/definework", role: "secondary" },
         {
@@ -583,21 +577,18 @@ function SectorBody({ d }: BodyProps) {
       ]}
     >
       <ClosedNote d={d} />
-      <Card>
-        <LoadFrame r={v}>
-          {(vocab) => (
-            <Vocab
-              name="sector"
-              label="Sector"
-              declared={vocab.sectors}
-              value={sector}
-              onChange={setSector}
-              placeholder="health"
-              hint="Recorded on the version as classification.sector."
-            />
-          )}
-        </LoadFrame>
-      </Card>
+      <LoadFrame r={v}>
+        {(vocab) => (
+          <Vocab
+            name="sector"
+            label=""
+            declared={vocab.sectors}
+            value={sector}
+            onChange={setSector}
+            placeholder="health"
+          />
+        )}
+      </LoadFrame>
     </Frame>
   );
 }
@@ -778,12 +769,6 @@ function UnitBody({ d }: BodyProps) {
     <Frame
       counter="Unit · 4 of 9"
       title="What exactly is counted?"
-      lede={
-        <>
-          The unit of work is the single most load-bearing string in the definition: it is what a record counts, what
-          a credential reports, and the one field a rate owner will price. Everything downstream counts in it.
-        </>
-      }
       btns={[
         { label: "Back", to: "/define/category", role: "secondary" },
         {
@@ -809,45 +794,39 @@ function UnitBody({ d }: BodyProps) {
       ]}
     >
       <ClosedNote d={d} />
-      <Card>
+      <div style={grid()}>
+        <RefField label="Unit of work" hint="One record equals one of these. The rate prices exactly this.">
+          <input name="outcomeUnit" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bednets-distributed" />
+        </RefField>
+        <RefField label="Frequency">
+          <input name="frequency" value={freq} onChange={(e) => setFreq(e.target.value)} placeholder="Per campaign day" />
+        </RefField>
+      </div>
+      <RefField label="Counting model">
+        <input name="countingModel" value={model} onChange={(e) => setModel(e.target.value)} placeholder="Individually countable — one record per unit" />
+      </RefField>
+      <div style={grid()}>
+        <RefField label="Activity code" hint="This deployment's own word for the work.">
+          <input name="activityCode" value={code} onChange={(e) => setCode(e.target.value)} placeholder="bednet-distribution" />
+        </RefField>
+        <RefField label="Activity label">
+          <input name="activityLabel" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Bednet distribution" />
+        </RefField>
+        <RefField label="Skill code" hint="Optional. The part of the record that travels between deployments.">
+          <input name="skillCode" value={skill} onChange={(e) => setSkill(e.target.value)} placeholder="CREST-SKILL:chw.bednet-distribution.v2" />
+        </RefField>
+      </div>
+      <RefField label="Aggregation level">
         <div style={grid()}>
-          <RefField label="Unit of work" hint="One record equals one of these. The rate prices exactly this.">
-            <input name="outcomeUnit" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bednets-distributed" />
-          </RefField>
-          <RefField label="Frequency" hint="How often the work recurs. Programme policy (L2).">
-            <input name="frequency" value={freq} onChange={(e) => setFreq(e.target.value)} placeholder="Per campaign day" />
-          </RefField>
-          <RefField label="Counting model" hint="Recorded as counting.description — text the infrastructure never interprets.">
-            <input name="countingModel" value={model} onChange={(e) => setModel(e.target.value)} placeholder="Individually countable — one record per unit" />
-          </RefField>
-          <RefField label="Activity code" hint="This deployment's own word for the work.">
-            <input name="activityCode" value={code} onChange={(e) => setCode(e.target.value)} placeholder="bednet-distribution" />
-          </RefField>
-          <RefField label="Activity label">
-            <input name="activityLabel" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Bednet distribution" />
-          </RefField>
-          <RefField label="Skill code" hint="Optional. The part of the record that travels between deployments.">
-            <input name="skillCode" value={skill} onChange={(e) => setSkill(e.target.value)} placeholder="CREST-SKILL:chw.bednet-distribution.v2" />
-          </RefField>
-        </div>
-      </Card>
-      <CardTitled t="Aggregation level">
-        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
           {AGGREGATIONS.map(([t, sub]) => (
             <OptionCard key={t} t={t} s={sub} on={agg === t} onPick={() => setAgg(t)} />
           ))}
         </div>
-        <p className="muted" style={{ marginTop: 8 }}>
-          This decides what the rate multiplies, which is why it belongs to the definition rather than to the rate:
-          totalling per pay cycle before pricing and pricing each event are different amounts of money from the same
-          work.
-        </p>
-      </CardTitled>
-      <Callout kind="teal" title="The field the rate will price">
-        <b>{unit.trim() || "— not answered yet —"}</b>. The definition declares the unit and stops there: no amount,
-        no currency, no rate. Pricing is a separate record with a separate owner (F-1), attached to this definition
-        by reference, and the definition is complete and usable with nothing attached at all.
-      </Callout>
+      </RefField>
+      <Sidecar>
+        This unit{unit.trim() ? <> — <b>{unit.trim()}</b> —</> : null} is referenced by ID by any rate that prices
+        it. It is never re-entered as text on the rate record, so the two cannot silently drift apart.
+      </Sidecar>
     </Frame>
   );
 }
