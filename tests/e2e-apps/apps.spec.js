@@ -1593,6 +1593,16 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   // The assignment is a record with the assigner's name and date, kept.
   await expect(page.locator("[data-assignment]").first()).toContainText("assigned by");
 
+  // The funder role is now derivable from the assignment itself, not a seeded
+  // label: the assigned party's own /rate-ownerships/mine names the definition,
+  // and a party that owns no rate gets an empty list. This is what lets a real
+  // eSignet login land on the rate-owner surface (console state.tsx derivation).
+  const mineRates = await asPartyOn(request, PAYSVC.payments, me, "GET", "/v1/rate-ownerships/mine");
+  expect(mineRates.status()).toBe(200);
+  expect((await mineRates.json()).definitionIds, "the assigned owner's own read names the definition").toContain(DEFN);
+  const notOwnerRates = await asPartyOn(request, PAYSVC.payments, FIX.custodian, "GET", "/v1/rate-ownerships/mine");
+  expect((await notOwnerRates.json()).definitionIds || [], "a non-owner owns no rate").not.toContain(DEFN);
+
   // A party who is NOT the assigned owner cannot author a rate — the
   // service's refusal, not a hidden button.
   const notOwner = await asPartyOn(request, PAYSVC.payments, FIX.custodian, "POST",
@@ -1700,6 +1710,13 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   await page.click("#save-rails");
   await expect(page.locator("body")).toContainText("rails-chosen — by", { timeout: 20000 });
   await expect(page.locator("body")).toContainText(/configured, not live/i);
+
+  // The mechanism owner is now derivable from owning the mechanism: their own
+  // /mechanisms/mine names it. This is the fact a real eSignet login reads to
+  // land on the /mech surface as the payment mechanism owner (state.tsx).
+  const mineMechs = await asPartyOn(request, PAYSVC.payments, me, "GET", "/v1/mechanisms/mine");
+  expect(mineMechs.status()).toBe(200);
+  expect((await mineMechs.json()).mechanisms.length, "the owner's own read names their mechanism").toBeGreaterThan(0);
 
   // ── f2_3: the connection names the provider; the secret never passes
   // through the console. ──

@@ -312,6 +312,32 @@ export function ConsoleProvider(props: { children: ReactNode }) {
       } else if (fns.has("ratify-definition")) {
         key = "approver";
         role = "Work Definition Approver";
+      } else {
+        // The funder roles are not party grants — a rate owner is named by a
+        // rate-owner assignment, a mechanism owner by owning a mechanism. So
+        // they are derived from the payments service's own ownership records,
+        // the same shape as the P-3 grants above: a real fact about this
+        // party, read back, not a persona chosen in the browser. Mechanism
+        // ownership is checked first only because a party that somehow holds
+        // both would most need the /mech surface; the ordering is not a
+        // precedence claim about the roles.
+        const owned = await api
+          .get("payments", "/v1/mechanisms/mine")
+          .then((r) => (r && r.mechanisms) || [])
+          .catch(() => []);
+        if (owned.length) {
+          key = "payowner";
+          role = "Payment Mechanism Owner";
+        } else {
+          const rates = await api
+            .get("payments", "/v1/rate-ownerships/mine")
+            .then((r) => (r && r.definitionIds) || [])
+            .catch(() => []);
+          if (rates.length) {
+            key = "rateowner";
+            role = "Rate Owner";
+          }
+        }
       }
     }
     // The reference shows the signed-in person's own name. That is the
