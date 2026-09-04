@@ -92,6 +92,8 @@ h1{font:300 38px/1.15 Roboto;letter-spacing:-.9px}
 .def-row+.def-row{border-top:1px solid var(--generic-bg)}
 .def-row .t{font:500 14.5px/1.4 Roboto;color:var(--text-1)}
 .def-row .sub{font:400 12.3px/1.45 Roboto;color:var(--text-2);margin-top:2px}
+.def-row.dim .t{color:var(--text-2)}
+.def-row.dim .sub{color:var(--text-3,#9a9a9a)}
 .progressbar-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .progressbar-row .progressbar{flex:1}
 

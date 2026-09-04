@@ -442,7 +442,6 @@ export function Registry() {
                 label: "Clone a version",
                 role: "secondary",
                 onClick: () => (latest ? start({ id: latest.id, version: latest.version }) : Promise.resolve()),
-                note: latest ? undefined : "Nothing to clone: this deployment has no published definition yet.",
               },
               { label: "Define new work", role: "primary", onClick: () => start() },
             ]}
@@ -480,12 +479,12 @@ export function Registry() {
                 ))}
               {showDrafts &&
                 drafts.slice(0, 12).map((d) => (
-                  <div className="def-row" key={d.id}>
+                  <div className="def-row dim" key={d.id}>
                     <div style={{ flex: 1 }}>
-                      <div className="t">{d.doc?.activity?.label || <MonoShort id={d.id} />}</div>
+                      <div className="t">{d.doc?.activity?.label || "Untitled definition"}</div>
                       <div className="sub">
-                        <MonoShort id={d.id} /> · by <MonoShort id={d.createdByPartyId} /> ·{" "}
-                        {Object.keys(d.doc || {}).length} of 9 sections · {when(d.updatedAt)}
+                        <MonoShort id={d.id} /> · {Object.keys(d.doc || {}).length} of 9 sections ·{" "}
+                        {when(d.updatedAt)}
                       </div>
                     </div>
                     {stateChip(d)}
@@ -525,17 +524,7 @@ export function Registry() {
                   immutable version.</>
                 )}
               </Callout>
-            ) : (
-              <Callout kind="blue" title="Two registers">
-                Drafts are the only mutable object this service has, and the only place authoring happens.
-                Versions cannot be changed at all, because credentials name them.
-              </Callout>
-            )}
-            <p className="muted" style={{ fontSize: 12.3 }}>
-              Published rows come from the registry's own list (<span className="mono">GET /v1/definitions</span>),
-              latest version per definition. Cloning one opens a draft prefilled from that version, and the version
-              itself is untouched by anything the clone does.
-            </p>
+            ) : null}
           </Frame>
         );
       }}

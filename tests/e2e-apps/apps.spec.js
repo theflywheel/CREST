@@ -1908,8 +1908,8 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await page.evaluate(() => { location.hash = "#/definework"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("Work definitions");
-  // Published rows come from the registry's real list endpoint.
-  await expect(page.locator("body")).toContainText(/GET \/v1\/definitions/i);
+  // The reference frame: one list, three filter chips over it.
+  await expect(page.locator(".fchip")).toHaveCount(3);
   await step(page, "Define new work", "define/sector");
   // The draft is real and this session is authoring it.
   await page.evaluate(() => { location.hash = "#/definework"; });
