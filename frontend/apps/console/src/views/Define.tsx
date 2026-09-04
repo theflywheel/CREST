@@ -394,13 +394,15 @@ export function Registry() {
   const [gen, setGen] = useState(0);
   const me = s.me!.partyId;
   const r = useLoad(async () => {
-    const [drafts, def] = await Promise.all([
+    const [drafts, defs] = await Promise.all([
       api.get("definitions", DRAFTS),
-      api.get("definitions", defpath(FIX.definition)).catch(() => null),
+      api.get("definitions", "/v1/definitions"),
     ]);
     return {
       drafts: (drafts.drafts || []) as Draft[],
-      def: def as { id: string; version: number; state: string; activity?: { label?: string } } | null,
+      defs: (defs.definitions || []) as Array<{
+        id: string; version: number; state: string; activity?: { label?: string };
+      }>,
     };
   }, [gen]);
   const start = async (clone?: { id: string; version: number }) => {
@@ -416,10 +418,10 @@ export function Registry() {
   const [filter, setFilter] = useState<"all" | "active" | "draft">("all");
   return (
     <LoadFrame r={r}>
-      {({ drafts, def }) => {
+      {({ drafts, defs }) => {
         const open = drafts.filter((d) => d.state === "OPEN");
-        const activeCount = def ? 1 : 0;
-        const total = drafts.length + activeCount;
+        const latest = defs[0];
+        const total = drafts.length + defs.length;
         const showActive = filter !== "draft";
         const showDrafts = filter !== "active";
         const fchip = (key: "all" | "active" | "draft", label: string, n: number) => (
@@ -439,30 +441,43 @@ export function Registry() {
               {
                 label: "Clone a version",
                 role: "secondary",
-                onClick: () => (def ? start({ id: def.id, version: def.version }) : Promise.resolve()),
-                note: def ? undefined : "Nothing to clone: no definition version could be read from this deployment.",
+                onClick: () => (latest ? start({ id: latest.id, version: latest.version }) : Promise.resolve()),
+                note: latest ? undefined : "Nothing to clone: this deployment has no published definition yet.",
               },
               { label: "Define new work", role: "primary", onClick: () => start() },
             ]}
           >
             <div className="fchips">
               {fchip("all", "All", total)}
-              {fchip("active", "Active", activeCount)}
+              {fchip("active", "Active", defs.length)}
               {fchip("draft", "Draft", drafts.length)}
             </div>
             <div className="def-list">
-              {showActive && def ? (
-                <div className="def-row">
-                  <div style={{ flex: 1 }}>
-                    <div className="t">{def.activity?.label || def.id}</div>
-                    <div className="sub">
-                      <MonoShort id={def.id} /> v{def.version} · published · what credentials pin and verifiers
-                      resolve
+              {showActive &&
+                defs.map((def) => (
+                  <div className="def-row" key={def.id}>
+                    <div style={{ flex: 1 }}>
+                      <div className="t">{def.activity?.label || def.id}</div>
+                      <div className="sub">
+                        <MonoShort id={def.id} /> v{def.version} · published · what credentials pin and verifiers
+                        resolve
+                      </div>
                     </div>
+                    {def.state === "ACTIVE" ? (
+                      <Chip kind="ok">Active</Chip>
+                    ) : (
+                      <Chip kind="plain">{def.state.toLowerCase()}</Chip>
+                    )}
+                    <button
+                      className="btn secondary"
+                      data-clone={def.id}
+                      style={{ width: "auto", minWidth: 0, padding: "4px 9px", fontSize: 11.5 }}
+                      onClick={() => start({ id: def.id, version: def.version })}
+                    >
+                      Clone
+                    </button>
                   </div>
-                  <Chip kind="ok">Active</Chip>
-                </div>
-              ) : null}
+                ))}
               {showDrafts &&
                 drafts.slice(0, 12).map((d) => (
                   <div className="def-row" key={d.id}>
@@ -489,7 +504,7 @@ export function Registry() {
                     ) : null}
                   </div>
                 ))}
-              {(showDrafts && drafts.length) || (showActive && def) ? null : (
+              {(showDrafts && drafts.length) || (showActive && defs.length) ? null : (
                 <div className="def-row">
                   <span className="sub">
                     Nothing here. An unstarted definition is the absence of a record, not an empty one.
@@ -517,9 +532,9 @@ export function Registry() {
               </Callout>
             )}
             <p className="muted" style={{ fontSize: 12.3 }}>
-              The definitions service has no list endpoint for published versions — it is a POST-only registry by
-              design — so the Active row reads the one version the fixture world seeds. Cloning it opens a draft
-              prefilled from that version, and the version itself is untouched by anything the clone does.
+              Published rows come from the registry's own list (<span className="mono">GET /v1/definitions</span>),
+              latest version per definition. Cloning one opens a draft prefilled from that version, and the version
+              itself is untouched by anything the clone does.
             </p>
           </Frame>
         );
