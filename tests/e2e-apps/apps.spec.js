@@ -109,6 +109,17 @@ test("enrolment app: every route", async ({ page, request }) => {
   await page.evaluate(() => { location.hash = "#/roster"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("outcome_value");
+  // w2_1 — the day's two real counters, from this device's own state.
+  await page.evaluate(() => { location.hash = "#/registrations"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("done today");
+  await expect(page.locator("body")).toContainText("to sync");
+  // w2_3 — the consent script carries ownership and per-use consent, and the
+  // record sentence names what the recording captures.
+  await page.evaluate(() => { location.hash = "#/consent"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("nobody can see it unless you agree, each time");
+  await expect(page.locator("body")).toContainText("your agent ID and the time. This is the consent record.");
 });
 
 // Role-derived personas (docs/JOURNEY_GAP_ASSESSMENT.md finding 1): each

@@ -20,6 +20,22 @@ export function Registrations() {
   return (
     <>
       <div className="scr-title m">Today, through you</div>
+      {/* w2_1's two counters, real: what this device did and what it holds. */}
+      <div style={{ display: "flex", gap: 10 }}>
+        <div className="card quiet" style={{ flex: 1 }}>
+          <span style={{ font: "500 15px/1.3 Roboto" }}>{done.length}</span>
+          <span className="muted" style={{ display: "block" }}>done today</span>
+        </div>
+        <div className="card quiet" style={{ flex: 1 }}>
+          <span style={{ font: "500 15px/1.3 Roboto" }}>{q.length}</span>
+          <span className="muted" style={{ display: "block" }}>to sync</span>
+        </div>
+      </div>
+      {!online ? (
+        <Sidecar warm>
+          You are offline. Registrations are held on this device and sync when you have signal.
+        </Sidecar>
+      ) : null}
       {q.length ? (
         <>
           <span className="eyebrow">Held on this device</span>
@@ -157,9 +173,9 @@ export function Register() {
         </form>
       </div>
       <Sidecar>
-        No national ID? We can still register them — the record is marked with how identity was established rather than
-        being refused. Nothing on this form takes a raw ID number: CREST holds a pairwise reference and a salted hash,
-        nothing else.{" "}
+        No ID document? Switch to the confidence check — the worker is still registered, and the record is marked with
+        how identity was established rather than being refused. Nothing on this form takes a raw ID number: CREST holds
+        a pairwise reference and a salted hash, nothing else.{" "}
         <button
           type="button"
           id="to-confidence"
@@ -204,14 +220,17 @@ export function Consent() {
         unakubali?”
       </div>
       <div className="body-2" style={{ color: "var(--text-2)" }}>
-        “{first}, Crest will keep a record of your work — the work you do, and what it pays. You will be told each time
-        your work is recorded, and you have seven days to say whether it is right. You can withdraw this consent at any
-        time. Do you agree?”
+        “{first}, Crest will keep a record of your work — the work you do, and what it pays. It belongs to you, and
+        nobody can see it unless you agree, each time. You will be told each time your work is recorded, and you have
+        seven days to say whether it is right. You can ask us to stop at any time. Do you agree?”
       </div>
       <Sidecar>Recording captures the worker's answer, your agent ID and the time. This is the consent record.</Sidecar>
       <div className="btn-row">
         <button className="btn" id="recordbtn" onClick={record}>
           ● Record
+        </button>
+        <button className="btn secondary" disabled title="Only Kiswahili and English scripts exist on this deployment yet">
+          Change language
         </button>
       </div>
     </>
@@ -227,7 +246,10 @@ export function Hold() {
       <div className="card hi">
         <p className="body-2">
           The registry found more than one possible match for {s.reg?.name || "this worker"}.{" "}
-          <strong>You cannot decide this — it goes to the registry custodian.</strong>
+          <strong>
+            You cannot merge or reject this. Only the Worker Registry Custodian (Worker Registry Custodian) can, and
+            that authority sits with the deployment operator.
+          </strong>
         </p>
         <p className="muted" style={{ marginTop: 6 }}>
           What you see here is that a hold exists — not whose records collided, and not on what. Probable matches hold;
@@ -270,6 +292,12 @@ export function Registered() {
         </span>{" "}
         <Chip sm kind="plain">Illustrative — no printer on this device</Chip>
       </div>
+      {!s.reg?.phone ? (
+        <Sidecar warm>
+          This worker has no phone. The printed card is their only way to be found on the next campaign — and losing it
+          loses nothing: the record is in the registry, and a recovery contact can vouch them back in.
+        </Sidecar>
+      ) : null}
       <NextBlock
         happened="The worker exists in the registry, with voice consent on record, enrolled by you."
         who="The programme — evidence of their work arrives from its systems; nobody types work into Crest."
