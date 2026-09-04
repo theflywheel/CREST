@@ -76,7 +76,7 @@ import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, FIX, services } from "@crest/api";
 import {
-  Callout, Chip, GridTable, NextBlock, OpenNote, OptionCard, ProgressBar, RefField, Sidecar, StepCounter,
+  Callout, Chip, GridTable, NextBlock, OpenNote, OptionCard, ProgressBar, RefField, Sidecar, Stat, StepCounter,
   WizardContent,
 } from "@crest/ui";
 import { Card, CardTitled, Empty, KVR, Lede, LoadFrame, Mono, MonoShort, Title, useLoad, when } from "../ui";
@@ -1825,13 +1825,7 @@ function ConnectBody({ d }: BodyProps) {
     <Frame
       counter="Connection · 3 of 5"
       title="Connect to the system"
-      lede={
-        <>
-          Where the system is, what it is called, and the name of the place a secret will live. Not the secret. A
-          definition travels — it is reviewed, signed, published and read by verifiers — and a credential that
-          travelled with it would be a credential CREST promised never to hold.
-        </>
-      }
+      lede="Set where the records come from and how often. The partner's platform team supplies the credential separately — never here."
       btns={[
         { label: "Back", to: "/define/mapping", role: "secondary" },
         { label: "Continue", to: "/define/dryrun", role: "primary", onClick: persist },
@@ -1985,11 +1979,18 @@ function DryRunBody({ d }: BodyProps) {
       title="Test it against real records"
       chip={out ? <Chip kind="ok">nothing committed</Chip> : stateChip(d)}
       lede={
-        <>
-          The same CSV adaptor and the same strength function the real pipeline uses — not a simulation of them. So
-          what this screen shows is what ingestion would actually do with these rows, including the tier each one
-          would reach and why.
-        </>
+        out ? (
+          <>
+            {out.rows.length} record{out.rows.length === 1 ? "" : "s"} parsed from the sample. Nothing was written —
+            this is a dry run.
+          </>
+        ) : (
+          <>
+            The same CSV adaptor and the same strength function the real pipeline uses — not a simulation of them. So
+            what this screen shows is what ingestion would actually do with these rows, including the tier each one
+            would reach and why.
+          </>
+        )
       }
       btns={[
         { label: "Back", to: "/define/connect", role: "secondary" },
@@ -2048,6 +2049,13 @@ function DryRunBody({ d }: BodyProps) {
       </Card>
       {out ? (
         <>
+          {/* The frame's verdict trio, computed from the real rows rather
+              than illustrated: acceptable / not acceptable / refused. */}
+          <div style={{ display: "flex", gap: 12 }}>
+            <Stat n={out.rows.filter((r) => r.tier).length} label="would be acceptable" />
+            <Stat n={out.rows.filter((r) => !r.tier).length} label="would go to a human" />
+            <Stat n={out.rejections.length} label="would be refused" />
+          </div>
           <CardTitled
             t="What the pipeline would do with these rows"
             chip={<Chip kind={out.committed ? "err" : "ok"}>committed: {String(out.committed)}</Chip>}
