@@ -4,7 +4,7 @@
 // screen — phase B turns that into self-registration.
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Sidecar } from "@crest/ui";
+import { DisLi, Sidecar } from "@crest/ui";
 import { EntryShell } from "./Login";
 import { useSession, describeError } from "../session";
 
@@ -90,12 +90,21 @@ function SignUp() {
       <EntryShell>
         <div className="pane-narrow screen">
           <span className="eyebrow">CREST · Worker · Enrollment consent</span>
-          <h1 className="scr-title">Before anything is created — do you agree?</h1>
+          <h1 className="scr-title">What you are agreeing to</h1>
           <p className="body-2">
             Nothing exists about you here yet, and nothing will until you say yes. If you agree, CREST will:{" "}
-            {CONSENT_PURPOSE}. You can withdraw this at any time from your profile — withdrawal stops new records; it
-            never deletes the work you already did.
+            {CONSENT_PURPOSE}.
           </p>
+          <div className="card">
+            <div className="dis">
+              <DisLi on t="We can fetch your work records" s="From systems your employer already uses, when you ask us to" />
+              <DisLi on t="We store your work history" s="In this country. It never leaves." />
+              <DisLi on t="You approve every share" s="Nobody sees your record without you saying yes, each time" />
+            </div>
+            <p className="muted" style={{ marginTop: 8 }}>
+              You can withdraw any of these later without losing credentials you already hold.
+            </p>
+          </div>
           <form
             id="consentform"
             onSubmit={(ev) => {
@@ -160,6 +169,10 @@ function SignUp() {
           <label className="body-2">
             Phone
             <input required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+254…" style={{ width: "100%", marginTop: 4 }} />
+            <span className="muted" style={{ display: "block", marginTop: 4 }}>
+              This number is how you sign in and how projects reach you. The reference verifies it with a texted code;
+              this deployment sends no messages (#150), so the number is recorded unverified.
+            </span>
           </label>
           {err ? <div className="errbar">{err}</div> : null}
           <button className="btn" disabled={busy}>

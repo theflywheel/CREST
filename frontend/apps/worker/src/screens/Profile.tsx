@@ -25,6 +25,10 @@ export function Profile() {
       <div className="mono" style={{ color: "var(--text-2)" }}>
         {s.me}
       </div>
+      <p className="muted">
+        This ID stays with you across every campaign, employer and country. Your work history accumulates against it.
+        Keep the printed card. It is the fastest way to be found again, and it works with no phone and no signal.
+      </p>
       {rows.map(([go, t, sub]) => (
         <Link className="card" to={go} key={go} style={{ textDecoration: "none" }}>
           <div style={{ font: "500 14px/1.4 Roboto", color: "var(--text-1)" }}>{t}</div>
@@ -230,8 +234,8 @@ export function Recovery() {
     <div className="pane-narrow" style={{ display: "flex", flexDirection: "column", gap: 15 }}>
       <h2 className="scr-title m">Who can confirm it is you?</h2>
       <p className="body-2">
-        Choose three people. If you lose your phone, any two of them can vouch for you and a new key is issued to you.
-        A contact is a person on the registry — never a phone number, because numbers are lost with the handset.
+        Choose three people. If you lose your phone, any two of them can vouch for you and we issue you a new key. A
+        contact is a person on the registry — never a phone number, because numbers are lost with the handset.
       </p>
       {live.map((c) => (
         <ContactRow key={c.contactPartyId} c={c} onRevoke={() => revoke(c.contactPartyId)} />

@@ -37,8 +37,8 @@ export function Login() {
         Your work, on the record. Your money, explained.
       </h1>
       <p className="muted" style={{ maxWidth: 700 }}>
-        Two ways in, and neither is a fallback — both give the same record, the same consent, the same CREST ID. A
-        verifier can never tell which you used.
+        Two ways in, and neither is a fallback. Both pathways issue the same Crest DID and the same enrollment consent
+        record. A verifier can never tell which was used.
       </p>
       <div className="form-grid" style={{ alignItems: "stretch" }}>
         <div className="card hi" data-pathway="self">
@@ -53,7 +53,8 @@ export function Login() {
           </button>
           <p className="muted" style={{ marginTop: 8 }}>
             In this deployment eSignet authenticates against a test identity registry — a real national registry
-            arrives with a pilot (#53). The flow, and what CREST sees, is identical.
+            arrives with a pilot (#53). The flow, and what CREST sees, is identical. CREST never stores the document.
+            Only the result of the check is kept.
           </p>
         </div>
         <div className="card" data-pathway="assisted">
@@ -63,12 +64,20 @@ export function Login() {
             you on a shared device, reads the consent aloud, and your record carries their name as the enroller —
             equal rigour, the same CREST ID at the end.
           </p>
+          <p className="muted" style={{ marginTop: 8 }}>
+            No document at all? Your record will show that your identity was established without a document. This does
+            not limit what work you can do or be paid for.
+          </p>
           <div style={{ height: 10 }} />
           <a className="btn secondary" id="login-assisted" href="/enrolment/">
             Find a registering agent · the field door
           </a>
         </div>
       </div>
+      <p className="muted" style={{ marginTop: 12 }}>
+        Section 11, Choice One also allows a third route: skip registration entirely and import an existing worker
+        identifier. This deployment has not configured it.
+      </p>
     </EntryShell>
   );
 }

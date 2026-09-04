@@ -130,8 +130,7 @@ export function Cred() {
         ]}
       />
       <Sidecar ok>
-        This credential is yours. It resolves without trusting CREST — the signature, not the server, is what a
-        verifier believes.
+        This credential is yours. It resolves without trusting CREST — a verifier checks the signatures themselves.
       </Sidecar>
       <div className="btn-row">
         <Link className="btn secondary" to="/pay">
@@ -165,7 +164,9 @@ export function CredShow() {
       <div>
         <h2 className="scr-title m">Show to someone</h2>
         <p className="body-2">
-          Hand them the phone, or let them scan the printed card. This — and only this — is what a scan gives away:
+          Hand them the phone, or let them scan the printed card. They will see that your record is real, what you can
+          do, and how strongly it is backed up. They will not see your name, your number, or where you live. This —
+          and only this — is what a scan gives away:
         </p>
         <div className="card">
           <div className="dis">
@@ -180,6 +181,13 @@ export function CredShow() {
         <Sidecar>
           Every scan leaves a line in "Who checked me", on your Profile — even a failed one, even inside a batch.
         </Sidecar>
+        <div className="card quiet">
+          <span className="eyebrow">If they want more</span>
+          <p className="body-2" style={{ marginTop: 6 }}>
+            If they need more than what the scan shows, they have to ask, and you can say no. Saying no does not make
+            your record look worse to them — they simply see that you declined.
+          </p>
+        </div>
       </div>
       <div>
         <CredQR c={c} />

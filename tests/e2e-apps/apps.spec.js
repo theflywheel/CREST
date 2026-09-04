@@ -387,6 +387,44 @@ test("worker entry presents both enrollment pathways", async ({ page }) => {
   await assertAlive(page, errors, "worker entry pathways");
 });
 
+// The worker screens carry the W-1 pack's copy (J7): the fork's same-DID
+// promise, the record/rate separation, the burden-of-proof rule, the payment
+// buckets, and the show-face's disclosure limits — anatomy and explanation
+// from the frames, every number from live records.
+test("worker screens carry the w1 pack's copy (J7)", async ({ page, request }) => {
+  const errors = watch(page);
+  await page.goto("/worker/");
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Both pathways issue the same Crest DID");
+  await expect(page.locator("body")).toContainText("Section 11, Choice One");
+  await expect(page.locator("body")).toContainText("Only the result of the check is kept");
+
+  await workerSignIn(page, request, FIX.workerA, "Grace · community health worker");
+  await settle(page);
+  await page.evaluate(() => { location.hash = "#/work"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("The rate lives in a separate record from the definition");
+  await page.evaluate(() => { location.hash = "#/work/declined"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("The third question matters most");
+
+  await page.evaluate(() => { location.hash = "#/pay"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Arrived in your account");
+  await expect(page.locator("body")).toContainText("Still being checked");
+  await expect(page.locator("body")).toContainText("their number is on your profile");
+
+  await page.evaluate(() => { location.hash = "#/wallet/0/show"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("They will not see your name, your number, or where you live");
+  await expect(page.locator("body")).toContainText("they have to ask, and you can say no");
+
+  await page.evaluate(() => { location.hash = "#/profile"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Your work history accumulates against it");
+  await assertAlive(page, errors, "worker w1 pack copy");
+});
+
 // w1_18: the show screen presents a QR (offline presentation), JSON behind a
 // toggle — no raw JSON dump as the primary face.
 test("worker wallet: show-to-someone renders a QR, JSON behind a toggle", async ({ page, request }) => {
