@@ -8,7 +8,7 @@
 // demo-persona rows this screen used to offer on local stacks are gone, and
 // the e2e suite signs in programmatically through the same mint-and-bind path
 // they performed.
-import { Callout, ErrBar } from "@crest/ui";
+import { ErrBar } from "@crest/ui";
 import { ApiError, claimInvitation, setSession, startEsignetLogin } from "@crest/api";
 import { useConsole } from "../state";
 import { claimRefusal, clearClaim, pendingClaim } from "./Claim";
@@ -39,10 +39,6 @@ export function SignIn() {
       <h1 className="scr-title" id="signin-title">
         Sign in to CREST Console
       </h1>
-      <Callout kind="teal" title="Why this screen exists">
-        One door, every console role. What you see after signing in is decided by the roles you hold — never by
-        which link you opened.
-      </Callout>
       {s.err ? <ErrBar>{s.err}</ErrBar> : null}
 
       <div className="card" style={{ maxWidth: 700 }} data-panel="signin-with">
@@ -55,10 +51,6 @@ export function SignIn() {
           Your national identity provider. CREST never sees a credential of yours.
         </p>
       </div>
-      <Callout kind="green" title="What this screen never does">
-        It never asks which role you want, and never offers a role you do not hold. A role is granted in the
-        registry and read back here — picking your own would make authority a matter of self-declaration.
-      </Callout>
     </AppbarOnly>
   );
 }
