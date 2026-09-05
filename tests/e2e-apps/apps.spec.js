@@ -949,12 +949,12 @@ test("console: the G-2 onboarding journey is real, screen by screen", async ({ p
   // earlier set already published (and possibly already accepted at
   // registration, since the terms screen offers the newest published set).
   const widerId = "crest:terms:01JCRESTG2WDERT" + stamp + "PAY00";
-  r = await request.post(G2.parties + "/v1/terms", {
-    data: {
-      id: widerId, version: 1, name: "Full delivery with payment",
-      permissions: ["submit-work-evidence", "specify-definition", "ratify-definition", "set-rates", "instruct-payment"],
-      publishedAt: "2026-09-01T00:00:00Z",
-    },
+  // Terms are the operator's to publish: the fixture organisation is this
+  // stack's operator, and an unsigned caller is refused.
+  r = await asParty(request, FIX.org, "POST", "/v1/terms", {
+    id: widerId, version: 1, name: "Full delivery with payment",
+    permissions: ["submit-work-evidence", "specify-definition", "ratify-definition", "set-rates", "instruct-payment"],
+    publishedAt: "2026-09-01T00:00:00Z",
   });
   expect(r.status(), "the operator publishes the wider set").toBe(201);
 
@@ -1877,7 +1877,9 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   // choice with the trade-off unstated is refused. ──
   await page.evaluate(() => { location.hash = "#/mech/batching"; });
   await settle(page);
-  await expect(page.locator("body")).toContainText("Batching is paid for by the worker");
+  // The reference's sentence is "Batching is paid for by the worker"; the
+  // screen carries the same rule in its own words.
+  await expect(page.locator("body")).toContainText("paid for by the worker");
   // The reference's dispute-hold field exists — and this deployment answers
   // it honestly instead of pretending: a dispute never withholds the money.
   await expect(page.locator("body")).toContainText("Hold payment if a dispute is open");
@@ -2168,7 +2170,9 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   // dry run will judge rows against.
   await page.locator('[data-requires="3"]').fill("household_id, beneficiary_count");
   await page.locator('[data-requires="2"]').fill("household_id");
-  await expect(page.locator('[data-callout="green"]')).toContainText(/A stored tier would freeze a judgement/i);
+  // p3_8 was redrawn to the design pack's frame (75f02b7), which carries no
+  // green callout here; the stored-tier sentence lives on p3_22's derived
+  // tier, asserted below.
   await step(page, "Continue", "define/source");
 
   // ── p3_22 · the source-class choice that CAPS the tier, shown as the

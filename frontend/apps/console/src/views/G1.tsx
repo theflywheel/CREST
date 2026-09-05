@@ -195,7 +195,7 @@ export function G1Covers() {
             an edit that would change nothing. The identity block itself is on the Self-description view.
           </Lede>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 20px", maxWidth: 780 }}>
-            <CoverField label="Instance name" value={inst.name || "—"} caption={inst.id} />
+            <CoverField label="Instance name" value={inst.name || "—"} caption={inst.instanceId || inst.id} />
             <CoverField label="Jurisdiction" value="deploy-time configuration — not published" muted />
             <CoverField
               label="Identity anchor"
