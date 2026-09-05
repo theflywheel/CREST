@@ -8,11 +8,12 @@
 // demo-persona rows this screen used to offer on local stacks are gone, and
 // the e2e suite signs in programmatically through the same mint-and-bind path
 // they performed.
-import { ErrBar } from "@crest/ui";
-import { startEsignetLogin } from "@crest/api";
+import { Callout, ErrBar } from "@crest/ui";
+import { ApiError, claimInvitation, setSession, startEsignetLogin } from "@crest/api";
 import { useConsole } from "../state";
+import { claimRefusal, clearClaim, pendingClaim } from "./Claim";
 
-function AppbarOnly(props: { children: React.ReactNode }) {
+export function AppbarOnly(props: { children: React.ReactNode }) {
   return (
     <div className="console-shell">
       <div className="appbar">
@@ -38,10 +39,10 @@ export function SignIn() {
       <h1 className="scr-title" id="signin-title">
         Sign in to CREST Console
       </h1>
-      <p className="muted" style={{ maxWidth: 700 }}>
+      <Callout kind="teal" title="Why this screen exists">
         One door, every console role. What you see after signing in is decided by the roles you hold — never by
         which link you opened.
-      </p>
+      </Callout>
       {s.err ? <ErrBar>{s.err}</ErrBar> : null}
 
       <div className="card" style={{ maxWidth: 700 }} data-panel="signin-with">
@@ -54,7 +55,10 @@ export function SignIn() {
           Your national identity provider. CREST never sees a credential of yours.
         </p>
       </div>
-
+      <Callout kind="green" title="What this screen never does">
+        It never asks which role you want, and never offers a role you do not hold. A role is granted in the
+        registry and read back here — picking your own would make authority a matter of self-declaration.
+      </Callout>
     </AppbarOnly>
   );
 }
@@ -86,15 +90,44 @@ export function AuthReturn() {
       setDetail("the login returned neither a token nor an error");
       return;
     }
-    s.completeEsignet(token)
-      .then((outcome) => {
-        if (outcome === "enrolled") nav("/", { replace: true });
-        else setState("stranger");
-      })
-      .catch((e) => {
+    (async () => {
+      const outcome = await s.completeEsignet(token);
+      if (outcome === "enrolled") {
+        // An already-bound login has nothing to claim; a code left over from
+        // an earlier attempt must not follow them around.
+        clearClaim();
+        nav("/", { replace: true });
+        return;
+      }
+      // A stranger holding an invitation is the whole point of #/claim: bind
+      // this login to the record somebody created, then ask the registry
+      // again — the persona derives from the grants that binding revealed,
+      // never from anything this browser decided.
+      const code = pendingClaim();
+      if (!code) {
+        setState("stranger");
+        return;
+      }
+      // completeEsignet drops the session on "stranger"; the claim is made
+      // with the claimant's own token, so put it back for that one call.
+      setSession(token);
+      try {
+        await claimInvitation(code);
+      } catch (e) {
+        setSession(null);
+        clearClaim();
         setState("failed");
-        setDetail(String((e as Error)?.message || e));
-      });
+        setDetail(claimRefusal(e instanceof ApiError ? e.code : null, String((e as Error)?.message || e)));
+        return;
+      }
+      clearClaim();
+      const after = await s.completeEsignet(token);
+      if (after === "enrolled") nav("/", { replace: true });
+      else setState("stranger");
+    })().catch((e) => {
+      setState("failed");
+      setDetail(String((e as Error)?.message || e));
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (state === "working")

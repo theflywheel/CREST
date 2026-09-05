@@ -250,6 +250,33 @@ export function ConsoleProvider(props: { children: ReactNode }) {
         );
         list = fetched.filter(Boolean) as ProjectRow[];
       }
+      // A mechanism owner's projects are the contexts of the mechanisms they
+      // own — the record their persona derives from names the project too.
+      let ownedRates: string[] = [];
+      if (!list.length) {
+        const mechs = await api
+          .get("payments", "/v1/mechanisms/mine")
+          .then((r) => ((r && r.mechanisms) || []) as Array<{ contextId?: string }>)
+          .catch(() => []);
+        const ctxIds = Array.from(new Set(mechs.map((m) => m.contextId).filter(Boolean) as string[]));
+        // The project read answers its owner and configurator; a mechanism
+        // owner is neither, and the context id is still theirs to work in.
+        const fetched = await Promise.all(
+          ctxIds.map((id) =>
+            api
+              .get("parties", "/v1/projects/" + encodeURIComponent(id))
+              .then((p) => (p.project || p) as ProjectRow)
+              .catch(() => ({ id, name: id }) as ProjectRow),
+          ),
+        );
+        list = fetched;
+      }
+      // A rate owner's definition is the one they were assigned, whatever
+      // else is listed.
+      ownedRates = await api
+        .get("payments", "/v1/rate-ownerships/mine")
+        .then((r) => ((r && r.definitionIds) || []) as string[])
+        .catch(() => []);
       if (!live) return;
       setProjects(list);
       setProjectId((cur) => (cur && list.some((p) => p.id === cur) ? cur : list[0]?.id || ""));
@@ -261,7 +288,11 @@ export function ConsoleProvider(props: { children: ReactNode }) {
       setDefinitionId((cur) =>
         cur && defs.some((d) => d.id === cur)
           ? cur
-          : defs.find((d) => d.state === "ACTIVE")?.id || defs[0]?.id || "",
+          : ownedRates.find((id) => defs.some((d) => d.id === id)) ||
+            ownedRates[0] ||
+            defs.find((d) => d.state === "ACTIVE")?.id ||
+            defs[0]?.id ||
+            "",
       );
     })();
     return () => {
@@ -312,6 +343,22 @@ export function ConsoleProvider(props: { children: ReactNode }) {
       } else if (fns.has("ratify-definition")) {
         key = "approver";
         role = "Work Definition Approver";
+      } else if (fns.has("resolve-unclear-evidence")) {
+        // The registry custodian holds the one decision the system refuses
+        // to make for itself — attributing a row nobody could match — and
+        // that grant is the fact the persona is read from.
+        key = "custodian";
+        role = "Registry Custodian";
+      } else if (
+        await api
+          .get("parties", `/v1/projects?configuratorPartyId=${encodeURIComponent(w.partyId)}`)
+          .then((r) => ((r && r.projects) || []).length > 0)
+          .catch(() => false)
+      ) {
+        // A configurator is named on a project by its owner (p1_3); the
+        // project's own record is the fact, not a grant.
+        key = "configurator";
+        role = "Project Configurator";
       } else {
         // The funder roles are not party grants — a rate owner is named by a
         // rate-owner assignment, a mechanism owner by owning a mechanism. So

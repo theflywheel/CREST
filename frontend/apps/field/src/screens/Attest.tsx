@@ -271,6 +271,33 @@ export function Roster() {
       <Chip sm kind="info">CREST's evidence intake — in the reference (w3_4) the roster closes in the delivery platform first</Chip>
       <div className="card">
         <form id="rosterform" onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* A definition document carries no project reference, so the door
+              cannot derive which one this roster counts against. The agent
+              names it, from what the deployment has activated. */}
+          <label className="body-2">
+            Work definition this roster counts against
+            {s.definitions.length ? (
+              <select
+                id="definition-select"
+                value={s.definitionId || ""}
+                onChange={(e) => s.setDefinitionId(e.target.value)}
+                style={{ width: "100%", marginTop: 4, font: "inherit" }}
+              >
+                <option value="">Choose a definition…</option>
+                {s.definitions.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {(d.activity && d.activity.label) || d.id}
+                    {d.version ? ` · v${d.version}` : ""} · {short(d.id)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="muted" style={{ display: "block", marginTop: 4 }}>
+                This deployment has no active work definition, so there is nothing a batch could be checked against.
+                A definition is authored and ratified in the console before evidence can be taken in.
+              </span>
+            )}
+          </label>
           <label className="body-2">
             CSV file
             <input type="file" name="file" accept=".csv,text/csv" onChange={(e) => setFile(e.target.files?.[0] || null)} style={{ font: "inherit", marginTop: 4 }} />

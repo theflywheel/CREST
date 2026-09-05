@@ -123,11 +123,14 @@ async function flowSignedInAs(page, who) {
     .waitFor({ state: "visible", timeout: 20000 });
 }
 
-async function flowConsolePersona(page, persona) {
+async function flowConsolePersona(page, request, persona) {
   await page.goto("/console/");
   await settle(page);
   const card = page.locator(`[data-persona="${persona}"]`);
-  if (!(await card.count())) return `no console persona card [data-persona="${persona}"]`;
+  // The sign-in screen offers no persona cards any more — eSignet is the only
+  // door — so the arrival signs in the way the walks do: mint, bind, and hand
+  // the session to the door.
+  if (!(await card.count())) return flowConsoleLogin(page, request, persona);
   await card.click();
   const ok = await page
     .locator("#logout")
@@ -146,7 +149,7 @@ async function flowFundersArrive(page, request, mode, route) {
   // walk drives it. Nothing here is a second proof; it is arrival machinery
   // reusing the walk's own acts so the screen lands with real state on it.
   if (mode === "funders-rate" || mode === "funders-rate-published") {
-    let p = await flowConsolePersona(page, "orgadmin");
+    let p = await flowConsolePersona(page, request, "orgadmin");
     if (p) return p;
     await flowSignedInAs(page, "Peter Otieno");
     await flowLand(page, "#/rateowner");
@@ -158,7 +161,7 @@ async function flowFundersArrive(page, request, mode, route) {
     await page.click("#logout");
     await settle(page);
 
-    p = await flowConsolePersona(page, "rateowner");
+    p = await flowConsolePersona(page, request, "rateowner");
     if (p) return p;
     await flowSignedInAs(page, "Nadia Okoth");
 
@@ -208,7 +211,7 @@ async function flowFundersArrive(page, request, mode, route) {
     });
     if (r.status() !== 201) return `the supervisor's grant on the flow's project was refused (${r.status()})`;
 
-    let p = await flowConsolePersona(page, "payowner");
+    let p = await flowConsolePersona(page, request, "payowner");
     if (p) return p;
     await flowSignedInAs(page, "Daniel Mwangi");
     await flowLand(page, "#/where");
@@ -378,7 +381,11 @@ function flowStamp() {
 // seeder uses; returns its id (26-char suffix, walk-shaped, unique per call).
 async function flowPublishWiderTerms(request) {
   const id = "crest:terms:01JCRESTG2GATEX" + flowStamp() + "PAY00";
+  // Terms are the operator's to publish, and the fixture organisation is
+  // this stack's operator.
+  const token = await flowMintToken(request, FLOW_FIX.org);
   const r = await request.post(FLOW_API.parties + "/v1/terms", {
+    headers: { Authorization: "Bearer " + token },
     data: {
       id, version: 1, name: "Full delivery with payment",
       permissions: ["submit-work-evidence", "specify-definition", "ratify-definition", "set-rates", "instruct-payment"],
@@ -417,8 +424,8 @@ const CONSOLE_PERSONAS = {
   configurator: ["org", "Dr. Alice Mutua", "Project Configurator"],
   author: ["org", "Amina Yusuf", "Work Definition Author"],
   approver: ["org", "Prof. Ndegwa", "Work Definition Approver"],
-  rateowner: ["org", "Mutua", "Rate Owner"],
-  payowner: ["org", "Njeri", "Payment Mechanism Owner"],
+  rateowner: ["org", "Nadia Okoth", "Rate Owner"],
+  payowner: ["org", "Daniel Mwangi", "Payment Mechanism Owner"],
   instance: ["org", "Instance administrator", "Instance Admin"],
   custodian: ["custodian", "Otieno", "Registry Custodian"],
   support: ["custodian", "Naliaka", "Support Agent"],

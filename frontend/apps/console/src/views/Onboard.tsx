@@ -9,7 +9,7 @@
 // transaction. No seeded party, no persona, no hidden admin step.
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, loginAs } from "@crest/api";
+import { api, isLocalStack, loginAs, whoAmI } from "@crest/api";
 import { Callout, Chip, ErrBar, GridTable, KV, NextBlock, Sidecar, Stat } from "@crest/ui";
 
 const OKEY = "crest.console.onboarding";
@@ -21,7 +21,9 @@ export type OrgProfile = {
   contactName: string;
 };
 
-export function readOnboarding(): ({ orgId: string; name: string } & Partial<OrgProfile>) | null {
+export function readOnboarding():
+  | ({ orgId: string; name: string; inviteCode?: string } & Partial<OrgProfile>)
+  | null {
   try {
     const raw = sessionStorage.getItem(OKEY);
     return raw ? JSON.parse(raw) : null;
@@ -29,7 +31,7 @@ export function readOnboarding(): ({ orgId: string; name: string } & Partial<Org
     return null;
   }
 }
-function storeOnboarding(v: { orgId: string; name: string } & Partial<OrgProfile>) {
+function storeOnboarding(v: { orgId: string; name: string; inviteCode?: string } & Partial<OrgProfile>) {
   try {
     sessionStorage.setItem(OKEY, JSON.stringify(v));
   } catch {
@@ -47,9 +49,22 @@ export function updateOnboarding(patch: Record<string, unknown>) {
 // party id. So the flow authenticates the same way a first login does: mint a
 // token from the deployment's issuer and self-bind, which the never-yet-bound
 // organisation accepts as bootstrap (#102). Idempotent per orgId.
+//
+// Since #123 the first question is whether a session is already the
+// organisation: somebody who claimed the organisation's invitation IS signed
+// in as it, and minting a second token for them would replace a real login
+// with a dev one. Only a local stack falls back to loginAs — on a deployment
+// there is no mock issuer to mint from, and pretending otherwise would hide
+// the missing claim behind a working-looking screen.
 let orgSessionFor: string | null = null;
 export async function ensureOrgSession(orgId: string): Promise<void> {
   if (orgSessionFor === orgId) return;
+  const already = await whoAmI().catch(() => null);
+  if (already && already.partyId === orgId) {
+    orgSessionFor = orgId;
+    return;
+  }
+  if (!isLocalStack) return;
   await loginAs(orgId);
   orgSessionFor = orgId;
 }
@@ -181,6 +196,10 @@ export function OnboardApply() {
         orgId: out.party.id,
         name: out.party.displayName,
         contactName: contactName.trim(),
+        // The one-time code the registration minted for this organisation
+        // (#123). It is the applicant's way to become the organisation's own
+        // sign-in — shown on the status screen and nowhere else.
+        inviteCode: out.inviteCode,
       });
       nav("/onboard/terms");
     } catch (e: any) {
@@ -638,11 +657,15 @@ export function OnboardStatus() {
   const nav = useNavigate();
   const ob = readOnboarding();
   const [reg, setReg] = useState<any | null>(null);
+  const [terms, setTerms] = useState<Array<{ id: string; name?: string; version?: number }>>([]);
   const [nProjects, setNProjects] = useState<number | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => {
     if (!ob) return;
     api.get("parties", `/v1/organisations/${ob.orgId}/registration`).then(setReg, (e: any) => setErr(String(e?.message || e)));
+    // The terms the registration names are read back by id — the name on
+    // this card is the published set's own, never a label typed here.
+    api.get("parties", "/v1/terms").then((d: any) => setTerms(d.terms || []), () => setTerms([]));
     // The projects card is a real read, made as the organisation itself.
     ensureOrgSession(ob.orgId)
       .then(() => api.get("parties", `/v1/projects?ownerPartyId=${encodeURIComponent(ob.orgId)}`))
@@ -665,7 +688,8 @@ export function OnboardStatus() {
       : state === "TERMS_ACCEPTED"
         ? "Waiting on the operator’s decision"
         : ob.name;
-  const termsName = reg?.termsId ? "Standard delivery" : "—";
+  const onTerms = reg?.termsId ? terms.find((t) => t.id === reg.termsId && (!reg.termsVersion || t.version === reg.termsVersion)) : null;
+  const termsName = reg?.termsId ? onTerms?.name || reg.termsId : "—";
   return (
     <OnboardFrame step={4} title={title} who={ob.contactName}>
       {err ? <ErrBar>{err}</ErrBar> : null}
@@ -683,10 +707,12 @@ export function OnboardStatus() {
           label="how projects find you — your declared sector"
         />
         <Stat
-          n={termsName}
+          n={<span data-terms-on={reg?.termsId || ""}>{termsName}</span>}
           label={
             <>
-              terms you are on{reg?.termsVersion ? <> · <Chip sm kind="info">version {reg.termsVersion}</Chip></> : null}
+              terms you are on{reg?.termsId ? <> · <span className="mono">{reg.termsId} v{reg.termsVersion || 1}</span></> : null}
+              {" · "}
+              <span className="mono" data-state={state}>{state}</span>
             </>
           }
         />
@@ -744,6 +770,41 @@ export function OnboardStatus() {
           ]}
         />
       </div>
+      {/* g2_13's "Copy the key", as this deployment actually works (#123):
+          there is no secret to copy, there is a one-time claim. Whoever signs
+          in through this link becomes the organisation's sign-in — its admin
+          — and the link stops working the moment they do. */}
+      {ob.inviteCode ? (
+        <div className="card" style={{ maxWidth: 720 }} data-panel="org-claim">
+          <span className="eyebrow">Claim your organisation</span>
+          <p className="body-2" style={{ marginTop: 8 }}>
+            The person who signs in through this link becomes the organisation's admin: their identity provider
+            proves who they are, and the record you just created becomes theirs to act for. It works once, and it
+            expires. Send it to the person who should hold that, or use it yourself now.
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+            <a className="btn dominant" id="org-claim" href={`#/claim/${ob.inviteCode}`}>
+              Claim your organisation with eSignet
+            </a>
+            <button
+              className="btn secondary"
+              onClick={() => {
+                navigator.clipboard?.writeText(
+                  `${location.origin}${location.pathname}#/claim/${ob.inviteCode}`,
+                );
+              }}
+            >
+              Copy the link
+            </button>
+          </div>
+          <p className="mono" data-org-claim-link style={{ marginTop: 8, wordBreak: "break-all" }}>
+            {`${location.origin}${location.pathname}#/claim/${ob.inviteCode}`}
+          </p>
+          <p className="muted">
+            Shown here only. CREST keeps the code's hash, not the code, so it cannot be read back to you later.
+          </p>
+        </div>
+      ) : null}
       {approved ? (
         <NextBlock
           happened={

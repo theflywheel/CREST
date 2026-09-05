@@ -52,6 +52,13 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/parties/{id}/assurance", h.getAssurance)
 	mux.HandleFunc("POST /v1/parties/{id}/roster-ids", h.addRosterID)
 	mux.HandleFunc("POST /v1/parties/{id}/identity-bindings", h.addIdentityBinding)
+	// Who the token makes the caller, served on every stack (see auth.go).
+	registerWhoAmI(mux)
+	// The invitation in front of the first-login bootstrap (finding #123):
+	// minted by the operator or an approved organisation for an unbound
+	// party, claimed by the invited person with their own login.
+	mux.HandleFunc("POST /v1/parties/{id}/invitations", h.createPartyInvitation)
+	mux.HandleFunc("POST /v1/party-invitations/claim", h.claimPartyInvitation)
 	// Service twins: contact routes are read here, evidence resolves identities
 	// and consent state, verification derives assurance mid-verdict.
 	mux.HandleFunc("GET /internal/parties/{id}", h.getPartyRaw)
@@ -346,9 +353,38 @@ func (h *handlers) listTerms(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) createTerms(w http.ResponseWriter, r *http.Request) {
+	// Terms are the deployment's policy — the set of permissions an
+	// organisation can be admitted on — and the party answerable for the
+	// deployment publishes them: the instance operator, named in the
+	// published self-description. Anybody else publishing terms would be
+	// setting the ceiling on their own admission. On a stack with no identity
+	// provider the check is moot, as every gate here is.
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
+	if h.d.Authenticating {
+		caller := identity.From(r.Context())
+		actor, err := identity.Acting(r.Context(), caller, "", h.d.Permits)
+		if err != nil {
+			httpx.WriteError(w, http.StatusForbidden, "not_permitted_to_act_for", "%v", err)
+			return
+		}
+		inst, ierr := loadInstance(h.d.Config)
+		if ierr != nil || inst.OperatorPartyID == "" || inst.OperatorPartyID != actor {
+			httpx.WriteError(w, http.StatusForbidden, "not_the_operator",
+				"terms are published by the instance operator; this deployment names %q", inst.OperatorPartyID)
+			return
+		}
+	}
 	var t schema.Terms
 	if !httpx.ReadJSON(w, r, &t) {
 		return
+	}
+	if t.ID == "" {
+		t.ID = id.New(h.d.Clock, "terms")
+	}
+	if t.Version == 0 {
+		t.Version = 1
 	}
 	if t.PublishedAt.IsZero() {
 		t.PublishedAt = h.d.Clock.Now()
@@ -435,6 +471,13 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.State == "" {
 		a.State = schema.AuthorizationStateACTIVE
+	}
+	// A grant that names no start starts now — by the registry's clock, not
+	// the browser's. A console that sent its own wall time would mint grants
+	// that "have not started yet" on any deployment whose clock it did not
+	// share, and a permits() check reads the start.
+	if a.Period.Start.IsZero() {
+		a.Period.Start = h.d.Clock.Now()
 	}
 	if err := schema.Validate(schema.IDAuthorization, a); err != nil {
 		writeValidation(w, err)

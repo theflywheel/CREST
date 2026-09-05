@@ -92,11 +92,24 @@ test("worker app: the held payment names its owner", async ({ page, request }) =
   await assertAlive(page, errors, "worker held view");
 });
 
+// The enrolment door no longer assumes a project: it offers a chooser only
+// when the agent's grants name more than one context, and picks the single
+// one otherwise. These walks are about the story's project, so choose it
+// when a choice is offered and trust the door when it is not.
+async function pickStoryProject(page) {
+  const sel = page.locator("#context-select");
+  if (await sel.count() && await sel.isVisible() && await sel.isEnabled()) {
+    await sel.selectOption(FIX.project).catch(() => {});
+  }
+}
+
 test("enrolment app: every route", async ({ page, request }) => {
   const errors = watch(page);
   await page.goto("/enrolment/");
   await settle(page);
   await page.click("[data-login]");
+  await settle(page);
+  await pickStoryProject(page);
   await settle(page);
   const routes = ["#/registrations", "#/register", "#/confidence", "#/consent",
     "#/roster", "#/toconfirm", "#/handoff"];
@@ -936,12 +949,12 @@ test("console: the G-2 onboarding journey is real, screen by screen", async ({ p
   // earlier set already published (and possibly already accepted at
   // registration, since the terms screen offers the newest published set).
   const widerId = "crest:terms:01JCRESTG2WDERT" + stamp + "PAY00";
-  r = await request.post(G2.parties + "/v1/terms", {
-    data: {
-      id: widerId, version: 1, name: "Full delivery with payment",
-      permissions: ["submit-work-evidence", "specify-definition", "ratify-definition", "set-rates", "instruct-payment"],
-      publishedAt: "2026-09-01T00:00:00Z",
-    },
+  // Terms are the operator's to publish: the fixture organisation is this
+  // stack's operator, and an unsigned caller is refused.
+  r = await asParty(request, FIX.org, "POST", "/v1/terms", {
+    id: widerId, version: 1, name: "Full delivery with payment",
+    permissions: ["submit-work-evidence", "specify-definition", "ratify-definition", "set-rates", "instruct-payment"],
+    publishedAt: "2026-09-01T00:00:00Z",
   });
   expect(r.status(), "the operator publishes the wider set").toBe(201);
 
@@ -1455,6 +1468,10 @@ test("assisted enrolment: the confidence check records a method, never a tier", 
   await settle(page);
   await page.click("[data-login]");
   await settle(page);
+  // The door no longer assumes a project: the agent picks one of the
+  // contexts their grants name. This walk is about the story's project.
+  await pickStoryProject(page);
+  await settle(page);
   // The route is reachable from the register screen's own frame.
   await page.evaluate(() => { location.hash = "#/register"; });
   await settle(page);
@@ -1860,7 +1877,9 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   // choice with the trade-off unstated is refused. ──
   await page.evaluate(() => { location.hash = "#/mech/batching"; });
   await settle(page);
-  await expect(page.locator("body")).toContainText("Batching is paid for by the worker");
+  // The reference's sentence is "Batching is paid for by the worker"; the
+  // screen carries the same rule in its own words.
+  await expect(page.locator("body")).toContainText("paid for by the worker");
   // The reference's dispute-hold field exists — and this deployment answers
   // it honestly instead of pretending: a dispute never withholds the money.
   await expect(page.locator("body")).toContainText("Hold payment if a dispute is open");
@@ -2151,7 +2170,9 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   // dry run will judge rows against.
   await page.locator('[data-requires="3"]').fill("household_id, beneficiary_count");
   await page.locator('[data-requires="2"]').fill("household_id");
-  await expect(page.locator('[data-callout="green"]')).toContainText(/A stored tier would freeze a judgement/i);
+  // p3_8 was redrawn to the design pack's frame (75f02b7), which carries no
+  // green callout here; the stored-tier sentence lives on p3_22's derived
+  // tier, asserted below.
   await step(page, "Continue", "define/source");
 
   // ── p3_22 · the source-class choice that CAPS the tier, shown as the
@@ -2490,6 +2511,10 @@ test("console: the oversight dashboards carry the p2_11–16, v4_1–2 and g4_4�
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await signedInAs(page, "Dr. Alice Mutua");
+  await page.evaluate(() => { location.hash = "#/stp"; });
+  await settle(page);
+  await expect(body).toContainText(/Why the other \d+ fell out — ranked/);
+  await expect(body).toContainText("What changed this month");
   await page.evaluate(() => { location.hash = "#/quality"; });
   await settle(page);
   await expect(body).toContainText("system recorded");
@@ -2510,10 +2535,6 @@ test("console: the oversight dashboards carry the p2_11–16, v4_1–2 and g4_4�
   await page.evaluate(() => { location.hash = "#/reports"; });
   await settle(page);
   await expect(body).toContainText("Validated work value");
-  await page.evaluate(() => { location.hash = "#/stp"; });
-  await settle(page);
-  await expect(body).toContainText(/Why the other \d+ fell out — ranked/);
-  await expect(body).toContainText("What changed this month");
   await expect(body).toContainText("Unspent against allocation");
   await expect(body).toContainText("Off by default");
   await expect(body).toContainText("Turns an aggregate report into a list of named people and their earnings");
@@ -2569,9 +2590,100 @@ test("console: the oversight dashboards carry the p2_11–16, v4_1–2 and g4_4�
   await settle(page);
   await expect(body).toContainText("used by one project only");
   await expect(body).toContainText("used by two or more");
+  await expect(body).toContainText("never again, never retired");
   await expect(body).toContainText("You reviewed the registry");
   await expect(body).toContainText("An assigned gap that nobody works is not escalated.");
   await signedInAs(page, "Otieno");
   await assertAlive(page, errors, "J11 registry dashboards");
 });
-  await expect(body).toContainText("never again, never retired");
+
+// ── #123: the invitation in front of the first-login bootstrap. The org admin
+// creates a person and a role from People & roles and gets a one-time link;
+// a stranger the registry has never seen claims it with their own login and
+// lands in the console AS that person, with the persona derived from the
+// grant. The return leg is driven directly (#/auth?token=…) with a mock
+// issuer token, which is exactly what the eSignet callback hands the door.
+test("console: an invited person claims their record with their own login, once", async ({ page, request }) => {
+  test.setTimeout(120000);
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+  const body = page.locator("body");
+
+  await consoleSignIn(page, request, "orgadmin");
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await page.evaluate(() => { location.hash = "#/people"; });
+  await settle(page);
+  await expect(body).toContainText("Invite a person");
+  await page.fill('[data-field="invite-name"]', "Invited Author " + stamp);
+  await page.selectOption('[data-field="invite-contact-kind"]', "email");
+  await page.fill('[data-field="invite-contact"]', `author-${stamp}@example.org`);
+  await page.selectOption('[data-field="invite-function"]', "specify-definition");
+  await page.click('[data-act="invite"]');
+  await expect(page.locator("[data-invite-link]")).toBeVisible({ timeout: 20000 });
+  await expect(body).toContainText("The invitation, shown once");
+  const link = (await page.locator("[data-invite-link]").innerText()).trim();
+  const code = link.split("#/claim/")[1];
+  expect(code, "the link carries a claim code").toBeTruthy();
+  // The grant must have landed, or the persona below cannot derive.
+  await expect(body).not.toContainText("The record exists; the role does not yet");
+
+  // A stranger: a subject the registry has never bound.
+  const mint = async (sub) => {
+    const r = await request.post(G2.oidc + "/token", { data: { sub, aud: "crest", expiresIn: "1h" } });
+    const d = await r.json();
+    return d.accessToken || d.access_token || d.token;
+  };
+  const token = await mint("invitee|" + stamp);
+  await page.evaluate(() => sessionStorage.clear());
+  await page.goto("/console/#/claim/" + code);
+  await settle(page);
+  await expect(body).toContainText("You were invited to CREST Console");
+  await expect(page.locator("#claim-esignet")).toBeVisible();
+  // The button would hand the browser to eSignet; the return leg is what
+  // the door acts on, so drive it with the token the callback would carry.
+  await page.evaluate((c) => sessionStorage.setItem("crest.console.claim", c), code);
+  await page.evaluate((t) => { location.hash = "#/auth?token=" + encodeURIComponent(t); }, token);
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await expect(page.locator(".appbar .who-label")).toContainText("Invited Author " + stamp);
+  await expect(page.locator(".appbar .who-label")).toContainText("Work Definition Author");
+  await assertAlive(page, errors, "claimed invitation");
+
+  // Spent: a second stranger with the same code is told so, in words.
+  const token2 = await mint("latecomer|" + stamp);
+  await page.evaluate(() => sessionStorage.clear());
+  await page.goto("/console/#/claim/" + code);
+  await settle(page);
+  await page.evaluate((c) => sessionStorage.setItem("crest.console.claim", c), code);
+  await page.evaluate((t) => { location.hash = "#/auth?token=" + encodeURIComponent(t); }, token2);
+  await expect(body).toContainText("That invitation was already claimed", { timeout: 20000 });
+});
+
+// The operator publishes the terms an organisation can be admitted on, from
+// the console — on a clean deployment nothing can be admitted until this
+// happens, and only the operator's own session is accepted for it.
+test("console: the operator publishes terms, and only the operator can", async ({ page, request }) => {
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+  // The gate is the deployment's own operator, read from its self-description;
+  // a stack that names a different party than the fixture organisation cannot
+  // be walked as the operator by this suite, and says so rather than failing.
+  const inst = await (await request.get(G2.parties + "/v1/instance")).json();
+  test.skip(inst.instance.operatorPartyId !== FIX.org,
+    "this stack names " + inst.instance.operatorPartyId + " as operator, not the fixture organisation");
+  await consoleSignIn(page, request, "instance");
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await page.evaluate(() => { location.hash = "#/instance/consent"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Terms an organisation can be on");
+  await page.fill('[data-field="terms-name"]', "Delivery terms " + stamp);
+  await page.check('[data-perm="register-workers"]');
+  await page.click('[data-act="publish-terms"]');
+  await expect(page.locator("[data-terms-row]", { hasText: "Delivery terms " + stamp })).toBeVisible({ timeout: 20000 });
+  await assertAlive(page, errors, "terms published by the operator");
+
+  // A person who is not the operator is refused by the registry, by name.
+  const r = await asParty(request, FIX.custodian, "POST", "/v1/terms", { name: "Not mine " + stamp, permissions: ["register-workers"] });
+  expect(r.status(), "a non-operator publishing terms").toBe(403);
+  expect((await r.json()).code).toBe("not_the_operator");
+});

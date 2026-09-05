@@ -35,6 +35,7 @@ import {
   OnboardStandalone, OnboardWider, OnboardDocuments, OnboardReview, OnboardInvited, OnboardProject,
 } from "./views/OnboardOrg";
 import { SignIn, AuthReturn } from "./views/SignIn";
+import { Claim } from "./views/Claim";
 import {
   Projects as OrgHome, NewProject, People, Workers, Validation, Intake, SpreadsheetArrived, Finance as FinanceConnect, Navigation,
 } from "./views/Setup";
@@ -243,7 +244,11 @@ const homeOf = (key: PersonaKey) =>
 // is reached from the queue.
 const G1_EXTRA = ["/instance/setup", "/instance/invite"];
 const allowed = (key: PersonaKey, path: string) =>
-  (isJ3(key) && J3_ROUTES.includes(path)) ||
+  // The organisation stands up F-1/F-2 before the owners exist: it assigns
+  // the rate owner and creates the mechanism naming its owner, and until it
+  // has, nobody derives as rate owner or mechanism owner. So the org admin
+  // holds the funders routes too; the configurator does not.
+  (isJ3(key) && (J3_ROUTES.includes(path) || (key === "orgadmin" && FUNDERS_ROUTES.includes(path)))) ||
   (key === "author" && AUTHOR_ROUTES.includes(path)) ||
   // The approver reads the record and the act, and holds no wizard route.
   (key === "approver" && P3_READS.includes(path)) ||
@@ -309,6 +314,9 @@ export function App() {
       <Route path="/onboard/review" element={<OnboardReview />} />
       <Route path="/onboard/invited" element={<OnboardInvited />} />
       <Route path="/onboard/project" element={<OnboardProject />} />
+      {/* Claiming an invitation (#123): reachable with no session by design —
+          the person claiming has no party here yet, which is the point. */}
+      <Route path="/claim/:code" element={<Claim />} />
       <Route element={<Shell />}>
         {/* J3 — setting up a project */}
         <Route path="/org" element={<OrgHome />} />

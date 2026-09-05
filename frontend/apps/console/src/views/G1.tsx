@@ -195,7 +195,7 @@ export function G1Covers() {
             an edit that would change nothing. The identity block itself is on the Self-description view.
           </Lede>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 20px", maxWidth: 780 }}>
-            <CoverField label="Instance name" value={inst.name || "—"} caption={inst.id} />
+            <CoverField label="Instance name" value={inst.name || "—"} caption={inst.instanceId || inst.id} />
             <CoverField label="Jurisdiction" value="deploy-time configuration — not published" muted />
             <CoverField
               label="Identity anchor"
@@ -312,6 +312,7 @@ export function G1Consent() {
           </div>
         </div>
       </div>
+      <TermsPublisher />
       <Callout kind="teal">
         Set before the first worker registers, deliberately. Retro-fitting consent onto records already collected under
         a different rule has no clean answer.
@@ -618,6 +619,100 @@ export function AdmissionDetail() {
           </>
         );
       }}
+    </LoadFrame>
+  );
+}
+
+// Terms an organisation can be on. On a clean deployment there are none, and
+// nothing can be admitted until the operator publishes a set: an admission
+// is an acceptance of a named version, and "whatever was current" is not a
+// fact a verifier can walk back to. The permissions are opaque strings to
+// the core; the ones offered here are the functions this console's own
+// surfaces grant, and a deployment may type any other.
+const TERMS_PERMISSIONS = [
+  "submit-work-evidence",
+  "specify-definition",
+  "ratify-definition",
+  "act-for-party",
+  "register-workers",
+  "submit-evidence",
+  "resolve-unclear-evidence",
+];
+
+function TermsPublisher() {
+  const [gen, setGen] = useState(0);
+  const [name, setName] = useState("");
+  const [perms, setPerms] = useState<string[]>(["submit-work-evidence"]);
+  const [extra, setExtra] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const r = useLoad(async () => (await api.get("parties", "/v1/terms")).terms || [], [gen]);
+  const toggle = (p: string) => setPerms((cur) => (cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]));
+  const publish = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    setBusy(true);
+    setErr("");
+    try {
+      const all = Array.from(new Set([...perms, ...extra.split(",").map((s) => s.trim()).filter(Boolean)]));
+      await api.post("parties", "/v1/terms", { name: name.trim(), permissions: all });
+      setName("");
+      setGen((g) => g + 1);
+    } catch (e) {
+      setErr(String((e as Error)?.message || e));
+    }
+    setBusy(false);
+  };
+  return (
+    <LoadFrame r={r}>
+      {(terms: Array<{ id: string; name?: string; version?: number; permissions?: string[]; publishedAt?: string }>) => (
+        <CardTitled t="Terms an organisation can be on">
+          <p className="body-2">
+            An organisation is admitted onto a named version of a set of terms, and the functions its people can be
+            granted are capped by that set. Published, never edited: a revision is a new version.
+          </p>
+          <Tbl
+            heads={["Terms", "Version", "Permissions", "Published"]}
+            rows={terms.map((t) => [
+              <span data-terms-row={t.id}>{t.name || t.id}</span>,
+              String(t.version ?? ""),
+              (t.permissions || []).join(", "),
+              when(t.publishedAt),
+            ])}
+            empty="No terms are published yet. Nothing can be admitted until a set exists — this deployment has not said what an organisation may be trusted with."
+          />
+          <form data-terms-form onSubmit={publish} style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12, maxWidth: 640 }}>
+            <label className="field">
+              <span className="eyebrow">Name</span>
+              <input required value={name} onChange={(e) => setName(e.target.value)} data-field="terms-name" placeholder="Standard delivery" />
+            </label>
+            <div>
+              <span className="eyebrow">Permissions this set allows</span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", marginTop: 6 }}>
+                {TERMS_PERMISSIONS.map((p) => (
+                  <label key={p} className="body-2" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="checkbox" checked={perms.includes(p)} onChange={() => toggle(p)} data-perm={p} />
+                    <span className="mono">{p}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <label className="field">
+              <span className="eyebrow">Other permissions, comma-separated</span>
+              <input value={extra} onChange={(e) => setExtra(e.target.value)} data-field="terms-extra" placeholder="the deployment's own function names" />
+            </label>
+            {err ? <div className="errbar">{err}</div> : null}
+            <div>
+              <button className="btn dominant" type="submit" disabled={busy || perms.length + extra.trim().length === 0} data-act="publish-terms">
+                {busy ? "Publishing…" : "Publish these terms"}
+              </button>
+            </div>
+          </form>
+          <p className="muted" style={{ marginTop: 8 }}>
+            Only the instance operator can publish — the registry checks the caller against the published
+            self-description, and refuses anybody else.
+          </p>
+        </CardTitled>
+      )}
     </LoadFrame>
   );
 }

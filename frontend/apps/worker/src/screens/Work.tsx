@@ -11,7 +11,7 @@ export function Work() {
   const s = useSession();
   const [bump, setBump] = useState(0);
   const data = useLoad(async () => {
-    const [fr, wins] = await Promise.all([loadFace(), loadWindows(s.me!)]);
+    const [fr, wins] = await Promise.all([loadFace(s.me!), loadWindows(s.me!)]);
     return { ...fr, wins, bump };
   });
   if (!data) return null;

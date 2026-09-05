@@ -9,7 +9,7 @@ import { Ussd } from "./Login";
 export function Home() {
   const s = useSession();
   const data = useLoad(async () => {
-    const [creds, wins, fr] = await Promise.all([loadCreds(s.me!), loadWindows(s.me!), loadFace()]);
+    const [creds, wins, fr] = await Promise.all([loadCreds(s.me!), loadWindows(s.me!), loadFace(s.me!)]);
     return { creds, wins, ...fr };
   });
   if (!data) return null;

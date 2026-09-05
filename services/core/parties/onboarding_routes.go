@@ -41,7 +41,10 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var reg Registration
+	var (
+		reg        Registration
+		inviteCode string
+	)
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		if err := insertParty(r.Context(), tx, p); err != nil {
 			return err
@@ -51,6 +54,15 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 		}
 		var err error
 		reg, err = getRegistration(r.Context(), tx, p.ID)
+		if err != nil {
+			return err
+		}
+		// The applicant registered at an open door and holds no session as
+		// the organisation yet. The code is how they come back as it: their
+		// own login claims the unbound organisation party (g2_13's "copy the
+		// key"). Invited by the party itself — nobody with standing exists
+		// yet, and that is the honest record of an open-door registration.
+		inviteCode, err = mintInvitation(r.Context(), tx, p.ID, p.ID, h.d.Clock.Now(), 0)
 		return err
 	})
 	switch {
@@ -63,7 +75,9 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 		// approved organisation, and an append-only log that recorded every
 		// application as an existing organisation could not later distinguish
 		// the two (§3).
-		httpx.WriteJSON(w, http.StatusCreated, map[string]any{"party": p, "registration": reg})
+		httpx.WriteJSON(w, http.StatusCreated, map[string]any{
+			"party": p, "registration": reg, "inviteCode": inviteCode,
+		})
 	}
 }
 
