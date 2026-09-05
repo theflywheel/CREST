@@ -657,11 +657,15 @@ export function OnboardStatus() {
   const nav = useNavigate();
   const ob = readOnboarding();
   const [reg, setReg] = useState<any | null>(null);
+  const [terms, setTerms] = useState<Array<{ id: string; name?: string; version?: number }>>([]);
   const [nProjects, setNProjects] = useState<number | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => {
     if (!ob) return;
     api.get("parties", `/v1/organisations/${ob.orgId}/registration`).then(setReg, (e: any) => setErr(String(e?.message || e)));
+    // The terms the registration names are read back by id — the name on
+    // this card is the published set's own, never a label typed here.
+    api.get("parties", "/v1/terms").then((d: any) => setTerms(d.terms || []), () => setTerms([]));
     // The projects card is a real read, made as the organisation itself.
     ensureOrgSession(ob.orgId)
       .then(() => api.get("parties", `/v1/projects?ownerPartyId=${encodeURIComponent(ob.orgId)}`))
@@ -684,7 +688,8 @@ export function OnboardStatus() {
       : state === "TERMS_ACCEPTED"
         ? "Waiting on the operator’s decision"
         : ob.name;
-  const termsName = reg?.termsId ? "Standard delivery" : "—";
+  const onTerms = reg?.termsId ? terms.find((t) => t.id === reg.termsId && (!reg.termsVersion || t.version === reg.termsVersion)) : null;
+  const termsName = reg?.termsId ? onTerms?.name || reg.termsId : "—";
   return (
     <OnboardFrame step={4} title={title} who={ob.contactName}>
       {err ? <ErrBar>{err}</ErrBar> : null}
@@ -702,10 +707,12 @@ export function OnboardStatus() {
           label="how projects find you — your declared sector"
         />
         <Stat
-          n={termsName}
+          n={<span data-terms-on={reg?.termsId || ""}>{termsName}</span>}
           label={
             <>
-              terms you are on{reg?.termsVersion ? <> · <Chip sm kind="info">version {reg.termsVersion}</Chip></> : null}
+              terms you are on{reg?.termsId ? <> · <span className="mono">{reg.termsId} v{reg.termsVersion || 1}</span></> : null}
+              {" · "}
+              <span className="mono" data-state={state}>{state}</span>
             </>
           }
         />
