@@ -123,11 +123,14 @@ async function flowSignedInAs(page, who) {
     .waitFor({ state: "visible", timeout: 20000 });
 }
 
-async function flowConsolePersona(page, persona) {
+async function flowConsolePersona(page, request, persona) {
   await page.goto("/console/");
   await settle(page);
   const card = page.locator(`[data-persona="${persona}"]`);
-  if (!(await card.count())) return `no console persona card [data-persona="${persona}"]`;
+  // The sign-in screen offers no persona cards any more — eSignet is the only
+  // door — so the arrival signs in the way the walks do: mint, bind, and hand
+  // the session to the door.
+  if (!(await card.count())) return flowConsoleLogin(page, request, persona);
   await card.click();
   const ok = await page
     .locator("#logout")
@@ -146,7 +149,7 @@ async function flowFundersArrive(page, request, mode, route) {
   // walk drives it. Nothing here is a second proof; it is arrival machinery
   // reusing the walk's own acts so the screen lands with real state on it.
   if (mode === "funders-rate" || mode === "funders-rate-published") {
-    let p = await flowConsolePersona(page, "orgadmin");
+    let p = await flowConsolePersona(page, request, "orgadmin");
     if (p) return p;
     await flowSignedInAs(page, "Peter Otieno");
     await flowLand(page, "#/rateowner");
@@ -158,7 +161,7 @@ async function flowFundersArrive(page, request, mode, route) {
     await page.click("#logout");
     await settle(page);
 
-    p = await flowConsolePersona(page, "rateowner");
+    p = await flowConsolePersona(page, request, "rateowner");
     if (p) return p;
     await flowSignedInAs(page, "Nadia Okoth");
 
@@ -208,7 +211,7 @@ async function flowFundersArrive(page, request, mode, route) {
     });
     if (r.status() !== 201) return `the supervisor's grant on the flow's project was refused (${r.status()})`;
 
-    let p = await flowConsolePersona(page, "payowner");
+    let p = await flowConsolePersona(page, request, "payowner");
     if (p) return p;
     await flowSignedInAs(page, "Daniel Mwangi");
     await flowLand(page, "#/where");
