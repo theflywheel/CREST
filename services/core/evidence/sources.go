@@ -118,10 +118,9 @@ func registerSource(ctx context.Context, tx store.Querier, s Source) (Source, er
 		INSERT INTO sources (id, adapter_ref, context_id, system_ref, expected_every,
 		                     owner_party_id, registered_at, mapping)
 		VALUES ($1,$2,$3,$4,$5::interval,$6,$7,$8)
-		ON CONFLICT (adapter_ref, context_id) DO UPDATE SET
+		ON CONFLICT (adapter_ref, context_id, system_ref) DO UPDATE SET
 			expected_every = EXCLUDED.expected_every,
 			owner_party_id = EXCLUDED.owner_party_id,
-			system_ref     = EXCLUDED.system_ref,
 			mapping        = EXCLUDED.mapping
 		RETURNING id, registered_at, last_seen_at,
 		          extract(epoch from expected_every)::bigint`,
@@ -148,10 +147,10 @@ func registerSource(ctx context.Context, tx store.Querier, s Source) (Source, er
 // alerts nobody believes — which is worse than no alert, because it teaches
 // people to ignore the real one. The consequence is stated in the manifest: an
 // unregistered source is not watched.
-func markSeen(ctx context.Context, tx store.Querier, adapterRef, contextID string, at time.Time) error {
+func markSeen(ctx context.Context, tx store.Querier, adapterRef, contextID, systemRef string, at time.Time) error {
 	_, err := tx.Exec(ctx, `
-		UPDATE sources SET last_seen_at = $3, silent_since = NULL, notified_at = NULL
-		WHERE adapter_ref = $1 AND context_id = $2`, adapterRef, contextID, at)
+		UPDATE sources SET last_seen_at = $4, silent_since = NULL, notified_at = NULL
+		WHERE adapter_ref = $1 AND context_id = $2 AND system_ref = $3`, adapterRef, contextID, systemRef, at)
 	return err
 }
 
@@ -193,11 +192,11 @@ func listSources(ctx context.Context, q store.Querier, now time.Time) ([]Source,
 // names needs no translation, which is every fixture in this repo and the case
 // this started as. Registering the source is what a deployment does when its
 // source system speaks its own.
-func mappingFor(ctx context.Context, q store.Querier, adapterRef, contextID string) (adapters.Mapping, error) {
+func mappingFor(ctx context.Context, q store.Querier, adapterRef, contextID, systemRef string) (adapters.Mapping, error) {
 	var raw []byte
 	err := q.QueryRow(ctx,
-		`SELECT mapping FROM sources WHERE adapter_ref = $1 AND context_id = $2`,
-		adapterRef, contextID).Scan(&raw)
+		`SELECT mapping FROM sources WHERE adapter_ref = $1 AND context_id = $2 AND system_ref = $3`,
+		adapterRef, contextID, systemRef).Scan(&raw)
 	if errors.Is(err, store.ErrNotFound) || len(raw) == 0 {
 		return adapters.Mapping{}, nil
 	}

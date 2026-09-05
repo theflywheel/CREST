@@ -369,11 +369,10 @@ paths:
       operationId: listAdaptors
       summary: The adaptor catalogue, honestly
       description: >
-        Built from what the binary links, plus named absences. CREST has one
-        implemented adapter class today (batch-file); a DHIS2-shaped source runs
-        through it with a per-source column mapping. Entries the reference journey
-        shows but CREST does not have say `not-implemented` rather than appearing
-        available.
+        Built from the connector registry linked into the binary, plus named
+        absences. A deployment can expose additional connector classes by
+        registering their implementation. Entries the reference journey shows
+        but CREST does not have say `not-implemented` rather than appearing available.
       responses:
         "200":
           description: The catalogue.
@@ -391,6 +390,8 @@ paths:
                       properties:
                         ref: { type: string }
                         class: { type: string }
+                        name: { type: string }
+                        contentTypes: { type: array, items: { type: string } }
                         status: { type: string, enum: [available, not-implemented] }
                         note: { type: string }
         "500": { $ref: "#/components/responses/Internal" }

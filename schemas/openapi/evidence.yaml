@@ -46,19 +46,24 @@ paths:
         to more than one party go to the unclear queue rather than being attached
         to a best guess (W7).
       parameters:
+        - { name: adapterRef, in: query, required: false, schema: { type: string, default: "csv-batch@1" }, description: Exact versioned connector reference. Omitted only for backwards-compatible CSV submissions. }
         - { name: contextId, in: query, required: true, schema: { type: string } }
         - { name: definitionId, in: query, required: true, schema: { type: string } }
         - { name: submittedBy, in: query, required: true, schema: { type: string }, description: The party accountable for the submission. }
         - { name: sourceClass, in: query, required: true, schema: { type: string }, description: What kind of system this came from - a provenance fact, never a tier. }
         - { name: captureMethod, in: query, required: true, schema: { type: string } }
         - { name: sourceExposure, in: query, required: true, schema: { type: string } }
-        - { name: systemRef, in: query, schema: { type: string }, description: The specific source system instance. }
+        - { name: systemRef, in: query, required: true, schema: { type: string }, description: The specific source system instance. }
       requestBody:
         required: true
-        description: The CSV file as sent by the source system. Up to 64 MiB.
+        description: The source payload consumed by the selected connector. Up to 64 MiB.
         content:
           text/csv:
             schema: { type: string }
+          application/json:
+            schema: { type: object, additionalProperties: true }
+          application/octet-stream:
+            schema: { type: string, format: binary }
       responses:
         "201":
           description: >
@@ -83,9 +88,10 @@ paths:
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "422":
           description: >
-            `unparseable_batch` - the header is unusable, so the file is refused
-            whole and the missing column is named. Or `batch_refused` - ingest
-            could not proceed, e.g. the definition is unknown.
+            `unsupported_connector` - adapterRef is not linked into this
+            deployment. `unparseable_batch` - the selected connector could not
+            read the payload as a whole. Or `batch_refused` - ingest could not
+            proceed, e.g. the definition is unknown.
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "500": { $ref: "#/components/responses/Internal" }
 
@@ -342,7 +348,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [adapterRef, contextId, expectedEvery, ownerPartyId]
+              required: [adapterRef, contextId, systemRef, expectedEvery, ownerPartyId]
               properties:
                 adapterRef: { type: string }
                 contextId:
@@ -525,7 +531,7 @@ components:
         the same rule as a credential's tier and a Party's identity assurance.
         A stored state is wrong the moment the clock moves, and the whole
         subject here is time passing.
-      required: [id, adapterRef, contextId, expectedEvery, ownerPartyId, registeredAt, state]
+      required: [id, adapterRef, contextId, systemRef, expectedEvery, ownerPartyId, registeredAt, state]
       properties:
         id: { type: string }
         adapterRef: { type: string }

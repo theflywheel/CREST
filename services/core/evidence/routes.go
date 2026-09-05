@@ -3,13 +3,14 @@ package evidence
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/theflywheel/crest/adapters"
-	csvadapter "github.com/theflywheel/crest/adapters/csv"
 	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/httpx"
@@ -26,7 +27,22 @@ import (
 // rather than failing on the first batch that carries a national identifier.
 var hasher *pii.Hasher
 
-func routes(mux *http.ServeMux, d service.Deps) {
+const defaultConnectorRef = "csv-batch@1"
+
+func connectorFor(registry *adapters.Registry, ref string) (adapters.Connector, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		ref = defaultConnectorRef
+	}
+	connector, ok := registry.Lookup(ref)
+	if !ok {
+		return adapters.Connector{}, fmt.Errorf("adapterRef %q is not linked into this deployment; supported refs: %s",
+			ref, strings.Join(registry.Refs(), ", "))
+	}
+	return connector, nil
+}
+
+func routes(mux *http.ServeMux, d service.Deps, connectors *adapters.Registry) {
 	h, err := pii.NewHasher(
 		config.Str("NATIONAL_ID_SALT", "local-development-salt-not-for-any-real-deployment"),
 		config.Str("NATIONAL_ID_SALT_REF", "local-1"))
@@ -37,7 +53,8 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	hasher = h
 
 	hs := &handlers{
-		d: d,
+		d:          d,
+		connectors: connectors,
 		in: &ingestor{
 			registry:    client.New(config.Str("PARTIES_URL", "http://parties:8080")),
 			definitions: client.New(config.Str("DEFINITIONS_URL", "http://definitions:8080")),
@@ -75,8 +92,9 @@ func routes(mux *http.ServeMux, d service.Deps) {
 }
 
 type handlers struct {
-	d  service.Deps
-	in *ingestor
+	d          service.Deps
+	in         *ingestor
+	connectors *adapters.Registry
 }
 
 // submitBatch takes the file itself as the body and everything the deployment
@@ -100,7 +118,8 @@ func (h *handlers) submitBatch(w http.ResponseWriter, r *http.Request) {
 	}
 	for name, value := range map[string]string{
 		"contextId": params.ContextID, "definitionId": params.DefinitionID,
-		"submittedBy": params.SubmittedBy, "sourceClass": string(params.Source.Class),
+		"submittedBy": params.SubmittedBy, "systemRef": params.Source.SystemRef,
+		"sourceClass":   string(params.Source.Class),
 		"captureMethod": string(params.Source.CaptureMethod), "sourceExposure": string(params.Source.Exposure),
 	} {
 		if value == "" {
@@ -109,6 +128,12 @@ func (h *handlers) submitBatch(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	connector, err := connectorFor(h.connectors, q.Get("adapterRef"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "unsupported_connector", "%v", err)
+		return
+	}
+	params.AdapterRef = connector.Ref()
 
 	// The submitter is the caller (#102): submittedBy is what permits() is
 	// checked against and what every claim records as its provenance, and
@@ -124,21 +149,19 @@ func (h *handlers) submitBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	adapter := csvadapter.Adapter{}
-
 	// The source's own vocabulary, from configuration (#25). An unregistered
 	// source gets an empty mapping and the file is read as canonical column
 	// names — which is every fixture in this repo, and the reason registering a
 	// source is a deployment step rather than a precondition for ingesting
 	// anything at all.
-	mapping, err := mappingFor(r.Context(), h.d.DB.Q(), adapter.Ref(), params.ContextID)
+	mapping, err := mappingFor(r.Context(), h.d.DB.Q(), connector.Ref(), params.ContextID, params.Source.SystemRef)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "read the source mapping", err)
 		return
 	}
 	params.Source.Mapping = mapping
 
-	rows, rejections, err := adapter.Parse(bytes.NewReader(body), params.Source, h.d.Clock.Now())
+	rows, rejections, err := connector.Adapter.Parse(bytes.NewReader(body), params.Source, h.d.Clock.Now())
 	if err != nil {
 		// A file whose header is unusable is refused whole, and named. There is
 		// nothing to salvage and the sender needs to know which column is missing.
@@ -292,13 +315,19 @@ func (h *handlers) registerSource(w http.ResponseWriter, r *http.Request) {
 	}
 	for name, v := range map[string]string{
 		"adapterRef": body.AdapterRef, "contextId": body.ContextID,
-		"expectedEvery": body.ExpectedEvery, "ownerPartyId": body.OwnerPartyID,
+		"systemRef": body.SystemRef, "expectedEvery": body.ExpectedEvery, "ownerPartyId": body.OwnerPartyID,
 	} {
 		if v == "" {
 			httpx.WriteError(w, http.StatusBadRequest, "invalid_body",
 				"%s is required; a source with no %s cannot be monitored", name, name)
 			return
 		}
+	}
+	if _, ok := h.connectors.Lookup(body.AdapterRef); !ok {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "unsupported_connector",
+			"adapterRef %q is not linked into this deployment; supported refs: %s",
+			body.AdapterRef, strings.Join(h.connectors.Refs(), ", "))
+		return
 	}
 	every, err := time.ParseDuration(body.ExpectedEvery)
 	if err != nil || every <= 0 {
