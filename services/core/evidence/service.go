@@ -15,7 +15,9 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"net/http"
 
+	"github.com/theflywheel/crest/adapters/builtin"
 	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/service"
@@ -28,11 +30,14 @@ var migrations embed.FS
 // Service is this member's wiring, composed into the core binary (#150).
 func Service() service.Options {
 	confirmation := client.New(config.Str("CONFIRMATION_URL", "http://payments:8080"))
+	connectors := builtin.Registry()
 
 	return service.Options{
 		Migrations: migrations,
 		Dir:        "migrations",
-		Routes:     routes,
+		Routes: func(mux *http.ServeMux, d service.Deps) {
+			routes(mux, d, connectors)
+		},
 
 		// Two side effects, both delivered from the outbox rather than inline.
 		// A claim that exists with no window is a worker who is never asked and

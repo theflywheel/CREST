@@ -1050,6 +1050,7 @@ export function SpreadsheetArrived() {
     setBusy(true);
     try {
       const qs = new URLSearchParams({
+        adapterRef: "csv-batch@1",
         contextId: s.projectId,
         definitionId: s.definitionId,
         submittedBy: s.me!.partyId,

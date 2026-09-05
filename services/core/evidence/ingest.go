@@ -49,6 +49,7 @@ type ingestParams struct {
 	ContextID    string
 	DefinitionID string
 	SubmittedBy  string
+	AdapterRef   string
 	Source       adapters.Source
 }
 
@@ -86,7 +87,7 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 		DefinitionID:      def.ID,
 		DefinitionVersion: def.Version,
 		SubmittedBy:       p.SubmittedBy,
-		AdapterRef:        p.Source.SystemRef,
+		AdapterRef:        p.AdapterRef,
 		RowsTotal:         len(rows) + len(rejections),
 		CreatedAt:         now,
 	}
@@ -144,7 +145,7 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 		// this watches whether the source is *sending*, not whether what it
 		// sends is any good. Bad rows are the unclear queue's problem and are
 		// visible there; silence is invisible everywhere else.
-		if err := markSeen(ctx, tx, batch.AdapterRef, batch.ContextID, now); err != nil {
+		if err := markSeen(ctx, tx, batch.AdapterRef, batch.ContextID, p.Source.SystemRef, now); err != nil {
 			return err
 		}
 		for _, u := range result.Unclear {

@@ -45,9 +45,9 @@ func (w *world) registerSource(t *testing.T, every string) sourceView {
 	t.Helper()
 	var out sourceView
 	if err := w.Evidence.Post(w.ctx, "/v1/sources", map[string]any{
-		"adapterRef":    "dhis2-riverside-" + runID,
+		"adapterRef":    "csv-batch@1",
 		"contextId":     fixtures.ProjectID,
-		"systemRef":     "dhis2-riverside",
+		"systemRef":     "dhis2-riverside-" + runID,
 		"expectedEvery": every,
 		"ownerPartyId":  fixtures.SupervisorID,
 	}, &out); err != nil {
@@ -62,9 +62,9 @@ func TestASourceCannotBeMonitoredWithoutACadenceAndAnOwner(t *testing.T) {
 	w := setup(t)
 
 	for name, body := range map[string]map[string]any{
-		"no cadence": {"adapterRef": "a", "contextId": fixtures.ProjectID, "ownerPartyId": fixtures.SupervisorID},
-		"no owner":   {"adapterRef": "a", "contextId": fixtures.ProjectID, "expectedEvery": "24h"},
-		"zero cadence": {"adapterRef": "a", "contextId": fixtures.ProjectID,
+		"no cadence": {"adapterRef": "csv-batch@1", "contextId": fixtures.ProjectID, "systemRef": "test", "ownerPartyId": fixtures.SupervisorID},
+		"no owner":   {"adapterRef": "csv-batch@1", "contextId": fixtures.ProjectID, "systemRef": "test", "expectedEvery": "24h"},
+		"zero cadence": {"adapterRef": "csv-batch@1", "contextId": fixtures.ProjectID, "systemRef": "test",
 			"expectedEvery": "0s", "ownerPartyId": fixtures.SupervisorID},
 	} {
 		code, resp, err := w.Evidence.Status(w.ctx, http.MethodPost, "/v1/sources", body)
@@ -89,7 +89,7 @@ func TestASourceThatGoesQuietIsNoticedAndItsOwnerIsTold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := fmt.Sprintf("/v1/batches?contextId=%s&definitionId=%s&submittedBy=%s"+
+	path := fmt.Sprintf("/v1/batches?adapterRef=csv-batch%%401&contextId=%s&definitionId=%s&submittedBy=%s"+
 		"&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch"+
 		"&systemRef=%s",
 		fixtures.ProjectID, fixtures.DefinitionID, fixtures.SupervisorID, "dhis2-riverside-"+runID)
@@ -171,7 +171,7 @@ func TestAFeedThatResumesIsHealthyAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := fmt.Sprintf("/v1/batches?contextId=%s&definitionId=%s&submittedBy=%s"+
+	path := fmt.Sprintf("/v1/batches?adapterRef=csv-batch%%401&contextId=%s&definitionId=%s&submittedBy=%s"+
 		"&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch"+
 		"&systemRef=%s",
 		fixtures.ProjectID, fixtures.DefinitionID, fixtures.SupervisorID, "dhis2-riverside-"+runID)

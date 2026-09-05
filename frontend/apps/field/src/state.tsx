@@ -330,6 +330,7 @@ export function FieldProvider(props: { children: ReactNode }) {
         "choose the work definition this roster counts against — the deployment has activated more than one, and a batch must name the one it was checked against",
       );
     const q = new URLSearchParams({
+      adapterRef: "csv-batch@1",
       contextId: ctx,
       definitionId,
       submittedBy: by,
