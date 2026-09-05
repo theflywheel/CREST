@@ -35,6 +35,7 @@ import {
   OnboardStandalone, OnboardWider, OnboardDocuments, OnboardReview, OnboardInvited, OnboardProject,
 } from "./views/OnboardOrg";
 import { SignIn, AuthReturn } from "./views/SignIn";
+import { Claim } from "./views/Claim";
 import {
   Projects as OrgHome, NewProject, People, Workers, Validation, Intake, SpreadsheetArrived, Finance as FinanceConnect, Navigation,
 } from "./views/Setup";
@@ -315,6 +316,9 @@ export function App() {
         <Route path="/projects" element={<Navigation />} />
         <Route path="/projects/new" element={<NewProject />} />
         <Route path="/people" element={<People />} />
+      {/* Claiming an invitation (#123): reachable with no session by design —
+          the person claiming has no party here yet, which is the point. */}
+      <Route path="/claim/:code" element={<Claim />} />
         <Route path="/workers" element={<Workers />} />
         <Route path="/validation" element={<Validation />} />
         <Route path="/intake" element={<Intake />} />

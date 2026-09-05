@@ -52,6 +52,11 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/parties/{id}/assurance", h.getAssurance)
 	mux.HandleFunc("POST /v1/parties/{id}/roster-ids", h.addRosterID)
 	mux.HandleFunc("POST /v1/parties/{id}/identity-bindings", h.addIdentityBinding)
+	// The invitation in front of the first-login bootstrap (finding #123):
+	// minted by the operator or an approved organisation for an unbound
+	// party, claimed by the invited person with their own login.
+	mux.HandleFunc("POST /v1/parties/{id}/invitations", h.createPartyInvitation)
+	mux.HandleFunc("POST /v1/party-invitations/claim", h.claimPartyInvitation)
 	// Service twins: contact routes are read here, evidence resolves identities
 	// and consent state, verification derives assurance mid-verdict.
 	mux.HandleFunc("GET /internal/parties/{id}", h.getPartyRaw)

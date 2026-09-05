@@ -212,6 +212,44 @@ forever, and a deployment that changed operator or rotated its publisher key
 would go on advertising the old one — leaving the log, the thing a verifier
 trusts, as the most confidently wrong copy in the system.
 
+### Standing up from nothing: the operator, and the doors after it
+
+A clean registry has no party in it, and every door answers to one — the
+operator approves the first organisation, an approved organisation invites
+its people, a worker enrols themselves. So the operator is the one party that
+cannot arrive through a door, and stand-up writes it (Blueprint §15 G-1,
+"the first screen anyone ever sees" is deploy-time):
+
+```sh
+DATABASE_URL=<the core database> go run ./tools/bootstrap-operator \
+    -name "CREST production operator" -email ops@example.org \
+    -door https://crest-console-production.up.railway.app
+```
+
+It prints the operator's party id, a one-time claim code, and the console
+link that carries it. Set `CREST_OPERATOR_PARTY_ID` to the id and redeploy
+`crest-core`; then open the link and sign in with eSignet. That first login
+claims the operator's record — the same append-only identity binding as any
+other, put in front of an invitation instead of the bare first-login
+bootstrap (finding #123; `services/core/parties/partyinvites.go`).
+
+From there nothing else is seeded. An organisation registers at the open
+onboarding door and receives its own claim code (g2_13's "copy the key");
+the operator approves it in the console; the organisation invites each person
+from People & roles, which creates their record, grants their role, and
+shows a claim link once; the person signs in with eSignet from that link.
+Workers self-register on the worker door. The story seeder (`crest-seed`) is
+a demo layer and is not part of stand-up.
+
+**Wiping the demo fleet (authorised 2026-09-05, this window).** To start
+over: stop `crest-core` and `crest-payments`, `DROP SCHEMA parties, definitions,
+evidence, verification, payments CASCADE` on the Railway Postgres (each
+service owns exactly its schema, and re-creates it from its embedded
+migrations on boot), redeploy the fleet, then run the bootstrap above.
+Credentials already issued stop verifying against a registry that no longer
+holds their parties — a wipe is a new deployment wearing the old hostnames,
+and it must be treated as one.
+
 One caveat worth stating: `publisherKeyId` is **self-asserted**. Anyone holding a
 valid publisher key for the namespace could publish a different answer. What
 stops that being silent is the log itself — the record is append-only, so a

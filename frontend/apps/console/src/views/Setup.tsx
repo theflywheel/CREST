@@ -454,25 +454,36 @@ function RoleHolders() {
     // The vacancy row is derived, not invented: the functions this
     // organisation's terms authorise, minus the ones somebody already holds.
     let vacant: string[] = [];
+    let termsPermissions: string[] = [];
     if (reg && reg.termsId) {
       const t = await api.get("parties", "/v1/terms").catch(() => null);
       const hit = t && (t.terms || []).find((x: { id: string; permissions?: string[] }) => x.id === reg.termsId);
       const held = new Set(
         ((out.roles || []) as Array<{ functions?: string[] }>).flatMap((a) => a.functions || []),
       );
-      vacant = ((hit && hit.permissions) || []).filter((p: string) => !held.has(p));
+      termsPermissions = ((hit && hit.permissions) || []) as string[];
+      vacant = termsPermissions.filter((p: string) => !held.has(p));
     }
+    // The scopes an invitation can name: this organisation's own projects,
+    // read from the registry — never a project id typed into a browser.
+    const owned = await api
+      .get("parties", `/v1/projects?ownerPartyId=${encodeURIComponent(me)}`)
+      .catch(() => null);
     return {
       roles: (out.roles || []) as Array<{
         partyId?: string; displayName?: string; partyKind?: string; functions?: string[];
         grantedByPartyId?: string; grantedAt?: string; until?: string; state?: string;
       }>,
       vacant,
+      termsPermissions,
+      terms: reg && reg.termsId ? { id: String(reg.termsId), version: Number(reg.termsVersion || 1) } : null,
+      projects: ((owned && owned.projects) || []) as Array<{ id: string; name?: string }>,
+      org: me,
     };
   });
   return (
     <LoadFrame r={r}>
-      {({ roles, vacant }) => (
+      {({ roles, vacant, termsPermissions, terms, projects, org }) => (
         <>
           <Title t="Putting named people into roles" />
           <Lede>An invitation goes to a work email. The person holds the role only once they have accepted it.</Lede>
@@ -515,6 +526,8 @@ function RoleHolders() {
               </p>
             ) : null}
             <div style={{ height: 14 }} />
+            <InvitePerson org={org} terms={terms} functions={termsPermissions} projects={projects} />
+            <div style={{ height: 14 }} />
             <Callout kind="teal" title="">
               A vacant role is not a blocked project. A work definition can be ratified with fields marked as
               assigned-but-unfilled, and a project with no Evidence Validator simply cannot use manual review until
@@ -527,6 +540,186 @@ function RoleHolders() {
         </>
       )}
     </LoadFrame>
+  );
+}
+
+// Inviting a person (#123). Three real calls, in the only order that can be
+// honest about what happened: create the record, mint the one-time code for
+// it, then grant the role. The record and the grant are separable — if the
+// grant fails the person still exists and can still claim, and the screen
+// says exactly that rather than swallowing the half-done state.
+//
+// The role list is not invented here: it is what this organisation's terms
+// permit, plus the console's own function names for the roles this surface
+// grants. An organisation can never offer more than its terms allow — the
+// registry refuses it — so an unfamiliar entry is a refusal waiting to be
+// read, not a hidden capability.
+const CONSOLE_FUNCTIONS = [
+  "specify-definition",
+  "ratify-definition",
+  "act-for-party",
+  "register-workers",
+  "submit-evidence",
+];
+
+function InvitePerson(props: {
+  org: string;
+  terms: { id: string; version: number } | null;
+  functions: string[];
+  projects: Array<{ id: string; name?: string }>;
+}) {
+  const [name, setName] = useState("");
+  const [contactKind, setContactKind] = useState("email");
+  const [contact, setContact] = useState("");
+  const [fn, setFn] = useState("");
+  const [scope, setScope] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [out, setOut] = useState<{ partyId: string; code: string; expiresAt?: string; grantFailed?: string } | null>(
+    null,
+  );
+  const [copied, setCopied] = useState(false);
+  const choices = Array.from(new Set([...props.functions, ...CONSOLE_FUNCTIONS]));
+  const link = out ? `${location.origin}${location.pathname}#/claim/${out.code}` : "";
+
+  const submit = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    setBusy(true);
+    setErr("");
+    try {
+      const party = await api.post("parties", "/v1/parties", {
+        kind: "person",
+        displayName: name.trim(),
+        contactRoutes: [{ kind: contactKind, value: contact.trim() }],
+      });
+      const partyId = (party.party && party.party.id) || party.id;
+      const inv = await api.post("parties", `/v1/parties/${encodeURIComponent(partyId)}/invitations`, {});
+      let grantFailed: string | undefined;
+      if (!props.terms) {
+        grantFailed =
+          "no terms are recorded for this organisation, and a grant is made under terms — the role has to be granted once that is settled";
+      } else if (fn) {
+        const now = new Date().toISOString();
+        try {
+          await api.post("parties", "/v1/authorizations", {
+            partyId,
+            terms: props.terms,
+            scope: scope ? { kind: "context", contextId: scope } : { kind: "instance" },
+            functions: [fn],
+            period: { start: now },
+            authorityPartyId: props.org,
+            approvedByPartyId: props.org,
+            approvedAt: now,
+            state: "ACTIVE",
+          });
+        } catch (e) {
+          grantFailed = errText(e);
+        }
+      }
+      setOut({ partyId, code: inv.inviteCode, expiresAt: inv.expiresAt, grantFailed });
+    } catch (e) {
+      setErr(errText(e));
+    }
+    setBusy(false);
+  };
+
+  if (out)
+    return (
+      <CardTitled t="The invitation, shown once">
+        <p className="body-2">
+          Send this link to {name || "the person"} by a route you trust. It works once, and this screen is the only
+          place it is ever shown — CREST keeps only its hash, so nobody, including this deployment, can read it back.
+        </p>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", margin: "10px 0" }}>
+          <span className="mono" data-invite-link style={{ wordBreak: "break-all" }}>
+            {link}
+          </span>
+          <button
+            className="btn secondary"
+            data-act="copy-invite"
+            onClick={() => {
+              navigator.clipboard?.writeText(link).then(
+                () => setCopied(true),
+                () => setCopied(false),
+              );
+            }}
+          >
+            {copied ? "Copied" : "Copy the link"}
+          </button>
+        </div>
+        <KVR
+          rows={[
+            ["the record it claims", <MonoShort id={out.partyId} />],
+            ["expires", out.expiresAt ? when(out.expiresAt) : "—"],
+            ["what claiming does", "binds the identity they sign in with to this record — nothing more"],
+          ]}
+        />
+        {out.grantFailed ? (
+          <Callout kind="grey" title="The record exists; the role does not yet">
+            The person and their invitation were created, but the grant was refused — {out.grantFailed}. The link
+            above still works: they can claim their record now and be granted the role afterwards.
+          </Callout>
+        ) : null}
+      </CardTitled>
+    );
+
+  return (
+    <CardTitled t="Invite a person">
+      {err ? <p className="errbar">{err}</p> : null}
+      <p className="body-2">
+        This creates the person's record and a one-time link they claim with their own sign-in. Nothing here proves
+        who they are — their identity provider does that, when they claim it.
+      </p>
+      <form data-invite-form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 10 }}>
+        <label className="field">
+          <span className="eyebrow">Name to show</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} required data-field="invite-name" />
+        </label>
+        <label className="field">
+          <span className="eyebrow">How they are reached</span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <select value={contactKind} onChange={(e) => setContactKind(e.target.value)} data-field="invite-contact-kind">
+              <option value="email">email</option>
+              <option value="phone">phone</option>
+            </select>
+            <input
+              value={contact}
+              onChange={(e) => setContact(e.target.value)}
+              required
+              style={{ flex: 1 }}
+              data-field="invite-contact"
+            />
+          </div>
+        </label>
+        <label className="field">
+          <span className="eyebrow">Role</span>
+          <select value={fn} onChange={(e) => setFn(e.target.value)} data-field="invite-function">
+            <option value="">No role yet — the record and the link only</option>
+            {choices.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span className="eyebrow">Where it applies</span>
+          <select value={scope} onChange={(e) => setScope(e.target.value)} data-field="invite-scope">
+            <option value="">Instance-wide (no project)</option>
+            {props.projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name || short(p.id)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div>
+          <button className="btn dominant" type="submit" disabled={busy} data-act="invite">
+            {busy ? "Creating…" : "Create the invitation"}
+          </button>
+        </div>
+      </form>
+    </CardTitled>
   );
 }
 

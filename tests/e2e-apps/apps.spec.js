@@ -98,6 +98,8 @@ test("enrolment app: every route", async ({ page, request }) => {
   await settle(page);
   await page.click("[data-login]");
   await settle(page);
+  await page.selectOption("#context-select", FIX.project);
+  await settle(page);
   const routes = ["#/registrations", "#/register", "#/confidence", "#/consent",
     "#/roster", "#/toconfirm", "#/handoff"];
   for (const r of routes) {
@@ -1455,6 +1457,10 @@ test("assisted enrolment: the confidence check records a method, never a tier", 
   await settle(page);
   await page.click("[data-login]");
   await settle(page);
+  // The door no longer assumes a project: the agent picks one of the
+  // contexts their grants name. This walk is about the story's project.
+  await page.selectOption("#context-select", FIX.project);
+  await settle(page);
   // The route is reachable from the register screen's own frame.
   await page.evaluate(() => { location.hash = "#/register"; });
   await settle(page);
@@ -2573,5 +2579,67 @@ test("console: the oversight dashboards carry the p2_11–16, v4_1–2 and g4_4�
   await expect(body).toContainText("An assigned gap that nobody works is not escalated.");
   await signedInAs(page, "Otieno");
   await assertAlive(page, errors, "J11 registry dashboards");
+});
+
+// ── #123: the invitation in front of the first-login bootstrap. The org admin
+// creates a person and a role from People & roles and gets a one-time link;
+// a stranger the registry has never seen claims it with their own login and
+// lands in the console AS that person, with the persona derived from the
+// grant. The return leg is driven directly (#/auth?token=…) with a mock
+// issuer token, which is exactly what the eSignet callback hands the door.
+test("console: an invited person claims their record with their own login, once", async ({ page, request }) => {
+  test.setTimeout(120000);
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+  const body = page.locator("body");
+
+  await consoleSignIn(page, request, "orgadmin");
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await page.evaluate(() => { location.hash = "#/people"; });
+  await settle(page);
+  await expect(body).toContainText("Invite a person");
+  await page.fill('[data-field="invite-name"]', "Invited Author " + stamp);
+  await page.selectOption('[data-field="invite-contact-kind"]', "email");
+  await page.fill('[data-field="invite-contact"]', `author-${stamp}@example.org`);
+  await page.selectOption('[data-field="invite-function"]', "specify-definition");
+  await page.click('[data-act="invite"]');
+  await expect(page.locator("[data-invite-link]")).toBeVisible({ timeout: 20000 });
+  await expect(body).toContainText("The invitation, shown once");
+  const link = (await page.locator("[data-invite-link]").innerText()).trim();
+  const code = link.split("#/claim/")[1];
+  expect(code, "the link carries a claim code").toBeTruthy();
+  // The grant must have landed, or the persona below cannot derive.
+  await expect(body).not.toContainText("The record exists; the role does not yet");
+
+  // A stranger: a subject the registry has never bound.
+  const mint = async (sub) => {
+    const r = await request.post(G2.oidc + "/token", { data: { sub, aud: "crest", expiresIn: "1h" } });
+    const d = await r.json();
+    return d.accessToken || d.access_token || d.token;
+  };
+  const token = await mint("invitee|" + stamp);
+  await page.evaluate(() => sessionStorage.clear());
+  await page.goto("/console/#/claim/" + code);
+  await settle(page);
+  await expect(body).toContainText("You were invited to CREST Console");
+  await expect(page.locator("#claim-esignet")).toBeVisible();
+  // The button would hand the browser to eSignet; the return leg is what
+  // the door acts on, so drive it with the token the callback would carry.
+  await page.evaluate((c) => sessionStorage.setItem("crest.console.claim", c), code);
+  await page.evaluate((t) => { location.hash = "#/auth?token=" + encodeURIComponent(t); }, token);
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await expect(page.locator(".appbar .who-label")).toContainText("Invited Author " + stamp);
+  await expect(page.locator(".appbar .who-label")).toContainText("Work Definition Author");
+  await assertAlive(page, errors, "claimed invitation");
+
+  // Spent: a second stranger with the same code is told so, in words.
+  const token2 = await mint("latecomer|" + stamp);
+  await page.evaluate(() => sessionStorage.clear());
+  await page.goto("/console/#/claim/" + code);
+  await settle(page);
+  await page.evaluate((c) => sessionStorage.setItem("crest.console.claim", c), code);
+  await page.evaluate((t) => { location.hash = "#/auth?token=" + encodeURIComponent(t); }, token2);
+  await expect(body).toContainText("That invitation was already claimed", { timeout: 20000 });
 });
   await expect(body).toContainText("never again, never retired");

@@ -2,9 +2,9 @@
 // ported 1:1 from apps/enrolment.
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { actingFor, api, ApiError, FIX } from "@crest/api";
+import { actingFor, api, ApiError } from "@crest/api";
 import { Chip, KV, Sidecar, OpenNote, NextBlock } from "@crest/ui";
-import { useField } from "../state";
+import { useField, NO_PROJECT } from "../state";
 import { queue, setQueue, pushDone, useQueue, useDone, useOnline } from "../queue";
 
 export function Registrations() {
@@ -77,7 +77,7 @@ export function Registrations() {
         <div className="card quiet">
           <span className="muted">
             Nothing yet today. The registry keeps the durable list; this screen shows what came through this device —
-            there is no "everyone Naomi ever registered" endpoint at L1, and the day's work is a device-local view on
+            there is no "everyone this agent ever registered" endpoint at L1, and the day's work is a device-local view on
             purpose.
           </span>
         </div>
@@ -331,7 +331,10 @@ export function Confidence() {
   const [phone, setPhone] = useState("");
   const [rosterId, setRosterId] = useState("");
   const [partyId, setPartyId] = useState<string | null>(null);
-  const [contact, setContact] = useState<string>(FIX.supervisor);
+  // Prefilled with the signed-in agent: on w1_4 the agent themselves is the
+  // route the worker most often names. It is an id the agent can overwrite,
+  // never a fixture.
+  const [contact, setContact] = useState<string>(s.me?.partyId || "");
   const [nominated, setNominated] = useState<string | null>(null);
 
   const submit = async (ev: React.FormEvent) => {
@@ -363,13 +366,17 @@ export function Confidence() {
   // never a phone number.
   const nominate = async () => {
     if (!partyId) return;
+    if (!s.contextId) {
+      s.fail(new Error(NO_PROJECT));
+      return;
+    }
     try {
       actingFor(partyId);
       // contextId names the programme this assisted act happens under — the
       // agent's act-for-party grant is context-scoped, exactly like consent.
       await api.post(
         "parties",
-        `/v1/parties/${encodeURIComponent(partyId)}/recovery-contacts?contextId=${encodeURIComponent(FIX.project)}`,
+        `/v1/parties/${encodeURIComponent(partyId)}/recovery-contacts?contextId=${encodeURIComponent(s.contextId)}`,
         { contactPartyId: contact.trim() },
       );
       setNominated(contact.trim());
