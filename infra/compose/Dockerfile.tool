@@ -9,7 +9,7 @@ WORKDIR /src
 COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -o /out/ ./tools/mocks/... ./tools/seed
+RUN CGO_ENABLED=0 go build -trimpath -o /out/ ./tools/mocks/... ./tools/seed ./tools/bootstrap-operator
 # Where the tool lives. The mocks by default; TOOLDIR=tools lets the same
 # image build one-shot utilities like tools/seed for a deployed demo. Only the
 # basename matters for selecting the compiled binary.

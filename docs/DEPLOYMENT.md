@@ -241,11 +241,20 @@ shows a claim link once; the person signs in with eSignet from that link.
 Workers self-register on the worker door. The story seeder (`crest-seed`) is
 a demo layer and is not part of stand-up.
 
-**Wiping the demo fleet (authorised 2026-09-05, this window).** To start
-over: stop `crest-core` and `crest-payments`, `DROP SCHEMA parties, definitions,
-evidence, verification, payments CASCADE` on the Railway Postgres (each
-service owns exactly its schema, and re-creates it from its embedded
-migrations on boot), redeploy the fleet, then run the bootstrap above.
+**Wiping the demo fleet (authorised 2026-09-05, this window).** The
+database has no public endpoint and the CLI's ssh does not reach Railway's
+Postgres, so both deploy-time acts run as the same one-off job the seeder
+uses: `crest-seed` built from `infra/compose/Dockerfile.tool` with
+`TOOL=bootstrap-operator`, `TOOLDIR=tools` and `DATABASE_URL` referencing
+the Postgres service. `BOOTSTRAP_MODE=wipe` drops exactly the five CREST
+schemas (`parties`, `definitions`, `evidence`, `verification`, `payments`;
+each service re-creates its own from embedded migrations on boot, and the
+identity provider's schema in the same database is never touched). Then
+`railway redeploy` `crest-core` and `crest-payments`, run the job again
+without `BOOTSTRAP_MODE` and with `BOOTSTRAP_NAME` / `BOOTSTRAP_EMAIL` /
+`BOOTSTRAP_DOOR` set, read the operator's id and claim link from
+`railway logs --service crest-seed`, set `CREST_OPERATOR_PARTY_ID`, redeploy
+`crest-core` once more, and `railway down --service crest-seed -y`.
 Credentials already issued stop verifying against a registry that no longer
 holds their parties — a wipe is a new deployment wearing the old hostnames,
 and it must be treated as one.
