@@ -34,6 +34,35 @@ export function Pay() {
       <div>
         <h2 className="scr-title m">My money</h2>
         {s.flash && s.flash.route === "pay" ? s.flash.node : null}
+        {list.length ? (
+          <div className="card">
+            <KV
+              rows={[
+                [
+                  "Arrived in your account",
+                  money(
+                    flowing.filter((i) => i.state === "RELEASED").reduce((a, i) => a + (i.amountMinor || 0), 0),
+                    (list[0] || {}).currency,
+                  ),
+                ],
+                [
+                  "Cleared, payment not yet sent",
+                  money(
+                    flowing.filter((i) => i.state !== "RELEASED").reduce((a, i) => a + (i.amountMinor || 0), 0),
+                    (list[0] || {}).currency,
+                  ),
+                ],
+                [
+                  "Still being checked",
+                  money(
+                    held.reduce((a, i) => a + (i.amountMinor || 0), 0),
+                    (list[0] || {}).currency,
+                  ),
+                ],
+              ]}
+            />
+          </div>
+        ) : null}
         {!list.length ? (
           <div className="card quiet">
             <p className="body-2">
@@ -75,10 +104,17 @@ export function Pay() {
         {held.length ? (
           <>
             <h2 className="scr-title m">What is waiting</h2>
+            <p className="body-2">
+              {held.length === 1 ? "One amount has" : `${held.length} amounts have`} not arrived. None of this is
+              something you have to fix, and every line has somebody's name against it.
+            </p>
             {held.map((i, k) => (
               <HeldCard i={i} key={k} />
             ))}
-            <Sidecar ok>You do not need to do anything about these — your project support agent can.</Sidecar>
+            <Sidecar ok>
+              You do not need to do anything about these. If you want them chased, your project support agent can do
+              it, and their number is on your profile.
+            </Sidecar>
             <Sidecar>
               Nothing here is a mark against you. Being held is a problem between two offices, not a judgement about
               your work.
@@ -166,8 +202,8 @@ export function PayDetail() {
         ]}
       />
       <Sidecar>
-        CREST did not move this money — it told M-Pesa to. What you see here is the instruction and its trace, which is
-        exactly what a delayed payment needs you to have.
+        CREST did not move this money. It configured the rate and tracked that the transfer happened. What you see
+        here is the instruction and its trace, which is exactly what a delayed payment needs you to have.
       </Sidecar>
     </div>
   );

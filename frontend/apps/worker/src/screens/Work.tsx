@@ -11,7 +11,7 @@ export function Work() {
   const s = useSession();
   const [bump, setBump] = useState(0);
   const data = useLoad(async () => {
-    const [fr, wins] = await Promise.all([loadFace(), loadWindows(s.me!)]);
+    const [fr, wins] = await Promise.all([loadFace(s.me!), loadWindows(s.me!)]);
     return { ...fr, wins, bump };
   });
   if (!data) return null;
@@ -68,13 +68,16 @@ export function Work() {
                 Confirm it, tell us what does not match, or let seven days pass. <b>You are paid on every one of those
                 paths</b> — a dispute contests the record, never the money.
               </p>
+              <p className="muted">
+                If you do nothing, this is confirmed automatically on {when(w.closesAt)} and your payment is released.
+              </p>
               <div style={{ height: 8 }} />
               <div className="btn-row">
                 <button className="btn dominant" data-confirm={w.claimId} onClick={() => confirm(w.claimId)}>
-                  It is right
+                  This is right
                 </button>
                 <Link className="btn secondary" to={`/work/dispute/${encodeURIComponent(w.claimId)}`}>
-                  Tell us what does not match
+                  Something is wrong
                 </Link>
               </div>
             </div>
@@ -111,6 +114,13 @@ export function Work() {
             </p>
           </div>
         ) : null}
+        {open.length ? (
+          <Sidecar>
+            The burden of proof is on the issuer, not you. If you dispute this, they have 14 days to answer or it
+            defaults in your favour. Your agreement is recorded alongside the work, so anybody checking this in five
+            years can see that you confirmed it rather than that somebody asserted it about you.
+          </Sidecar>
+        ) : null}
         <p className="muted">
           <Link to="/work/declined">Work you declined</Link> — what saying no looks like here.
         </p>
@@ -140,6 +150,10 @@ export function Work() {
                   ]}
                 />
               </div>
+              <p className="muted" style={{ marginTop: 8 }}>
+                The rate lives in a separate record from the definition. It can change without re-signing what the
+                work is.
+              </p>
             </div>
             <div className="card">
               <span className="eyebrow">What stands as evidence</span>
@@ -178,6 +192,7 @@ export function Dispute() {
         You are disputing the <i>record</i>, not your payment. <b>Your payment is released either way</b> — CREST holds
         that as a rule, not a courtesy.
       </p>
+      <p className="muted">This goes to a Dispute and Appeals Officer, not to your supervisor.</p>
       <KV rows={[["Record", <span className="mono">{short(claimId)}</span>]]} />
       <form
         id="dispute-form"
@@ -214,6 +229,20 @@ export function Dispute() {
           }
         }}
       >
+        <div className="btn-row" role="radiogroup" aria-label="What kind of mismatch">
+          {["The count is too low", "These are not my dates", "This is not my work", "Something else"].map((t) => (
+            <button
+              key={t}
+              type="button"
+              className="btn secondary"
+              data-mismatch={t}
+              aria-pressed={reason.startsWith(t)}
+              onClick={() => setReason(`${t}: `)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
         <textarea
           name="reason"
           rows={4}
@@ -222,6 +251,11 @@ export function Dispute() {
           value={reason}
           onChange={(e) => setReason(e.target.value)}
         />
+        <p className="muted">
+          The issuer has until{" "}
+          {new Date(Date.now() + 14 * 86400000).toLocaleDateString("en-GB", { day: "numeric", month: "long" })} to
+          respond. If they do not, your version stands.
+        </p>
         <div className="btn-row">
           <button className="btn" type="submit">
             Send the dispute
@@ -250,8 +284,13 @@ export function Declined() {
         belongs to the definitions surface. Nothing is drawn here because nothing real exists to draw.
       </OpenNote>
       <p className="body-2">
-        The promise this screen will keep: declining work is not recorded about you. A verifier can never see what you
-        said no to.
+        The worker returns to their wallet. Beyond that, nothing is defined. Is the slot re-listed to other workers?
+        Does declining change future offers? Is the decline recorded against the worker?
+      </p>
+      <p className="body-2">
+        The third question matters most. A recorded decline history could quietly become a scoring signal, which the
+        architecture explicitly rules out for workers. The promise this screen will keep: declining work is not
+        recorded about you. A verifier can never see what you said no to.
       </p>
     </div>
   );

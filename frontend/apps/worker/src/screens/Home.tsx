@@ -9,7 +9,7 @@ import { Ussd } from "./Login";
 export function Home() {
   const s = useSession();
   const data = useLoad(async () => {
-    const [creds, wins, fr] = await Promise.all([loadCreds(s.me!), loadWindows(s.me!), loadFace()]);
+    const [creds, wins, fr] = await Promise.all([loadCreds(s.me!), loadWindows(s.me!), loadFace(s.me!)]);
     return { creds, wins, ...fr };
   });
   if (!data) return null;
@@ -57,7 +57,7 @@ export function Home() {
                     "One unit pays",
                     rate
                       ? money(rate.ratePerOutcomeUnit.amountMinor, rate.ratePerOutcomeUnit.currency)
-                      : "no rate attached — this work is recognised; recognition is a use of its own",
+                      : "no rate set — recognised only. It still goes on your record as work you did, and a future employer can see it.",
                   ],
                   ["Definition", <span className="mono">{short(f.definitionId)} · v{f.version}</span>],
                 ]}

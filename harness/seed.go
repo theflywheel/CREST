@@ -62,8 +62,35 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 			return nil, fmt.Errorf("skill %s: %w", sk.Code, err)
 		}
 	}
+	// Terms are published by the instance operator — the fixture organisation,
+	// which CREST_OPERATOR_PARTY_ID names on every stack the seeder runs on —
+	// so the seeder proves it is the organisation before publishing them:
+	// mint a token from the stack's own mock issuer and self-bind its subject
+	// to the never-yet-bound org party (the first-login bootstrap). The
+	// registration walk below re-writes the party from the fixture document
+	// and drops this binding; it is made again afterwards, for the grants.
+	oidc := NewOIDC()
+	if err := oidc.WaitReady(ctx, 60*time.Second); err != nil {
+		return nil, fmt.Errorf("identity provider: %w", err)
+	}
+	token, err := oidc.Token(ctx, "seed|custodian")
+	if err != nil {
+		return nil, fmt.Errorf("mint seeding token: %w", err)
+	}
+	asSeeder := s.Parties.As(Caller{Token: token})
+	bindSeeder := func() error {
+		return asSeeder.Post(ctx, "/v1/parties/"+fixtures.OrgID+"/identity-bindings",
+			map[string]any{
+				"provider":      "mock-oidc",
+				"providerClass": "generic-oidc",
+				"subjectRef":    oidc.Subject("seed|custodian"),
+			}, nil)
+	}
+	if err := bindSeeder(); err != nil {
+		return nil, fmt.Errorf("bind the seeder to the organisation: %w", err)
+	}
 	for _, t := range w.Terms {
-		if err := s.Parties.Post(ctx, "/v1/terms", t, nil); err != nil {
+		if err := asSeeder.Post(ctx, "/v1/terms", t, nil); err != nil {
 			return nil, fmt.Errorf("terms %s: %w", t.Name, err)
 		}
 	}
@@ -79,10 +106,6 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 	// which the never-yet-bound org accepts as bootstrap. The rest of the
 	// seed goes through doors that are deliberately open (parties, terms,
 	// contexts).
-	oidc := NewOIDC()
-	if err := oidc.WaitReady(ctx, 60*time.Second); err != nil {
-		return nil, fmt.Errorf("identity provider: %w", err)
-	}
 	// The organisation must be APPROVED before it can be an authority: the
 	// grant gate reads the registration, not the party's shape. The seeder
 	// walks the same application → terms → decision path a real organisation
@@ -96,17 +119,7 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 	if err := s.approveOrganisation(ctx, oidc, w); err != nil {
 		return nil, err
 	}
-	token, err := oidc.Token(ctx, "seed|custodian")
-	if err != nil {
-		return nil, fmt.Errorf("mint seeding token: %w", err)
-	}
-	asSeeder := s.Parties.As(Caller{Token: token})
-	if err := asSeeder.Post(ctx, "/v1/parties/"+fixtures.OrgID+"/identity-bindings",
-		map[string]any{
-			"provider":      "mock-oidc",
-			"providerClass": "generic-oidc",
-			"subjectRef":    oidc.Subject("seed|custodian"),
-		}, nil); err != nil {
+	if err := bindSeeder(); err != nil {
 		return nil, fmt.Errorf("bind the seeder to the organisation: %w", err)
 	}
 	for _, a := range w.Authorizations {

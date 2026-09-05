@@ -1,0 +1,32 @@
+{
+  "_comment": "Local-compose variant of mimoto-issuers-config.json — same shape, localhost/compose-network URLs. Browser-facing URLs (redirect_uri, token_endpoint) use host-mapped localhost ports; URLs Mimoto fetches server-side (proxy_token_endpoint, credential_issuer_host, wellknown_endpoint) use compose service names. token_endpoint goes through Inji Web's own nginx proxy so it stays same-origin for the browser. authorization_audience is the aud Mimoto writes into its client assertion, and must match what the local eSignet advertises (MOSIP_ESIGNET_DOMAIN_URL=http://localhost:58088).",
+  "issuers": [
+    {
+      "issuer_id": "CREST",
+      "credential_issuer": "CREST",
+      "protocol": "OpenId4VCI",
+      "display": [
+        {
+          "name": "CREST",
+          "logo": {
+            "url": "http://localhost:59110/logo.png",
+            "alt_text": "CREST"
+          },
+          "title": "CREST",
+          "description": "Download your work record",
+          "language": "en"
+        }
+      ],
+      "client_id": "CLIENT_ID_PLACEHOLDER",
+      "redirect_uri": "http://localhost:58093/redirect",
+      "token_endpoint": "http://localhost:58093/v1/mimoto/get-token/CREST",
+      "authorization_audience": "http://localhost:58088/v1/esignet/oauth/v2/token",
+      "proxy_token_endpoint": "http://esignet:8088/v1/esignet/oauth/v2/token",
+      "client_alias": "crest-wallet-client",
+      "qr_code_type": "EmbeddedVC",
+      "credential_issuer_host": "http://inji-certify:8090/v1/certify",
+      "enabled": "true",
+      "wellknown_endpoint": "http://inji-certify:8090/v1/certify/.well-known/openid-credential-issuer"
+    }
+  ]
+}

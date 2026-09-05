@@ -47,6 +47,13 @@ else
   echo "MIMOTO_OIDC_P12_B64 is not set; mimoto will fail to start" >&2
 fi
 
+# Local compose stages a localhost-URL issuer config as a read-only bind
+# mount; sed -i below cannot rename over a single-file mount, so it is copied
+# into place first. Absent on Railway, where the baked config is the right one.
+if [ -f "$CONFIG_DIR/local/mimoto-issuers-config.json" ]; then
+  cp "$CONFIG_DIR/local/mimoto-issuers-config.json" "$CONFIG_DIR/mimoto-issuers-config.json"
+fi
+
 if [ -n "$MIMOTO_OIDC_CLIENT_ID" ]; then
   # The client id is derived from the key that was registered, so it is not
   # knowable when the image is built. A placeholder left unsubstituted would

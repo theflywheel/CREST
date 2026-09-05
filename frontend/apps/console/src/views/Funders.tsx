@@ -21,9 +21,9 @@
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, FIX } from "@crest/api";
-import { Callout, Chip, DisLi, OpenNote, RefField, StepCounter } from "@crest/ui";
+import { Callout, Chip, DisLi, NextBlock, OpenNote, OptionCard, RefField, Sidecar, StepCounter } from "@crest/ui";
 import {
-  Card, CardTitled, KVR, Lede, LoadFrame, Mono, MonoShort, Title, useLoad, when, money,
+  Card, CardTitled, KVR, Lede, LoadFrame, Mono, MonoShort, Tbl, Title, useLoad, when, money,
 } from "../ui";
 import { errText, useConsole } from "../state";
 
@@ -64,14 +64,16 @@ type Instruction = {
   state: string; held?: HeldReason;
 };
 
-const DEF = FIX.definition;
-const defPath = (tail: string) => `/v1/definitions/${encodeURIComponent(DEF)}${tail}`;
+// The definition a rate prices is the session's — assigned to a rate owner
+// by the organisation, chosen by everybody else — never a fixture's.
+const defPath = (def: string, tail: string) => `/v1/definitions/${encodeURIComponent(def)}${tail}`;
 
-async function loadRates() {
+async function loadRates(def: string) {
+  if (!def) throw new Error("no definition is selected; a rate prices a unit somebody defined");
   const [owner, rates, d] = await Promise.all([
-    api.get("payments", defPath("/rate-owner")),
-    api.get("payments", defPath("/rates")),
-    api.get("definitions", `/v1/definitions/${encodeURIComponent(DEF)}`).catch(() => null),
+    api.get("payments", defPath(def, "/rate-owner")),
+    api.get("payments", defPath(def, "/rates")),
+    api.get("definitions", `/v1/definitions/${encodeURIComponent(def)}`).catch(() => null),
   ]);
   return {
     current: (owner.current || null) as Assignment | null,
@@ -122,12 +124,12 @@ export function RateOwner() {
   const nav = useNavigate();
   const [gen, setGen] = useState(0);
   const [assignee, setAssignee] = useState<string>(FIX.org);
-  const r = useLoad(loadRates, [gen]);
+  const r = useLoad(() => loadRates(s.definitionId), [gen, s.definitionId]);
   const me = s.me!.partyId;
   const assign = async () => {
     s.clearErr();
     try {
-      await api.post("payments", defPath("/rate-owner"), {
+      await api.post("payments", defPath(s.definitionId, "/rate-owner"), {
         assigneePartyId: assignee.trim(),
         assignedByPartyId: me,
       });
@@ -142,13 +144,13 @@ export function RateOwner() {
         <>
           <Title t="A request to put someone on payment" extra={current ? <Chip kind="ok">owner assigned</Chip> : <Chip kind="plain">no owner yet</Chip>} />
           <Lede>
-            Anyone can ask for a rate. Only one person can assign who sets it — and the assignment is a record with
-            the assigner's name on it, not a setting.
+            Anyone can ask for a rate. Only you can place a person in a role, so a handoff ends here first — and the
+            assignment is a record with the assigner's name on it, not a setting.
           </Lede>
           <Card>
             <RefField
               label="Who will own it"
-              value="One person owns both halves They set the rate and choose how the money moves."
+              value="A Rate Owner sets the price; a Payment Mechanism Owner moves the money. They can be one person or two."
             />
             <RefField label="Rate Owner" hint="a registry party id — the assignment names a party, never an email alone">
               <input name="rateownerparty" value={assignee} onChange={(e) => setAssignee(e.target.value)} />
@@ -189,6 +191,10 @@ export function RateOwner() {
             Anyone can ask. Only one person can assign. Handing the rate to someone else is a new assignment that
             supersedes this one — the old one stays on the record, because who set a rate is part of what the rate is.
           </Callout>
+          <Sidecar>
+            A request nobody accepts stays on this screen. It does not expire quietly, and the project keeps running
+            without payment in the meantime — work validated meanwhile issues credentials normally.
+          </Sidecar>
         </>
       )}
     </LoadFrame>
@@ -205,7 +211,7 @@ export function RateAuthor() {
   const d0 = draft();
   const [amount, setAmount] = useState(d0.amount || "150.00");
   const [effective, setEffective] = useState(d0.effective || "");
-  const r = useLoad(loadRates);
+  const r = useLoad(() => loadRates(s.definitionId), [s.definitionId]);
   const me = s.me!.partyId;
   return (
     <LoadFrame r={r}>
@@ -213,8 +219,8 @@ export function RateAuthor() {
         <>
           <Title t="What one unit pays" />
           <Lede>
-            The unit below was defined and ratified by other people; you price it. Nothing on this screen can change
-            what the work is.
+            The unit comes from the Work Definition and cannot be changed here. Only its price is yours — nothing on
+            this screen can change what the work is.
           </Lede>
           {current && current.assigneePartyId !== me ? (
             <Callout kind="green" title="What this screen never does">
@@ -223,13 +229,13 @@ export function RateAuthor() {
             </Callout>
           ) : null}
           <Card>
-            <RefField label="Unit of work" value={"Per " + outcomeUnit} hint="read-only: defined and ratified elsewhere — pricing cannot redefine it" />
+            <RefField label="Unit of work" value={"Per " + outcomeUnit} hint="Set by the ratified definition. Changing it means a new version of the definition — pricing cannot redefine it" />
             <RefField label="Rate per unit" hint="KES, per outcome unit">
               <input name="rateamount" value={amount} onChange={(e) => setAmount(e.target.value)} />
             </RefField>
-            <RefField label="Calculation rule" value="Flat per unit" hint="the one rule built today; other rules are programme policy with no enforcement point yet" />
-            <RefField label="Ceiling" value="KES 9,000 per worker per month" hint="declared programme policy — recorded here, not yet enforced by the payments application" />
-            <RefField label="Effective from" hint="empty = effective now; a future date is a version that holds payments until it is in force">
+            <RefField label="Calculation rule" value="Flat per unit" hint="Alternatives: banded, tapering, or a rate that varies by item — programme policy with no enforcement point yet" />
+            <RefField label="Ceiling" value="KES 9,000 per worker per month" hint="Optional. Caps what any one worker can accrue — declared programme policy, not yet enforced by the payments application" />
+            <RefField label="Effective from" hint="Work validated before this date is priced at the rate in force then. Rates are versioned, never overwritten — empty means effective now">
               <input name="rateeffective" type="date" value={effective} onChange={(e) => setEffective(e.target.value)} />
             </RefField>
             <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
@@ -246,6 +252,10 @@ export function RateAuthor() {
               </button>
             </div>
           </Card>
+          <Sidecar>
+            A rate is versioned like a definition. Re-pricing publishes a new version; it never rewrites what a
+            worker already earned.
+          </Sidecar>
           <KVR rows={[["rate in force today", inForce ? rateMoney(inForce.rate) + " (v" + inForce.version + ")" : "none yet"]]} />
         </>
       )}
@@ -260,14 +270,14 @@ export function RateAuthor() {
 export function RatePublish() {
   const s = useConsole();
   const nav = useNavigate();
-  const r = useLoad(loadRates);
+  const r = useLoad(() => loadRates(s.definitionId), [s.definitionId]);
   const me = s.me!.partyId;
   const d0 = draft();
   const publish = async () => {
     s.clearErr();
     const minor = Math.round(parseFloat(d0.amount || "0") * 100);
     try {
-      await api.post("payments", defPath("/rates"), {
+      await api.post("payments", defPath(s.definitionId, "/rates"), {
         authorPartyId: me,
         amountMinor: minor,
         currency: "KES",
@@ -286,8 +296,9 @@ export function RatePublish() {
         <>
           <Title t="What the worker will see" />
           <Lede>
-            Publication is the act. Each publication is a new version on the definition's own record — one store,
-            no copy in payments that could disagree with it.
+            A rate is published as terms, not held as an internal setting. This is the wording a worker reads before
+            they accept work — each publication a new version on the definition's own record, one store, no copy in
+            payments that could disagree with it.
           </Lede>
           <CardTitled t="The worker's own words">
             <div className="consent-quote">
@@ -295,8 +306,8 @@ export function RatePublish() {
               <br />
               <br />
               <strong>
-                One {outcomeUnit} pays {(d0.amount || "—") + " KES"} — set separately from the definition, versioned,
-                never overwritten.
+                You are paid {(d0.amount || "—") + " KES"} for each {outcomeUnit}, once your work is validated — set
+                separately from the definition, versioned, never overwritten.
               </strong>
             </div>
           </CardTitled>
@@ -323,6 +334,10 @@ export function RatePublish() {
             changed, and a payment is priced by the version in force when its work was released — a later
             publication never re-prices done work.
           </Callout>
+          <Sidecar>
+            Published terms are what make a dispute possible. A worker cannot contest a payment against a rate they
+            were never shown.
+          </Sidecar>
           <div style={{ display: "flex", gap: 10 }}>
             <button className="btn secondary inline" onClick={() => nav("/rate")}>Back</button>
             <button id="publish-rate" className="btn inline" onClick={publish}>
@@ -341,7 +356,7 @@ export function RatePublish() {
 export function RateStanding() {
   const s = useConsole();
   const nav = useNavigate();
-  const rates = useLoad(loadRates);
+  const rates = useLoad(() => loadRates(s.definitionId), [s.definitionId]);
   const mech = useMech(s.projectId);
   return (
     <LoadFrame r={rates}>
@@ -351,8 +366,9 @@ export function RateStanding() {
             <>
               <Title t="The rate is live. The money still cannot move." extra={standingChip(m.standing)} />
               <Lede>
-                Where payment set up stands for <Mono>{s.projectId}</Mono> — derived from the records on every read,
-                never stored, so no screen can be out of date about it.
+                Half of payment set up is done. Nothing will be disbursed until the other half exists — and where it
+                stands for <Mono>{s.projectId}</Mono> is derived from the records on every read, never stored, so no
+                screen can be out of date about it.
               </Lede>
               <Card>
                 <div data-standing={m.standing} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -380,11 +396,45 @@ export function RateStanding() {
                   ["mechanism owner", m.mechanism ? <MonoShort id={m.mechanism.ownerPartyId} /> : "—"],
                 ]}
               />
+              <Sidecar>
+                Credentials are unaffected. Work validated from today issues credentials normally; they simply carry
+                no payment yet. A project that never completes this half is still a working project.
+              </Sidecar>
+              <CardTitled t="What is now owed, and by whom">
+                <p className="body-2" style={{ maxWidth: "72ch" }}>
+                  Setting a rate does not make money move. Three things are outstanding, each owed by exactly one
+                  party, and each will sit quietly until somebody acts:
+                </p>
+                <KVR
+                  rows={[
+                    [
+                      "the pathway",
+                      <>
+                        owed by whoever owns the payment mechanism — until it is set, cleared work produces no
+                        instruction at all{" "}
+                        {m.standing === "not-configured" ? <Chip kind="warn" sm>outstanding</Chip> : <Chip kind="ok" sm>set</Chip>}
+                      </>,
+                    ],
+                    [
+                      "the settlement account",
+                      <>
+                        owed by the payment organisation — until it is proved, instructions are made but nothing is
+                        sent{" "}
+                        {(m.records || []).some((x) => x.kind === "qualification-verified") ? <Chip kind="ok" sm>verified</Chip> : <Chip kind="warn" sm>outstanding</Chip>}
+                      </>,
+                    ],
+                    ["the finance code", "owed by the project — until it is linked, payments cannot post to anybody's books"],
+                  ]}
+                />
+                <p className="muted" style={{ marginTop: 8 }}>
+                  None of these escalates on its own. Each appears as an open item on the project until it is closed.
+                </p>
+              </CardTitled>
               <div style={{ display: "flex", gap: 10 }}>
                 <button className="btn secondary inline" onClick={() => nav("/rateowner")}>
                   Hand this to someone else
                 </button>
-                <button id="choose-pathway" className="btn inline" onClick={() => nav("/paysetup")}>
+                <button id="choose-pathway" className="btn inline" onClick={() => nav("/mech/where")}>
                   Choose the pathway
                 </button>
               </div>
@@ -438,6 +488,235 @@ function BackContinue(props: { back: string; next: string; nextLabel?: string })
       <button className="btn secondary inline" onClick={() => nav(props.back)}>Back</button>
       <button className="btn inline" onClick={() => nav(props.next)}>{props.nextLabel || "Continue"}</button>
     </div>
+  );
+}
+
+// ── f2_1 · Where does CREST's job end for this project? ────────────────────
+// One question, and it is the same recorded question the Configurator's
+// composition screen answers: the payment-posture composition choice. Two
+// screens, one record — they can never disagree.
+export function MechWhere() {
+  const s = useConsole();
+  const nav = useNavigate();
+  const [gen, setGen] = useState(0);
+  const r = useLoad(async () => {
+    const comp = await api
+      .get("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/composition`)
+      .catch(() => ({ choices: [] }));
+    const rec = ((comp.choices || []) as Array<{ kind?: string; payload?: { value?: unknown } }>).find(
+      (c) => (c.kind || "").replace(/^composition:/, "") === "payment-posture",
+    );
+    return { posture: rec ? String(rec.payload?.value || "") : "" };
+  }, [s.projectId, gen]);
+  const record = async (v: string, next: string) => {
+    s.clearErr();
+    try {
+      await api.put("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/composition/payment-posture`, { value: v });
+      setGen((g) => g + 1);
+      nav(next);
+    } catch (e) {
+      s.fail(e);
+    }
+  };
+  return (
+    <LoadFrame r={r}>
+      {({ posture }) => (
+        <>
+          <Title t="Where does CREST's job end for this project?" />
+          <Lede>One question. Everything after it follows from the answer.</Lede>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, maxWidth: 820 }}>
+            <OptionCard
+              t="At a payment advisory"
+              s="CREST works out what is owed and issues a statement. Somebody else pays it."
+              ex="No rail, no integration · CREST never learns whether it was paid · Right where you already have a finance system"
+              on={posture === "calculation-only"}
+              onPick={() => record("calculation-only", "/mech/statement")}
+            />
+            <OptionCard
+              t="At a payment instruction"
+              s="CREST raises the instruction and follows it to whatever carries the money."
+              ex="You choose one or more rails next · Confirmation comes back, so reconciliation is possible · Right where you want CREST to close the loop"
+              on={posture === "track-money-movement"}
+              onPick={() => record("track-money-movement", "/mech/rails")}
+            />
+          </div>
+          <Callout kind="teal" title="">
+            This is not a choice between four payment methods. It is a choice about where CREST stops. Methods only
+            exist on one side of it.
+          </Callout>
+          <p className="muted" style={{ maxWidth: "72ch" }}>
+            The answer is the project's payment-posture composition record — the same one the Configurator's
+            composition screen reads and writes, so the two screens can never disagree.
+          </p>
+          <BackContinue back="/ratestanding" next={posture === "calculation-only" ? "/mech/statement" : "/mech/rails"} />
+        </>
+      )}
+    </LoadFrame>
+  );
+}
+
+// ── f2_2 · What carries the money? ─────────────────────────────────────────
+// Rails are L2 vocabulary; the chosen set is a recorded act on the mechanism.
+const RAILS: Array<[string, string, string]> = [
+  ["Bank or FSP", "A direct connection. CREST raises the instruction and reads confirmation back.", "Full tracking · needs integration"],
+  ["Mobile money / MNO", "For workers with a phone and no bank account.", "Full tracking · needs integration"],
+  ["Your own treasury", "CREST raises the instruction; your finance team executes it from an export and confirms back.", "Partial tracking · no integration"],
+  ["An implementing partner", "A local partner disburses on your behalf and confirms back — including in cash, or in kind where that is how the project actually pays.", "Partial tracking · no integration"],
+];
+
+export function MechRails() {
+  const s = useConsole();
+  const me = s.me!.partyId;
+  const [picked, setPicked] = useState<string[]>([]);
+  // The owner the mechanism is created under. Every held payment has a
+  // reason with an owner, and this is where the owner is first named — by
+  // default the person configuring it, but an organisation standing up the
+  // mechanism before its owner has signed in names that owner here.
+  const [owner, setOwner] = useState(me);
+  return (
+    <MechFrame title="What carries the money?">
+      {(m, reload) => {
+        const chosen = recordsOf(m, "rails-chosen")[0];
+        const live = chosen ? ((chosen.payload || {}).rails as string[]) || [] : picked;
+        const flip = (name: string) =>
+          setPicked((p) => (p.includes(name) ? p.filter((x) => x !== name) : [...p, name]));
+        const save = async () => {
+          s.clearErr();
+          try {
+            if (!m.mechanism) {
+              await api.post("payments", "/v1/mechanisms", {
+                contextId: s.projectId,
+                ownerPartyId: owner.trim() || me,
+                createdByPartyId: me,
+                config: { rails: picked },
+              });
+            }
+            const mech =
+              m.mechanism ||
+              ((await api.get("payments", `/v1/mechanisms/by-context/${encodeURIComponent(s.projectId)}`)) as MechView).mechanism;
+            await api.post("payments", `/v1/mechanisms/${encodeURIComponent(mech!.id)}/records`, {
+              kind: "rails-chosen",
+              actorPartyId: me,
+              payload: { rails: picked },
+            });
+            reload();
+          } catch (e) {
+            s.fail(e);
+          }
+        };
+        return (
+          <>
+            <Lede>Choose as many as you need. One project is rarely one rail.</Lede>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, maxWidth: 820 }}>
+              {RAILS.map(([name, sub, tag]) => (
+                <OptionCard
+                  key={name}
+                  t={name}
+                  s={sub}
+                  tag={<Chip kind={tag.startsWith("Full") ? "ok" : "plain"} sm>{tag}</Chip>}
+                  on={live.includes(name)}
+                  onPick={chosen ? undefined : () => flip(name)}
+                />
+              ))}
+            </div>
+            {chosen ? (
+              <RecordedAct rec={chosen} missing="" />
+            ) : (
+              <>
+              {!m.mechanism ? (
+                <label className="field" style={{ marginTop: 12, display: "block" }}>
+                  <span className="eyebrow">Who owns this mechanism</span>
+                  <input name="mechowner" className="mono" value={owner} onChange={(e) => setOwner(e.target.value)} style={{ width: "100%" }} />
+                  <span className="muted" style={{ display: "block", marginTop: 4 }}>
+                    The party every held payment on this project will name. Yourself by default; the person who will
+                    run it if you are standing it up for them.
+                  </span>
+                </label>
+              ) : null}
+              <button id="save-rails" className="btn inline" onClick={save} disabled={!picked.length} style={{ marginTop: 12 }}>
+                Set up the first rail
+              </button>
+              </>
+            )}
+            <Sidecar>
+              A worker is routed to whichever rail their payout details fit. Cash and in-kind are recorded the same
+              way as any other mode, so the work stays traceable even where no electronic rail exists. Two selected
+              here means two set-ups, and a worker with neither is a case the project has to answer for.
+            </Sidecar>
+            <BackContinue back="/mech/where" next="/mech/connect" />
+          </>
+        );
+      }}
+    </MechFrame>
+  );
+}
+
+// ── f2_3 · Connect the rail ────────────────────────────────────────────────
+// Step 1 of 3. The connection this deployment has is the sandbox rail wired
+// in configuration; what this screen records is the act of naming it. The
+// secret never passes through the console.
+export function MechConnect() {
+  const s = useConsole();
+  const me = s.me!.partyId;
+  const [provider, setProvider] = useState("MockPay sandbox — bulk disbursement");
+  return (
+    <MechFrame title="Connect the rail" counter="Payment set up · 1 of 3">
+      {(m, reload) => {
+        const rec = recordsOf(m, "provider-connected")[0];
+        const tested = (m.tests || []).some((t) => t.state === "SUCCEEDED" || t.state === "CONFIRMED" || t.state === "SETTLED");
+        const recon = recordsOf(m, "reconciliation-agreement")[0];
+        const save = async () => {
+          s.clearErr();
+          try {
+            await api.post("payments", `/v1/mechanisms/${encodeURIComponent(m.mechanism!.id)}/records`, {
+              kind: "provider-connected",
+              actorPartyId: me,
+              payload: { provider: provider.trim(), environment: "sandbox" },
+            });
+            reload();
+          } catch (e) {
+            s.fail(e);
+          }
+        };
+        return (
+          <>
+            <Lede>
+              Step 1 of 3. Nothing moves money yet — this only establishes that CREST can talk to your provider.
+            </Lede>
+            <Card>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <DisLi on={!!rec} t="Connect" s="Credentials and environment" />
+                <DisLi on={tested} t="Test a real transaction" s="A single small payment to an account you control" />
+                <DisLi on={!!recon} t="Agree the reconciliation file" s="So a mismatch can be detected later" />
+              </div>
+            </Card>
+            <Card>
+              <RefField label="Provider">
+                <input name="railprovider" value={provider} onChange={(e) => setProvider(e.target.value)} />
+              </RefField>
+              <RefField label="Environment" value="Sandbox" hint="the one rail wired in this deployment — moving off sandbox is a deliberate act, never a side effect" />
+              <RefField label="Client secret" value="held by the platform operator — never entered here" hint="Held by the platform operator, never shown again after saving." />
+              {m.mechanism ? (
+                !rec ? (
+                  <button id="save-connect" className="btn inline" onClick={save} style={{ marginTop: 10 }}>
+                    Save and test
+                  </button>
+                ) : (
+                  <RecordedAct rec={rec} missing="" />
+                )
+              ) : (
+                <p className="muted">Choose the rails first — the connection is recorded against the mechanism.</p>
+              )}
+            </Card>
+            <Sidecar warm>
+              The secret is held on the platform, not by you or by the project. Who may use it, and what stops it
+              being used outside a validated work unit, is not yet specified.
+            </Sidecar>
+            <BackContinue back="/mech/rails" next="/mech/test" />
+          </>
+        );
+      }}
+    </MechFrame>
   );
 }
 
@@ -537,7 +816,7 @@ export function MechTest() {
               failure is kept on the record with its reason and its owner, because a mechanism that cannot pay you is
               a fact somebody must own.
             </Callout>
-            <BackContinue back="/paysetup" next="/mech/recon" />
+            <BackContinue back="/mech/connect" next="/mech/recon" />
           </>
         );
       }}
@@ -576,7 +855,12 @@ export function MechRecon() {
             <Card>
               <RefField label="Format" value="CSV, one row per instruction" hint="contract crest-recon-csv-v1" />
               <RefField label="Cadence" value="Daily, 23:00" hint="programme policy (L2) — recorded with the agreement, not read by the substrate" />
+              <RefField label="Failure reason" value="Free text" hint="Used to decide whether a retry makes sense" />
             </Card>
+            <Sidecar warm>
+              Without the instruction reference nothing can be matched, and the reconciliation engine can only report
+              that the totals differ.
+            </Sidecar>
             <LoadFrame r={file}>
               {(f) => (
                 <CardTitled t={"The file today — " + (f.format || "crest-recon-csv-v1")}>
@@ -642,8 +926,9 @@ export function MechStatement() {
         return (
           <>
             <Lede>
-              A statement, and an honest limit: CREST never holds or moves money, so this statement is advisory and
-              says so on itself — the rail's own statement is the authoritative record of what was paid.
+              The advisory pathway. CREST works out what is owed and issues a statement; your finance function pays
+              it however it already does — and the statement says its own limit on itself, because the rail's record
+              is the authoritative one.
             </Lede>
             <Card>
               <RefField label="Statement covers" value="One calendar month" />
@@ -678,6 +963,10 @@ export function MechStatement() {
             ) : (
               <p className="muted">Configure the mechanism first — the agreement is recorded against it.</p>
             )}
+            <Callout kind="green" title="What this pathway never does">
+              A statement is a claim about what is owed, not a record of payment. Nothing in this pathway lets CREST
+              tell a worker their money has arrived, because CREST never learns it.
+            </Callout>
             <BackContinue back="/paysetup" next="/mech/batching" />
           </>
         );
@@ -715,16 +1004,37 @@ export function MechBatching() {
         return (
           <>
             <Lede>
-              The obligation is raised the moment a confirmation window exits — all four exits, always. What this
-              screen chooses is when the rail is asked to move the batch, and that wait lands on the worker.
+              What starts the clock, and how often the money actually goes out. The obligation is raised the moment
+              a confirmation window exits — all four exits, always — and what this screen chooses is when the rail
+              is asked to move the batch. That wait lands on the worker.
             </Lede>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, maxWidth: 820, marginBottom: 12 }}>
+              <OptionCard
+                t="As soon as a work unit is validated"
+                s="Each validated event raises its own instruction. Fastest for the worker, most instructions for the rail."
+                on={batchWin === "on-validation"}
+                onPick={() => setBatchWin("on-validation")}
+              />
+              <OptionCard
+                t="Batched weekly"
+                s="Validated events accumulate and go out together each Friday."
+                on={batchWin === "weekly-friday"}
+                onPick={() => setBatchWin("weekly-friday")}
+              />
+              <OptionCard
+                t="Batched monthly"
+                s="One run a month. Cheapest to operate, slowest for the worker."
+                on={batchWin === "monthly"}
+                onPick={() => setBatchWin("monthly")}
+              />
+            </div>
             <Card>
               <RefField
                 label="Hold payment if a dispute is open"
                 value="Never — a dispute contests the record, not the money; all four window exits release payment (W4)"
                 hint="the reference frame offers this as a choice; in CREST it is not one, and this deployment says so instead of pretending"
               />
-              <RefField label="Manual approval before release" value="Off" hint="no manual approval step exists between a window exit and its instruction" />
+              <RefField label="Manual approval before release" value="Off" hint="On would send every payment to a Payment Approver first — no such step exists between a window exit and its instruction today" />
               <RefField label="Batching window" hint="programme policy (L2) — the substrate records the choice and does not read the value">
                 <input name="batchwindow" value={batchWin} onChange={(e) => setBatchWin(e.target.value)} />
               </RefField>
@@ -754,9 +1064,10 @@ export function MechBatching() {
               </CardTitled>
             ) : null}
             <Callout kind="teal" title="The rule this screen sets">
-              Batching is paid for by the worker. The choice is legitimate; making it silently is not — so the record
-              carries who chose, when, and the trade-off in their own sentence, and a choice that hides the cost is
-              refused.
+              Batching is a cost decision made by the project and paid for by the worker — a monthly run means a
+              worker who finishes today waits up to thirty days. The choice is legitimate; making it silently is not:
+              the record carries who chose, when, and the trade-off in their own sentence, and a choice that hides
+              the cost is refused.
             </Callout>
             <BackContinue back="/mech/recon" next="/mech/activate" />
           </>
@@ -816,10 +1127,16 @@ export function MechActivate() {
         return (
           <>
             <Lede>
-              Configured is not the same as live. Nothing on this list can be ticked by hand: each condition reads a
-              record — a test that ran, an agreement that was made, a choice with a name on it, a verification a
-              different person recorded.
+              Both halves, in one place, with whoever is still outstanding named. Configured is not the same as live
+              — nothing on this list can be ticked by hand: each condition reads a record, a test that ran, an
+              agreement that was made, a choice with a name on it, a verification a different person recorded.
             </Lede>
+            <KVR
+              rows={[
+                ["Payment Approver", "Not assigned — manual approval is off, so not required"],
+                ["Environment", "Sandbox. No real money will move."],
+              ]}
+            />
             {m.mechanism ? (
               <Card>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -843,6 +1160,10 @@ export function MechActivate() {
             ) : (
               <p className="muted">No mechanism exists for this project yet — configure one on the test screen first.</p>
             )}
+            <Sidecar>
+              Going live is a separate act from finishing setup. This project is configured; moving it off sandbox is
+              a decision somebody makes deliberately, not a side effect of completing a form.
+            </Sidecar>
             <div style={{ display: "flex", gap: 10 }}>
               <button className="btn secondary inline" onClick={() => nav("/mech/batching")}>Back</button>
               {m.mechanism ? (
@@ -893,8 +1214,9 @@ export function MechQualify() {
         return (
           <>
             <Lede>
-              The organisation's authority to move real money is submitted here and verified by somebody else. What
-              this gate holds is disbursement — nothing more.
+              Everything below already works. This step exists only because the next instruction carries real value —
+              the organisation's authority to move real money is submitted here and verified by somebody else, and
+              what this gate holds is disbursement, nothing more.
             </Lede>
             <Card>
               <KVR
@@ -904,6 +1226,28 @@ export function MechQualify() {
                 ]}
               />
             </Card>
+            <CardTitled t="Needed before the first real payment">
+              <Tbl
+                heads={["What", "Why", "Status"]}
+                rows={[
+                  [
+                    "Proof the settlement account belongs to this organisation",
+                    "So money cannot be routed to an account nobody owns",
+                    verified ? <Chip kind="ok">verified</Chip> : <Chip kind="warn">needed</Chip>,
+                  ],
+                  [
+                    "Named officer authorised to receive funds",
+                    "Somebody accountable at the receiving end",
+                    submitted ? <Chip kind="ok">submitted</Chip> : <Chip kind="warn">needed</Chip>,
+                  ],
+                  [
+                    "Account name matches the registered organisation name",
+                    "The single most common cause of rejected disbursement",
+                    <Chip kind="plain">checked by the verifier — no automatic check exists</Chip>,
+                  ],
+                ]}
+              />
+            </CardTitled>
             <Callout kind="teal" title="Why this is the third step and not the first">
               None of this was asked when the rail was connected, and that is deliberate. A partner who turns out not
               to fit can discover it in an afternoon instead of after a document round.
@@ -1035,6 +1379,13 @@ export function MechLive() {
                 every held instruction re-priced and released, none quietly dropped.
               </OpenNote>
             )}
+            <NextBlock
+              happened={verified ? <>The qualification was verified — the record above names who and when.</> : <>Nothing yet — verification is still outstanding.</>}
+              who="The rail, once the first instruction is issued"
+              when="The next confirmation-window exit raises the next instruction — all four exits release"
+              told="The instruction appears in Payments with its state; a held one names its owner"
+              ifnot="A rejected instruction does not retry on its own — it appears in the project's delayed list with a reason."
+            />
             <Callout kind="grey" title="What is not watched">
               Nothing re-checks this. If the organisation changes bank, or the authorised officer leaves, the
               verification stands until somebody notices. That is a gap, not a design.

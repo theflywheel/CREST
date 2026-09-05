@@ -16,8 +16,8 @@
 // act on says who can (n5). The "one rail across all of J3" reading of F1 is
 // corrected in docs/design/j3-connective-tissue/README.md: it holds per
 // section, not across all 24 frames.
-import { useEffect, useState } from "react";
-import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect } from "react";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { ConsoleShell, ErrBar, type NavGroup, type NavItem } from "@crest/ui";
 import { useConsole, type PersonaKey } from "./state";
 import { Definition, Sources, Receipt } from "./views/Project";
@@ -34,18 +34,20 @@ import { OnboardApply, OnboardTerms, OnboardStatus, OnboardChecks } from "./view
 import {
   OnboardStandalone, OnboardWider, OnboardDocuments, OnboardReview, OnboardInvited, OnboardProject,
 } from "./views/OnboardOrg";
-import { SignIn } from "./views/SignIn";
+import { SignIn, AuthReturn } from "./views/SignIn";
+import { Claim } from "./views/Claim";
 import {
-  Projects as OrgHome, NewProject, People, Workers, Validation, Intake, Finance as FinanceConnect, Navigation,
+  Projects as OrgHome, NewProject, People, Workers, Validation, Intake, SpreadsheetArrived, Finance as FinanceConnect, Navigation,
 } from "./views/Setup";
 import {
-  Where, Handover, Compose, Owners, Activate, FinanceCode, SupportOwner, Partners,
+  Where, Handover, Compose, Owners, Activate, FinanceCode, SupportOwner, Partners, Vocabulary,
 } from "./views/J3";
 import {
   G1Setup, G1Covers, G1Consent, G1Invite, G1Services, G1People, Admissions, AdmissionDetail,
 } from "./views/G1";
 import {
   RateOwner, RateAuthor, RatePublish, RateStanding,
+  MechWhere, MechRails, MechConnect,
   MechTest, MechRecon, MechStatement, MechBatching, MechActivate, MechQualify, MechLive,
 } from "./views/Funders";
 
@@ -80,7 +82,7 @@ const FINANCE_ROUTES = ["/finance", "/finance/connect", "/support"];
 // frame's own buttons rather than by the rail.
 const J3_ROUTES = [
   "/org", "/people", "/projects", "/projects/new", "/definition", "/paysetup", "/workers",
-  "/validation", "/intake", "/sources", "/where", "/handover", "/compose", "/owners",
+  "/validation", "/intake", "/intake/file", "/sources", "/where", "/handover", "/compose", "/vocabulary", "/owners",
   "/activate", "/partners", "/rateowner", ...DASHBOARD_ROUTES, ...FINANCE_ROUTES,
 ];
 
@@ -90,6 +92,7 @@ const J3_ROUTES = [
 // Org Admin.
 const FUNDERS_ROUTES = [
   "/rateowner", "/rate", "/ratepublish", "/ratestanding",
+  "/mech/where", "/mech/rails", "/mech/connect",
   "/mech/test", "/mech/recon", "/mech/statement", "/mech/batching",
   "/mech/activate", "/mech/qualify", "/mech/live",
 ];
@@ -241,7 +244,11 @@ const homeOf = (key: PersonaKey) =>
 // is reached from the queue.
 const G1_EXTRA = ["/instance/setup", "/instance/invite"];
 const allowed = (key: PersonaKey, path: string) =>
-  (isJ3(key) && J3_ROUTES.includes(path)) ||
+  // The organisation stands up F-1/F-2 before the owners exist: it assigns
+  // the rate owner and creates the mechanism naming its owner, and until it
+  // has, nobody derives as rate owner or mechanism owner. So the org admin
+  // holds the funders routes too; the configurator does not.
+  (isJ3(key) && (J3_ROUTES.includes(path) || (key === "orgadmin" && FUNDERS_ROUTES.includes(path)))) ||
   (key === "author" && AUTHOR_ROUTES.includes(path)) ||
   // The approver reads the record and the act, and holds no wizard route.
   (key === "approver" && P3_READS.includes(path)) ||
@@ -249,90 +256,17 @@ const allowed = (key: PersonaKey, path: string) =>
   (key === "instance" && (G1_EXTRA.includes(path) || path.startsWith("/admissions/"))) ||
   NAV[key].some((g) => g.items.some((i) => i.to === path));
 
-// The eSignet return leg: the door's own callback route, handed either a
-// verified token or an error in the query string (services/core/parties'
-// /v1/auth/callback). A stranger (a verified token bound to no party) stays
-// on the sign-in door with the fact stated, rather than a dead end — this
-// console has no self-registration surface of its own to hand them to.
-function AuthReturn() {
-  const s = useConsole();
-  const nav = useNavigate();
-  const [params] = useSearchParams();
-  const [working, setWorking] = useState(true);
-  useEffect(() => {
-    const err = params.get("error");
-    const token = params.get("token");
-    if (err) {
-      s.fail(new Error("eSignet sign-in did not finish: " + err));
-      setWorking(false);
-      return;
-    }
-    if (!token) {
-      s.fail(new Error("the login returned neither a token nor an error"));
-      setWorking(false);
-      return;
-    }
-    s.completeEsignet(token)
-      .then((outcome) => {
-        if (outcome === "enrolled") {
-          nav("/org", { replace: true });
-        } else {
-          s.fail(new Error("that identity checked out, but no party in this registry is bound to it yet"));
-          setWorking(false);
-        }
-      })
-      .catch((e) => {
-        s.fail(e);
-        setWorking(false);
-      });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  if (working)
-    return (
-      <div className="console-shell">
-        <div className="console-body">
-          <main className="pane">
-            <div className="screen pane-narrow">
-              <span className="eyebrow">CREST Console</span>
-              <p className="body-2">Completing your sign-in…</p>
-            </div>
-          </main>
-        </div>
-      </div>
-    );
-  return (
-    <SignIn
-      onSignedIn={async (i) => {
-        s.clearErr();
-        try {
-          const key = await s.login(i);
-          nav(homeOf(key));
-        } catch (e) {
-          s.fail(e);
-        }
-      }}
-    />
-  );
-}
-
 function Shell() {
   const s = useConsole();
   const loc = useLocation();
-  const nav = useNavigate();
   useEffect(() => s.clearErr(), [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!s.me || !s.persona)
-    return (
-      <SignIn
-        onSignedIn={async (i) => {
-          s.clearErr();
-          try {
-            const key = await s.login(i);
-            nav(homeOf(key));
-          } catch (e) {
-            s.fail(e);
-          }
-        }}
-      />
-    );
+  // The onboarding surface swaps the api session to the organisation's own
+  // token; entering (or navigating) the shell puts the person back.
+  useEffect(() => s.assertSession(), [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The eSignet return leg must render before the signed-out gate: the
+  // callback bounces here with the token still in the route's query.
+  if (loc.pathname === "/auth") return <AuthReturn />;
+  if (!s.me || !s.persona) return <SignIn />;
   // The role boundary: a view outside this persona's flow is not rendered —
   // an approver who types #/definework lands back on their own home. For the
   // J3 actors nothing is hidden: both hold every route, and a screen they
@@ -365,9 +299,6 @@ export function App() {
   const s = useConsole();
   return (
     <Routes>
-      {/* The eSignet return leg — reachable with no persona, like /onboard,
-          because this is where a session first gets one. */}
-      <Route path="/auth" element={<AuthReturn />} />
       {/* Programme onboarding (#155 phase D): reachable with no persona —
           applying is the open bootstrap by design (#20). */}
       <Route path="/onboard" element={<OnboardApply />} />
@@ -383,6 +314,9 @@ export function App() {
       <Route path="/onboard/review" element={<OnboardReview />} />
       <Route path="/onboard/invited" element={<OnboardInvited />} />
       <Route path="/onboard/project" element={<OnboardProject />} />
+      {/* Claiming an invitation (#123): reachable with no session by design —
+          the person claiming has no party here yet, which is the point. */}
+      <Route path="/claim/:code" element={<Claim />} />
       <Route element={<Shell />}>
         {/* J3 — setting up a project */}
         <Route path="/org" element={<OrgHome />} />
@@ -392,6 +326,7 @@ export function App() {
         <Route path="/workers" element={<Workers />} />
         <Route path="/validation" element={<Validation />} />
         <Route path="/intake" element={<Intake />} />
+        <Route path="/intake/file" element={<SpreadsheetArrived />} />
         <Route path="/finance" element={<FinanceCode />} />
         <Route path="/finance/connect" element={<FinanceConnect />} />
         <Route path="/support" element={<SupportOwner />} />
@@ -399,6 +334,7 @@ export function App() {
         <Route path="/where" element={<Where />} />
         <Route path="/handover" element={<Handover />} />
         <Route path="/compose" element={<Compose />} />
+        <Route path="/vocabulary" element={<Vocabulary />} />
         <Route path="/owners" element={<Owners />} />
         <Route path="/activate" element={<Activate />} />
         <Route path="/partners" element={<Partners />} />
@@ -469,6 +405,9 @@ export function App() {
         <Route path="/instance/covers" element={<G1Covers />} />
         <Route path="/instance/consent" element={<G1Consent />} />
         <Route path="/instance/invite" element={<G1Invite />} />
+        <Route path="/mech/where" element={<MechWhere />} />
+        <Route path="/mech/rails" element={<MechRails />} />
+        <Route path="/mech/connect" element={<MechConnect />} />
         <Route path="/instance/services" element={<G1Services />} />
         <Route path="/instance/people" element={<G1People />} />
         {/* G-4 admission review (g4_1–g4_3): the real queue and the real

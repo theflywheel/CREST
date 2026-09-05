@@ -10,8 +10,8 @@
 // that decides whether a project looks healthy is the exact failure this
 // project cannot afford.
 import { useState } from "react";
-import { api, FIX } from "@crest/api";
-import { Callout, Chip, GridTable, NextBlock, OpenNote } from "@crest/ui";
+import { api } from "@crest/api";
+import { Callout, Chip, DisLi, GridTable, NextBlock, OpenNote } from "@crest/ui";
 import {
   agoDays, Card, CardTitled, ILLUSTRATIVE, KVR, Lede, LoadFrame, Mono, MonoShort, money,
   Stat, TStep, Title, Tbl, TierChip, short, useLoad, when,
@@ -33,7 +33,7 @@ const oldest = (arr: Array<Record<string, string | undefined>>, field: string) =
 };
 const median = (xs: number[]) => (xs.length ? xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)] : null);
 
-async function projectRead() {
+async function projectRead(defId: string) {
   const [claims, unclear, unreleased, unreached, instr, metrics, def] = await Promise.all([
     api.get("evidence", "/v1/claims").catch(() => ({ claims: [] })),
     api.get("evidence", "/v1/unclear").catch(() => ({ unclear: [] })),
@@ -41,7 +41,7 @@ async function projectRead() {
     api.get("confirmation", "/v1/unreached").catch(() => ({ windows: [] })),
     api.get("payments", "/v1/instructions").catch(() => ({ instructions: [] })),
     api.get("parties", "/v1/holds/metrics").catch(() => null),
-    api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}`).catch(() => null),
+    defId ? api.get("definitions", `/v1/definitions/${encodeURIComponent(defId)}`).catch(() => null) : Promise.resolve(null),
   ]);
   return {
     claims: (claims.claims || []) as Array<{ state?: string; createdAt?: string }>,
@@ -54,13 +54,14 @@ async function projectRead() {
   };
 }
 
-const projectTitle = (def: { activity?: { label?: string } } | null) =>
-  short(FIX.project) + " · " + (def?.activity?.label || "this project's work");
+const projectTitle = (projectId: string, def: { activity?: { label?: string } } | null) =>
+  (projectId ? short(projectId) : "no project yet") + " · " + (def?.activity?.label || "this project's work");
 
 // ── p2_11 · A funnel, not a set of totals ───────────────────────────────────
 export function Status() {
   const nav = useNavigate();
-  const r = useLoad(projectRead);
+  const s = useConsole();
+  const r = useLoad(() => projectRead(s.definitionId), [s.definitionId]);
   return (
     <LoadFrame r={r}>
       {(f) => {
@@ -79,7 +80,7 @@ export function Status() {
         const oldestUnclear = oldest(f.unclear, "createdAt");
         return (
           <>
-            <Title t={projectTitle(f.def)} />
+            <Title t={projectTitle(s.projectId, f.def)} />
             <Lede>This month to date · read from the services just now.</Lede>
             <div className="stats">
               <Stat n={f.claims.length} label="Work units received" owner="evidence service" />
@@ -144,7 +145,8 @@ export function Status() {
 // ── p2_12 · The headline, with the causes underneath it ─────────────────────
 export function Stp() {
   const nav = useNavigate();
-  const r = useLoad(projectRead);
+  const s = useConsole();
+  const r = useLoad(() => projectRead(s.definitionId), [s.definitionId]);
   return (
     <LoadFrame r={r}>
       {(f) => {
@@ -166,7 +168,7 @@ export function Stp() {
               <Stat n="—" label="Cleared with no human touch" owner="the metric contract is #31, unbuilt" />
               <Stat n={causes.reduce((s, c) => s + c.n, 0)} label="Needed a person, or failed" owner="every one of these has a cause, and every cause has an owner" />
             </div>
-            <CardTitled t="Why the others fell out — ranked">
+            <CardTitled t={"Why the other " + causes.reduce((s, c) => s + c.n, 0) + " fell out — ranked"}>
               <GridTable cols="auto 1.8fr 1.2fr auto" head={["#", "Cause", "Fixed by", "Count"]}>
                 {causes.map((c, i) => (
                   <div className="g-row" key={c.what}>
@@ -189,6 +191,12 @@ export function Stp() {
             <Callout kind="grey" title="How this could be gamed">
               <b>Straight-through rate</b> rises if you lower a definition’s tier ceiling — the work gets no better,
               the number does. <span className="guard">Guarded by · showing it beside the tier mix, and flagging any definition whose ceiling moved this period.</span>
+            </Callout>
+            <Callout kind="teal" title="What changed this month">
+              The reference reads this list as a series — which cause is rising, which appeared this month — and points
+              at the two that are fixable this week without validators working harder. Here the causes are a live
+              queue, not a series: nothing keeps last month's ranking, so no trend is drawn until the metric contract
+              in <a href="https://github.com/theflywheel/CREST/issues/31">#31</a> exists.
             </Callout>
             <OpenNote>
               The headline percentage is the illustrative half of this frame: computing it needs the exit route and the
@@ -218,18 +226,19 @@ export function Stp() {
 // ── p2_13 · Two different problems that look identical in a pie chart ───────
 export function Quality() {
   const nav = useNavigate();
+  const s = useConsole();
   const r = useLoad(async () => {
     const [sources, assess, def] = await Promise.all([
       api.get("evidence", "/v1/sources").catch(() => ({ sources: [] })),
       api.get("verification", "/v1/source-assessments").catch(() => ({ assessments: [] })),
-      api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}`).catch(() => null),
+      s.definitionId ? api.get("definitions", `/v1/definitions/${encodeURIComponent(s.definitionId)}`).catch(() => null) : Promise.resolve(null),
     ]);
     return {
       sources: (sources.sources || []) as Array<{ systemRef?: string; adapterRef?: string; state?: string }>,
       assessments: (assess.assessments || []) as Array<{ adapterRef: string; maxTier: number; reason?: string }>,
       tierMap: (def?.tierMap || []) as Array<{ tier: number; sourceClassIn?: string[]; captureMethodIn?: string[] }>,
     };
-  });
+  }, [s.definitionId]);
   return (
     <LoadFrame r={r}>
       {({ sources, assessments, tierMap }) => (
@@ -239,8 +248,8 @@ export function Quality() {
             Tier is derived by CREST from the source and the capture mode, never asserted by the sender.
           </Lede>
           <div className="stats">
-            {[1, 2, 3].map((t) => (
-              <Stat key={t} n="—" label={<>Tier {t} share</>} owner="no project-wide credential read exists" />
+            {([[1, "system recorded"], [2, "a person attested"], [3, "self reported"]] as Array<[number, string]>).map(([t, how]) => (
+              <Stat key={t} n="—" label={<>Tier {t} share</>} owner={how + " · no project-wide credential read exists"} />
             ))}
           </div>
           <CardTitled t="Source, and the ceiling it puts on a tier">
@@ -288,6 +297,16 @@ export function Quality() {
             however good field practice becomes. A record that fell short is a practice problem. Reporting them as one
             number sends a manager to train people who were already doing it right.
           </Callout>
+          <Callout kind="teal" title="The one action on this screen">
+            Records capped by their source are the largest single quality item a project can carry, and they are not a
+            field problem at all. There is a system holding this data already — connecting it moves those records up a
+            tier and lifts straight-through with them.
+            {assessments.length ? (
+              <> Here, {assessments.length} assessed source(s) currently cap what they send.</>
+            ) : (
+              <> No assessed source caps anything here yet.</>
+            )}
+          </Callout>
           <OpenNote>
             The tier-share figures read “—” on purpose: credentials are listable per worker only
             (<span className="mono">/v1/credentials?partyId=</span>), by design, so a project-wide tier mix needs the
@@ -322,6 +341,7 @@ export function Payments() {
     ]);
     return { list: (out.instructions || []) as Instr[], rec };
   });
+  const [showUnowned, setShowUnowned] = useState(false);
   const trace = (claimId?: string) => {
     s.setTraceClaim(claimId || "");
     nav(s.persona === "custodian" || s.persona === "support" ? "/supporttrace" : "/trace");
@@ -330,6 +350,7 @@ export function Payments() {
     <LoadFrame r={r}>
       {({ list, rec }) => {
         const held = list.filter((i) => i.state === "HELD");
+        const unowned = held.filter((i) => !(i.held?.ownerPartyId || "").trim());
         const paid = list.filter((i) => i.state === "SETTLED");
         const released = list.filter((i) => i.state === "RELEASED");
         const failed = list.filter((i) => i.state === "FAILED" || i.state === "REJECTED");
@@ -395,6 +416,25 @@ export function Payments() {
               A worker must never see a missing payment with no explanation attached. Each row above names the office
               that owes the next move; a row that could not name one would itself be the defect to raise.
             </Callout>
+            <Callout kind="teal" title="The row that crosses a boundary">
+              A worker with no valid payment details is the row whose fix is not in this project — it is the same
+              failed-validation record the registry custodian sees on the quality worklist. One list, two dashboards,
+              and neither of you can close it alone.
+            </Callout>
+            {showUnowned ? (
+              <CardTitled t={"Cleared but never instructed, or held with nobody holding — " + unowned.length}>
+                <Tbl
+                  heads={["Worker", "Amount", "Why", "Owner"]}
+                  rows={unowned.map((i) => [
+                    <MonoShort id={i.partyId} />,
+                    money(i.amountMinor || 0, i.currency),
+                    i.held?.explanation || i.held?.code || "held",
+                    "nobody — this is a gap",
+                  ])}
+                  empty="Every held payment here names an owner. The gap the reference draws is empty on this project."
+                />
+              </CardTitled>
+            ) : null}
             <Tbl
               heads={["Worker", "Amount", "State", "Released by", "When", "If held: why — owner", ""]}
               rows={list.slice(0, 100).map((i) => [
@@ -425,6 +465,9 @@ export function Payments() {
               <button className="btn secondary" data-act="secondary" onClick={() => nav("/quality")}>
                 Quality
               </button>
+              <button className="btn secondary" data-act="unowned" onClick={() => setShowUnowned((v) => !v)}>
+                Open the {unowned.length}
+              </button>
               <button className="btn dominant" data-act="primary" onClick={() => nav("/trace")}>
                 Proof
               </button>
@@ -441,6 +484,7 @@ export function Trace() {
   const s = useConsole();
   const nav = useNavigate();
   const [input, setInput] = useState(s.traceClaim);
+  const [bundleNote, setBundleNote] = useState(false);
   const claimId = s.traceClaim;
   const r = useLoad(async () => {
     if (!claimId) return null;
@@ -486,12 +530,14 @@ export function Trace() {
             return (
               <>
                 <Title t={(who?.displayName || "This worker") + " · " + short(c?.partyId || claimId)} />
-                <GridTable cols="1.2fr 1fr 1fr 1.4fr 1fr 1fr" head={["Work definition", "Unit", "Cleared", "Evidence", "Credential", "Payment"]}>
+                <GridTable cols="0.9fr 1.2fr 1fr 0.7fr 1.4fr 1fr 1fr 1fr" head={["Date", "Work definition", "Unit", "Tier", "Evidence", "Cleared", "Credential", "Payment"]}>
                   <div className="g-row">
+                    <span>{when(c?.createdAt)}</span>
                     <span>{c?.definitionId ? <Mono>{short(c.definitionId)}</Mono> : "—"}</span>
                     <span>{c?.unitId ? <Mono>{short(c.unitId)}</Mono> : "—"}</span>
-                    <span>{win?.exitRoute || (win ? "window open" : "—")}</span>
+                    <span title="derived at query time from the credential's provenance; no per-claim tier read exists here">—</span>
                     <span className="muted">{c?.state || "no claim on record"}</span>
+                    <span>{win?.exitRoute || (win ? "window open" : "—")}</span>
                     <span>{win?.credentialId ? <Mono>{short(win.credentialId)}</Mono> : "—"}</span>
                     <span>{i ? i.state : "none"}</span>
                   </div>
@@ -517,6 +563,16 @@ export function Trace() {
         project — and she may have worked on two — needs her explicit consent through the disclosure flow, and would
         arrive as a narrower disclosure than this.
       </Callout>
+      <Callout kind="teal" title="One row worth acting on">
+        A row that has been sitting sent-back is the one to read first. The worker may not know. This is the single
+        most common way a worker quietly loses money, and it appears on no other screen in the project.
+      </Callout>
+      {bundleNote ? (
+        <OpenNote>
+          Not backed. The reference exports the worker's whole trail as a bundle an auditor can verify without CREST;
+          no bundle endpoint exists, so nothing is exported from here.
+        </OpenNote>
+      ) : null}
       <OpenNote>
         The reference's frame opens on a named worker's whole history and exports it as a bundle an auditor can verify
         without CREST. What exists here is one claim's trail, hop by hop, each hop a real service read: there is no
@@ -526,6 +582,9 @@ export function Trace() {
       <div className="btn-row" style={{ maxWidth: 520 }}>
         <button className="btn secondary" data-act="secondary" onClick={() => nav("/payments")}>
           Payments
+        </button>
+        <button className="btn secondary" data-act="bundle" onClick={() => setBundleNote(true)}>
+          Export the bundle
         </button>
         <button className="btn dominant" data-act="primary" onClick={() => nav("/reports")}>
           Reports
@@ -537,7 +596,10 @@ export function Trace() {
 
 // ── p2_16 · Two things a funder always wants, pre-built ─────────────────────
 export function Reports() {
-  const r = useLoad(projectRead);
+  const s = useConsole();
+  const nav = useNavigate();
+  const [reportNote, setReportNote] = useState<string | null>(null);
+  const r = useLoad(() => projectRead(s.definitionId), [s.definitionId]);
   return (
     <LoadFrame r={r}>
       {(f) => {
@@ -561,10 +623,16 @@ export function Reports() {
                   <span className="muted">No funding ledger exists in CREST; an allocation figure would be invented.</span>
                 </div>
                 <div className="g-row">
+                  <span>Validated work value</span>
+                  <span className="num">{f.claims.length} unit(s)</span>
+                  <span>—</span>
+                  <span className="muted">Work not yet done or not yet validated is the difference from an allocation — and no read prices validated units before an instruction exists.</span>
+                </div>
+                <div className="g-row">
                   <span>Instructed</span>
                   <span className="num">{money(instructed, cur)}</span>
                   <span>—</span>
-                  <span className="muted">{f.instructions.length} instruction(s) raised — every window exit raises one.</span>
+                  <span className="muted">{f.instructions.length} instruction(s) raised — every window exit raises one. Any difference from the row above would be cleared but never instructed — the unowned gap.</span>
                 </div>
                 <div className="g-row">
                   <span>Confirmed paid</span>
@@ -575,16 +643,35 @@ export function Reports() {
                     each.
                   </span>
                 </div>
+                <div className="g-row">
+                  <span>Unspent against allocation</span>
+                  <span>—</span>
+                  <span>—</span>
+                  <span className="muted">Follows from an allocation; without one the row is empty rather than invented.</span>
+                </div>
               </GridTable>
             </CardTitled>
             <CardTitled t="Proof of work — volume with the strength of evidence attached">
               <GridTable cols="1.6fr 1fr 1fr" head={["Work definition", "Validated units", "Tier mix"]}>
                 <div className="g-row">
-                  <span>{f.def?.activity?.label || short(FIX.definition)}</span>
+                  <span>{f.def?.activity?.label || (s.definitionId ? short(s.definitionId) : "no definition yet")}</span>
                   <span className="num">{f.claims.length}</span>
                   <span className="muted">— · no project-wide tier read exists</span>
                 </div>
               </GridTable>
+            </CardTitled>
+            <CardTitled t="Cuts">
+              <div className="dis">
+                <DisLi on t="By month" s="every stage above, per period" />
+                <DisLi on t="By sub-county" s="by whichever place attribute this deployment names" />
+                <DisLi on t="By work definition" s="the proof-of-work table, per definition" />
+                <DisLi on t="By delivering organisation" s="per organisation submitting against the project" />
+              </div>
+              <div className="eyebrow" style={{ marginTop: 10 }}>Off by default</div>
+              <div className="dis">
+                <DisLi on={false} t="By individual worker" s="Turns an aggregate report into a list of named people and their earnings" />
+                <DisLi on={false} t="Worker names in any cut" s="Needs a governance decision, not a checkbox" />
+              </div>
             </CardTitled>
             <Callout kind="green" title="Why tier is in a funder report">
               The tier columns are what make this proof rather than a claim. A funder reading 92% Tier 1 on household
@@ -597,8 +684,20 @@ export function Reports() {
               rows are live. Nothing constrains what a saved report may expose either — individual-level cuts would
               need a governance decision, not a checkbox.
             </OpenNote>
+            {reportNote ? <OpenNote>{reportNote}</OpenNote> : null}
+            <div className="btn-row" style={{ maxWidth: 640 }}>
+              <button className="btn secondary" data-act="secondary" onClick={() => nav("/trace")}>
+                Proof
+              </button>
+              <button className="btn secondary" data-act="preview" onClick={() => setReportNote("Not backed. There is no report object to preview — what is on this screen is the preview, read live.")}>
+                Preview
+              </button>
+              <button className="btn dominant" data-act="primary" onClick={() => setReportNote("Not backed. Saving and sharing a report needs a saved-report object and a governance rule on what it may expose; neither exists yet.")}>
+                Save and share
+              </button>
+            </div>
             <NextBlock
-              happened={<>This project's records are readable end to end · <Mono>{short(FIX.project)}</Mono></>}
+              happened={<>Your project is configured and running · <Mono>{s.projectId ? short(s.projectId) : "—"}</Mono></>}
               who="Work definitions, then workers submitting against them"
               when="Records arrive as evidence is submitted; the confirmation window then runs its course"
               told="Nothing is pushed to you — this console is the read"

@@ -123,11 +123,14 @@ async function flowSignedInAs(page, who) {
     .waitFor({ state: "visible", timeout: 20000 });
 }
 
-async function flowConsolePersona(page, persona) {
+async function flowConsolePersona(page, request, persona) {
   await page.goto("/console/");
   await settle(page);
   const card = page.locator(`[data-persona="${persona}"]`);
-  if (!(await card.count())) return `no console persona card [data-persona="${persona}"]`;
+  // The sign-in screen offers no persona cards any more — eSignet is the only
+  // door — so the arrival signs in the way the walks do: mint, bind, and hand
+  // the session to the door.
+  if (!(await card.count())) return flowConsoleLogin(page, request, persona);
   await card.click();
   const ok = await page
     .locator("#logout")
@@ -146,7 +149,7 @@ async function flowFundersArrive(page, request, mode, route) {
   // walk drives it. Nothing here is a second proof; it is arrival machinery
   // reusing the walk's own acts so the screen lands with real state on it.
   if (mode === "funders-rate" || mode === "funders-rate-published") {
-    let p = await flowConsolePersona(page, "orgadmin");
+    let p = await flowConsolePersona(page, request, "orgadmin");
     if (p) return p;
     await flowSignedInAs(page, "Peter Otieno");
     await flowLand(page, "#/rateowner");
@@ -158,7 +161,7 @@ async function flowFundersArrive(page, request, mode, route) {
     await page.click("#logout");
     await settle(page);
 
-    p = await flowConsolePersona(page, "rateowner");
+    p = await flowConsolePersona(page, request, "rateowner");
     if (p) return p;
     await flowSignedInAs(page, "Nadia Okoth");
 
@@ -208,7 +211,7 @@ async function flowFundersArrive(page, request, mode, route) {
     });
     if (r.status() !== 201) return `the supervisor's grant on the flow's project was refused (${r.status()})`;
 
-    let p = await flowConsolePersona(page, "payowner");
+    let p = await flowConsolePersona(page, request, "payowner");
     if (p) return p;
     await flowSignedInAs(page, "Daniel Mwangi");
     await flowLand(page, "#/where");
@@ -378,7 +381,11 @@ function flowStamp() {
 // seeder uses; returns its id (26-char suffix, walk-shaped, unique per call).
 async function flowPublishWiderTerms(request) {
   const id = "crest:terms:01JCRESTG2GATEX" + flowStamp() + "PAY00";
+  // Terms are the operator's to publish, and the fixture organisation is
+  // this stack's operator.
+  const token = await flowMintToken(request, FLOW_FIX.org);
   const r = await request.post(FLOW_API.parties + "/v1/terms", {
+    headers: { Authorization: "Bearer " + token },
     data: {
       id, version: 1, name: "Full delivery with payment",
       permissions: ["submit-work-evidence", "specify-definition", "ratify-definition", "set-rates", "instruct-payment"],
@@ -408,21 +415,78 @@ async function flowInvite(request, orgId) {
 // appends a real identity binding — exactly the acts apps.spec.js's walks
 // prove end to end. This is arrival machinery, not a second proof.
 
-// The worker door's dev login (local stacks only; eSignet is the real way in).
-async function flowWorkerLogin(page, who) {
-  await page.goto("/worker/");
+// Console personas (mirrors frontend/apps/console/src/state.tsx): the console
+// door offers only eSignet now, so console arrivals sign in programmatically —
+// the same mint-and-bind the persona cards performed, with the session handed
+// to the app through the key its provider restores from.
+const CONSOLE_PERSONAS = {
+  orgadmin: ["org", "Peter Otieno", "Org Admin"],
+  configurator: ["org", "Dr. Alice Mutua", "Project Configurator"],
+  author: ["org", "Amina Yusuf", "Work Definition Author"],
+  approver: ["org", "Prof. Ndegwa", "Work Definition Approver"],
+  rateowner: ["org", "Nadia Okoth", "Rate Owner"],
+  payowner: ["org", "Daniel Mwangi", "Payment Mechanism Owner"],
+  instance: ["org", "Instance administrator", "Instance Admin"],
+  custodian: ["custodian", "Otieno", "Registry Custodian"],
+  support: ["custodian", "Naliaka", "Support Agent"],
+  funder: ["org", "Funding oversight", "Funding Viewer"],
+};
+async function flowConsoleLogin(page, request, personaKey) {
+  const row = CONSOLE_PERSONAS[personaKey];
+  if (!row) return `unknown console persona "${personaKey}"`;
+  const [fixKey, who, role] = row;
+  const partyId = FLOW_FIX[fixKey];
+  const token = await flowMintToken(request, partyId);
+  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const pw = await (await request.get(FLOW_API.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub))).json();
+  const bind = await request.post(
+    FLOW_API.parties + "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      data: { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject },
+    });
+  if (!bind.ok()) return `the self-bind was refused for ${partyId} (${bind.status()})`;
+  await page.goto("/console/");
+  await page.evaluate(
+    ([t, pid, w, r, k]) => sessionStorage.setItem("crest.console.session",
+      JSON.stringify({ token: t, me: { partyId: pid, who: w, role: r }, persona: k })),
+    [token, partyId, who, role, personaKey]);
+  await page.reload();
+  const signedIn = await page
+    .locator(".appbar")
+    .filter({ hasNotText: /Not signed in/i })
+    .first()
+    .waitFor({ state: "visible", timeout: 20000 })
+    .then(() => true, () => false);
+  if (!signedIn) return `persona ${personaKey} could not sign in within 20s (the door still says "Not signed in")`;
   await settle(page);
-  if (who === "grace") await page.click("#login-grace");
-  else if (who === "supervisor") await page.click("#login-supervisor");
-  else {
-    await page.fill("#login-partyid", who);
-    await page.click("#login-party-go");
-  }
+  return "";
+}
+
+// The worker door's login screen shows only the real pathways now, so flows
+// sign in the way the dev card used to work underneath: a mock-issuer token,
+// the same idempotent identity-binding append through the real endpoint, and
+// the session handed to the door as a reload would find it.
+async function flowWorkerLogin(page, request, who) {
+  const partyId = who === "grace" ? FLOW_FIX.workerA : who === "supervisor" ? FLOW_FIX.supervisor : who;
+  const token = await flowMintToken(request, partyId);
+  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const pw = await (await request.get(FLOW_API.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub))).json();
+  const bind = await request.post(
+    FLOW_API.parties + "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      data: { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject },
+    });
+  if (!bind.ok()) return `the self-bind was refused for ${partyId} (${bind.status()})`;
+  await page.goto("/worker/");
+  await page.evaluate(
+    ([t, me]) => sessionStorage.setItem("crest.worker.session", JSON.stringify({ token: t, me })),
+    [token, partyId]);
+  await page.reload();
   const ok = await page
     .locator("#logout")
     .waitFor({ state: "visible", timeout: 20000 })
     .then(() => true, () => false);
-  if (!ok) return "the worker door's dev login did not complete within 20s";
+  if (!ok) return "the worker door did not accept the dev session within 20s";
   await settle(page);
   return "";
 }
@@ -452,7 +516,7 @@ async function flowWorkerArrive(page, request, mode) {
     // w1_19/w1_15 — a REQUESTED share, opened by its subject, with two lines
     // left ticked (the reference frame's own decision moment).
     const reqId = await flowMintShare(request);
-    const p = await flowWorkerLogin(page, "grace");
+    const p = await flowWorkerLogin(page, request, "grace");
     if (p) return p;
     await flowLand(page, `#/shares/${encodeURIComponent(reqId)}`);
     const boxes = page.locator("[data-dis] input[type=checkbox]");
@@ -477,7 +541,7 @@ async function flowWorkerArrive(page, request, mode) {
       `/v1/presentation-requests/${encodeURIComponent(reqId)}/decision`,
       { approve: true, approvedCredentialIds: keep });
     if (!d.ok()) return `the subject's decision was refused (${d.status()})`;
-    const p = await flowWorkerLogin(page, "grace");
+    const p = await flowWorkerLogin(page, request, "grace");
     if (p) return p;
     await flowLand(page, `#/shares/${encodeURIComponent(reqId)}/sent`);
     return "";
@@ -514,7 +578,7 @@ async function flowWorkerArrive(page, request, mode) {
         `/v1/recoveries/${encodeURIComponent(recId)}/refusals`,
         { refuserPartyId: FLOW_FIX.supervisor, reason: "fidelity gate — could not be sure it was them" });
     }
-    const p = await flowWorkerLogin(page, "supervisor");
+    const p = await flowWorkerLogin(page, request, "supervisor");
     if (p) return p;
     await flowLand(page,
       mode === "recovery-confirmer" ? "#/vouch"
@@ -527,7 +591,7 @@ async function flowWorkerArrive(page, request, mode) {
     // w1_17 — the moment belongs to the story's unanchored worker: her first
     // dev sign-in APPENDS the identity binding (the same first-login path an
     // eSignet anchor takes), and #/added reads the derived result live.
-    const p = await flowWorkerLogin(page, FLOW_FIX.chandra);
+    const p = await flowWorkerLogin(page, request, FLOW_FIX.chandra);
     if (p) return p;
     await flowLand(page, "#/added");
     return "";
@@ -581,20 +645,10 @@ async function flowArrive(page, request, mode) {
     // first-login path every console: arrival takes. The token lives in
     // memory, so the arrival must never reload after signing in; it lands by
     // hash navigation, which mounts the screen fresh over live reads.
-    await page.goto("/console/");
-    await settle(page);
-    const card = page.locator('[data-persona="instance"]');
-    if (!(await card.count())) return 'no console persona card [data-persona="instance"]';
-    await card.click();
-    const signedIn = await page
-      .locator(".appbar")
-      .filter({ hasNotText: /Not signed in/i })
-      .first()
-      .waitFor({ state: "visible", timeout: 20000 })
-      .then(() => true, () => false);
-    if (!signedIn)
-      return 'persona instance could not sign in within 20s (the door still says "Not signed in")';
-    await settle(page);
+    {
+      const p = await flowConsoleLogin(page, request, "instance");
+      if (p) return p;
+    }
     const h = mode === "admissions-queue"
       ? "#/admissions"
       : "#/admissions/" + encodeURIComponent(orgId);
@@ -704,28 +758,11 @@ async function arrive(page, request, entry) {
   await settle(page);
   if (entry.arrive.startsWith("console:")) {
     const persona = entry.arrive.slice("console:".length);
-    const card = page.locator(`[data-persona="${persona}"]`);
-    if (!(await card.count())) return `no console persona card [data-persona="${persona}"]`;
-    await card.click();
-    await settle(page);
-    // First login mints a token and appends an identity binding, which is two
-    // round trips: poll the appbar rather than guess a sleep. A fixed wait
-    // here reads a slow login as a broken one and quarantines a screen that
-    // works — which is exactly the kind of false verdict that gets a gate
-    // switched off.
-    const signedIn = await page
-      .locator(".appbar")
-      .filter({ hasNotText: /Not signed in/i })
-      .first()
-      .waitFor({ state: "visible", timeout: 20000 })
-      .then(() => true, () => false);
-    if (!signedIn) {
-      return `persona ${persona} could not sign in within 20s (the door still says "Not signed in")`;
-    }
-    await settle(page);
+    const p = await flowConsoleLogin(page, request, persona);
+    if (p) return p;
   } else if (entry.arrive === "worker") {
-    await page.click("#login-grace");
-    await settle(page);
+    const p = await flowWorkerLogin(page, request, "grace");
+    if (p) return p;
   } else if (entry.arrive === "field") {
     await page.click("[data-login]");
     await settle(page);

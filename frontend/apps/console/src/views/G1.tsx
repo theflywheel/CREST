@@ -55,80 +55,99 @@ const loadInstance = async () => {
 // g1_1 — the stand-up front door. In CREST an instance is stood up at deploy
 // time; this frame states what this deployment already IS, read live.
 export function G1Setup() {
-  const r = useLoad(loadInstance);
+  const nav = useNavigate();
+  const r = useLoad(async () => {
+    const base = await loadInstance();
+    // The fourth step of the reference's wizard, answered from the record:
+    // has any organisation been admitted? Operator-only read; a refusal
+    // renders as unknown rather than invented.
+    const regs = await api.get("parties", "/v1/registrations").catch(() => null);
+    return { ...base, regs: regs ? regs.registrations || regs || [] : null };
+  });
   return (
     <LoadFrame r={r}>
-      {({ inst }) => (
-        <>
-          <Title t={"Let's set up CREST — " + (inst.name || "this deployment")} />
-          <Lede>
-            The reference opens G-1 with a stand-up wizard. There is no wizard: a CREST instance is stood up by its
-            deployment — compose locally, Railway in the cloud — and told who it is through configuration the services
-            read at start. This walk shows what that stand-up already decided, each value read live from{" "}
-            <span className="mono">GET /v1/instance</span>, none of them editable from a console because none of them
-            is stored anywhere a console could edit.
-          </Lede>
-          <CardTitled t="What this deployment already is">
-            <KVR rows={[
-              ["instance", <Mono>{inst.instanceId}</Mono>],
-              ["name", inst.name || "—"],
-              ["stood up by", "the deployment itself — compose/Railway configuration, not a console action"],
-            ]} />
-          </CardTitled>
-          <OpenNote>
-            "Import from another instance" is drawn in the reference and not built: nothing imports a deployment's
-            identity, because an identity that could be imported could collide on the append-only log.
-          </OpenNote>
-          <WalkButtons next="/instance/covers" nextLabel="Begin" />
-        </>
-      )}
-    </LoadFrame>
-  );
-}
-
-// g1_2 — what this instance covers. Read-only by design.
-export function G1Covers() {
-  const r = useLoad(loadInstance);
-  return (
-    <LoadFrame r={r}>
-      {({ inst, issuer }) => {
-        const reg = inst.registry || {};
+      {({ inst, regs }) => {
+        const approved = Array.isArray(regs) ? regs.filter((x: any) => x.state === "APPROVED").length : null;
+        const undecided = Array.isArray(regs) ? regs.filter((x: any) => x.state !== "APPROVED" && x.state !== "REJECTED").length : null;
+        // The reference's four steps, drawn as its timeline — each dot's state
+        // derived from the record, never from a wizard's progress variable.
+        const steps: Array<{ t: string; sub: React.ReactNode; done: boolean | null }> = [
+          {
+            t: "Name the instance",
+            sub: <>What it covers, and in which languages{inst.name ? <> · named “{inst.name}” at deploy time</> : " · not named — CREST_INSTANCE_* configuration"}</>,
+            done: Boolean(inst.name),
+          },
+          {
+            t: "Set the consent rules",
+            sub: "Before a single worker registers · the floor is enforced by the infrastructure; scripts and templates are programme configuration (#59)",
+            done: true,
+          },
+          {
+            t: "Appoint an Instance Administrator",
+            sub: <>So organisations can be admitted{inst.operatorPartyId ? <> · <MonoShort id={inst.operatorPartyId} /></> : " · not appointed — CREST_OPERATOR_PARTY_ID names the party"}</>,
+            done: Boolean(inst.operatorPartyId),
+          },
+          {
+            t: "Admit the first organisation",
+            sub: <>
+              Which registers itself, then asks for terms
+              {approved === null
+                ? " · the queue answers the operator only"
+                : approved > 0
+                  ? ` · ${approved} admitted${undecided ? ` · ${undecided} waiting on your decision` : ""}`
+                  : undecided
+                    ? ` · none yet — ${undecided} waiting on your decision in the queue`
+                    : " · none yet — the door is open"}
+            </>,
+            done: approved === null ? null : approved > 0,
+          },
+        ];
+        const dot = (done: boolean | null) =>
+          done ? "var(--ok, #00703C)" : done === null ? "#B9B9B9" : "#C84C0E";
         return (
           <>
-            <Title t="What this instance covers" />
+            <Title t={"Let\u2019s set up CREST for " + (inst.name || "this deployment")} />
             <Lede>
-              The reference draws these as editable fields. They are deploy-time L1 configuration — the layering test:
-              two deployments disagreeing on every one of them are both CREST, so the values live in the environment
-              the services start with, and this screen reads them back rather than offering an edit that would change
-              nothing.
+              Four steps to a working deployment — your state or country's own installation of CREST. There is no
+              wizard here: each step is deploy-time configuration, and the dots show what this deployment already
+              decided, read live from <span className="mono">GET /v1/instance</span>.
             </Lede>
-            <CardTitled t="Published self-description — read live">
-              <KVR rows={[
-                ["Instance name", inst.name || "—"],
-                ["Instance id", <Mono>{inst.instanceId}</Mono>],
-                ["Operator", inst.operatorPartyId ? <MonoShort id={inst.operatorPartyId} /> : "not configured"],
-                ["Issuer", inst.issuerId ? <Mono>{inst.issuerId}</Mono> : (issuer ? <Mono>{issuer.id || issuer.issuer}</Mono> : "not configured")],
-                ["Registry", reg.url ? <><Mono>{reg.url}</Mono>{reg.namespace ? <> · <Mono>{reg.namespace}</Mono></> : null}</> : "Postgres fallback — no external registry"],
-              ]} />
-            </CardTitled>
-            <CardTitled t="What the reference also draws here">
-              <KVR rows={[
-                ["Jurisdiction", "deploy-time configuration — not part of the published self-description"],
-                ["Identity anchor", "the deployment's OIDC issuer configuration (§4.1); which anchor is not published"],
-                ["Data residency", "where the deployment's stores run — infrastructure placement, not an API fact"],
-                ["Worker-facing languages", "programme configuration (L2); the worker faces carry the words"],
-              ]} />
-              <OpenNote>
-                These four are the reference's remaining fields. They are real decisions of a real deployment, but{" "}
-                <span className="mono">GET /v1/instance</span> (#70) does not publish them, so this screen names the
-                gap instead of inventing values.
-              </OpenNote>
-            </CardTitled>
-            <OpenNote>
-              The reference's button says "Save and continue". There is nothing to save — changing any value above is
-              a deployment change, made where the deployment is defined.
-            </OpenNote>
-            <WalkButtons back="/instance/setup" next="/instance/consent" />
+            <div style={{ margin: "6px 0 2px" }}>
+              {steps.map((st, i) => (
+                <div key={i} style={{ display: "flex", gap: 14 }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 12 }}>
+                    <span style={{ flex: "none", width: 11, height: 11, borderRadius: "50%", background: dot(st.done), marginTop: 5 }} />
+                    {i < steps.length - 1 ? (
+                      <span style={{ flex: 1, width: 2, minHeight: 26, background: st.done ? dot(st.done) : "#DDDDDD", opacity: st.done ? 0.55 : 1 }} />
+                    ) : null}
+                  </div>
+                  <div style={{ paddingBottom: i < steps.length - 1 ? 18 : 0 }}>
+                    <div style={{ font: "500 14px/1.35 Roboto, system-ui, sans-serif" }}>{st.t}</div>
+                    <div className="muted" style={{ marginTop: 2 }}>{st.sub}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <Callout kind="teal">
+              You are not creating an organisation. An instance is the deployment itself — a country's or a state's
+              installation. Personal data collected here never leaves it.
+            </Callout>
+            <div style={{ borderTop: "1px solid var(--line, #E4E4E4)", marginTop: 4, paddingTop: 14, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button
+                className="btn secondary"
+                disabled
+                title="Drawn in the reference and not built: nothing imports a deployment's identity, because an identity that could be imported could collide on the append-only log."
+              >
+                Import from another instance
+              </button>
+              <button className="btn dominant" id="g1-begin" onClick={() => nav("/instance/covers")}>
+                Begin
+              </button>
+            </div>
+            <p className="muted" style={{ margin: 0 }}>
+              "Import from another instance" is deliberately inert — an importable identity could collide on the
+              append-only log.
+            </p>
           </>
         );
       }}
@@ -136,33 +155,176 @@ export function G1Covers() {
   );
 }
 
-// g1_3 — consent rules, before the first worker.
+// g1_2 — what this instance covers. The reference's form layout, read-only by
+// design: the values are deploy-time L1 configuration (the layering test), so
+// each "field" is a read — real where the self-description publishes it,
+// honestly named as unpublished configuration where it does not (#70).
+function CoverField(p: { label: string; value: React.ReactNode; caption?: React.ReactNode; muted?: boolean; wide?: boolean }) {
+  return (
+    <div style={{ gridColumn: p.wide ? "1 / -1" : undefined }}>
+      <div className="muted" style={{ font: "500 10.5px/1 Roboto, system-ui, sans-serif", letterSpacing: ".9px", textTransform: "uppercase", marginBottom: 6 }}>
+        {p.label}
+      </div>
+      <div
+        style={{
+          border: "1px solid var(--line, #DDDDDD)",
+          borderRadius: 8,
+          padding: "10px 12px",
+          background: "var(--card, transparent)",
+          font: "400 13.5px/1.4 Roboto, system-ui, sans-serif",
+          ...(p.muted ? { color: "var(--muted, #787878)", fontStyle: "italic" } : {}),
+        }}
+      >
+        {p.value}
+      </div>
+      {p.caption ? <div className="muted" style={{ marginTop: 5 }}>{p.caption}</div> : null}
+    </div>
+  );
+}
+
+export function G1Covers() {
+  const r = useLoad(loadInstance);
+  return (
+    <LoadFrame r={r}>
+      {({ inst }) => (
+        <>
+          <Title t="What this instance covers" />
+          <Lede>
+            A name, a jurisdiction, and the languages a worker can be spoken to in. All three are hard to change later
+            — and here none is editable at all: they are deploy-time configuration, read back rather than offered as
+            an edit that would change nothing. The identity block itself is on the Self-description view.
+          </Lede>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 20px", maxWidth: 780 }}>
+            <CoverField label="Instance name" value={inst.name || "—"} caption={inst.instanceId || inst.id} />
+            <CoverField label="Jurisdiction" value="deploy-time configuration — not published" muted />
+            <CoverField
+              label="Identity anchor"
+              value="the deployment's OIDC issuer (§4.1) — which anchor is not published"
+              muted
+              caption="Which external system identity binds to. Not operated by CREST."
+            />
+            <CoverField
+              label="Data residency"
+              value="where the deployment's stores run — placement, not an API fact"
+              muted
+              caption="Personal data never leaves this instance."
+            />
+            <CoverField
+              label="Worker-facing languages"
+              value="programme configuration (L2) — the worker faces carry the words"
+              muted
+              wide
+              caption="A worker who cannot be addressed in a language they read is a worker who cannot meaningfully consent."
+            />
+          </div>
+          <Callout kind="grey">
+            Changing the identity anchor after workers exist would orphan every identity bound to the old one. There is
+            no migration path designed for this.
+          </Callout>
+          <OpenNote>
+            The four muted fields are the reference's remaining decisions. They are real decisions of a real
+            deployment, but <span className="mono">GET /v1/instance</span> (#70) does not publish them, so this screen
+            names the gap instead of inventing values — and the reference's "Save and continue" has nothing to save,
+            so the button walks on.
+          </OpenNote>
+          <div style={{ borderTop: "1px solid var(--line, #E4E4E4)", marginTop: 4, paddingTop: 14, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <WalkButtons back="/instance/setup" next="/instance/consent" />
+          </div>
+        </>
+      )}
+    </LoadFrame>
+  );
+}
+
+// g1_3 — consent rules, before the first worker. The reference's checkbox
+// frame, each box's state derived from what the infrastructure actually
+// enforces — the three enforced rules render checked and locked (a floor you
+// could untick would not be a floor), the fourth renders off because the
+// mechanism it would switch does not exist.
+function ConsentRule(p: { on: boolean; locked?: boolean; title: string; sub: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 18 }}>
+      <span
+        aria-checked={p.on}
+        role="checkbox"
+        title={p.locked ? "Enforced by the infrastructure — not a setting" : undefined}
+        style={{
+          flex: "none", width: 18, height: 18, borderRadius: 4, marginTop: 1,
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          border: p.on ? "none" : "2px solid #B9B9B9",
+          background: p.on ? "#C84C0E" : "transparent",
+          color: "#fff", font: "700 13px/1 Roboto, system-ui, sans-serif",
+        }}
+      >
+        {p.on ? "\u2713" : ""}
+      </span>
+      <div>
+        <div style={{ font: "500 14px/1.35 Roboto, system-ui, sans-serif" }}>{p.title}</div>
+        <div className="muted" style={{ marginTop: 2 }}>{p.sub}</div>
+      </div>
+    </div>
+  );
+}
+
 export function G1Consent() {
   return (
     <>
       <Title t="Consent rules, before the first worker" />
       <Lede>
-        The floor is infrastructure and already holds: enrolment consent is captured per programme as a record with an
-        artefact the worker can hear back; withdrawing stops new evidence collection and never touches what was
-        already paid. The words of the ask are deployment configuration (#59) — two deployments wording it
-        differently are both CREST.
+        These are set once for the instance and inherited by every project. A project can be stricter; it cannot be
+        looser. Here they are not settings at all: the checked rules are the floor the infrastructure itself enforces
+        — which is why they cannot be unticked — and the words of the ask are deployment configuration (#59).
       </Lede>
-      <CardTitled t="The floor — what every deployment enforces">
-        <KVR rows={[
-          ["before any record", "consent is captured before a worker's record is created, and stored as its own record"],
-          ["the artefact", "every captured consent has an artefact the worker can hear back — GET /v1/consents/{id}/artefact"],
-          ["withdrawal", "stops new evidence collection from that moment; it never unwinds a payment already made"],
-        ]} />
-      </CardTitled>
-      <CardTitled t="What the reference also draws here">
-        <KVR rows={[["Data Protection / Consent Officer", "Not yet appointed"]]} />
-        <OpenNote>
-          The officer's appointment has no record in this deployment — there is no endpoint that names one, and this
-          screen does not pretend otherwise. Editing consent scripts and message templates from a console is not
-          built; templates are deployment configuration (#59).
-        </OpenNote>
-      </CardTitled>
-      <WalkButtons back="/instance/covers" next="/instance/invite" />
+      <div style={{ maxWidth: 760 }}>
+        <ConsentRule
+          on
+          locked
+          title="A worker may withdraw consent at any time"
+          sub="Withdrawal stops future disclosure and new evidence collection. It does not delete credentials already issued, and never unwinds a payment already made."
+        />
+        <ConsentRule
+          on
+          locked
+          title="A worker may see every verification of their own record"
+          sub="Who checked, when, and what they were shown — every check reaches the worker's own audit trail (settled at G1, #9)."
+        />
+        <ConsentRule
+          on
+          locked
+          title="Disclosure is per share, never standing"
+          sub="A verifier gets one scoped view, not an open account — presentation consent is captured per share (#189)."
+        />
+        <ConsentRule
+          on={false}
+          title="Projects may request a broader default"
+          sub="Off — and not a switch: no mechanism exists for a project to widen disclosure below the instance rule, so there is nothing to turn on."
+        />
+        <div style={{ marginTop: 6 }}>
+          <div className="muted" style={{ font: "500 10.5px/1 Roboto, system-ui, sans-serif", letterSpacing: ".9px", textTransform: "uppercase", marginBottom: 6 }}>
+            Data protection / consent officer
+          </div>
+          <div style={{ border: "1px solid var(--line, #DDDDDD)", borderRadius: 8, padding: "10px 12px", font: "400 13.5px/1.4 Roboto, system-ui, sans-serif", color: "var(--muted, #787878)", fontStyle: "italic" }}>
+            Not yet appointed — no record names one; the appointment is recordless in this deployment
+          </div>
+          <div className="muted" style={{ marginTop: 5 }}>
+            This role owns these rules from here on. Instance Administrator sets them; Data Protection / Consent
+            Officer maintains them.
+          </div>
+        </div>
+      </div>
+      <TermsPublisher />
+      <Callout kind="teal">
+        Set before the first worker registers, deliberately. Retro-fitting consent onto records already collected under
+        a different rule has no clean answer.
+      </Callout>
+      <OpenNote>
+        Every captured consent has an artefact the worker can hear back —{" "}
+        <span className="mono">GET /v1/consents/{"{id}"}/artefact</span>. Editing consent scripts and message templates
+        from a console is not built; templates are deployment configuration (#59).
+      </OpenNote>
+      <div style={{ borderTop: "1px solid var(--line, #E4E4E4)", marginTop: 4, paddingTop: 14, display: "flex", justifyContent: "flex-end" }}>
+        <WalkButtons back="/instance/covers" next="/instance/invite" />
+      </div>
     </>
   );
 }
@@ -457,6 +619,100 @@ export function AdmissionDetail() {
           </>
         );
       }}
+    </LoadFrame>
+  );
+}
+
+// Terms an organisation can be on. On a clean deployment there are none, and
+// nothing can be admitted until the operator publishes a set: an admission
+// is an acceptance of a named version, and "whatever was current" is not a
+// fact a verifier can walk back to. The permissions are opaque strings to
+// the core; the ones offered here are the functions this console's own
+// surfaces grant, and a deployment may type any other.
+const TERMS_PERMISSIONS = [
+  "submit-work-evidence",
+  "specify-definition",
+  "ratify-definition",
+  "act-for-party",
+  "register-workers",
+  "submit-evidence",
+  "resolve-unclear-evidence",
+];
+
+function TermsPublisher() {
+  const [gen, setGen] = useState(0);
+  const [name, setName] = useState("");
+  const [perms, setPerms] = useState<string[]>(["submit-work-evidence"]);
+  const [extra, setExtra] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const r = useLoad(async () => (await api.get("parties", "/v1/terms")).terms || [], [gen]);
+  const toggle = (p: string) => setPerms((cur) => (cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]));
+  const publish = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    setBusy(true);
+    setErr("");
+    try {
+      const all = Array.from(new Set([...perms, ...extra.split(",").map((s) => s.trim()).filter(Boolean)]));
+      await api.post("parties", "/v1/terms", { name: name.trim(), permissions: all });
+      setName("");
+      setGen((g) => g + 1);
+    } catch (e) {
+      setErr(String((e as Error)?.message || e));
+    }
+    setBusy(false);
+  };
+  return (
+    <LoadFrame r={r}>
+      {(terms: Array<{ id: string; name?: string; version?: number; permissions?: string[]; publishedAt?: string }>) => (
+        <CardTitled t="Terms an organisation can be on">
+          <p className="body-2">
+            An organisation is admitted onto a named version of a set of terms, and the functions its people can be
+            granted are capped by that set. Published, never edited: a revision is a new version.
+          </p>
+          <Tbl
+            heads={["Terms", "Version", "Permissions", "Published"]}
+            rows={terms.map((t) => [
+              <span data-terms-row={t.id}>{t.name || t.id}</span>,
+              String(t.version ?? ""),
+              (t.permissions || []).join(", "),
+              when(t.publishedAt),
+            ])}
+            empty="No terms are published yet. Nothing can be admitted until a set exists — this deployment has not said what an organisation may be trusted with."
+          />
+          <form data-terms-form onSubmit={publish} style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12, maxWidth: 640 }}>
+            <label className="field">
+              <span className="eyebrow">Name</span>
+              <input required value={name} onChange={(e) => setName(e.target.value)} data-field="terms-name" placeholder="Standard delivery" />
+            </label>
+            <div>
+              <span className="eyebrow">Permissions this set allows</span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", marginTop: 6 }}>
+                {TERMS_PERMISSIONS.map((p) => (
+                  <label key={p} className="body-2" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="checkbox" checked={perms.includes(p)} onChange={() => toggle(p)} data-perm={p} />
+                    <span className="mono">{p}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <label className="field">
+              <span className="eyebrow">Other permissions, comma-separated</span>
+              <input value={extra} onChange={(e) => setExtra(e.target.value)} data-field="terms-extra" placeholder="the deployment's own function names" />
+            </label>
+            {err ? <div className="errbar">{err}</div> : null}
+            <div>
+              <button className="btn dominant" type="submit" disabled={busy || perms.length + extra.trim().length === 0} data-act="publish-terms">
+                {busy ? "Publishing…" : "Publish these terms"}
+              </button>
+            </div>
+          </form>
+          <p className="muted" style={{ marginTop: 8 }}>
+            Only the instance operator can publish — the registry checks the caller against the published
+            self-description, and refuses anybody else.
+          </p>
+        </CardTitled>
+      )}
     </LoadFrame>
   );
 }

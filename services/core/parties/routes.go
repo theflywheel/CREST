@@ -52,6 +52,13 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/parties/{id}/assurance", h.getAssurance)
 	mux.HandleFunc("POST /v1/parties/{id}/roster-ids", h.addRosterID)
 	mux.HandleFunc("POST /v1/parties/{id}/identity-bindings", h.addIdentityBinding)
+	// Who the token makes the caller, served on every stack (see auth.go).
+	registerWhoAmI(mux)
+	// The invitation in front of the first-login bootstrap (finding #123):
+	// minted by the operator or an approved organisation for an unbound
+	// party, claimed by the invited person with their own login.
+	mux.HandleFunc("POST /v1/parties/{id}/invitations", h.createPartyInvitation)
+	mux.HandleFunc("POST /v1/party-invitations/claim", h.claimPartyInvitation)
 	// Service twins: contact routes are read here, evidence resolves identities
 	// and consent state, verification derives assurance mid-verdict.
 	mux.HandleFunc("GET /internal/parties/{id}", h.getPartyRaw)
@@ -82,6 +89,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/terms", h.listTerms)
 	mux.HandleFunc("POST /v1/authorizations", h.createAuthorization)
 	mux.HandleFunc("GET /v1/authorizations/permits", h.permits)
+	mux.HandleFunc("GET /v1/authorizations/mine", h.myAuthorizations)
 	mux.HandleFunc("GET /v1/authorizations", h.listAuthorizations)
 	mux.HandleFunc("GET /v1/authorizations/overdue", h.overdueAuthorizations)
 	mux.HandleFunc("GET /v1/authorizations/{id}", h.readAuthorization)
@@ -345,9 +353,38 @@ func (h *handlers) listTerms(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) createTerms(w http.ResponseWriter, r *http.Request) {
+	// Terms are the deployment's policy — the set of permissions an
+	// organisation can be admitted on — and the party answerable for the
+	// deployment publishes them: the instance operator, named in the
+	// published self-description. Anybody else publishing terms would be
+	// setting the ceiling on their own admission. On a stack with no identity
+	// provider the check is moot, as every gate here is.
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
+	if h.d.Authenticating {
+		caller := identity.From(r.Context())
+		actor, err := identity.Acting(r.Context(), caller, "", h.d.Permits)
+		if err != nil {
+			httpx.WriteError(w, http.StatusForbidden, "not_permitted_to_act_for", "%v", err)
+			return
+		}
+		inst, ierr := loadInstance(h.d.Config)
+		if ierr != nil || inst.OperatorPartyID == "" || inst.OperatorPartyID != actor {
+			httpx.WriteError(w, http.StatusForbidden, "not_the_operator",
+				"terms are published by the instance operator; this deployment names %q", inst.OperatorPartyID)
+			return
+		}
+	}
 	var t schema.Terms
 	if !httpx.ReadJSON(w, r, &t) {
 		return
+	}
+	if t.ID == "" {
+		t.ID = id.New(h.d.Clock, "terms")
+	}
+	if t.Version == 0 {
+		t.Version = 1
 	}
 	if t.PublishedAt.IsZero() {
 		t.PublishedAt = h.d.Clock.Now()
@@ -434,6 +471,13 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.State == "" {
 		a.State = schema.AuthorizationStateACTIVE
+	}
+	// A grant that names no start starts now — by the registry's clock, not
+	// the browser's. A console that sent its own wall time would mint grants
+	// that "have not started yet" on any deployment whose clock it did not
+	// share, and a permits() check reads the start.
+	if a.Period.Start.IsZero() {
+		a.Period.Start = h.d.Clock.Now()
 	}
 	if err := schema.Validate(schema.IDAuthorization, a); err != nil {
 		writeValidation(w, err)
@@ -532,6 +576,31 @@ func (h *handlers) readAuthorization(w http.ResponseWriter, r *http.Request) {
 // answered for a person, would be a roster query — and a roster of who works
 // where is precisely what #68 established must not be readable, whether from
 // the log or from here.
+// myAuthorizations is the self-read #68's refusal deliberately left open: a
+// signed-in person listing THEIR OWN active grants. What #68 forbids is a
+// third party assembling who-works-where; a person's own list is the opposite
+// — it is how a console shows somebody the roles they actually hold instead
+// of offering them a role to pick.
+func (h *handlers) myAuthorizations(w http.ResponseWriter, r *http.Request) {
+	caller := identity.From(r.Context())
+	if !caller.Authenticated() || caller.PartyID == "" {
+		httpx.WriteError(w, http.StatusUnauthorized, "no_token",
+			"this endpoint answers about a verified caller's own grants")
+		return
+	}
+	list, err := activeAuthorizationsHeldBy(r.Context(), h.d.DB.Q(), caller.PartyID, h.d.Clock.Now())
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "list own authorizations", err)
+		return
+	}
+	if list == nil {
+		list = []schema.Authorization{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"partyId": caller.PartyID, "authorizations": list, "count": len(list),
+	})
+}
+
 func (h *handlers) listAuthorizations(w http.ResponseWriter, r *http.Request) {
 	// A custodian/operations read: who holds what, where. Signed-in callers
 	// only (#102); the anonymous question this could answer is a roster probe.

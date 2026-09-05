@@ -515,6 +515,32 @@ func authorizationsFor(ctx context.Context, q store.Querier,
 	})
 }
 
+// activeAuthorizationsHeldBy is authorizationsFor without the scope filter:
+// every grant a party currently holds, both scopes, for the party's own
+// self-read (/v1/authorizations/mine). Never exposed for a third party.
+func activeAuthorizationsHeldBy(ctx context.Context, q store.Querier,
+	partyID string, at time.Time) ([]schema.Authorization, error) {
+	rows, err := q.Query(ctx, `
+		SELECT doc FROM authorizations
+		WHERE party_id = $1
+		  AND state = 'ACTIVE'
+		  AND period_start <= $2
+		  AND (period_end IS NULL OR period_end >= $2)
+		ORDER BY id`, partyID, at)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.Collect(rows, func(r store.Row) (schema.Authorization, error) {
+		var doc []byte
+		if err := r.Scan(&doc); err != nil {
+			return schema.Authorization{}, err
+		}
+		var a schema.Authorization
+		return a, json.Unmarshal(doc, &a)
+	})
+}
+
 // followMerges replaces every party id with the survivor it was merged into,
 // and drops the duplicates that collapse produces.
 //

@@ -20,9 +20,9 @@
 // speak for a record). Everything here is the confirmer's own bearer-checked
 // voice; quorum stays the service's 2-of-distinct-authorities rule — this
 // screen never counts votes itself.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, FIX } from "@crest/api";
+import { api } from "@crest/api";
 import { Callout, Chip, KV, OpenNote, Sidecar } from "@crest/ui";
 import { useSession } from "../session";
 import { useLoad } from "../App";
@@ -88,7 +88,26 @@ function VouchCard({ r }: { r: Recovery }) {
   const name = usePartyName(r.partyId);
   const mine = (r.confirmations || []).some((c) => c.confirmerPartyId === s.me);
   const [answering, setAnswering] = useState<"yes" | "no" | null>(null);
-  const [authority, setAuthority] = useState<string>(FIX.org);
+  // The authority behind this YES is a real fact about the confirmer, not a
+  // default: their own active grants each name the body that stands behind
+  // them, so the first is offered and the confirmer can name another.
+  const [authority, setAuthority] = useState<string>("");
+  const authorities = useLoad<string[]>(
+    async () => {
+      const out = await api.get("parties", "/v1/authorizations/mine").catch(() => null);
+      return Array.from(
+        new Set(
+          ((out && out.authorizations) || [])
+            .map((a: { authorityPartyId?: string }) => a.authorityPartyId)
+            .filter(Boolean) as string[],
+        ),
+      );
+    },
+    [s.me],
+  );
+  useEffect(() => {
+    if (!authority && authorities && authorities.length) setAuthority(authorities[0]);
+  }, [authorities]); // eslint-disable-line react-hooks/exhaustive-deps
   const [reason, setReason] = useState("");
   const yes = async () => {
     try {
@@ -132,9 +151,15 @@ function VouchCard({ r }: { r: Recovery }) {
           <label className="body-2">
             The organisation that stands behind you — your YES counts under an authority that vouches for you, and two
             voices from the same authority count once.
-            <input name="authority" value={authority} onChange={(e) => setAuthority(e.target.value)} style={{ width: "100%", marginTop: 4 }} />
+            <input name="authority" value={authority} onChange={(e) => setAuthority(e.target.value)} placeholder="the party id of the organisation you hold a role under" style={{ width: "100%", marginTop: 4 }} />
+            {!authority ? (
+              <span className="muted" style={{ display: "block", marginTop: 4 }}>
+                You hold no role here that names an authority, so there is none to fill in for you. Name the
+                organisation that stands behind you — a reply with no authority behind it cannot be counted.
+              </span>
+            ) : null}
           </label>
-          <button className="btn" id="vouch-yes-confirm" onClick={yes}>
+          <button className="btn" id="vouch-yes-confirm" disabled={!authority.trim()} onClick={yes}>
             Reply YES
           </button>
         </div>

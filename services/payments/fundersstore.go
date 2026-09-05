@@ -61,6 +61,37 @@ func currentRateOwner(history []RateOwnerAssignment) *RateOwnerAssignment {
 	return nil
 }
 
+// rateOwnershipsFor is the definitions a party currently owns the rate for —
+// the "am I a rate owner?" a console asks to decide it is looking at a rate
+// owner, derived from the assignment records rather than a stored role.
+func rateOwnershipsFor(ctx context.Context, q store.Querier, partyID string) ([]string, error) {
+	rows, err := q.Query(ctx, `
+		SELECT definition_id FROM rate_owner_assignments
+		WHERE assignee_party_id = $1 AND superseded_at IS NULL
+		ORDER BY definition_id`, partyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.Collect(rows, func(r store.Row) (string, error) {
+		var id string
+		return id, r.Scan(&id)
+	})
+}
+
+// mechanismsOwnedBy is the mechanisms a party owns — the "am I a mechanism
+// owner?" companion to rateOwnershipsFor, derived from the mechanism's own
+// owner column, never a stored role.
+func mechanismsOwnedBy(ctx context.Context, q store.Querier, partyID string) ([]Mechanism, error) {
+	rows, err := q.Query(ctx,
+		`SELECT `+mechanismColumns+` FROM mechanisms WHERE owner_party_id = $1 ORDER BY created_at`, partyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.Collect(rows, scanMechanism)
+}
+
 // ─── mechanisms ─────────────────────────────────────────────────────────────
 
 func insertMechanism(ctx context.Context, tx store.Querier, m Mechanism) (bool, error) {

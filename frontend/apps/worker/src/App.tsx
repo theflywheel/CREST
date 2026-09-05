@@ -14,7 +14,7 @@ import { Profile, Consents, Checks, Messages, Recovery } from "./screens/Profile
 import { SharesInbox, ShareDecide, ShareSent } from "./screens/Shares";
 import { VouchInbox, VouchProgress, VouchRefused } from "./screens/Vouch";
 import { Added } from "./screens/Added";
-import { AuthReturn } from "./screens/Auth";
+import { AuthReturn, Join } from "./screens/Auth";
 
 const ic = (d: ReactNode) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -127,6 +127,9 @@ export function App() {
       {/* The eSignet return leg renders outside the shell: it runs before
           there is a session to gate on. */}
       <Route path="/auth" element={<AuthReturn />} />
+      {/* The invite link a project shares: it names the programme and
+          nothing else, and renders outside the shell for the same reason. */}
+      <Route path="/join/:contextId" element={<Join />} />
       <Route element={<Shell />}>
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="/home" element={<Home />} />

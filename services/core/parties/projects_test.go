@@ -699,3 +699,34 @@ func TestNoProjectFixtureCarriesAPersonalIdentifier(t *testing.T) {
 		}
 	}
 }
+
+// ── A role holder may read the project their grant names, and only that ─────
+
+func TestAGrantScopedToTheContextAdmitsReadsAndNothingElse(t *testing.T) {
+	other := "crest:context:01JCRESTOTHERPRJ0000000000"
+	scoped := func(ctx string) schema.Authorization {
+		return schema.Authorization{
+			PartyID:          personSarah,
+			AuthorityPartyID: orgMinistry,
+			Functions:        []string{"specify-definition"},
+			Scope:            schema.AuthorizationScope{ContextID: &ctx},
+		}
+	}
+	unscoped := schema.Authorization{PartyID: personSarah, AuthorityPartyID: orgMinistry}
+
+	if !grantAdmitsRead([]schema.Authorization{scoped(projectID)}, projectID) {
+		t.Fatal("a grant scoped to this context must admit a read of it — the author's wizard runs on the project's declared vocabulary")
+	}
+	if grantAdmitsRead([]schema.Authorization{scoped(other)}, projectID) {
+		t.Fatal("a grant on a different context must not admit this one")
+	}
+	if grantAdmitsRead([]schema.Authorization{unscoped}, projectID) {
+		t.Fatal("a grant with no context scope must not admit any project")
+	}
+	if grantAdmitsRead([]schema.Authorization{scoped(projectID)}, "") {
+		t.Fatal("an empty context id must never match anything")
+	}
+	if grantAdmitsRead(nil, projectID) {
+		t.Fatal("no grants, no read")
+	}
+}

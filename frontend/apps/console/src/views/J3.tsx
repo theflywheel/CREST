@@ -21,8 +21,8 @@
 //     stays visible and readable, and the screen says what is missing.
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, ApiError, FIX } from "@crest/api";
-import { Callout, Chip, OpenNote, RefField, StepCounter as StepBar } from "@crest/ui";
+import { api, ApiError } from "@crest/api";
+import { Callout, Chip, DisLi, OpenNote, OptionCard, RefField, Sidecar, StepCounter as StepBar } from "@crest/ui";
 import {
   Card, CardTitled, KVR, Lede, LoadFrame, Mono, MonoShort, Stat, Title, Tbl, useLoad, when, short,
 } from "../ui";
@@ -149,7 +149,7 @@ export function Where() {
                 <div style={{ font: "500 14px/1.4 Roboto" }}>No project has been handed to you</div>
                 <p className="muted">
                   An empty list is a true answer: it means a role still has to be granted. The organisation that can
-                  grant one is {org?.displayName ? String(org.displayName) : <MonoShort id={FIX.org} />}
+                  grant one is {org?.displayName ? String(org.displayName) : "your organisation's admin"}
                   {(org?.contactRoutes || []).length
                     ? " · " +
                       (org.contactRoutes as Array<{ kind: string; value?: string }>)
@@ -251,25 +251,6 @@ export function Handover() {
                   />
                 </CardTitled>
               </div>
-              <div>
-                <CardTitled t="What is still yours to answer">
-                  <KVR
-                    rows={(project.activationConditions || []).map((c) => [
-                      c.name,
-                      <>
-                        {c.satisfied ? <Chip kind="ok">done</Chip> : <Chip kind="warn">open</Chip>}{" "}
-                        {c.because || ""}
-                      </>,
-                    ])}
-                  />
-                  {(project.activationConditions || []).length ? null : (
-                    <div className="muted">
-                      This deployment declared no readiness conditions on this project, which is not the same as a
-                      project that is ready.
-                    </div>
-                  )}
-                </CardTitled>
-              </div>
             </div>
             {err ? <WriteRefusal err={err} owner={project.ownerPartyId} /> : null}
             {o?.state === "PENDING" ? (
@@ -320,12 +301,67 @@ export function Handover() {
 // Choice names and values are L2 with no enum in CREST. Where the project's
 // own configuration declares a vocabulary, this renders it; where it does not,
 // it takes a typed answer and says why there is no list.
+// The reference's p2_1 five capabilities, in its own words. The five names are
+// programme vocabulary (L2) — the infrastructure carries no enum of them; they
+// are recorded through the same composition endpoint any deployment's
+// vocabulary goes through, one named answer per capability.
+const CAPABILITIES = [
+  ["register-workers", "Register workers",
+    "Run CREST enrollment, or map identifiers from a registry you already have."],
+  ["define-work", "Define work", "What counts as done, what proves it, who checks it."],
+  ["set-up-payment", "Set up payment",
+    "Configure a rate and decide how the money reaches the worker. Off means credentials still issue, with no rate attached."],
+  ["validate", "Validate",
+    "Check evidence received from another system, or uploaded as a spreadsheet, against the definition before a credential issues. CREST never records the work itself."],
+  ["carry-forward", "Carry forward", "A worker keeps their verified history after this project ends."],
+] as const;
+
+// One capability row: the reference's orange checkbox, title and sub-line.
+function CapabilityRow(props: {
+  on: boolean;
+  recorded: boolean;
+  title: string;
+  sub: string;
+  onFlip: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "12px 0" }}>
+      <button
+        onClick={props.onFlip}
+        aria-pressed={props.on}
+        data-capability={props.title}
+        title={props.recorded ? "Recorded — click to flip it" : "Not yet recorded — the project does this until a record narrows it. Click to record an answer."}
+        style={{
+          width: 18,
+          height: 18,
+          marginTop: 2,
+          flexShrink: 0,
+          borderRadius: 4,
+          border: props.on ? "none" : "2px solid var(--muted, #8A857E)",
+          background: props.on ? "#C84C0E" : "transparent",
+          color: "#fff",
+          font: "700 13px/18px system-ui",
+          cursor: "pointer",
+          padding: 0,
+        }}
+      >
+        {props.on ? "✓" : ""}
+      </button>
+      <div>
+        <div style={{ font: "500 15px/1.4 Roboto,system-ui" }}>{props.title}</div>
+        <div className="muted" style={{ font: "400 13px/1.5 Roboto,system-ui", marginTop: 2 }}>
+          {props.sub}
+          {props.recorded ? null : <span> · not yet recorded — on until an answer narrows it</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Compose() {
   const s = useConsole();
   const nav = useNavigate();
   const [gen, setGen] = useState(0);
-  const [choice, setChoice] = useState("");
-  const [value, setValue] = useState("");
   const [err, setErr] = useState<unknown>(null);
   const r = useLoad(async () => {
     const [p, comp] = await Promise.all([
@@ -341,8 +377,6 @@ export function Compose() {
     setErr(null);
     try {
       await api.put("parties", proj(s.projectId, `/composition/${encodeURIComponent(name)}`), { value: v });
-      setChoice("");
-      setValue("");
       setGen((g) => g + 1);
     } catch (e) {
       setErr(e);
@@ -351,87 +385,241 @@ export function Compose() {
   return (
     <LoadFrame r={r}>
       {({ project, choices }) => {
-        const declared = ((project.configuration || {}) as { compositionChoices?: Array<{ name: string; options?: string[]; question?: string }> })
-          .compositionChoices;
+        // A capability is on until a recorded answer narrows it: turning one
+        // off narrows what the project does, and an unanswered choice is the
+        // absence of a record, not a no.
+        // Records come back with the storage prefix on the kind and the value
+        // inside the payload envelope the write path wraps it in.
+        const answered = new Map(
+          choices.map((c) => [
+            (c.kind || "").replace(/^composition:/, ""),
+            (c.payload as { value?: unknown } | undefined)?.value,
+          ]),
+        );
         return (
           <>
             <Title t="What this project needs from CREST" extra={ownershipChip(project.ownership)} />
             <Lede>
-              Five choices, answered separately — and separately is the point: answering one never overwrites another,
-              and every answer carries the name of whoever gave it and the date they did.
+              Five independent choices. None is a degraded version of another, and a project that answers no to most
+              of them is still a valid project.
             </Lede>
-            <CardTitled t="Answered so far">
-              <Tbl
-                heads={["Choice", "Answer", "Decided by", "When"]}
-                rows={choices.map((c) => [
-                  <Mono>{c.kind || ""}</Mono>,
-                  typeof c.payload === "object" ? <Mono>{JSON.stringify(c.payload)}</Mono> : String(c.payload),
-                  <MonoShort id={c.recordedBy || ""} />,
-                  when(c.recordedAt),
-                ])}
-                empty="Nothing is answered yet. An unanswered choice is the absence of a record, not a null — so this list is short rather than full of blanks."
-              />
-            </CardTitled>
             {err ? <WriteRefusal err={err} owner={project.ownerPartyId} /> : null}
-            {declared && declared.length ? (
-              <CardTitled t="This deployment's choices">
-                {declared.map((d) => (
-                  <div key={d.name} style={{ marginBottom: 10 }}>
-                    <RefField label={d.question || d.name}>
-                      <select
-                        data-choice={d.name}
-                        defaultValue=""
-                        onChange={(e) => e.target.value && record(d.name, e.target.value)}
+            <div style={{ maxWidth: 820 }}>
+              {CAPABILITIES.map(([key, title, sub]) => {
+                const rec = answered.get(key);
+                const on = rec === undefined ? true : rec !== "off";
+                return (
+                  <CapabilityRow
+                    key={key}
+                    on={on}
+                    recorded={rec !== undefined}
+                    title={title}
+                    sub={sub}
+                    onFlip={() => record(key, on ? "off" : "on")}
+                  />
+                );
+              })}
+              <div style={{ height: 10 }} />
+              <Callout kind="teal" title="">
+                A project with a mature worker registry and its own bank relationship can adopt the trust layer alone
+                — register off, pay off, validate on. The credential is never contingent on a payment component being
+                present, connected or resolved.
+              </Callout>
+              <p className="muted" style={{ marginTop: 10 }}>
+                Define work runs on this deployment's own words.{" "}
+                <a href="#/vocabulary" data-to-vocabulary>Declare the definition vocabulary →</a>
+              </p>
+              {/* p2_5 — the payment posture, narrowed past on/off. Three
+                  genuinely different postures, recorded through the same
+                  composition endpoint as every other choice; the value names
+                  are this deployment's records, not a CREST enum. */}
+              {(() => {
+                const posture = answered.get("payment-posture") as string | undefined;
+                const approval = answered.get("manual-payment-approval");
+                const POSTURES: Array<[string, string, string]> = [
+                  ["track-money-movement", "Track money movement",
+                    "CREST calculates what is owed and follows the instruction through to confirmation on a rail."],
+                  ["calculation-only", "Calculation only",
+                    "CREST produces a versioned statement of what is owed. Somebody else pays it, outside CREST entirely."],
+                  ["no-rate", "No rate at all",
+                    "Credentials issue with no payment attached. Used where the value is recognition or credentialing."],
+                ];
+                return (
+                  <div style={{ borderTop: "1px solid var(--line, #E5E1DC)", marginTop: 18, paddingTop: 16 }}>
+                    <div style={{ font: "500 16px/1.4 Roboto,system-ui" }}>Payment, calculation only, or neither</div>
+                    <p className="muted" style={{ margin: "4px 0 12px" }}>
+                      Three genuinely different postures. The third is not a failure state.
+                      {posture === undefined ? " Nothing is recorded yet — a posture is a record, not a default." : ""}
+                    </p>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+                      {POSTURES.map(([v, t, sub]) => (
+                        <OptionCard key={v} t={t} s={sub} on={posture === v} onPick={() => record("payment-posture", v)} />
+                      ))}
+                    </div>
+                    <p className="muted" style={{ margin: "12px 0 0" }}>
+                      Pay rate is set separately — not part of ratifying the definition. A Work Definition must be
+                      complete and usable with no pay information attached.
+                    </p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+                      <span style={{ font: "500 14px/1.4 Roboto,system-ui" }}>Manual payment approval</span>
+                      <Chip kind={approval === "on" ? "warn" : "plain"} sm>{approval === "on" ? "On" : "Off"}</Chip>
+                      <button
+                        className="btn secondary"
+                        data-flip-approval
+                        style={{ width: "auto", minWidth: 0, padding: "4px 10px", fontSize: 12 }}
+                        onClick={() => record("manual-payment-approval", approval === "on" ? "off" : "on")}
                       >
-                        <option value="">—</option>
-                        {(d.options || []).map((o) => (
-                          <option key={o} value={o}>
-                            {o}
-                          </option>
-                        ))}
-                      </select>
-                    </RefField>
+                        {approval === "on" ? "Turn it off" : "Turn it on"}
+                      </button>
+                    </div>
+                    <p className="muted" style={{ margin: "4px 0 0" }}>
+                      On would send every payment to a payment approver before release.
+                    </p>
+                    <div style={{ marginTop: 12 }}>
+                      <Sidecar>
+                        Pay rate is a separate object from the work definition, deliberately. Payment is one CREST use
+                        case among several, and a definition can never be gated on deciding whether anyone gets paid.
+                      </Sidecar>
+                    </div>
                   </div>
-                ))}
-              </CardTitled>
-            ) : (
-              <CardTitled t="Record a choice">
-                <form
-                  id="composeform"
-                  style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}
-                  onSubmit={(ev) => {
-                    ev.preventDefault();
-                    record(choice.trim(), value.trim());
-                  }}
+                );
+              })()}
+              <div style={{ borderTop: "1px solid var(--line, #E5E1DC)", marginTop: 16, paddingTop: 14, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button className="btn secondary" style={{ width: "auto", padding: "10px 22px" }} onClick={() => nav("/handover")}>
+                  Back
+                </button>
+                <button className="btn dominant" style={{ width: "auto", padding: "10px 22px" }} onClick={() => nav("/workers")}>
+                  Continue
+                </button>
+              </div>
+            </div>
+          </>
+        );
+      }}
+    </LoadFrame>
+  );
+}
+
+// ── the definition vocabulary, declared through the product ────────────────
+// The sector/category words the authoring wizard offers are L2: CREST carries
+// no enum of them, and until now the only way to declare them was the
+// project-creation payload — configuration by seed, which is exactly what a
+// self-servable deployment cannot depend on. This screen writes them as a
+// composition choice (PUT /v1/projects/{id}/composition/definition-vocabulary),
+// the same accountable write path every other configuration-level fact uses:
+// the record carries who declared the words and when, and the wizard renders
+// whatever it finds — never a list CREST invented.
+//
+// Line format: one entry per line, optionally "value | short descriptor".
+// The value is what gets recorded on a definition; the descriptor only helps
+// the author choose.
+const splitLines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
+const vocabArea = {
+  width: "100%", minHeight: 120, border: "1px solid var(--divider)", borderRadius: 6,
+  padding: "10px 12px", font: "400 13.3px/1.6 Roboto",
+} as const;
+
+export function Vocabulary() {
+  const s = useConsole();
+  const [gen, setGen] = useState(0);
+  const [err, setErr] = useState<unknown>(null);
+  const [saved, setSaved] = useState(false);
+  const [sectors, setSectors] = useState<string | null>(null);
+  const [cats, setCats] = useState<string | null>(null);
+  const r = useLoad(async () => {
+    const [p, comp] = await Promise.all([
+      api.get("parties", proj(s.projectId)),
+      api.get("parties", proj(s.projectId, "/composition")).catch(() => ({ choices: [] })),
+    ]);
+    const project = (p.project || p) as Project;
+    const rec = ((comp.choices || []) as Array<{ kind?: string; payload?: { value?: unknown }; recordedBy?: string; recordedAt?: string }>).find(
+      (c) => (c.kind || "").replace(/^composition:/, "") === "definition-vocabulary",
+    );
+    const declared = ((rec?.payload as { value?: unknown } | undefined)?.value || {}) as Record<string, string[]>;
+    return { project, rec, declared };
+  }, [s.projectId, gen]);
+  const record = async (v: Record<string, string[]>) => {
+    setErr(null);
+    setSaved(false);
+    try {
+      await api.put("parties", proj(s.projectId, "/composition/definition-vocabulary"), { value: v });
+      setSectors(null);
+      setCats(null);
+      setSaved(true);
+      setGen((g) => g + 1);
+    } catch (e) {
+      setErr(e);
+    }
+  };
+  return (
+    <LoadFrame r={r}>
+      {({ project, rec, declared }) => {
+        const sVal = sectors ?? (declared.sectors || []).join("\n");
+        const cVal = cats ?? (declared.categories || []).join("\n");
+        return (
+          <>
+            <Title t="Definition vocabulary" extra={ownershipChip(project.ownership)} />
+            <Lede>
+              The words the authoring wizard offers for sector and category. They are this deployment's own — CREST
+              carries no list of them — and whatever is declared here renders as a picker on the author's screens;
+              where nothing is declared, the author types instead.
+            </Lede>
+            {err ? <WriteRefusal err={err} owner={project.ownerPartyId} /> : null}
+            <div style={{ maxWidth: 820, display: "flex", flexDirection: "column", gap: 15 }}>
+              <Card>
+                <RefField
+                  label="Sectors"
+                  hint={<>One per line. Optionally add a short descriptor after a pipe: <Mono>Health | Community health, campaigns, facility work</Mono>. The value before the pipe is what a definition records.</>}
                 >
-                  <RefField label="Choice">
-                    <input name="choice" required value={choice} onChange={(e) => setChoice(e.target.value)} placeholder="worker-sourcing" />
-                  </RefField>
-                  <RefField label="Answer">
-                    <input name="value" required value={value} onChange={(e) => setValue(e.target.value)} placeholder="register-and-import" />
-                  </RefField>
-                  <button className="btn inline">Record it</button>
-                </form>
-                <p className="muted" style={{ marginTop: 8 }}>
-                  There is no list to pick from because there is no list to have: choice names and their values are
-                  this deployment's vocabulary (L2), and CREST carries no enum of postures or origins anywhere. A
-                  deployment declares its own on the project's <span className="mono">configuration</span>, and this
-                  screen renders whatever it finds there.
+                  <textarea
+                    name="vocab-sectors"
+                    style={vocabArea}
+                    value={sVal}
+                    placeholder={"Health | Community health, campaigns, facility work\nSanitation | Waste, drainage, public toilets"}
+                    onChange={(e) => setSectors(e.target.value)}
+                  />
+                </RefField>
+              </Card>
+              <Card>
+                <RefField
+                  label="Categories"
+                  hint="One per line, same format. This flat list is offered for every sector; per-sector lists can be declared through the same record as categories:<sector>."
+                >
+                  <textarea
+                    name="vocab-categories"
+                    style={vocabArea}
+                    value={cVal}
+                    placeholder={"Community outreach | Door-to-door, campaigns\nFacility support | In-facility assistance"}
+                    onChange={(e) => setCats(e.target.value)}
+                  />
+                </RefField>
+              </Card>
+              {rec ? (
+                <p className="muted">
+                  Declared by <MonoShort id={rec.recordedBy || ""} /> · {when(rec.recordedAt)}
+                  {saved ? " · saved" : ""}
                 </p>
-              </CardTitled>
-            )}
-            <Callout kind="teal" title="What infrastructure contributes here">
-              Not the vocabulary — two deployments could reasonably disagree about every one of these words and both
-              still be CREST. What infrastructure contributes is that somebody's name and a timestamp are attached to
-              every answer, and that answering one choice never overwrites another.
-            </Callout>
-            <div className="btn-row" style={{ maxWidth: 560 }}>
-              <button className="btn secondary" onClick={() => nav("/handover")}>
-                Back
-              </button>
-              <button className="btn dominant" onClick={() => nav("/owners")}>
-                Continue
-              </button>
+              ) : (
+                <p className="muted">
+                  Nothing declared yet — the wizard currently takes typed answers.{saved ? " · saved" : ""}
+                </p>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button
+                  className="btn dominant"
+                  data-btn="Declare vocabulary"
+                  style={{ width: "auto", padding: "10px 22px" }}
+                  onClick={() =>
+                    record({
+                      ...declared,
+                      sectors: splitLines(sVal),
+                      categories: splitLines(cVal),
+                    })
+                  }
+                >
+                  Declare vocabulary
+                </button>
+              </div>
             </div>
           </>
         );
@@ -528,6 +716,10 @@ export function Owners() {
               configurator, who must not be able to grant themselves anything.
             </p>
           </CardTitled>
+          <Sidecar>
+            The rate and the mechanism are separate roles on purpose. Deciding how much someone is paid and deciding
+            how the money reaches them are different decisions, often in different departments.
+          </Sidecar>
           <div className="btn-row" style={{ maxWidth: 560 }}>
             <button className="btn secondary" onClick={() => nav("/compose")}>
               Back
@@ -659,6 +851,11 @@ export function Activate() {
               Activate project
             </button>
           </div>
+          <Sidecar warm>
+            A project can activate with a rate still unset and roles still unaccepted. What it cannot do is issue a
+            credential before a signed work definition exists — that one is never optional, whatever else a project
+            chooses.
+          </Sidecar>
           <Callout kind="teal" title="A refusal that names what is missing">
             “Cannot activate” without saying what is missing is a dead end, and this system does not leave people at
             dead ends: a refused activation answers with every condition and which of them are unmet, and they are
@@ -708,6 +905,23 @@ export function FinanceCode() {
               CREST does not invent account codes. The code arrives from a finance system that already had it, and is
               stored exactly as that system wrote it.
             </Lede>
+            {/* p2_8's two ways in. Pulling the chart of accounts live needs a
+                finance integration this deployment does not have, and the card
+                stays on screen saying so rather than disappearing. */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, maxWidth: 820, marginBottom: 14 }}>
+              <OptionCard
+                t="Pull from the finance system"
+                tag={<Chip kind="ok" sm>recommended</Chip>}
+                unavailable
+                s="Reads the chart of accounts live. Codes come back spelled and structured as finance holds them, with closed codes marked. No finance integration exists on this deployment yet."
+              />
+              <OptionCard
+                t="Enter the codes by hand"
+                tag={<Chip kind="warn" sm>discouraged</Chip>}
+                on
+                s="Available where no integration exists. Nothing validates what you type, and a mistake surfaces at reconciliation."
+              />
+            </div>
             <CardTitled t="Linked now">
               <KVR
                 rows={[
@@ -798,6 +1012,56 @@ export function SupportOwner() {
               First line sits with the project, because the project is where the answer is. The instance keeps only
               genuine platform faults.
             </Lede>
+            {/* p2_10's three lines. The first is this project's record below;
+                the second and third are instance facts with no record behind
+                them yet, described in the deployment's own general words. */}
+            <CardTitled t="Three lines, three scopes">
+              <Tbl
+                heads={["Line", "Who", "Handles", "Scope"]}
+                rows={[
+                  [
+                    <b>first · in this project</b>,
+                    p.partyId ? <MonoShort id={p.partyId} /> : <span className="muted">nobody named yet</span>,
+                    "Payment not arrived, evidence stuck, wrong record, lost access",
+                    "This project only",
+                  ],
+                  [
+                    "second · at the instance",
+                    "Platform operations",
+                    "The console is down, an adaptor is failing for every project, a key needs rotating",
+                    "All projects",
+                  ],
+                  [
+                    "escalates to · governance",
+                    "Data protection / consent officer",
+                    "A disclosure complaint, a consent dispute",
+                    "Instance-wide",
+                  ],
+                ]}
+              />
+            </CardTitled>
+            <Card>
+              <DisLi
+                on={!!p.partyId}
+                t="A named support agent is assigned"
+                s={p.partyId ? <MonoShort id={p.partyId} /> : "nobody is named — a worker's question reaches nobody"}
+              />
+              <DisLi
+                on={!!p.contactRoute?.value}
+                t="Contact route published to workers"
+                s={p.contactRoute?.value ? `${p.contactRoute.kind || ""} ${p.contactRoute.value}` : "no contact route recorded"}
+              />
+              <DisLi
+                on={!!p.escalatesToPartyId}
+                t="Escalation path recorded"
+                s={p.escalatesToPartyId ? <MonoShort id={p.escalatesToPartyId} /> : "escalation has not been arranged"}
+              />
+              <DisLi
+                on={false}
+                t="Response expectation agreed"
+                s="Not set — no service standard exists yet"
+              />
+            </Card>
             <CardTitled t="First line for this project">
               <KVR
                 rows={[
@@ -902,7 +1166,10 @@ export function Partners() {
       {({ partners, grants }) => (
         <>
           <Title t="Find a partner for this project" />
-          <Lede>Approved organisations, filtered by what their own terms already allow.</Lede>
+          <Lede>
+            Searching every organisation admitted to this deployment, filtered by what their own terms already
+            allow. You are not creating anything here, and nothing you do on this screen reaches them.
+          </Lede>
           <Callout kind="teal" title="What onboarding already did, once">
             These organisations registered and were approved independently of this project, some of them years ago.
             Nothing about their identity, their documents or their terms is re-examined here, and this project cannot
@@ -949,6 +1216,10 @@ export function Partners() {
             />
           </CardTitled>
           <Title t="What a partner may do on this project" />
+          <Lede>
+            Their terms are the ceiling. Anything you grant here is inside it, and you cannot widen it from this
+            screen or any other.
+          </Lede>
           {err ? <WriteRefusal err={err} /> : null}
           {note ? <Callout kind="green" title="Recorded">{note}</Callout> : null}
           <form

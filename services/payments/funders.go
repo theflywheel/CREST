@@ -128,6 +128,8 @@ const (
 
 // The recorded acts of setting a mechanism up (mechanism_records.kind).
 const (
+	recordRailsChosen             = "rails-chosen"
+	recordProviderConnected       = "provider-connected"
 	recordReconciliationAgreement = "reconciliation-agreement"
 	recordStatementAgreement      = "statement-agreement"
 	recordBatchingChoice          = "batching-choice"

@@ -9,6 +9,8 @@ const FIX = {
   workerA: "did:crest:party:01JCREST00000000000000WRKA",
   org: "did:crest:party:01JCREST000000000000000RGN",
   custodian: "did:crest:party:01JCREST00000000000000CSTD",
+  supervisor: "did:crest:party:01JCREST00000000000000SPVR",
+  specifier: "did:crest:party:01JCREST00000000000000SPEC",
   project: "crest:context:01JCREST00000000000000PRJC",
 };
 
@@ -47,11 +49,9 @@ test("landing names the four apps", async ({ page }) => {
   await assertAlive(page, errors, "landing");
 });
 
-test("worker app: every route, on real data", async ({ page }) => {
+test("worker app: every route, on real data", async ({ page, request }) => {
   const errors = watch(page);
-  await page.goto("/worker/");
-  await settle(page);
-  await page.click("#login-grace");
+  await workerSignIn(page, request, FIX.workerA, "Grace \u00b7 community health worker");
   await settle(page);
   // The worker door is a desktop console now: appbar + sidebar on wide
   // viewports; the bottom nav exists but shows only under 720px.
@@ -80,11 +80,9 @@ test("worker app: every route, on real data", async ({ page }) => {
   expect(payText).toMatch(/KES|held|instruction|settled|released/i);
 });
 
-test("worker app: the held payment names its owner", async ({ page }) => {
+test("worker app: the held payment names its owner", async ({ page, request }) => {
   const errors = watch(page);
-  await page.goto("/worker/");
-  await settle(page);
-  await page.click("#login-grace");
+  await workerSignIn(page, request, FIX.workerA, "Grace \u00b7 community health worker");
   await settle(page);
   await page.evaluate(() => { location.hash = "#/pay"; });
   await settle(page);
@@ -94,11 +92,24 @@ test("worker app: the held payment names its owner", async ({ page }) => {
   await assertAlive(page, errors, "worker held view");
 });
 
-test("enrolment app: every route", async ({ page }) => {
+// The enrolment door no longer assumes a project: it offers a chooser only
+// when the agent's grants name more than one context, and picks the single
+// one otherwise. These walks are about the story's project, so choose it
+// when a choice is offered and trust the door when it is not.
+async function pickStoryProject(page) {
+  const sel = page.locator("#context-select");
+  if (await sel.count() && await sel.isVisible() && await sel.isEnabled()) {
+    await sel.selectOption(FIX.project).catch(() => {});
+  }
+}
+
+test("enrolment app: every route", async ({ page, request }) => {
   const errors = watch(page);
   await page.goto("/enrolment/");
   await settle(page);
   await page.click("[data-login]");
+  await settle(page);
+  await pickStoryProject(page);
   await settle(page);
   const routes = ["#/registrations", "#/register", "#/confidence", "#/consent",
     "#/roster", "#/toconfirm", "#/handoff"];
@@ -111,6 +122,26 @@ test("enrolment app: every route", async ({ page }) => {
   await page.evaluate(() => { location.hash = "#/roster"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("outcome_value");
+  // J8 / W-4 (w3_1/w3_5): the worklist names the auto-resolve rule, and the
+  // handoff draws the attestation chain with its no-person-signs close.
+  await page.evaluate(() => { location.hash = "#/toconfirm"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("auto-confirms");
+  await page.evaluate(() => { location.hash = "#/handoff"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Only where the project configured a manual step");
+  await expect(page.locator("body")).toContainText("Many projects will have no human here at all");
+  // w2_1 — the day's two real counters, from this device's own state.
+  await page.evaluate(() => { location.hash = "#/registrations"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("done today");
+  await expect(page.locator("body")).toContainText("to sync");
+  // w2_3 — the consent script carries ownership and per-use consent, and the
+  // record sentence names what the recording captures.
+  await page.evaluate(() => { location.hash = "#/consent"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("nobody can see it unless you agree, each time");
+  await expect(page.locator("body")).toContainText("your agent ID and the time. This is the consent record.");
 });
 
 // Role-derived personas (docs/JOURNEY_GAP_ASSESSMENT.md finding 1): each
@@ -164,13 +195,11 @@ for (const [personaIdx, personaName, who, views] of [
   [8, "Naliaka (support agent, W-3)", "Naliaka", ["cases", "supportfind", "supporttrace"]],
   [9, "Funding oversight (V-4)", "Funding oversight", ["portfolio", "status"]],
 ]) {
-  test(`console: ${personaName} walks every view`, async ({ page }) => {
+  test(`console: ${personaName} walks every view`, async ({ page, request }) => {
     const errors = watch(page);
     await page.goto("/console/");
     await settle(page);
-    await page.click(`[data-p="${personaIdx}"]`);
-    // First login mints a token and appends an identity binding — two round
-    // trips. Poll for arrival rather than sleeping.
+    await consoleSignIn(page, request, CONSOLE_PERSONA_ORDER[personaIdx]);
     await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
     await settle(page);
     await signedInAs(page, who);
@@ -207,28 +236,26 @@ test("console door: eSignet is the way in, and no role can be picked", async ({ 
   await expect(page.locator("#signin-title")).toContainText("Sign in to CREST Console");
   await expect(page.locator("#signin-esignet")).toBeVisible();
   await expect(page.locator("body")).toContainText("CREST never sees a credential of yours");
-  // The rule this screen sets, verbatim from the design spec.
-  await expect(page.locator("body")).toContainText(
-    "It never asks which role you want, and never offers a role you do not hold.");
-  // No role selector of any kind: no select, no radio, nothing named "role".
+  // The rule stands without stating itself: no role selector of any kind —
+  // no select, no radio, nothing named "role".
   await expect(page.locator("select")).toHaveCount(0);
   await expect(page.locator('input[type="radio"]')).toHaveCount(0);
   await expect(page.locator('[name*="role" i]')).toHaveCount(0);
-  // The demo block is instance-configured: this local stack has a mock
-  // issuer, so it renders — and each row names a role rather than offering
-  // to grant one.
-  await expect(page.locator('[data-panel="demo-personas"]')).toBeVisible();
+  // The demo persona rows are gone: eSignet is the only door, on every
+  // instance. Only the sign-in panel renders.
+  await expect(page.locator('[data-panel="signin-with"]')).toBeVisible();
+  await expect(page.locator('[data-panel="demo-personas"]')).toHaveCount(0);
   await assertAlive(page, errors, "console door");
 });
 
 // n3/F1 — one rail, two actors. The five setup entries render identically for
 // the Org Admin and the Project Configurator, and no entry is removed by role.
-test("console: the J3 rail is the same five entries for both actors", async ({ page }) => {
+test("console: the J3 rail is the same five entries for both actors", async ({ page, request }) => {
   const entries = ["Projects", "People & roles", "Work definitions", "Payment set up", "Workers"];
   for (const persona of ["orgadmin", "configurator"]) {
     await page.goto("/console/");
     await settle(page);
-    await page.click(`[data-persona="${persona}"]`);
+    await consoleSignIn(page, request, persona);
     await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
     await settle(page);
     const rail = await page.locator(".sidebar a").allInnerTexts();
@@ -245,11 +272,11 @@ test("console: the J3 rail is the same five entries for both actors", async ({ p
 // n5 — a rail entry you cannot act on stays visible and says who can. The
 // Configurator opens People & roles and gets the boundary, not a redirect and
 // not a missing entry.
-test("console: People & roles guards the configurator instead of hiding", async ({ page }) => {
+test("console: People & roles guards the configurator instead of hiding", async ({ page, request }) => {
   const errors = watch(page);
   await page.goto("/console/");
   await settle(page);
-  await page.click('[data-persona="configurator"]');
+  await consoleSignIn(page, request, "configurator");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await expect(page.locator('.sidebar a[href*="people"]')).toHaveCount(1);
@@ -268,12 +295,11 @@ test("console: People & roles guards the configurator instead of hiding", async 
 
 // Author/approver separation: an approver ratifies and can never open the
 // authoring wizard — even a hand-typed #/definework bounces to their home.
-test("console: the approver cannot reach the author's wizard", async ({ page }) => {
+test("console: the approver cannot reach the author's wizard", async ({ page, request }) => {
   const errors = watch(page);
   await page.goto("/console/");
   await settle(page);
-  await page.click('[data-persona="approver"]');
-  await settle(page);
+  await consoleSignIn(page, request, "approver");
   // Their own flow renders.
   await expect(page.locator("body")).toContainText(/Ratify/i);
   // The sidebar carries no wizard entry…
@@ -303,11 +329,9 @@ test("console: the approver cannot reach the author's wizard", async ({ page }) 
 // only because the navigation lacks the entry — the definitions service
 // refuses a version whose ratifier is its author, and the two personas are
 // two parties so that the refusal is real rather than assumed.
-test("console: the author cannot reach the approver's signature", async ({ page }) => {
+test("console: the author cannot reach the approver's signature", async ({ page, request }) => {
   const errors = watch(page);
-  await page.goto("/console/");
-  await settle(page);
-  await page.click('[data-persona="author"]');
+  await consoleSignIn(page, request, "author");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await expect(page.locator('.sidebar a[href*="ratify"]')).toHaveCount(0);
@@ -385,13 +409,49 @@ test("worker entry presents both enrollment pathways", async ({ page }) => {
   await assertAlive(page, errors, "worker entry pathways");
 });
 
-// w1_18: the show screen presents a QR (offline presentation), JSON behind a
-// toggle — no raw JSON dump as the primary face.
-test("worker wallet: show-to-someone renders a QR, JSON behind a toggle", async ({ page }) => {
+// The worker screens carry the W-1 pack's copy (J7): the fork's same-DID
+// promise, the record/rate separation, the burden-of-proof rule, the payment
+// buckets, and the show-face's disclosure limits — anatomy and explanation
+// from the frames, every number from live records.
+test("worker screens carry the w1 pack's copy (J7)", async ({ page, request }) => {
   const errors = watch(page);
   await page.goto("/worker/");
   await settle(page);
-  await page.click("#login-grace");
+  await expect(page.locator("body")).toContainText("Both pathways issue the same Crest DID");
+  await expect(page.locator("body")).toContainText("Section 11, Choice One");
+  await expect(page.locator("body")).toContainText("Only the result of the check is kept");
+
+  await workerSignIn(page, request, FIX.workerA, "Grace · community health worker");
+  await settle(page);
+  await page.evaluate(() => { location.hash = "#/work"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("The rate lives in a separate record from the definition");
+  await page.evaluate(() => { location.hash = "#/work/declined"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("The third question matters most");
+
+  await page.evaluate(() => { location.hash = "#/pay"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Arrived in your account");
+  await expect(page.locator("body")).toContainText("Still being checked");
+  await expect(page.locator("body")).toContainText("their number is on your profile");
+
+  await page.evaluate(() => { location.hash = "#/wallet/0/show"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("They will not see your name, your number, or where you live");
+  await expect(page.locator("body")).toContainText("they have to ask, and you can say no");
+
+  await page.evaluate(() => { location.hash = "#/profile"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Your work history accumulates against it");
+  await assertAlive(page, errors, "worker w1 pack copy");
+});
+
+// w1_18: the show screen presents a QR (offline presentation), JSON behind a
+// toggle — no raw JSON dump as the primary face.
+test("worker wallet: show-to-someone renders a QR, JSON behind a toggle", async ({ page, request }) => {
+  const errors = watch(page);
+  await workerSignIn(page, request, FIX.workerA, "Grace \u00b7 community health worker");
   await settle(page);
   await page.evaluate(() => { location.hash = "#/wallet/0/show"; });
   await settle(page);
@@ -415,15 +475,11 @@ test("worker wallet: show-to-someone renders a QR, JSON behind a toggle", async 
   await assertAlive(page, errors, "worker wallet QR show");
 });
 
-test("console: the story shows through", async ({ page }) => {
+test("console: the story shows through", async ({ page, request }) => {
   const errors = watch(page);
   await page.goto("/console/");
   await settle(page);
-  await page.click('[data-p="1"]');
-  await settle(page);
-  // The switch ends with its own navigate(homeOf) — wait for it to land
-  // before setting a hash, or the two writes race and homeOf wins.
-  await page.waitForFunction(() => location.hash.length > 2);
+  await consoleSignIn(page, request, "configurator");
   // Sources: the story registered riverside-dhis2, and #117 is named on it.
   await page.evaluate(() => { location.hash = "#/sources"; });
   await page.waitForFunction(() => location.hash === "#/sources");
@@ -459,6 +515,17 @@ test("verify app: a real check, refusals shown, batch bounded", async ({ page })
     await assertAlive(page, errors, "verify " + r);
   }
 
+  // J8 / P-10: the attestation pack's copy on the institutional panels.
+  await page.evaluate(() => { location.hash = "#/w6_1"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Your institute holds no standing account");
+  await expect(page.locator("body")).toContainText("what makes it worth more than the worker's own word");
+  await expect(page.locator("body")).toContainText("the project contact is named on your invitation");
+  await page.evaluate(() => { location.hash = "#/w6_2"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Tier count is baked into every credential already issued");
+  await expect(page.locator("body")).toContainText("Deciding late is expensive");
+
   // Resolve a person: the whole chain, by party id.
   await page.evaluate(() => { location.hash = "#/person"; });
   await settle(page);
@@ -468,7 +535,7 @@ test("verify app: a real check, refusals shown, batch bounded", async ({ page })
   await expect(page.locator("body")).toContainText(/credential/i);
 });
 
-test("mobile viewport: no horizontal overflow, console nav becomes a chip rail", async ({ page }) => {
+test("mobile viewport: no horizontal overflow, console nav becomes a chip rail", async ({ page, request }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const path of ["/worker/", "/enrolment/", "/console/", "/verify/"]) {
     await page.goto(path);
@@ -481,8 +548,7 @@ test("mobile viewport: no horizontal overflow, console nav becomes a chip rail",
   // (row direction), and the pane must still render without sideways scroll.
   await page.goto("/console/");
   await settle(page);
-  await page.click('[data-p="0"]');
-  await settle(page);
+  await consoleSignIn(page, request, "orgadmin");
   const dir = await page.locator(".sidebar").evaluate(el => getComputedStyle(el).flexDirection);
   expect(dir).toBe("row");
   const overflow = await page.evaluate(
@@ -490,11 +556,9 @@ test("mobile viewport: no horizontal overflow, console nav becomes a chip rail",
   expect(overflow).toBe(0);
 });
 
-test("mobile viewport: the worker door keeps its bottom nav", async ({ page }) => {
+test("mobile viewport: the worker door keeps its bottom nav", async ({ page, request }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/worker/");
-  await settle(page);
-  await page.click("#login-grace");
+  await workerSignIn(page, request, FIX.workerA, "Grace \u00b7 community health worker");
   await settle(page);
   // Under 720px the worker's sidebar chip rail yields to the phone-style
   // bottom nav — the phone experience survives the desktop rebuild.
@@ -516,12 +580,12 @@ test("mobile viewport: the worker door keeps its bottom nav", async ({ page }) =
 // role listing, the organisation role listing, the APPROVED-only partner
 // directory, the partner-grant listing, the partner-grant end-date refusal,
 // and the support-owner party check are each exercised here.
-test("console: the J3 handover is real, and so is everything after it", async ({ page }) => {
+test("console: the J3 handover is real, and so is everything after it", async ({ page, request }) => {
   const errors = watch(page);
   const stamp = Date.now().toString().slice(-6);
   await page.goto("/console/");
   await settle(page);
-  await page.click('[data-persona="orgadmin"]');
+  await consoleSignIn(page, request, "orgadmin");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
 
@@ -532,6 +596,9 @@ test("console: the J3 handover is real, and so is everything after it", async ({
   // p1_3 — create a project and name a configurator. Naming is a proposal.
   await page.evaluate(() => { location.hash = "#/projects/new"; });
   await settle(page);
+  // p1_3 — creation decides nothing compositional, and says so on its face.
+  await expect(page.locator("body")).toContainText("belong to whoever configures the project, not to whoever creates it");
+  await expect(page.locator("body")).toContainText("Cannot exist until the project is composed");
   await page.fill('[name="projectname"]', "Bednet campaign " + stamp);
   await page.fill('[name="coverage"]', "Ward 4, Ward 7 · Kisumu County");
   await page.fill('[name="configurator"]', me);
@@ -571,12 +638,19 @@ test("console: the J3 handover is real, and so is everything after it", async ({
   await page.waitForURL(/#\/compose/, { timeout: 20000 });
   await settle(page);
 
-  // p2_1/p2_3/p2_5 — one composition choice, recorded with its decider.
-  await page.fill('[name="choice"]', "worker-sourcing");
-  await page.fill('[name="value"]', "register-and-import-" + stamp);
-  await page.locator("#composeform button").click();
-  await expect(page.locator("body")).toContainText("register-and-import-" + stamp, { timeout: 20000 });
-  await expect(page.locator("body")).toContainText("worker-sourcing");
+  // p2_1 — one capability answered, recorded with its decider: a switch flip
+  // writes the same composition choice the old free-text form used to take.
+  const cap = page.locator('[data-capability="Set up payment"]');
+  await expect(cap).toHaveAttribute("aria-pressed", "true");
+  await cap.click();
+  await expect(cap).toHaveAttribute("aria-pressed", "false", { timeout: 20000 });
+
+  // p2_5 — the payment posture, recorded as a composition choice: picking a
+  // card narrows it, and the record survives a reload.
+  await expect(page.locator("body")).toContainText("Three genuinely different postures. The third is not a failure state.");
+  await page.locator('.optcard:has-text("Calculation only")').click();
+  await expect(page.locator('.optcard:has-text("Calculation only")')).toHaveAttribute("aria-pressed", "true", { timeout: 20000 });
+  await expect(page.locator("body")).toContainText("Pay rate is a separate object from the work definition");
 
   // p2_6 — a role grant on this project, listed with its grantor and date.
   await page.evaluate(() => { location.hash = "#/owners"; });
@@ -586,12 +660,16 @@ test("console: the J3 handover is real, and so is everything after it", async ({
   await page.locator("#grantform button").click();
   await expect(page.locator("body")).toContainText("submit-work-evidence", { timeout: 20000 });
   await expect(page.locator("body")).toContainText("ACTIVE");
+  // p2_6 — the rate and the mechanism are separate on purpose, on the frame.
+  await expect(page.locator("body")).toContainText("separate roles on purpose");
 
   // p2_17 — the directory is a join over approvals somebody else made, so the
   // approved programme organisation is in it.
   await page.evaluate(() => { location.hash = "#/partners"; });
   await settle(page);
   await expect(page.locator(`[data-pick="${me}"]`)).toBeVisible();
+  // p2_18 — the terms are the ceiling, and the frame says so before the form.
+  await expect(page.locator("body")).toContainText("Their terms are the ceiling.");
 
   // p2_18 — a grant with no end date is refused: "the grant lapses by itself"
   // is the screen's whole subject, so an endless one is not a grant.
@@ -616,10 +694,17 @@ test("console: the J3 handover is real, and so is everything after it", async ({
   await page.fill('[name="supportvalue"]', "+254700000" + stamp.slice(-3));
   await page.locator("#supportform button").click();
   await expect(page.locator("body")).toContainText("+254700000" + stamp.slice(-3), { timeout: 20000 });
+  // p2_10 — the checklist is derived from the record, and the one item no
+  // contract exists for stays off with the true reason on its face.
+  await expect(page.locator('.li:has-text("Contact route published to workers"):not(.off)')).toBeVisible();
+  await expect(page.locator('.li.off:has-text("Response expectation agreed")')).toContainText("no service standard exists yet");
 
   // p2_8 — the code is stored verbatim, with who linked it.
   await page.evaluate(() => { location.hash = "#/finance"; });
   await settle(page);
+  // p2_8 — both ways in stay on screen; the pull card says why it cannot run.
+  await expect(page.locator('.optcard.na:has-text("Pull from the finance system")')).toContainText("not available");
+  await expect(page.locator('.optcard:has-text("Enter the codes by hand")')).toContainText("a mistake surfaces at reconciliation");
   await page.fill('[name="financesystem"]', "IFMIS · Kenya Treasury");
   await page.fill('[name="financecode"]', "4402-11-A" + stamp.slice(-2));
   await page.locator("#financeform button").click();
@@ -628,6 +713,8 @@ test("console: the J3 handover is real, and so is everything after it", async ({
   // p2_7 — a gate is declared, refuses activation by name, then is satisfied.
   await page.evaluate(() => { location.hash = "#/activate"; });
   await settle(page);
+  // p2_7 — what stays optional and what never is, on the frame.
+  await expect(page.locator("body")).toContainText("before a signed work definition exists");
   await page.fill('[name="gatename"]', "rate-published");
   await page.locator("#gateform button").click();
   await expect(page.locator("body")).toContainText("rate-published", { timeout: 20000 });
@@ -680,6 +767,67 @@ async function mintToken(request, partyId) {
   expect(r.ok(), "the dev issuer mints a token for " + partyId).toBeTruthy();
   const d = await r.json();
   return d.accessToken || d.access_token || d.token;
+}
+
+// The console door offers only eSignet now — no persona cards — so tests sign
+// in the way those cards worked underneath: mint a token, append the same
+// idempotent identity binding, hand the session to the app via the key its
+// provider restores from. Persona keys mirror frontend/apps/console/src/state.tsx.
+const CONSOLE_PERSONAS = {
+  orgadmin: ["org", "Peter Otieno", "Org Admin"],
+  configurator: ["org", "Dr. Alice Mutua", "Project Configurator"],
+  author: ["specifier", "Amina Yusuf", "Work Definition Author"],
+  approver: ["org", "Prof. Ndegwa", "Work Definition Approver"],
+  rateowner: ["org", "Nadia Okoth", "Rate Owner"],
+  payowner: ["org", "Daniel Mwangi", "Payment Mechanism Owner"],
+  instance: ["org", "Instance administrator", "Instance Admin"],
+  custodian: ["custodian", "Otieno", "Registry Custodian"],
+  support: ["custodian", "Naliaka", "Support Agent"],
+  funder: ["org", "Funding oversight", "Funding Viewer"],
+};
+const CONSOLE_PERSONA_ORDER = Object.keys(CONSOLE_PERSONAS);
+async function consoleSignIn(page, request, personaKey) {
+  const [fixKey, who, role] = CONSOLE_PERSONAS[personaKey];
+  const partyId = FIX[fixKey];
+  const token = await mintToken(request, partyId);
+  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const pw = await (await request.get(G2.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub))).json();
+  const bind = await request.post(
+    G2.parties + "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      data: { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject },
+    });
+  expect(bind.ok(), "the self-bind is accepted for " + partyId).toBeTruthy();
+  await page.goto("/console/");
+  await page.evaluate(
+    ([t, pid, w, r, k]) => sessionStorage.setItem("crest.console.session",
+      JSON.stringify({ token: t, me: { partyId: pid, who: w, role: r }, persona: k })),
+    [token, partyId, who, role, personaKey]);
+  await page.reload();
+  await settle(page);
+}
+
+// The dev-login card is gone from the worker door (the login screen shows only
+// the real pathways), so tests sign in the way the card used to: mint a token
+// from the mock issuer, append the same idempotent identity binding through
+// the real endpoint, and hand the session to the app the way a reload would
+// find it. Same acts, no test-only UI.
+async function workerSignIn(page, request, partyId, label) {
+  const token = await mintToken(request, partyId);
+  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const pw = await (await request.get(G2.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub))).json();
+  const bind = await request.post(
+    G2.parties + "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      data: { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject },
+    });
+  expect(bind.ok(), "the self-bind is accepted for " + partyId).toBeTruthy();
+  await page.goto("/worker/");
+  await page.evaluate(
+    ([t, me, lb]) => sessionStorage.setItem("crest.worker.session", JSON.stringify({ token: t, me, label: lb })),
+    [token, partyId, label]);
+  await page.reload();
+  await settle(page);
 }
 
 async function asParty(request, partyId, method, path, body) {
@@ -768,11 +916,11 @@ test("console: the G-2 onboarding journey is real, screen by screen", async ({ p
   await settle(page);
   await expect(page.locator("#stepcounter")).toContainText("Registration · 3 of 4");
   await expect(page.locator("body")).toContainText("Read the third row");
-  await expect(page.locator("body")).toContainText(/No check verdict has been recorded yet/i);
+  await expect(page.locator("body")).toContainText(/a check is a verdict with a named owner/i);
   await page.click("#submitchecks");
   await page.waitForURL(/#\/onboard\/status/, { timeout: 20000 });
   await settle(page);
-  await expect(page.locator("body")).toContainText(/TERMS_ACCEPTED|PENDING/);
+  await expect(page.locator("body")).toContainText(/TERMS_ACCEPTED|Pending/i);
 
   // The operator decides — never the organisation itself. The custodian is
   // this stack's named decider.
@@ -801,12 +949,12 @@ test("console: the G-2 onboarding journey is real, screen by screen", async ({ p
   // earlier set already published (and possibly already accepted at
   // registration, since the terms screen offers the newest published set).
   const widerId = "crest:terms:01JCRESTG2WDERT" + stamp + "PAY00";
-  r = await request.post(G2.parties + "/v1/terms", {
-    data: {
-      id: widerId, version: 1, name: "Full delivery with payment",
-      permissions: ["submit-work-evidence", "specify-definition", "ratify-definition", "set-rates", "instruct-payment"],
-      publishedAt: "2026-09-01T00:00:00Z",
-    },
+  // Terms are the operator's to publish: the fixture organisation is this
+  // stack's operator, and an unsigned caller is refused.
+  r = await asParty(request, FIX.org, "POST", "/v1/terms", {
+    id: widerId, version: 1, name: "Full delivery with payment",
+    permissions: ["submit-work-evidence", "specify-definition", "ratify-definition", "set-rates", "instruct-payment"],
+    publishedAt: "2026-09-01T00:00:00Z",
   });
   expect(r.status(), "the operator publishes the wider set").toBe(201);
 
@@ -897,7 +1045,7 @@ test("console: the G-2 onboarding journey is real, screen by screen", async ({ p
 // verification's generalisation of "every held payment has a reason with an
 // owner": every approval carries a decider — the authenticated caller, checked
 // by the service (#89), never a typed name — and every rejection a reason.
-test("console: G-1 walks the instance, and a person decides the admission", async ({ page }) => {
+test("console: G-1 walks the instance, and a person decides the admission", async ({ page, request }) => {
   test.setTimeout(180000);
   const errors = watch(page);
   const stamp = Date.now().toString().slice(-6);
@@ -923,7 +1071,7 @@ test("console: G-1 walks the instance, and a person decides the admission", asyn
   // applicant, which is what lets the decision stand at all.
   await page.goto("/console/");
   await settle(page);
-  await page.click('[data-p="6"]');
+  await consoleSignIn(page, request, "instance");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await signedInAs(page, "Instance administrator");
@@ -931,19 +1079,19 @@ test("console: G-1 walks the instance, and a person decides the admission", asyn
   // g1_1 — the front door: what the deployment IS, and no fake wizard.
   await page.evaluate(() => { location.hash = "#/instance/setup"; });
   await settle(page);
-  await expect(page.locator("body")).toContainText("Let's set up CREST");
-  await expect(page.locator("body")).toContainText("crest:instance:local");
-  await expect(page.locator("body")).toContainText(/compose locally, Railway in the cloud/i);
+  await expect(page.locator("body")).toContainText(/Let.s set up CREST/);
+  await expect(page.locator("body")).toContainText(/read live from GET \/v1\/instance/i);
   await assertAlive(page, errors, "g1_1 setup front door");
 
   // g1_2 — read-only coverage, walked by the frame's own Begin button.
-  await page.click("#g1-next");
+  await page.click("#g1-begin");
   await settle(page);
   expect(page.url()).toContain("#/instance/covers");
   await expect(page.locator("body")).toContainText("What this instance covers");
   // No editable instance field exists: read-only by design, and said so.
   await expect(page.locator('input[name="instancename"]')).toHaveCount(0);
-  await expect(page.locator("body")).toContainText("There is nothing to save");
+  await expect(page.locator("body")).toContainText(/has nothing to save/i);
+  await expect(page.locator("body")).toContainText("crest:instance:local");
 
   // g1_3 — the consent floor, stated as the infrastructure facts it is.
   await page.click("#g1-next");
@@ -1084,9 +1232,7 @@ test("per-share consent: the presentation loop on both faces, and the decline pa
   await expect(page.locator(".errbar")).toContainText(/not approved|nothing to collect|409/i, { timeout: 20000 });
 
   // The worker: who is asking and why, BEFORE any disclosure list.
-  await page.goto("/worker/");
-  await settle(page);
-  await page.click("#login-grace");
+  await workerSignIn(page, request, FIX.workerA, "Grace \u00b7 community health worker");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await expect(page.locator(".appbar .who-label")).toContainText("Grace");
@@ -1180,9 +1326,7 @@ test("recovery: nomination routes, a refusal is owned, and two authorities confi
   }
 
   // w1_7 — the worker nominates: party-linked picks, revocation kept.
-  await page.goto("/worker/");
-  await settle(page);
-  await page.click("#login-grace");
+  await workerSignIn(page, request, FIX.workerA, "Grace \u00b7 community health worker");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await page.evaluate(() => { location.hash = "#/profile/recovery"; });
@@ -1227,7 +1371,7 @@ test("recovery: nomination routes, a refusal is owned, and two authorities confi
   // w4_1 — the confirmer's inbox, the SMS gap said honestly.
   await page.click("#logout");
   await settle(page);
-  await page.click("#login-supervisor");
+  await workerSignIn(page, request, FIX.supervisor, "District Supervisor \u00b7 recovery confirmer");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await expect(page.locator(".appbar .who-label")).toContainText("District Supervisor");
@@ -1293,8 +1437,7 @@ test("recovery: nomination routes, a refusal is owned, and two authorities confi
   // and the quorum closes: 2 of 2 distinct authorities, CONFIRMED.
   await page.click("#logout");
   await settle(page);
-  await page.fill("#login-partyid", FIX.custodian);
-  await page.click("#login-party-go");
+  await workerSignIn(page, request, FIX.custodian, "Signed in by party id (dev)");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await page.evaluate(() => { location.hash = "#/vouch"; });
@@ -1324,6 +1467,10 @@ test("assisted enrolment: the confidence check records a method, never a tier", 
   await page.goto("/enrolment/");
   await settle(page);
   await page.click("[data-login]");
+  await settle(page);
+  // The door no longer assumes a project: the agent picks one of the
+  // contexts their grants name. This walk is about the story's project.
+  await pickStoryProject(page);
   await settle(page);
   // The route is reachable from the register screen's own frame.
   await page.evaluate(() => { location.hash = "#/register"; });
@@ -1384,8 +1531,7 @@ test("qualification arrival: the anchor lands and earned strength re-derives", a
   // the same first-login path an eSignet anchor takes. Nothing is rewritten.
   await page.goto("/worker/");
   await settle(page);
-  await page.fill("#login-partyid", CHANDRA);
-  await page.click("#login-party-go");
+  await workerSignIn(page, request, CHANDRA, "Signed in by party id (dev)");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await page.evaluate(() => { location.hash = "#/added"; });
@@ -1450,9 +1596,7 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   const me = FIX.org;
 
   // ── F-1 · f1_2: only one person can assign — the Org Admin records it. ──
-  await page.goto("/console/");
-  await settle(page);
-  await page.click('[data-persona="orgadmin"]');
+  await consoleSignIn(page, request, "orgadmin");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await signedInAs(page, "Peter Otieno");
@@ -1466,6 +1610,16 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   // The assignment is a record with the assigner's name and date, kept.
   await expect(page.locator("[data-assignment]").first()).toContainText("assigned by");
 
+  // The funder role is now derivable from the assignment itself, not a seeded
+  // label: the assigned party's own /rate-ownerships/mine names the definition,
+  // and a party that owns no rate gets an empty list. This is what lets a real
+  // eSignet login land on the rate-owner surface (console state.tsx derivation).
+  const mineRates = await asPartyOn(request, PAYSVC.payments, me, "GET", "/v1/rate-ownerships/mine");
+  expect(mineRates.status()).toBe(200);
+  expect((await mineRates.json()).definitionIds, "the assigned owner's own read names the definition").toContain(DEFN);
+  const notOwnerRates = await asPartyOn(request, PAYSVC.payments, FIX.custodian, "GET", "/v1/rate-ownerships/mine");
+  expect((await notOwnerRates.json()).definitionIds || [], "a non-owner owns no rate").not.toContain(DEFN);
+
   // A party who is NOT the assigned owner cannot author a rate — the
   // service's refusal, not a hidden button.
   const notOwner = await asPartyOn(request, PAYSVC.payments, FIX.custodian, "POST",
@@ -1475,9 +1629,7 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   expect((await notOwner.json()).code).toBe("not_rate_owner");
 
   // ── f1_3 / f1_4: the owner prices a unit somebody else defined. ──
-  await page.click("#logout");
-  await settle(page);
-  await page.click('[data-persona="rateowner"]');
+  await consoleSignIn(page, request, "rateowner");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await signedInAs(page, "Nadia Okoth");
@@ -1508,12 +1660,17 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   await expect(page.locator("body")).toContainText("The rate is live. The money still cannot move.");
   await expect(page.locator('[data-standing="not-configured"]')).toBeVisible();
   await expect(page.locator("body")).toContainText("Hand this to someone else");
+  // f1_5's outstanding items, each owed by exactly one party.
+  await expect(page.locator("body")).toContainText("What is now owed, and by whom");
+  await expect(page.locator("body")).toContainText("None of these escalates on its own.");
   // Supersession is a new version: the publish added one, naming its parent.
   await page.evaluate(() => { location.hash = "#/ratepublish"; });
   await settle(page);
   const versionsAfter = await page.locator("[data-rateversion]").count();
   expect(versionsAfter, "publication is a new version, never a rewrite").toBe(versionsBefore + 1);
   await expect(page.locator("[data-rateversion]").last()).toContainText("supersedes v" + versionsBefore);
+  // f1_4 — terms are what make a dispute possible, on the frame.
+  await expect(page.locator("body")).toContainText("Published terms are what make a dispute possible.");
   await assertAlive(page, errors, "F-1 rate walk");
 
   // ── The fresh project this run's mechanism will govern. ──
@@ -1540,9 +1697,7 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   expect(r.status(), "the supervisor's grant on the walk's project").toBe(201);
 
   // ── F-2: the mechanism owner configures — and no further. ──
-  await page.click("#logout");
-  await settle(page);
-  await page.click('[data-persona="payowner"]');
+  await consoleSignIn(page, request, "payowner");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await signedInAs(page, "Daniel Mwangi");
@@ -1552,10 +1707,46 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   await settle(page);
   await page.locator(`[data-context="${projId}"]`).click();
   await settle(page);
+
+  // ── f2_1: one question, and it is the composition record — where CREST
+  // stops, answered by the mechanism owner through the same payment-posture
+  // choice the Configurator's screen writes. ──
+  await page.evaluate(() => { location.hash = "#/mech/where"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("One question. Everything after it follows from the answer.");
+  await expect(page.locator("body")).toContainText("It is a choice about where CREST stops.");
+  await page.locator('.optcard:has-text("At a payment instruction")').click();
+  await page.waitForURL(/#\/mech\/rails/, { timeout: 20000 });
+  await settle(page);
+
+  // ── f2_2: rails, chosen as a set and recorded; choosing creates the
+  // mechanism this walk's records hang off. ──
+  await expect(page.locator("body")).toContainText("One project is rarely one rail.");
+  await page.locator('.optcard:has-text("Bank or FSP")').click();
+  await page.locator('.optcard:has-text("An implementing partner")').click();
+  await page.click("#save-rails");
+  await expect(page.locator("body")).toContainText("rails-chosen — by", { timeout: 20000 });
+  await expect(page.locator("body")).toContainText(/configured, not live/i);
+
+  // The mechanism owner is now derivable from owning the mechanism: their own
+  // /mechanisms/mine names it. This is the fact a real eSignet login reads to
+  // land on the /mech surface as the payment mechanism owner (state.tsx).
+  const mineMechs = await asPartyOn(request, PAYSVC.payments, me, "GET", "/v1/mechanisms/mine");
+  expect(mineMechs.status()).toBe(200);
+  expect((await mineMechs.json()).mechanisms.length, "the owner's own read names their mechanism").toBeGreaterThan(0);
+
+  // ── f2_3: the connection names the provider; the secret never passes
+  // through the console. ──
+  await page.evaluate(() => { location.hash = "#/mech/connect"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("this only establishes that CREST can talk to your provider");
+  await expect(page.locator("body")).toContainText("held by the platform operator — never entered here");
+  await page.click("#save-connect");
+  await expect(page.locator("body")).toContainText("provider-connected — by", { timeout: 20000 });
+
   await page.evaluate(() => { location.hash = "#/mech/test"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("Send one real payment");
-  await page.click("#mech-create");
   await expect(page.locator("body")).toContainText(/configured, not live/i, { timeout: 20000 });
 
   // f2_8, refused readably: activation before the acts is a readable list of
@@ -1686,7 +1877,9 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   // choice with the trade-off unstated is refused. ──
   await page.evaluate(() => { location.hash = "#/mech/batching"; });
   await settle(page);
-  await expect(page.locator("body")).toContainText("Batching is paid for by the worker");
+  // The reference's sentence is "Batching is paid for by the worker"; the
+  // screen carries the same rule in its own words.
+  await expect(page.locator("body")).toContainText("paid for by the worker");
   // The reference's dispute-hold field exists — and this deployment answers
   // it honestly instead of pretending: a dispute never withholds the money.
   await expect(page.locator("body")).toContainText("Hold payment if a dispute is open");
@@ -1778,10 +1971,8 @@ async function step(page, label, route) {
   await settle(page);
 }
 
-async function signInAs(page, persona, who) {
-  await page.goto("/console/");
-  await settle(page);
-  await page.click(`[data-persona="${persona}"]`);
+async function signInAs(page, request, persona, who) {
+  await consoleSignIn(page, request, persona);
   await page.locator("#logout").waitFor({ state: "visible", timeout: 25000 });
   await settle(page);
   await signedInAs(page, who);
@@ -1790,10 +1981,10 @@ async function signInAs(page, persona, who) {
 // Switch persona inside the same tab, so sessionStorage — which is where the
 // draft id lives — survives. That is deliberate: the approver reads the very
 // draft the author just submitted, and the console holds nothing else.
-async function switchTo(page, persona, who) {
-  await page.click("#logout");
-  await settle(page);
-  await page.click(`[data-persona="${persona}"]`);
+// consoleSignIn only rewrites the session key, so the rest of sessionStorage
+// (the draft id) survives the switch.
+async function switchTo(page, request, persona, who) {
+  await consoleSignIn(page, request, persona);
   await page.locator("#logout").waitFor({ state: "visible", timeout: 25000 });
   await settle(page);
   await signedInAs(page, who);
@@ -1807,9 +1998,7 @@ test("console: the registry metrics read real counts, and the receipt shows a re
   const errors = watch(page);
 
   // ── g4_4/g4_5/g4_7, as the registry custodian. ──
-  await page.goto("/console/");
-  await settle(page);
-  await page.click('[data-persona="custodian"]');
+  await consoleSignIn(page, request, "custodian");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
   await settle(page);
   await signedInAs(page, "Otieno");
@@ -1818,7 +2007,7 @@ test("console: the registry metrics read real counts, and the receipt shows a re
   // falls into the honest unspecified bucket — never a fabricated percentage.
   await page.evaluate(() => { location.hash = "#/coverage"; });
   await settle(page);
-  await expect(page.locator("body")).toContainText("total registered");
+  await expect(page.locator("body")).toContainText("Worst gaps first — this is the work list");
   await expect(page.locator("body")).toContainText(/unspecified/i);
   await expect(page.locator("body")).not.toContainText("0.0%");
   await signedInAs(page, "Otieno");
@@ -1826,7 +2015,8 @@ test("console: the registry metrics read real counts, and the receipt shows a re
   // g4_5: a row per party with a named gap, or the honest empty state.
   await page.evaluate(() => { location.hash = "#/registry-quality"; });
   await settle(page);
-  await expect(page.locator("body")).toContainText(/parties with a named gap/i);
+  await expect(page.locator("body")).toContainText(/Registered but with a gap/i);
+  await expect(page.locator("body")).toContainText("What is missing, counted");
   await signedInAs(page, "Otieno");
 
   // g4_7: the reuse metric, or its null state — never a fabricated 0.
@@ -1856,7 +2046,7 @@ test("console: the registry metrics read real counts, and the receipt shows a re
   const batchId = (await batchRes.json()).batch.id;
   expect(batchId).toBeTruthy();
 
-  await switchTo(page, "instance", "Instance administrator");
+  await switchTo(page, request, "instance", "Instance administrator");
   await page.evaluate(() => { location.hash = "#/receipt"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("What the project received, and where it sits");
@@ -1869,22 +2059,27 @@ test("console: the registry metrics read real counts, and the receipt shows a re
   await assertAlive(page, errors, "project receipt");
 });
 
-test("console: the authoring wizard writes a definition, proves it dry, and has it ratified with its gaps named", async ({ page }) => {
+test("console: the authoring wizard writes a definition, proves it dry, and has it ratified with its gaps named", async ({ page, request }) => {
   const errors = watch(page);
   test.setTimeout(240000);
 
   // ── p3_1 · the registry. "Define new work" is a real POST; a draft exists
   //    on the server before the first screen renders. ──
-  await signInAs(page, "author", "Amina Yusuf");
+  await signInAs(page, request, "author", "Amina Yusuf");
   await page.evaluate(() => { location.hash = "#/definework"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("Work definitions");
-  await expect(page.locator("body")).toContainText(/POST-only registry/i);
+  // The reference frame: one list, three filter chips over it.
+  await expect(page.locator(".fchip")).toHaveCount(3);
   await step(page, "Define new work", "define/sector");
   // The draft is real and this session is authoring it.
   await page.evaluate(() => { location.hash = "#/definework"; });
   await settle(page);
   await expect(page.locator("[data-authoring]")).toContainText("definition-draft");
+  // The current draft's own row does not hide its button: it says it is open
+  // in this session and carries Continue back into the wizard.
+  await expect(page.locator("[data-continue]")).toHaveCount(1);
+  await expect(page.locator("body")).toContainText("open · this session");
   await page.evaluate(() => { location.hash = "#/define/sector"; });
   await settle(page);
 
@@ -1911,7 +2106,8 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   //    the basis before it navigates. ──
   await expect(page.locator("#stepcounter")).toContainText("Counting basis · 2 of 9");
   await expect(page.locator(".optcard")).toHaveCount(3);
-  await expect(page.locator("body")).toContainText("counting.basis = outcome");
+  // The reference frame: three plain cards; the outcome branch offered by name.
+  await expect(page.locator("body")).toContainText(/Paid on a result, often measured across a population/i);
   // The two branch screens the fork offers, visited and then left — the draft
   // records whichever branch the walk continues on.
   await step(page, "Time-based instead", "define/period");
@@ -1936,8 +2132,9 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await fill(page, "frequency", "Per campaign day");
   await fill(page, "countingModel", "Individually countable — one record per unit");
   await page.click('.optcard:has-text("Per individual event")');
-  await expect(page.locator("body")).toContainText("The field the rate will price");
-  await expect(page.locator('[data-callout="teal"]:has-text("The field the rate will price")'))
+  // The reference's blue note: the rate references the unit by ID, and the
+  // screen echoes the unit it will reference.
+  await expect(page.locator('.sidecar:has-text("referenced by ID by any rate")'))
     .toContainText("bednets-distributed");
   await step(page, "Continue", "define/cascade");
 
@@ -1973,7 +2170,9 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   // dry run will judge rows against.
   await page.locator('[data-requires="3"]').fill("household_id, beneficiary_count");
   await page.locator('[data-requires="2"]').fill("household_id");
-  await expect(page.locator('[data-callout="green"]')).toContainText(/A stored tier would freeze a judgement/i);
+  // p3_8 was redrawn to the design pack's frame (75f02b7), which carries no
+  // green callout here; the stored-tier sentence lives on p3_22's derived
+  // tier, asserted below.
   await step(page, "Continue", "define/source");
 
   // ── p3_22 · the source-class choice that CAPS the tier, shown as the
@@ -1997,12 +2196,12 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   //    rest named as absent because that is what the service returns. ──
   await expect(page.locator("#stepcounter")).toContainText("Connection · 1 of 5");
   await expect(page.locator("body")).toContainText("csv-batch@1");
-  await expect(page.locator(".optcard.na")).not.toHaveCount(0);
+  await expect(page.locator(".g-row.dim")).not.toHaveCount(0);
   await expect(page.locator("body")).toContainText("not-implemented");
   // The reference's primary button names a class CREST does not have, so it
   // carries the gap instead of pretending.
   await expect(page.locator(".open-note")).toContainText(/DIGIT HCM is not an implemented adaptor class/i);
-  await page.click('.optcard:has-text("csv-batch@1")');
+  await page.click('button.g-row:has-text("csv-batch@1")');
   await page.waitForTimeout(400);
   await step(page, "Start a new one", "define/mapping");
 
@@ -2092,7 +2291,10 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await expect(page.locator("#stepcounter")).toContainText("Payment · 9 of 9");
   await choose(page, "rateSetter", "Someone else will — invite sent");
   await choose(page, "mechanismSetter", "I'll set this");
-  await expect(page.locator('[data-callout="green"]')).toContainText(/There is no currency field on this screen/i);
+  // No amount anywhere: the frame's split is two records joined by reference,
+  // and the money question is the payment record's, not the definition's.
+  await expect(page.locator("body")).toContainText(/stronger evidence to release money than it requires to issue/i);
+  await expect(page.locator('input[name="rateamount"], input[name="currency"]')).toHaveCount(0);
   await step(page, "Continue", "define/roles");
 
   // ── p3_20 · the four project roles. ──
@@ -2100,7 +2302,7 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await page.locator('[data-role="mechanismSetter"]').fill(P3.approver);
   await page.locator('[data-role="validator"]').fill("District health office");
   await page.locator('[data-role="approver"]').fill(P3.approver);
-  await expect(page.locator("body")).toContainText(/Naming somebody here does not grant them anything/i);
+  await expect(page.locator("body")).toContainText(/the authority itself lives in the service that enforces it/i);
   await step(page, "Continue", "define/tranches");
 
   // ── p3_12 · stacked pay. Shares of a rate nobody has published yet. ──
@@ -2125,7 +2327,7 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await choose(page, "exttype", "string");
   await fill(page, "extvalue", "MGN/2026/WD/0841");
   await page.click("#extensionform button[type=submit]");
-  await expect(page.locator("body")).toContainText(/it is a design finding/i);
+  await expect(page.locator("body")).toContainText(/is a design finding/i);
   await step(page, "Continue", "define/open");
 
   // ── p3_18 · nothing left undecided, and the submit that follows from it. ──
@@ -2169,7 +2371,7 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   // ── p3_15 · the approver signs, and names what stays pending. A DIFFERENT
   //    party: the service refuses a self-ratified version, and these two
   //    personas are two parties so that refusal is load-bearing. ──
-  await switchTo(page, "approver", "Prof. Ndegwa");
+  await switchTo(page, request, "approver", "Prof. Ndegwa");
   await page.evaluate(() => { location.hash = "#/ratify"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("Review and sign");
@@ -2201,7 +2403,7 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
 
   // ── p3_pay · pricing handed to the rate owner. The author's act, not the
   //    approver's, and a record rather than an authority. ──
-  await switchTo(page, "author", "Amina Yusuf");
+  await switchTo(page, request, "author", "Amina Yusuf");
   await page.evaluate(() => { location.hash = "#/handoff"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("The definition is signed. Nothing prices it yet.");
@@ -2226,11 +2428,11 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
 // that named fields. Driven through "Clone a version", which also proves that
 // submitting a clone APPENDS v2 and leaves v1 exactly as ratified — the
 // property that protects every credential already pinned to v1.
-test("console: a clone submits as the next version, and ratifying names nothing pending", async ({ page }) => {
+test("console: a clone submits as the next version, and ratifying names nothing pending", async ({ page, request }) => {
   const errors = watch(page);
   test.setTimeout(180000);
 
-  await signInAs(page, "author", "Amina Yusuf");
+  await signInAs(page, request, "author", "Amina Yusuf");
   await page.evaluate(() => { location.hash = "#/definework"; });
   await settle(page);
   await step(page, "Clone a version", "define/sector");
@@ -2277,7 +2479,7 @@ test("console: a clone submits as the next version, and ratifying names nothing 
 
   // ── Ratified with nothing pending: the approver declares no open fields,
   //    and that is a different record from a list that happens to be empty. ──
-  await switchTo(page, "approver", "Prof. Ndegwa");
+  await switchTo(page, request, "approver", "Prof. Ndegwa");
   await page.evaluate(() => { location.hash = "#/ratify"; });
   await settle(page);
   await expect(page.locator("#ratify-read")).toContainText(`v${appended}`);
@@ -2293,4 +2495,195 @@ test("console: a clone submits as the next version, and ratifying names nothing 
   await expect(page.locator("[data-event='RATIFIED']")).toBeVisible();
 
   await assertAlive(page, errors, "the clone-and-ratify walk");
+});
+
+// ── The oversight pack (J9 project view, J10 funder view, J11 registry view):
+// the reference's anatomy and explanatory copy on the ten console dashboards,
+// over live reads. Fixture figures from the reference (Turkana, KES, 84.4%)
+// are deliberately NOT asserted — a screen that carried them would be lying.
+test("console: the oversight dashboards carry the p2_11–16, v4_1–2 and g4_4–7 pack's copy", async ({ page, request }) => {
+  test.setTimeout(150000);
+  const errors = watch(page);
+  const body = page.locator("body");
+
+  // J9 — the Project Configurator's five frames.
+  await consoleSignIn(page, request, "configurator");
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await signedInAs(page, "Dr. Alice Mutua");
+  await page.evaluate(() => { location.hash = "#/stp"; });
+  await settle(page);
+  await expect(body).toContainText(/Why the other \d+ fell out — ranked/);
+  await expect(body).toContainText("What changed this month");
+  await page.evaluate(() => { location.hash = "#/quality"; });
+  await settle(page);
+  await expect(body).toContainText("system recorded");
+  await expect(body).toContainText("The one action on this screen");
+  await expect(body).toContainText("There is a system holding this data already");
+  await page.evaluate(() => { location.hash = "#/payments"; });
+  await settle(page);
+  await expect(body).toContainText("The row that crosses a boundary");
+  await expect(body).toContainText("One list, two dashboards, and neither of you can close it alone.");
+  await page.click('[data-act="unowned"]');
+  await expect(body).toContainText(/Cleared but never instructed, or held with nobody holding — \d+/);
+  await page.evaluate(() => { location.hash = "#/trace"; });
+  await settle(page);
+  await expect(body).toContainText("One row worth acting on");
+  await expect(body).toContainText("the single most common way a worker quietly loses money");
+  await page.click('[data-act="bundle"]');
+  await expect(body).toContainText("no bundle endpoint exists");
+  await page.evaluate(() => { location.hash = "#/reports"; });
+  await settle(page);
+  await expect(body).toContainText("Validated work value");
+  await expect(body).toContainText("Unspent against allocation");
+  await expect(body).toContainText("Off by default");
+  await expect(body).toContainText("Turns an aggregate report into a list of named people and their earnings");
+  await expect(body).toContainText("Needs a governance decision, not a checkbox");
+  await expect(body).toContainText("Your project is configured and running");
+  await page.click('[data-act="preview"]');
+  await expect(body).toContainText("what is on this screen is the preview");
+  await signedInAs(page, "Dr. Alice Mutua");
+  await assertAlive(page, errors, "J9 project dashboards");
+
+  // J10 — the funder's portfolio (v4_1) and the drill beneath it (v4_2).
+  await switchTo(page, request, "funder", "Funding oversight");
+  await page.evaluate(() => { location.hash = "#/portfolio"; });
+  await settle(page);
+  await expect(body).toContainText("the number that matters");
+  await expect(body).toContainText("Not the largest number, the worst ratio");
+  await expect(body).toContainText("Stuck");
+  await page.locator('[data-act="open-project"]').first().click();
+  await expect(body).toContainText("What was delivered, on");
+  await expect(body).toContainText("What is deliberately absent");
+  await expect(body).toContainText("Nothing on this screen names a worker, and nothing needs to.");
+  await expect(body).toContainText("Follow the tier column");
+  await expect(body).toContainText("An unanswered query is not escalated anywhere.");
+  // The drill groups real claims by the unit's geography and definition: the
+  // story's place and outcome unit are live reads, never the reference's Loima.
+  await expect(body).toContainText("Where the work happened");
+  await expect(body).toContainText("Riverside");
+  await expect(body).toContainText("bednets-distributed");
+  await expect(body).not.toContainText("Loima");
+  await page.click('[data-act="query"]');
+  await expect(body).toContainText("has no object and no endpoint yet");
+  await page.click('[data-act="individual"]');
+  await expect(body).toContainText("Deliberately absent from this view");
+  await signedInAs(page, "Funding oversight");
+  await assertAlive(page, errors, "J10 funder portfolio");
+
+  // J11 — the registry custodian's four frames.
+  await switchTo(page, request, "custodian", "Otieno");
+  await page.evaluate(() => { location.hash = "#/coverage"; });
+  await settle(page);
+  await expect(body).toContainText("Gap to close");
+  await expect(body).toContainText("people missing");
+  await page.evaluate(() => { location.hash = "#/dupes"; });
+  await settle(page);
+  await expect(body).toContainText("open pairs");
+  await expect(body).toContainText("median time to resolve");
+  await expect(body).toContainText("merged without confirmation");
+  await expect(body).toContainText("Duplicate rate falls if pairs are closed as different without being looked at.");
+  await expect(body).toContainText("which is why low confidence must never auto-merge");
+  await page.click('[data-act="bulk"]');
+  await expect(body).toContainText("a batch cannot carry one");
+  await page.evaluate(() => { location.hash = "#/reuse"; });
+  await settle(page);
+  await expect(body).toContainText("used by one project only");
+  await expect(body).toContainText("used by two or more");
+  await expect(body).toContainText("never again, never retired");
+  await expect(body).toContainText("You reviewed the registry");
+  await expect(body).toContainText("An assigned gap that nobody works is not escalated.");
+  await signedInAs(page, "Otieno");
+  await assertAlive(page, errors, "J11 registry dashboards");
+});
+
+// ── #123: the invitation in front of the first-login bootstrap. The org admin
+// creates a person and a role from People & roles and gets a one-time link;
+// a stranger the registry has never seen claims it with their own login and
+// lands in the console AS that person, with the persona derived from the
+// grant. The return leg is driven directly (#/auth?token=…) with a mock
+// issuer token, which is exactly what the eSignet callback hands the door.
+test("console: an invited person claims their record with their own login, once", async ({ page, request }) => {
+  test.setTimeout(120000);
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+  const body = page.locator("body");
+
+  await consoleSignIn(page, request, "orgadmin");
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await page.evaluate(() => { location.hash = "#/people"; });
+  await settle(page);
+  await expect(body).toContainText("Invite a person");
+  await page.fill('[data-field="invite-name"]', "Invited Author " + stamp);
+  await page.selectOption('[data-field="invite-contact-kind"]', "email");
+  await page.fill('[data-field="invite-contact"]', `author-${stamp}@example.org`);
+  await page.selectOption('[data-field="invite-function"]', "specify-definition");
+  await page.click('[data-act="invite"]');
+  await expect(page.locator("[data-invite-link]")).toBeVisible({ timeout: 20000 });
+  await expect(body).toContainText("The invitation, shown once");
+  const link = (await page.locator("[data-invite-link]").innerText()).trim();
+  const code = link.split("#/claim/")[1];
+  expect(code, "the link carries a claim code").toBeTruthy();
+  // The grant must have landed, or the persona below cannot derive.
+  await expect(body).not.toContainText("The record exists; the role does not yet");
+
+  // A stranger: a subject the registry has never bound.
+  const mint = async (sub) => {
+    const r = await request.post(G2.oidc + "/token", { data: { sub, aud: "crest", expiresIn: "1h" } });
+    const d = await r.json();
+    return d.accessToken || d.access_token || d.token;
+  };
+  const token = await mint("invitee|" + stamp);
+  await page.evaluate(() => sessionStorage.clear());
+  await page.goto("/console/#/claim/" + code);
+  await settle(page);
+  await expect(body).toContainText("You were invited to CREST Console");
+  await expect(page.locator("#claim-esignet")).toBeVisible();
+  // The button would hand the browser to eSignet; the return leg is what
+  // the door acts on, so drive it with the token the callback would carry.
+  await page.evaluate((c) => sessionStorage.setItem("crest.console.claim", c), code);
+  await page.evaluate((t) => { location.hash = "#/auth?token=" + encodeURIComponent(t); }, token);
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await settle(page);
+  await expect(page.locator(".appbar .who-label")).toContainText("Invited Author " + stamp);
+  await expect(page.locator(".appbar .who-label")).toContainText("Work Definition Author");
+  await assertAlive(page, errors, "claimed invitation");
+
+  // Spent: a second stranger with the same code is told so, in words.
+  const token2 = await mint("latecomer|" + stamp);
+  await page.evaluate(() => sessionStorage.clear());
+  await page.goto("/console/#/claim/" + code);
+  await settle(page);
+  await page.evaluate((c) => sessionStorage.setItem("crest.console.claim", c), code);
+  await page.evaluate((t) => { location.hash = "#/auth?token=" + encodeURIComponent(t); }, token2);
+  await expect(body).toContainText("That invitation was already claimed", { timeout: 20000 });
+});
+
+// The operator publishes the terms an organisation can be admitted on, from
+// the console — on a clean deployment nothing can be admitted until this
+// happens, and only the operator's own session is accepted for it.
+test("console: the operator publishes terms, and only the operator can", async ({ page, request }) => {
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+  // The gate is the deployment's own operator, read from its self-description;
+  // a stack that names a different party than the fixture organisation cannot
+  // be walked as the operator by this suite, and says so rather than failing.
+  const inst = await (await request.get(G2.parties + "/v1/instance")).json();
+  test.skip(inst.instance.operatorPartyId !== FIX.org,
+    "this stack names " + inst.instance.operatorPartyId + " as operator, not the fixture organisation");
+  await consoleSignIn(page, request, "instance");
+  await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
+  await page.evaluate(() => { location.hash = "#/instance/consent"; });
+  await settle(page);
+  await expect(page.locator("body")).toContainText("Terms an organisation can be on");
+  await page.fill('[data-field="terms-name"]', "Delivery terms " + stamp);
+  await page.check('[data-perm="register-workers"]');
+  await page.click('[data-act="publish-terms"]');
+  await expect(page.locator("[data-terms-row]", { hasText: "Delivery terms " + stamp })).toBeVisible({ timeout: 20000 });
+  await assertAlive(page, errors, "terms published by the operator");
+
+  // A person who is not the operator is refused by the registry, by name.
+  const r = await asParty(request, FIX.custodian, "POST", "/v1/terms", { name: "Not mine " + stamp, permissions: ["register-workers"] });
+  expect(r.status(), "a non-operator publishing terms").toBe(403);
+  expect((await r.json()).code).toBe("not_the_operator");
 });

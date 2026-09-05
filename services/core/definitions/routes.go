@@ -18,6 +18,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	h := &handlers{d: d}
 
 	mux.HandleFunc("POST /v1/definitions", h.create)
+	mux.HandleFunc("GET /v1/definitions", h.list)
 	mux.HandleFunc("GET /v1/definitions/{id}", h.get)
 	mux.HandleFunc("GET /v1/definitions/{id}/faces/{face}", h.face)
 	mux.HandleFunc("GET /v1/definitions/{id}/publication", h.publication)
@@ -91,6 +92,21 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, def)
+}
+
+// list answers which definitions exist, one entry per id — the version a
+// resolver would follow. Optional ?state= narrows; ?limit= caps (default 100).
+func (h *handlers) list(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	defs, err := listDefinitions(r.Context(), h.d.DB.Q(), r.URL.Query().Get("state"), limit)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "list definitions", err)
+		return
+	}
+	if defs == nil {
+		defs = []schema.Definition{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"definitions": defs, "count": len(defs)})
 }
 
 func (h *handlers) get(w http.ResponseWriter, r *http.Request) {

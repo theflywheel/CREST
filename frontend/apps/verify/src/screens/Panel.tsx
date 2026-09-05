@@ -2,7 +2,7 @@
 // apps/verify. These render in the panel shell, outside the console chrome —
 // the institution receiving a scoped link has no CREST account and sees no
 // console.
-import { Chip, Sidecar, OpenNote } from "@crest/ui";
+import { Chip, DisLi, Sidecar, OpenNote } from "@crest/ui";
 
 const CSV_COLUMNS: Array<[string, string]> = [
   ["activity", "bednet-distribution"],
@@ -22,12 +22,12 @@ const CSV_COLUMNS: Array<[string, string]> = [
 export function W61() {
   return (
     <>
-      <div className="eyebrow">P-10 · External institution · w6_1</div>
+      <div className="eyebrow">P-10 · External institution · w6_1 — supporting, not blocking</div>
       <h2 className="scr-title m">A request for one attestation</h2>
       <p className="body-2">
-        You received an emailed, scoped link: CREST is asking your institution to attest one thing it already knows. The
-        shape is a template out, a file back — the definition's own CSV columns, one row, from your records. You need no
-        CREST account; the link is the scope.
+        You received an emailed, scoped link: a project has emailed your institute a one-row template generated from
+        the work definition. You fill it in your own system and return it. There is no CREST account and no CREST
+        screen in this — the link is the scope.
       </p>
       <div className="eyebrow">The row you would return</div>
       <div className="tblwrap">
@@ -48,14 +48,34 @@ export function W61() {
       </div>
       <Sidecar>
         The worker id here is whatever identifier your system holds — never a national ID number. CREST resolves it and
-        keeps only a pairwise reference and a salted hash.
+        keeps only a pairwise reference and a salted hash. The template is scoped to this one event and asks for
+        nothing beyond it. Your institute holds no standing account, sees nothing else about this worker, and never
+        signs in anywhere.
       </Sidecar>
+      <div className="eyebrow">The row you send back (w6_2)</div>
+      <div className="card">
+        <div className="dis">
+          <DisLi on t="Yes — completed as claimed" s="the definition's own answer, in your file" />
+          <DisLi on={false} t="Partly — attended, did not complete" s="a partial answer is an answer, never silence" />
+          <DisLi on={false} t="No — no record of this worker" s="a negative is recorded too — it protects the worker from a wrong claim standing" />
+        </div>
+        <p className="muted" style={{ marginTop: 8 }}>
+          Your reference — your own system's id for the record — travels with the row. The returned file is recorded
+          as coming from your institute, and that provenance is what makes it worth more than the worker's own word.
+          It reaches CREST the same way any other spreadsheet does, through the project's intake.
+        </p>
+      </div>
       <OpenNote>
         <b>Not backed yet.</b> The scoped-link request object — the thing the emailed link would resolve to, carrying
         which attestation is being asked for and from whom — has no endpoint. The evidence service accepts CSV batches
         from authenticated submitters (<span className="mono">POST /v1/batches</span>), but nothing issues or honours an
         external scoped link. This panel is the design's shape only; no file can actually be returned from here.
       </OpenNote>
+      <p className="muted">
+        The reference closes the loop like this (w6_3): the project that requested the records acts next, within one
+        working day, with an email confirming what was accepted. If you hear nothing in three days, the project
+        contact is named on your invitation.
+      </p>
     </>
   );
 }
@@ -95,6 +115,19 @@ export function W62() {
             dressed up as more.
           </span>
         </div>
+      </div>
+      <div className="eyebrow">The fork the reference leaves unresolved (w6_3)</div>
+      <div className="card">
+        <div className="dis">
+          <DisLi on={false} t="Tier 1 by provenance?" s="It is an independent system record — but not from an authorised source_system" />
+          <DisLi on t="Capped at Tier 2?" s="Same treatment as a manually compiled export" />
+          <DisLi on={false} t="A fourth tier?" s="Tier count is baked into every credential already issued" />
+        </div>
+        <p className="muted" style={{ marginTop: 8 }}>
+          Section 4 warns that retrofitting a field like this breaks backward compatibility across all historical
+          credentials. Deciding late is expensive. This deployment decided: the middle line, recorded as the §16
+          ruling below.
+        </p>
       </div>
       <div className="eyebrow">Where your institution sits</div>
       <div className="card hi">

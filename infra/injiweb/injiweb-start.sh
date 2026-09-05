@@ -14,10 +14,21 @@ set -e
 
 CONFIG=/home/mosip/mimoto-issuers-config.json
 
+# Local compose stages a localhost-URL issuer config as a read-only bind
+# mount; sed -i below cannot rename over a single-file mount, so it is copied
+# into place first. Absent on Railway, where the baked config is the right one.
+if [ -f /home/mosip/local/mimoto-issuers-config.json ]; then
+  cp /home/mosip/local/mimoto-issuers-config.json "$CONFIG"
+fi
+
 if [ -n "$MIMOTO_OIDC_CLIENT_ID" ]; then
   sed -i "s|CLIENT_ID_PLACEHOLDER|$MIMOTO_OIDC_CLIENT_ID|g" "$CONFIG"
 else
   echo "MIMOTO_OIDC_CLIENT_ID is not set; the issuer config still has its placeholder" >&2
 fi
 
-exec nginx -g 'daemon off;'
+# The stock entrypoint (configure_start.sh) writes env.config.js from the
+# environment — MIMOTO_URL above all — before starting nginx. Exec'ing nginx
+# directly skips that, and the wallet frontend then calls the baked default
+# http://localhost:8099, which exists nowhere. Chain through it instead.
+exec ./configure_start.sh nginx -g 'daemon off;'

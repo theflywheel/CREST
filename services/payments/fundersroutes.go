@@ -39,6 +39,12 @@ func fundersRoutes(mux *http.ServeMux, d service.Deps, h *handlers) {
 	mux.HandleFunc("POST /v1/definitions/{id}/rates", f.publishRate)
 	mux.HandleFunc("GET /v1/definitions/{id}/rates", f.listRates)
 
+	// "What funder role does the signed-in caller hold?" — derived from the
+	// ownership records, so a console can land a real eSignet login on the
+	// rate-owner or mechanism-owner surface without a seeded persona label.
+	mux.HandleFunc("GET /v1/rate-ownerships/mine", f.myRateOwnerships)
+	mux.HandleFunc("GET /v1/mechanisms/mine", f.myMechanisms)
+
 	// F-2: mechanism to live.
 	mux.HandleFunc("POST /v1/mechanisms", f.createMechanism)
 	mux.HandleFunc("GET /v1/mechanisms/{id}", f.getMechanism)
@@ -108,6 +114,43 @@ func (f *fundersHandlers) getOwner(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"current": currentRateOwner(history), "history": history,
 	})
+}
+
+// myRateOwnerships and myMechanisms answer "which funder role does the caller
+// hold?" from the ownership records themselves. The caller is the caller: the
+// party the token resolves to, never a party named in a query, so one person
+// can only ever read their own ownership. A party that owns neither gets empty
+// lists, not an error — "you are not a funder here" is an answer.
+func (f *fundersHandlers) myRateOwnerships(w http.ResponseWriter, r *http.Request) {
+	if !identity.Authenticated(w, r, f.d.Log, f.d.Authenticating) {
+		return
+	}
+	me := identity.From(r.Context()).PartyID
+	defs := []string{}
+	if me != "" {
+		var err error
+		if defs, err = rateOwnershipsFor(r.Context(), f.d.DB.Q(), me); err != nil {
+			httpx.Fail(w, f.d.Log, "read rate ownerships", err)
+			return
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"partyId": me, "definitionIds": defs})
+}
+
+func (f *fundersHandlers) myMechanisms(w http.ResponseWriter, r *http.Request) {
+	if !identity.Authenticated(w, r, f.d.Log, f.d.Authenticating) {
+		return
+	}
+	me := identity.From(r.Context()).PartyID
+	mechs := []Mechanism{}
+	if me != "" {
+		var err error
+		if mechs, err = mechanismsOwnedBy(r.Context(), f.d.DB.Q(), me); err != nil {
+			httpx.Fail(w, f.d.Log, "read owned mechanisms", err)
+			return
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"partyId": me, "mechanisms": mechs})
 }
 
 // ─── F-1: rates as versioned terms ──────────────────────────────────────────
@@ -443,11 +486,12 @@ func (f *fundersHandlers) addRecord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch body.Kind {
-	case recordReconciliationAgreement, recordStatementAgreement,
+	case recordRailsChosen, recordProviderConnected,
+		recordReconciliationAgreement, recordStatementAgreement,
 		recordBatchingChoice, recordQualificationSubmitted, recordQualificationVerified:
 	default:
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body",
-			"kind is one of the recorded set-up acts: reconciliation-agreement, statement-agreement, batching-choice, qualification-submitted, qualification-verified")
+			"kind is one of the recorded set-up acts: rails-chosen, provider-connected, reconciliation-agreement, statement-agreement, batching-choice, qualification-submitted, qualification-verified")
 		return
 	}
 	actor, ok := identity.Authorize(w, r, f.d.Log, body.ActorPartyID, "",

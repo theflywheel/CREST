@@ -71,7 +71,9 @@ func loadAuthConfig(log interface{ Warn(string, ...any) }) *authConfig {
 			clean = append(clean, d)
 		}
 	}
-	return &authConfig{client: esignet.New(base, ui, rp, key), doors: clean, salt: salt}
+	client := esignet.New(base, ui, rp, key)
+	client.LogoURI = config.Str("CREST_LOGO_URL", "")
+	return &authConfig{client: client, doors: clean, salt: salt}
 }
 
 // callbackFor is the redirect URI eSignet sends the browser back to: the
@@ -79,6 +81,20 @@ func loadAuthConfig(log interface{ Warn(string, ...any) }) *authConfig {
 // first-party when the callback reads it.
 func (a *authConfig) callbackFor(door string) string {
 	return door + "/api/crest-registry/v1/auth/callback"
+}
+
+// cookiePathFor scopes the state cookie to the door's own callback prefix.
+// On Railway a door is a bare origin and this is /api/crest-registry/v1/auth,
+// exactly as before; locally the doors share one origin under path prefixes
+// (/console, /worker, …) and the callback arrives under that prefix — a cookie
+// scoped without it is never sent back, and the login dies as
+// no_login_in_flight with the person having done everything right.
+func cookiePathFor(door string) string {
+	path := ""
+	if u, err := url.Parse(door); err == nil {
+		path = strings.TrimRight(u.Path, "/")
+	}
+	return path + "/api/crest-registry/v1/auth"
 }
 
 func (a *authConfig) doorAllowed(door string) bool {
@@ -126,7 +142,7 @@ func registerAuth(mux *http.ServeMux, d service.Deps, a *authConfig) {
 		http.SetCookie(w, &http.Cookie{
 			Name:     "crest_auth",
 			Value:    esignet.SignState(a.salt, payload),
-			Path:     "/api/crest-registry/v1/auth",
+			Path:     cookiePathFor(door),
 			MaxAge:   600,
 			HttpOnly: true,
 			Secure:   strings.HasPrefix(door, "https://"),
@@ -176,15 +192,21 @@ func registerAuth(mux *http.ServeMux, d service.Deps, a *authConfig) {
 			return
 		}
 		// Clear the one-shot cookie; the token itself is the session now.
-		http.SetCookie(w, &http.Cookie{Name: "crest_auth", Value: "", Path: "/api/crest-registry/v1/auth", MaxAge: -1})
+		http.SetCookie(w, &http.Cookie{Name: "crest_auth", Value: "", Path: cookiePathFor(st.Door), MaxAge: -1})
 		// The fragment never reaches a server log — the door's #/auth route
 		// picks the token out and stores it for the session.
 		http.Redirect(w, r, st.Door+"/#/auth?token="+url.QueryEscape(tokens.AccessToken), http.StatusFound)
 	})
 
-	// Who am I, as this deployment sees me: the pairwise reference and the
-	// party bound to it. An authenticated stranger gets their subjectRef and
-	// no partyId — the state phase B's self-registration acts on.
+}
+
+// registerWhoAmI serves GET /v1/auth/me whether or not an eSignet login
+// surface is configured: the question "who does this deployment take me
+// for" is about the token the caller holds, not about how they obtained it,
+// and a mock-issuer stack (the e2e harness, a local run without eSignet)
+// answers it the same way. The doors' return legs and the invitation claim
+// both depend on it.
+func registerWhoAmI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
 		caller := identity.From(r.Context())
 		if !caller.Authenticated() {

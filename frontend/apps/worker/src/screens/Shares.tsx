@@ -245,8 +245,8 @@ export function ShareDecide() {
         refused — they will know you declined rather than that you have nothing.
       </Callout>
       <p className="muted">
-        This approval covers this one request — a second look means a second ask. It expires {when(v.request.expiresAt)}
-        {" "}if unanswered.
+        This approval covers this one request — a second look means a second ask. The link expires{" "}
+        {when(v.request.expiresAt)} if unanswered.
       </p>
       {refusing ? (
         <div className="card">

@@ -2,9 +2,9 @@
 // ported 1:1 from apps/enrolment.
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { actingFor, api, ApiError, FIX } from "@crest/api";
+import { actingFor, api, ApiError } from "@crest/api";
 import { Chip, KV, Sidecar, OpenNote, NextBlock } from "@crest/ui";
-import { useField } from "../state";
+import { useField, NO_PROJECT } from "../state";
 import { queue, setQueue, pushDone, useQueue, useDone, useOnline } from "../queue";
 
 export function Registrations() {
@@ -20,6 +20,22 @@ export function Registrations() {
   return (
     <>
       <div className="scr-title m">Today, through you</div>
+      {/* w2_1's two counters, real: what this device did and what it holds. */}
+      <div style={{ display: "flex", gap: 10 }}>
+        <div className="card quiet" style={{ flex: 1 }}>
+          <span style={{ font: "500 15px/1.3 Roboto" }}>{done.length}</span>
+          <span className="muted" style={{ display: "block" }}>done today</span>
+        </div>
+        <div className="card quiet" style={{ flex: 1 }}>
+          <span style={{ font: "500 15px/1.3 Roboto" }}>{q.length}</span>
+          <span className="muted" style={{ display: "block" }}>to sync</span>
+        </div>
+      </div>
+      {!online ? (
+        <Sidecar warm>
+          You are offline. Registrations are held on this device and sync when you have signal.
+        </Sidecar>
+      ) : null}
       {q.length ? (
         <>
           <span className="eyebrow">Held on this device</span>
@@ -61,7 +77,7 @@ export function Registrations() {
         <div className="card quiet">
           <span className="muted">
             Nothing yet today. The registry keeps the durable list; this screen shows what came through this device —
-            there is no "everyone Naomi ever registered" endpoint at L1, and the day's work is a device-local view on
+            there is no "everyone this agent ever registered" endpoint at L1, and the day's work is a device-local view on
             purpose.
           </span>
         </div>
@@ -157,9 +173,9 @@ export function Register() {
         </form>
       </div>
       <Sidecar>
-        No national ID? We can still register them — the record is marked with how identity was established rather than
-        being refused. Nothing on this form takes a raw ID number: CREST holds a pairwise reference and a salted hash,
-        nothing else.{" "}
+        No ID document? Switch to the confidence check — the worker is still registered, and the record is marked with
+        how identity was established rather than being refused. Nothing on this form takes a raw ID number: CREST holds
+        a pairwise reference and a salted hash, nothing else.{" "}
         <button
           type="button"
           id="to-confidence"
@@ -204,14 +220,17 @@ export function Consent() {
         unakubali?”
       </div>
       <div className="body-2" style={{ color: "var(--text-2)" }}>
-        “{first}, Crest will keep a record of your work — the work you do, and what it pays. You will be told each time
-        your work is recorded, and you have seven days to say whether it is right. You can withdraw this consent at any
-        time. Do you agree?”
+        “{first}, Crest will keep a record of your work — the work you do, and what it pays. It belongs to you, and
+        nobody can see it unless you agree, each time. You will be told each time your work is recorded, and you have
+        seven days to say whether it is right. You can ask us to stop at any time. Do you agree?”
       </div>
       <Sidecar>Recording captures the worker's answer, your agent ID and the time. This is the consent record.</Sidecar>
       <div className="btn-row">
         <button className="btn" id="recordbtn" onClick={record}>
           ● Record
+        </button>
+        <button className="btn secondary" disabled title="Only Kiswahili and English scripts exist on this deployment yet">
+          Change language
         </button>
       </div>
     </>
@@ -227,7 +246,10 @@ export function Hold() {
       <div className="card hi">
         <p className="body-2">
           The registry found more than one possible match for {s.reg?.name || "this worker"}.{" "}
-          <strong>You cannot decide this — it goes to the registry custodian.</strong>
+          <strong>
+            You cannot merge or reject this. Only the Worker Registry Custodian (Worker Registry Custodian) can, and
+            that authority sits with the deployment operator.
+          </strong>
         </p>
         <p className="muted" style={{ marginTop: 6 }}>
           What you see here is that a hold exists — not whose records collided, and not on what. Probable matches hold;
@@ -270,6 +292,12 @@ export function Registered() {
         </span>{" "}
         <Chip sm kind="plain">Illustrative — no printer on this device</Chip>
       </div>
+      {!s.reg?.phone ? (
+        <Sidecar warm>
+          This worker has no phone. The printed card is their only way to be found on the next campaign — and losing it
+          loses nothing: the record is in the registry, and a recovery contact can vouch them back in.
+        </Sidecar>
+      ) : null}
       <NextBlock
         happened="The worker exists in the registry, with voice consent on record, enrolled by you."
         who="The programme — evidence of their work arrives from its systems; nobody types work into Crest."
@@ -303,7 +331,10 @@ export function Confidence() {
   const [phone, setPhone] = useState("");
   const [rosterId, setRosterId] = useState("");
   const [partyId, setPartyId] = useState<string | null>(null);
-  const [contact, setContact] = useState<string>(FIX.supervisor);
+  // Prefilled with the signed-in agent: on w1_4 the agent themselves is the
+  // route the worker most often names. It is an id the agent can overwrite,
+  // never a fixture.
+  const [contact, setContact] = useState<string>(s.me?.partyId || "");
   const [nominated, setNominated] = useState<string | null>(null);
 
   const submit = async (ev: React.FormEvent) => {
@@ -335,13 +366,17 @@ export function Confidence() {
   // never a phone number.
   const nominate = async () => {
     if (!partyId) return;
+    if (!s.contextId) {
+      s.fail(new Error(NO_PROJECT));
+      return;
+    }
     try {
       actingFor(partyId);
       // contextId names the programme this assisted act happens under — the
       // agent's act-for-party grant is context-scoped, exactly like consent.
       await api.post(
         "parties",
-        `/v1/parties/${encodeURIComponent(partyId)}/recovery-contacts?contextId=${encodeURIComponent(FIX.project)}`,
+        `/v1/parties/${encodeURIComponent(partyId)}/recovery-contacts?contextId=${encodeURIComponent(s.contextId)}`,
         { contactPartyId: contact.trim() },
       );
       setNominated(contact.trim());

@@ -2,7 +2,7 @@
 // Loaders soft-fail (return []/null, never throw) exactly as before: every
 // screen is backed by an endpoint that exists, or says plainly that none
 // does. Nothing here invents live-looking data.
-import { api, FIX } from "@crest/api";
+import { api } from "@crest/api";
 
 export const short = (id: unknown) => {
   const s = String(id || "");
@@ -33,10 +33,27 @@ export async function loadInstr(me: string): Promise<any[]> {
   const out = await soft(api.get("payments", `/v1/instructions?partyId=${encodeURIComponent(me)}`));
   return (out && out.instructions) || [];
 }
-export async function loadFace(): Promise<{ face: any; rate: any }> {
-  const face = await soft(api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}/faces/worker`));
+// The worker's own definition, and what it says to them. Which definition
+// that is comes from the worker's OWN confirmation windows — every window
+// names the definition its unit was counted against — and, failing that, from
+// the deployment's activated definitions when there is exactly one and no
+// ambiguity to resolve. With neither, there is no face to draw and the screens
+// say so rather than showing somebody else's programme.
+export async function definitionFor(me: string): Promise<string | null> {
+  const wins = await loadWindows(me);
+  const fromWork = wins.map((w) => w && w.definitionId).find(Boolean);
+  if (fromWork) return String(fromWork);
+  const listed = await soft(api.get("definitions", "/v1/definitions?state=ACTIVE&limit=100"));
+  const defs = (listed && listed.definitions) || [];
+  return defs.length === 1 ? String(defs[0].id) : null;
+}
+
+export async function loadFace(me: string): Promise<{ face: any; rate: any }> {
+  const definitionId = await definitionFor(me);
+  if (!definitionId) return { face: null, rate: null };
+  const face = await soft(api.get("definitions", `/v1/definitions/${encodeURIComponent(definitionId)}/faces/worker`));
   const lr = await soft(
-    api.get("definitions", `/v1/definitions/${encodeURIComponent(FIX.definition)}/linked-records?type=payment-setup`),
+    api.get("definitions", `/v1/definitions/${encodeURIComponent(definitionId)}/linked-records?type=payment-setup`),
   );
   const rate = (((lr && lr.linkedRecords) || [])[0] || {}).payload || null;
   return { face, rate };

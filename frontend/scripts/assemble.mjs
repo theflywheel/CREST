@@ -32,6 +32,9 @@ cpSync(join(root, "packages/ui/src/styles.css"), join(out, "crest.css"));
 // phase C): Ed25519Signature2020 canonicalisation dereferences it, so the
 // door that serves the apps serves the context too.
 cpSync(join(repo, "apps/contexts"), join(out, "contexts"), { recursive: true });
+// Static brand assets — the logo the OIDC clients register (login screens and
+// the wallet's issuer card render it from this door).
+cpSync(join(root, "static"), out, { recursive: true });
 for (const dir of legacy) cpSync(join(repo, "apps", dir), join(out, dir), { recursive: true });
 for (const [name, dist] of Object.entries(built)) cpSync(join(root, dist), join(out, name), { recursive: true });
 

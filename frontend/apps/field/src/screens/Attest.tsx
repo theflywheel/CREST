@@ -11,7 +11,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "@crest/api";
-import { Chip, KV, Sidecar, OpenNote, NextBlock } from "@crest/ui";
+import { Chip, DisLi, KV, Sidecar, OpenNote, NextBlock } from "@crest/ui";
 import { useField, short, when } from "../state";
 
 type Win = { partyId?: string; closesAt?: string; exitRoute?: string };
@@ -40,7 +40,8 @@ export function ToConfirm() {
       <Chip sm kind="info">assisted confirmation — a CREST window exit, not source attestation</Chip>
       <p className="muted">
         Open windows whose worker could not be told — no phone, or no signal. You are their route; an assisted exit is
-        one of the four, recorded as itself with your name on it. Every exit releases payment.
+        one of the four, recorded as itself with your name on it. Every exit releases payment. A window left past its
+        close auto-confirms — the quietest of the four exits — and CREST is told either way.
       </p>
       <OpenNote>
         Honest boundary: the reference's W-4 worklist lives in the delivery platform (DIGIT HCM in the storyboard),
@@ -114,7 +115,8 @@ export function ConfirmSaw() {
       </div>
       <Sidecar>
         You are confirming on the worker's behalf what you saw done. The exit is recorded as assisted — never as if the
-        worker pressed the button themselves.
+        worker pressed the button themselves. You are confirming a figure the programme's system already recorded:
+        CREST never asked you for a number and has no screen where you could have entered one.
       </Sidecar>
       {win && !win.exitRoute ? (
         <div className="btn-row">
@@ -202,7 +204,8 @@ export function Differ() {
       </div>
       <Sidecar>
         A dispute contests the record, never the money — the worker is paid either way, and the underlying record of the
-        work is never destroyed.
+        work is never destroyed. Both figures travel together: the worker's and the recorded one, side by side, for
+        whoever answers the contest.
       </Sidecar>
       <OpenNote>
         Honest gap: the L1 dispute endpoint carries the worker's dispute but has no assistedBy field the way
@@ -268,6 +271,33 @@ export function Roster() {
       <Chip sm kind="info">CREST's evidence intake — in the reference (w3_4) the roster closes in the delivery platform first</Chip>
       <div className="card">
         <form id="rosterform" onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* A definition document carries no project reference, so the door
+              cannot derive which one this roster counts against. The agent
+              names it, from what the deployment has activated. */}
+          <label className="body-2">
+            Work definition this roster counts against
+            {s.definitions.length ? (
+              <select
+                id="definition-select"
+                value={s.definitionId || ""}
+                onChange={(e) => s.setDefinitionId(e.target.value)}
+                style={{ width: "100%", marginTop: 4, font: "inherit" }}
+              >
+                <option value="">Choose a definition…</option>
+                {s.definitions.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {(d.activity && d.activity.label) || d.id}
+                    {d.version ? ` · v${d.version}` : ""} · {short(d.id)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="muted" style={{ display: "block", marginTop: 4 }}>
+                This deployment has no active work definition, so there is nothing a batch could be checked against.
+                A definition is authored and ratified in the console before evidence can be taken in.
+              </span>
+            )}
+          </label>
           <label className="body-2">
             CSV file
             <input type="file" name="file" accept=".csv,text/csv" onChange={(e) => setFile(e.target.files?.[0] || null)} style={{ font: "inherit", marginTop: 4 }} />
@@ -353,12 +383,25 @@ export function Handoff() {
           ))}
         </>
       ) : null}
+      <div className="card">
+        <span className="eyebrow">Who holds it next — the chain (w3_5)</span>
+        <div className="dis" style={{ marginTop: 8 }}>
+          <DisLi on t="The attestor confirms, in the delivery platform" s="Tier 2 evidence, in their own name, inside the system that recorded it" />
+          <DisLi on t="Matching / validation engine" s="The matching service, then a validator if it cannot clear" />
+          <DisLi on t="Evidence validator" s="Only where the project configured a manual step" />
+          <DisLi on t="Credential issued automatically" s="signed by the organisation — releases payment. No person signs it." />
+        </div>
+        <p className="muted" style={{ marginTop: 8 }}>
+          The manual validation step is a per-project configuration choice, not a structural requirement. Many projects
+          will have no human here at all.
+        </p>
+      </div>
       <NextBlock
         happened="Accepted rows became claims; each opens the worker's seven-day window. Unclear rows went to the custodian — a mismatch is somebody named, not a status."
         who="The registry custodian on the unclear rows; the workers (or you, assisted) on the open windows."
         when="Windows close in seven days at the latest; every exit releases payment."
         told="Workers you are the route for reappear under To confirm; the custodian's attributions land as claims like any other."
-        ifnot="if a row stays unclear, no one is silently unpaid by it — the row waits, named, until the custodian decides whose work it was."
+        ifnot="You will not hear anything if it passes. Silence means it worked. You are told only if it is sent back — and if a row stays unclear, no one is silently unpaid by it: the row waits, named, until the custodian decides whose work it was."
       />
     </>
   );

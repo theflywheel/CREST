@@ -9,8 +9,8 @@
 // transaction. No seeded party, no persona, no hidden admin step.
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, loginAs } from "@crest/api";
-import { Callout, Chip, ErrBar, GridTable, KV, Sidecar } from "@crest/ui";
+import { api, isLocalStack, loginAs, whoAmI } from "@crest/api";
+import { Callout, Chip, ErrBar, GridTable, KV, NextBlock, Sidecar, Stat } from "@crest/ui";
 
 const OKEY = "crest.console.onboarding";
 
@@ -21,7 +21,9 @@ export type OrgProfile = {
   contactName: string;
 };
 
-export function readOnboarding(): ({ orgId: string; name: string } & Partial<OrgProfile>) | null {
+export function readOnboarding():
+  | ({ orgId: string; name: string; inviteCode?: string } & Partial<OrgProfile>)
+  | null {
   try {
     const raw = sessionStorage.getItem(OKEY);
     return raw ? JSON.parse(raw) : null;
@@ -29,7 +31,7 @@ export function readOnboarding(): ({ orgId: string; name: string } & Partial<Org
     return null;
   }
 }
-function storeOnboarding(v: { orgId: string; name: string } & Partial<OrgProfile>) {
+function storeOnboarding(v: { orgId: string; name: string; inviteCode?: string } & Partial<OrgProfile>) {
   try {
     sessionStorage.setItem(OKEY, JSON.stringify(v));
   } catch {
@@ -47,9 +49,22 @@ export function updateOnboarding(patch: Record<string, unknown>) {
 // party id. So the flow authenticates the same way a first login does: mint a
 // token from the deployment's issuer and self-bind, which the never-yet-bound
 // organisation accepts as bootstrap (#102). Idempotent per orgId.
+//
+// Since #123 the first question is whether a session is already the
+// organisation: somebody who claimed the organisation's invitation IS signed
+// in as it, and minting a second token for them would replace a real login
+// with a dev one. Only a local stack falls back to loginAs — on a deployment
+// there is no mock issuer to mint from, and pretending otherwise would hide
+// the missing claim behind a working-looking screen.
 let orgSessionFor: string | null = null;
 export async function ensureOrgSession(orgId: string): Promise<void> {
   if (orgSessionFor === orgId) return;
+  const already = await whoAmI().catch(() => null);
+  if (already && already.partyId === orgId) {
+    orgSessionFor = orgId;
+    return;
+  }
+  if (!isLocalStack) return;
   await loginAs(orgId);
   orgSessionFor = orgId;
 }
@@ -181,6 +196,10 @@ export function OnboardApply() {
         orgId: out.party.id,
         name: out.party.displayName,
         contactName: contactName.trim(),
+        // The one-time code the registration minted for this organisation
+        // (#123). It is the applicant's way to become the organisation's own
+        // sign-in — shown on the status screen and nowhere else.
+        inviteCode: out.inviteCode,
       });
       nav("/onboard/terms");
     } catch (e: any) {
@@ -282,6 +301,37 @@ export function OnboardApply() {
 }
 
 /* g2_11 — the terms, by exact version */
+// g2_11's own presentation rule: terms read in the organisation's language,
+// not in permission slugs. The map is UI copy (L3) over the deployment's
+// function vocabulary — the slugs stay the record; these words are how the
+// record is read. A slug with no entry falls back to itself rather than hide.
+const PLAIN_PERMISSION: Record<string, string> = {
+  "submit-work-evidence": "Send records of work done",
+  "specify-definition": "Say what work is and what counts as done",
+  "ratify-definition": "Approve a work definition somebody else drafted",
+  "attest-work": "Attest that work happened, so it can be counted",
+  "act-for-party": "Act for a worker who cannot act for themselves",
+  "resolve-unclear-evidence": "Review what could not be checked automatically",
+  "issue-credentials": "Issue a credential in your own organisation’s name",
+};
+// What no set of terms grants — true of the platform, not of this version.
+const NEVER_GRANTED = [
+  "Move money, or hand it to a bank — only the payments application touches a rail",
+  "Vouch for another organisation, which no terms grant",
+];
+function ableAndNot(t: any, all: any[]) {
+  const held: string[] = t.permissions || [];
+  const able = held.map((p) => PLAIN_PERMISSION[p] || p);
+  const elsewhere = new Set(
+    all.filter((o) => !(o.id === t.id && o.version === t.version)).flatMap((o) => o.permissions || []),
+  );
+  const notAble = Object.keys(PLAIN_PERMISSION)
+    .filter((p) => !held.includes(p))
+    .map((p) => PLAIN_PERMISSION[p] + (elsewhere.has(p) ? " — that needs wider terms" : ""))
+    .concat(NEVER_GRANTED);
+  return { able, notAble };
+}
+
 export function OnboardTerms() {
   const nav = useNavigate();
   const ob = readOnboarding();
@@ -356,14 +406,26 @@ export function OnboardTerms() {
               This deployment has published no terms yet — the operator publishes them; nothing to accept until then.
             </p>
           ) : (
-            <div className="card" style={{ maxWidth: 560 }}>
-              <KV
-                rows={[
-                  ["Terms", t.name],
-                  ["Version", String(t.version)],
-                  ["Grants, on approval", (t.permissions || []).join(" · ") || "—"],
-                ]}
-              />
+            <div className="card" style={{ maxWidth: 720 }}>
+              <div style={{ font: "500 15px/1.4 Roboto, system-ui, sans-serif" }}>{t.name}</div>
+              <p className="muted" style={{ margin: "4px 0 12px" }}>
+                Version {t.version}, published{" "}
+                {new Date(t.publishedAt).toLocaleDateString(undefined, { year: "numeric", month: "long" })}
+              </p>
+              {(() => {
+                const { able, notAble } = ableAndNot(t, terms || []);
+                const rows = Math.max(able.length, notAble.length);
+                return (
+                  <GridTable cols="1fr 1fr" head={["You would be able to", "You would not be able to"]}>
+                    {Array.from({ length: rows }, (_, i) => (
+                      <div className="g-row" key={i}>
+                        <span>{able[i] || ""}</span>
+                        <span className="muted">{notAble[i] || ""}</span>
+                      </div>
+                    ))}
+                  </GridTable>
+                );
+              })()}
               <div className="btn-row" style={{ marginTop: 10 }}>
                 <button className="btn secondary" id="acceptterms" disabled={busy} onClick={accept}>
                   {busy ? "Recording acceptance…" : `Accept v${t.version} for ${ob.name}`}
@@ -481,31 +543,95 @@ export function OnboardChecks() {
         <div>
           {checks === null ? (
             <p className="muted">Reading the recorded verdicts…</p>
-          ) : checks.length ? (
-            <GridTable cols="1.2fr 2fr 0.8fr" head={["What", "Who answers for it", "Status"]}>
-              {checks.map((c: any) => (
-                <div className="g-row" key={c.id || c.name}>
-                  <span>{c.name}</span>
-                  <span>
-                    {c.ownerKind === "policy" ? "policy " : ""}
-                    <span className="mono">{c.owner}</span>
-                    {c.note ? ` — ${c.note}` : ""}
-                  </span>
-                  <span>
-                    <Chip sm kind={c.outcome === "PASS" ? "ok" : "err"}>
-                      {c.outcome}
-                    </Chip>
-                  </span>
-                </div>
-              ))}
-            </GridTable>
           ) : (
-            <Sidecar>
-              No check verdict has been recorded yet. A check here is a recorded verdict with a named owner — a
-              person, or a named policy such as a business-register adapter — never a simulation; verdicts are
-              recorded while a request sits under review, and none exists on this application yet.
-              {request ? ` The open request is ${request.id} (${request.state}).` : ""}
-            </Sidecar>
+            (() => {
+              // The reference's four questions (g2_12), asked always; each
+              // status is read from a record that exists — a verdict the
+              // reviewer recorded, or the contact the applicant declared —
+              // and says "not recorded" where none does. No status here is
+              // ever simulated; there is no automated checker in this
+              // codebase and the register row stays honest about that.
+              const verdict = (name: string) => (checks as any[]).find((c) => (c.name || "").includes(name));
+              const vChip = (c: any) =>
+                c ? (
+                  <Chip sm kind={c.outcome === "PASS" ? "ok" : "err"}>
+                    {c.outcome === "PASS" ? "confirmed" : "failed"}
+                  </Chip>
+                ) : (
+                  <Chip sm kind="plain">
+                    not recorded
+                  </Chip>
+                );
+              const contact = reg?.attributes?.contactPerson;
+              const rows: Array<[string, string, React.ReactNode]> = [
+                [
+                  "Your registration number",
+                  "Checked against the business register for bodies like yours — recorded by the reviewer, never simulated",
+                  vChip(verdict("register")),
+                ],
+                [
+                  "Your organisation’s certificate",
+                  "So the systems you connect can be recognised as yours — a declared reference, read by a person",
+                  vChip(verdict("certificate")),
+                ],
+                [
+                  "A named data contact",
+                  "Required before you hold anybody’s identity number or photograph",
+                  contact ? (
+                    <Chip sm kind="ok">
+                      named · {String(contact)}
+                    </Chip>
+                  ) : (
+                    <Chip sm kind="warn">
+                      needed
+                    </Chip>
+                  ),
+                ],
+                [
+                  "If the register cannot confirm you",
+                  "A certificate or gazette reference, read by a person instead",
+                  vChip(verdict("fallback") || verdict("gazette")),
+                ],
+              ];
+              const named = new Set(["register", "certificate", "fallback", "gazette"]);
+              const extra = (checks as any[]).filter((c) => ![...named].some((n) => (c.name || "").includes(n)));
+              return (
+                <>
+                  <GridTable cols="1.2fr 2fr 0.9fr" head={["What", "Why it is asked", "Status"]}>
+                    {rows.map(([what, why, status]) => (
+                      <div className="g-row" key={what}>
+                        <span>{what}</span>
+                        <span className="muted">{why}</span>
+                        <span>{status}</span>
+                      </div>
+                    ))}
+                    {extra.map((c: any) => (
+                      <div className="g-row" key={c.id || c.name}>
+                        <span>{c.name}</span>
+                        <span className="muted">
+                          {c.ownerKind === "policy" ? "policy " : ""}
+                          <span className="mono">{c.owner}</span>
+                          {c.note ? ` — ${c.note}` : ""}
+                        </span>
+                        <span>
+                          <Chip sm kind={c.outcome === "PASS" ? "ok" : "err"}>
+                            {c.outcome}
+                          </Chip>
+                        </span>
+                      </div>
+                    ))}
+                  </GridTable>
+                  {!checks.length ? (
+                    <Sidecar>
+                      "Not recorded" is the honest status: a check is a verdict with a named owner — a person, or a
+                      named policy such as a business-register adapter — recorded while a request sits under review,
+                      and none exists on this application yet.
+                      {request ? ` The open request is ${request.id} (${request.state}).` : ""}
+                    </Sidecar>
+                  ) : null}
+                </>
+              );
+            })()
           )}
         </div>
         <Callout kind="teal" title="Read the third row">
@@ -531,9 +657,19 @@ export function OnboardStatus() {
   const nav = useNavigate();
   const ob = readOnboarding();
   const [reg, setReg] = useState<any | null>(null);
+  const [terms, setTerms] = useState<Array<{ id: string; name?: string; version?: number }>>([]);
+  const [nProjects, setNProjects] = useState<number | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => {
-    if (ob) api.get("parties", `/v1/organisations/${ob.orgId}/registration`).then(setReg, (e: any) => setErr(String(e?.message || e)));
+    if (!ob) return;
+    api.get("parties", `/v1/organisations/${ob.orgId}/registration`).then(setReg, (e: any) => setErr(String(e?.message || e)));
+    // The terms the registration names are read back by id — the name on
+    // this card is the published set's own, never a label typed here.
+    api.get("parties", "/v1/terms").then((d: any) => setTerms(d.terms || []), () => setTerms([]));
+    // The projects card is a real read, made as the organisation itself.
+    ensureOrgSession(ob.orgId)
+      .then(() => api.get("parties", `/v1/projects?ownerPartyId=${encodeURIComponent(ob.orgId)}`))
+      .then((d: any) => setNProjects((d.projects || []).length), () => setNProjects(null));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   if (!ob)
     return (
@@ -544,12 +680,163 @@ export function OnboardStatus() {
       </OnboardFrame>
     );
   const state = reg?.state || "…";
+  const approved = state === "APPROVED";
+  const title = approved
+    ? "Approved"
+    : state === "REJECTED"
+      ? "Not approved"
+      : state === "TERMS_ACCEPTED"
+        ? "Waiting on the operator’s decision"
+        : ob.name;
+  const onTerms = reg?.termsId ? terms.find((t) => t.id === reg.termsId && (!reg.termsVersion || t.version === reg.termsVersion)) : null;
+  const termsName = reg?.termsId ? onTerms?.name || reg.termsId : "—";
   return (
-    <OnboardFrame step={4} title={ob.name} who={ob.contactName}>
+    <OnboardFrame step={4} title={title} who={ob.contactName}>
       {err ? <ErrBar>{err}</ErrBar> : null}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Chip kind={state === "APPROVED" ? "ok" : state === "REJECTED" ? "err" : "warn"}>{state}</Chip>
+      {/* The reference's four cards (g2_13), each answered from a record.
+          The reference also counts organisations on the same terms; no
+          endpoint answers that to an applicant (the membership oracle #68
+          closed), so that card is deliberately absent rather than invented. */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Stat
+          n={<span className="mono" style={{ fontSize: 16 }}>{ob.orgId.slice(-8)}</span>}
+          label="your identifier — the party id, permanent"
+        />
+        <Stat
+          n={(reg?.attributes && reg.attributes.sector) || "—"}
+          label="how projects find you — your declared sector"
+        />
+        <Stat
+          n={<span data-terms-on={reg?.termsId || ""}>{termsName}</span>}
+          label={
+            <>
+              terms you are on{reg?.termsId ? <> · <span className="mono">{reg.termsId} v{reg.termsVersion || 1}</span></> : null}
+              {" · "}
+              <span className="mono" data-state={state}>{state}</span>
+            </>
+          }
+        />
+        <Stat
+          n={approved ? "Live" : state === "REJECTED" ? "Closed" : "Pending"}
+          label={approved ? "your connection" : state === "REJECTED" ? "with a recorded reason" : "the operator decides — never the organisation itself"}
+        />
       </div>
+      <div className="pane-cols">
+        <Callout kind="green" title="What you have">
+          {[
+            [true, approved ? "A permanent listing, and an identifier" : "An identifier — the listing goes live with approval"],
+            [Boolean(reg?.acceptedAt), "Terms you chose" + (approved ? " and were approved for" : ", awaiting the decision")],
+            [approved, "A working connection"],
+            [
+              Boolean(reg?.attributes?.contactPerson),
+              reg?.attributes?.contactPerson
+                ? `A named contact who answers for your data — ${reg.attributes.contactPerson}`
+                : "A named contact — still needed",
+            ],
+          ].map(([ok, label], i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", marginBottom: 6 }}>
+              <Chip sm kind={ok ? "ok" : "plain"}>{ok ? "✓" : "–"}</Chip>
+              <span className="body-2">{label as string}</span>
+            </div>
+          ))}
+        </Callout>
+        <Callout kind="grey" title="What you do not have">
+          <div style={{ marginBottom: 8 }}>
+            <b>Any project ({nProjects === null ? "—" : nProjects})</b>
+            <div className="muted">A project configurator grants this — you cannot</div>
+          </div>
+          <div>
+            <b>The right to put your name behind a credential</b>
+            <div className="muted">That is a separate request, and most never make it</div>
+          </div>
+        </Callout>
+      </div>
+      <Callout kind="teal" title="Terms and projects are different things">
+        Your terms say what you <b>may</b> do. A project says what you <b>will</b> do, and it can grant less than your
+        terms allow but never more.
+      </Callout>
+      <div className="card" style={{ maxWidth: 720 }}>
+        <KV
+          rows={[
+            [
+              "Your key",
+              "This deployment issues none — your sign-in is your identity provider’s, and there is no copied secret to lose",
+            ],
+            ["What approval lets you do", "Exactly what the terms said, and nothing beyond them"],
+            [
+              "If it is ever withdrawn",
+              "The registration is decided again, with a named decider and a reason — no middle state",
+            ],
+          ]}
+        />
+      </div>
+      {/* g2_13's "Copy the key", as this deployment actually works (#123):
+          there is no secret to copy, there is a one-time claim. Whoever signs
+          in through this link becomes the organisation's sign-in — its admin
+          — and the link stops working the moment they do. */}
+      {ob.inviteCode ? (
+        <div className="card" style={{ maxWidth: 720 }} data-panel="org-claim">
+          <span className="eyebrow">Claim your organisation</span>
+          <p className="body-2" style={{ marginTop: 8 }}>
+            The person who signs in through this link becomes the organisation's admin: their identity provider
+            proves who they are, and the record you just created becomes theirs to act for. It works once, and it
+            expires. Send it to the person who should hold that, or use it yourself now.
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+            <a className="btn dominant" id="org-claim" href={`#/claim/${ob.inviteCode}`}>
+              Claim your organisation with eSignet
+            </a>
+            <button
+              className="btn secondary"
+              onClick={() => {
+                navigator.clipboard?.writeText(
+                  `${location.origin}${location.pathname}#/claim/${ob.inviteCode}`,
+                );
+              }}
+            >
+              Copy the link
+            </button>
+          </div>
+          <p className="mono" data-org-claim-link style={{ marginTop: 8, wordBreak: "break-all" }}>
+            {`${location.origin}${location.pathname}#/claim/${ob.inviteCode}`}
+          </p>
+          <p className="muted">
+            Shown here only. CREST keeps the code's hash, not the code, so it cannot be read back to you later.
+          </p>
+        </div>
+      ) : null}
+      {approved ? (
+        <NextBlock
+          happened={
+            <>
+              Your registration stands approved on {reg.termsId} v{reg.termsVersion}
+              {reg.decidedBy ? <> — decided by <span className="mono">{reg.decidedBy}</span></> : null}
+            </>
+          }
+          who="A project configurator, whenever one goes looking for a partner like you"
+          when="Any time, or never — you are findable from now on"
+          told="Nothing is pushed — an invitation appears on your organisation page (this deployment sends no email; a recorded gap)"
+          ifnot="Nothing chases this. You can also approach a project directly — your listing is what makes you findable."
+        />
+      ) : (
+        <NextBlock
+          happened={
+            state === "REJECTED" ? (
+              <>The application was refused{reg?.reason ? <> — “{reg.reason}”</> : null}</>
+            ) : (
+              <>Your acceptance of {reg?.termsId || "the terms"} v{reg?.termsVersion || ""} is on record; the application waits, granting nothing yet</>
+            )
+          }
+          who="The instance operator — approval is manual here, and never the organisation’s own act"
+          when="When the operator opens the admissions queue; nothing decides by itself"
+          told="Nothing is pushed — this page is the read (this deployment sends no email; a recorded gap)"
+          ifnot="An undecided application sits indefinitely. The operator’s queue lists it undecided-first, which is the only escalation that exists."
+        />
+      )}
+      <Callout kind="grey" title="One thing still not unlocked">
+        You still cannot put your own name behind a credential. That needs wider terms — a separate, reviewed
+        request — and most organisations never make one.
+      </Callout>
       <div className="pane-cols">
         <div>
           {reg ? (
@@ -571,21 +858,7 @@ export function OnboardStatus() {
             />
           ) : null}
         </div>
-        <div>
-          {state === "APPROVED" ? (
-            <Sidecar ok>
-              Approved — the organisation is now published to the registry log, and its authority can be granted and
-              checked. From here: define work in the console's admin view, attach a payment setup, and enrol workers
-              through the field door.
-            </Sidecar>
-          ) : (
-            <Sidecar>
-              An application that is not yet decided grants nothing. Where approval is manual, the instance operator
-              decides — never the organisation itself. What is checked before this is live is on the Certificates
-              step: recorded verdicts with named owners, never a simulation.
-            </Sidecar>
-          )}
-        </div>
+        <div />
       </div>
       <div className="btn-row" style={{ maxWidth: 560 }}>
         <button className="btn secondary" onClick={() => nav("/onboard/status")}>

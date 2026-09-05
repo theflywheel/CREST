@@ -84,6 +84,22 @@ h1{font:300 38px/1.15 Roboto;letter-spacing:-.9px}
 /* ————— wizard progress bar ————— */
 .progressbar{width:100%;height:5px;border-radius:3px;background:var(--divider);overflow:hidden}
 .progressbar .fill{height:100%;background:var(--p1);border-radius:3px;transition:width .25s var(--ease)}
+.fchips{display:flex;gap:8px;flex-wrap:wrap}
+.fchip{border:none;cursor:pointer;padding:5px 12px;border-radius:14px;background:var(--generic-bg);color:var(--text-1);font:500 11.5px/1.4 Roboto}
+.fchip.on{background:var(--p1-bg);color:var(--p1);font-weight:600}
+.def-list{display:flex;flex-direction:column}
+.def-row{display:flex;align-items:center;gap:14px;padding:14px 2px}
+.def-row+.def-row{border-top:1px solid var(--generic-bg)}
+.def-row .t{font:500 14.5px/1.4 Roboto;color:var(--text-1)}
+.def-row .sub{font:400 12.3px/1.45 Roboto;color:var(--text-2);margin-top:2px}
+.def-row.dim .t{color:var(--text-2)}
+.def-row.dim .sub{color:var(--text-3,#9a9a9a)}
+.vocab-cards{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+.vcard{display:flex;flex-direction:column;gap:4px;text-align:left;padding:14px 16px;border:1px solid var(--divider);border-radius:8px;background:#fff;cursor:pointer;font:inherit}
+.vcard .v-t{font:500 14.5px/1.4 Roboto;color:var(--text-1)}
+.vcard .v-s{font:400 12.3px/1.45 Roboto;color:var(--text-2)}
+.vcard.on{border-color:var(--p1);background:var(--p1-bg)}
+.vcard.on .v-t{color:var(--p1)}
 .progressbar-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .progressbar-row .progressbar{flex:1}
 
@@ -115,10 +131,18 @@ button.card{text-align:left;width:100%}
 /* ————— honest sidecar ————— */
 .sidecar{display:flex;gap:10px;align-items:flex-start;border-radius:7px;padding:11px 13px;background:var(--info-bg)}
 .sidecar.ok{background:var(--success-bg)}
+.sidecar.warm{background:var(--warning-bg);border:1px solid #EA8D0022}
+.sidecar.warm .ico circle,.sidecar.warm .ico line{stroke:var(--warning)}
 .sidecar .txt{font:400 12.5px/1.55 Roboto;color:var(--text-1)}
 .sidecar .ico{flex:none;width:15px;height:15px;margin-top:2px}
 .sidecar .ico circle{fill:none;stroke:var(--info);stroke-width:1.6}
 .sidecar .ico line{stroke:var(--info);stroke-width:1.6;stroke-linecap:round}
+
+/* ————— the reference's dashed "proposed, not built" card ————— */
+.proposal{border:1px dashed var(--warning);background:var(--warning-bg);border-radius:9px;padding:13px 14px}
+.proposal .p-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:6px}
+.proposal .p-t{font:500 13.5px/1.3 Roboto;color:var(--warning-text)}
+.proposal .p-s{font:400 12.5px/1.5 Roboto;color:var(--text-1)}
 .sidecar.ok .ico circle,.sidecar.ok .ico line{stroke:var(--success)}
 
 /* ————— "What happens next" block ————— */
@@ -142,6 +166,8 @@ button.card{text-align:left;width:100%}
 .callout.green .c-title{color:var(--success)}
 .callout.grey{border:1px solid #78787822;background:var(--paper-2)}
 .callout.grey .c-title{color:var(--text-2)}
+.callout.blue{border:1px solid #0B4B6622;background:#EAF3FA}
+.callout.blue .c-title{color:var(--p2)}
 .callout .guard{color:var(--p2)}
 
 /* ————— reference field (uppercase label, bordered value) ————— */
@@ -160,6 +186,18 @@ button.card{text-align:left;width:100%}
 .optcard .o-na{font:500 11px/1.4 Roboto;color:var(--text-2);background:var(--generic-bg);border-radius:12px;padding:3px 9px}
 .optcard .o-s{font:400 12.2px/1.5 Roboto;color:var(--text-2);margin-top:4px}
 .optcard.na .o-s{color:var(--text-2)}
+.optcard.on{background:#FDF4EF}
+.optcard.on .o-t{color:var(--p1)}
+.optcard .o-sel{margin-left:auto;font:400 12px/1.4 Roboto;color:var(--p1)}
+.optcard .o-ex{font:400 12.2px/1.5 Roboto;color:var(--text-2);opacity:.75;margin-top:4px}
+.optcard .o-next{font:400 12.2px/1.5 Roboto;color:var(--text-2);margin-top:8px}
+.optcard.on .o-next{color:var(--p1)}
+
+/* ————— honest suggestion (category matcher) ————— */
+.suggest{display:flex;align-items:flex-start;gap:12px;border-radius:8px;padding:12px 14px;background:var(--success-bg)}
+.suggest .s-t{font:500 13px/1.4 Roboto;color:var(--success)}
+.suggest .s-s{font:400 12.3px/1.5 Roboto;color:var(--text-2);margin-top:2px}
+.suggest .s-use{margin-left:auto;flex:none;border:none;background:none;cursor:pointer;font:500 12.5px/1.4 Roboto;color:var(--success);padding:2px 4px}
 .optcols{display:flex;flex-direction:column;gap:10px}
 
 /* ————— error banner ————— */
@@ -222,6 +260,11 @@ input:focus-visible,textarea:focus-visible,select:focus-visible,button:focus-vis
 a.g-row,button.g-row{width:100%;text-align:left;background:#fff;border:none;color:inherit;text-decoration:none;cursor:pointer}
 a.g-row:hover,button.g-row:hover{background:var(--paper-2)}
 .gt-wrap{overflow-x:auto;border-radius:8px}
+.grid-tbl .g-strong{font:500 13px/1.45 Roboto;color:var(--text-1)}
+button.g-row.on{background:var(--p1-bg)}
+button.g-row.on .g-strong{color:var(--p1)}
+.grid-tbl .g-row.dim{color:var(--text-2)}
+.grid-tbl .g-row.dim .g-strong{color:var(--text-2)}
 
 /* ————— stats ————— */
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}

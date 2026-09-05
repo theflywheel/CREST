@@ -49,17 +49,51 @@ export function Added() {
       setVerr(describeError(e));
     }
   };
+  // w1_16 — the pre-anchor face: what the missing document blocks, and only
+  // that. Everything counted here is the worker's real record.
+  if (!newest) {
+    return (
+      <div className="pane-narrow" style={{ display: "flex", flexDirection: "column", gap: 15 }}>
+        <span className="eyebrow">Before your first credential</span>
+        <h2 className="scr-title m">One more thing, and only once</h2>
+        <p className="body-2">
+          You have {data.creds.length} validated {data.creds.length === 1 ? "piece" : "pieces"} of work. To turn them
+          into something you can show another employer, we need a document with your name on it.
+        </p>
+        <div className="card">
+          <span className="eyebrow">What counts</span>
+          <p className="body-2" style={{ marginTop: 6 }}>
+            National ID, passport, voter card, or a letter from your chief. Any of these. If you have none of them, a
+            registering agent can vouch for you in person instead.
+          </p>
+        </div>
+        <div className="card">
+          <span className="eyebrow">What you cannot do until then</span>
+          <p className="body-2" style={{ marginTop: 6 }}>
+            Your work is safe, recorded and paid. What you cannot yet do is carry it to a different employer as proof,
+            because a credential has to name somebody a stranger can check.
+          </p>
+        </div>
+        <Sidecar>
+          What to do: add a document, or ask a registering agent to vouch for you. Both take a few minutes and you
+          only do it once. Who can help: your project's support agent, or any registering agent.
+        </Sidecar>
+        <div className="btn-row">
+          <Link className="btn secondary" to="/home">
+            Later
+          </Link>
+          <Link className="btn" to="/">
+            Add it now — sign in through eSignet
+          </Link>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="pane-narrow" style={{ display: "flex", flexDirection: "column", gap: 15 }}>
       <Chip kind="ok">✓ Added</Chip>
       <h2 className="scr-title m">
-        {newest ? (
-          <>
-            Identity anchor · {String(newest.providerClass || newest.provider)} — asserted {when(newest.assertedAt)}
-          </>
-        ) : (
-          "No identity anchor yet"
-        )}
+        Identity anchor · {String(newest.providerClass || newest.provider)} — asserted {when(newest.assertedAt)}
       </h2>
       <div className="stats" style={{ maxWidth: 560 }}>
         <Stat n={data.creds.length} label="pieces of work, all already validated" />

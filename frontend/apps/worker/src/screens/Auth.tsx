@@ -3,9 +3,10 @@
 // binds to no party lands on the honest "you are not enrolled here yet"
 // screen — phase B turns that into self-registration.
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { Sidecar } from "@crest/ui";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { DisLi, Sidecar } from "@crest/ui";
 import { EntryShell } from "./Login";
+import { startEsignetLogin } from "@crest/api";
 import { useSession, describeError } from "../session";
 
 export function AuthReturn() {
@@ -82,6 +83,7 @@ function SignUp() {
   const [agree, setAgree] = useState(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [prog, setProg] = useState(s.programme || "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -90,12 +92,21 @@ function SignUp() {
       <EntryShell>
         <div className="pane-narrow screen">
           <span className="eyebrow">CREST · Worker · Enrollment consent</span>
-          <h1 className="scr-title">Before anything is created — do you agree?</h1>
+          <h1 className="scr-title">What you are agreeing to</h1>
           <p className="body-2">
             Nothing exists about you here yet, and nothing will until you say yes. If you agree, CREST will:{" "}
-            {CONSENT_PURPOSE}. You can withdraw this at any time from your profile — withdrawal stops new records; it
-            never deletes the work you already did.
+            {CONSENT_PURPOSE}.
           </p>
+          <div className="card">
+            <div className="dis">
+              <DisLi on t="We can fetch your work records" s="From systems your employer already uses, when you ask us to" />
+              <DisLi on t="We store your work history" s="In this country. It never leaves." />
+              <DisLi on t="You approve every share" s="Nobody sees your record without you saying yes, each time" />
+            </div>
+            <p className="muted" style={{ marginTop: 8 }}>
+              You can withdraw any of these later without losing credentials you already hold.
+            </p>
+          </div>
           <form
             id="consentform"
             onSubmit={(ev) => {
@@ -135,7 +146,9 @@ function SignUp() {
     setBusy(true);
     setErr("");
     try {
-      await s.signUp(name.trim(), phone.trim(), CONSENT_PURPOSE);
+      const joining = prog.trim() || null;
+      s.setProgramme(joining);
+      await s.signUp(name.trim(), phone.trim(), CONSENT_PURPOSE, joining);
       nav("/home", { replace: true });
     } catch (e) {
       setErr(describeError(e));
@@ -160,6 +173,30 @@ function SignUp() {
           <label className="body-2">
             Phone
             <input required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+254…" style={{ width: "100%", marginTop: 4 }} />
+            <span className="muted" style={{ display: "block", marginTop: 4 }}>
+              This number is how you sign in and how projects reach you. The reference verifies it with a texted code;
+              this deployment sends no messages (#150), so the number is recorded unverified.
+            </span>
+          </label>
+          {/* The programme, if the worker was pointed at one. CREST refuses to
+              list programmes to somebody who holds nothing here — an
+              unnarrowed listing would answer who-works-where to anybody who
+              asks — so the reference comes from the person's own link or
+              card, never from a menu this door invented. */}
+          <label className="body-2">
+            Programme reference (if a project gave you one)
+            <input
+              id="programme"
+              value={prog}
+              onChange={(e) => setProg(e.target.value)}
+              placeholder="crest:context:…"
+              style={{ width: "100%", marginTop: 4 }}
+            />
+            <span className="muted" style={{ display: "block", marginTop: 4 }}>
+              {prog.trim()
+                ? "Your consent will be recorded against this programme, and shows on your profile under Consents."
+                : "Leave it empty if you were not given one. Your record is still yours from the first minute; a programme records the enrolment consent when it enrols you."}
+            </span>
           </label>
           {err ? <div className="errbar">{err}</div> : null}
           <button className="btn" disabled={busy}>
@@ -171,6 +208,37 @@ function SignUp() {
           nothing outside this deployment. Not your ID number — the sign-in already proved it and it never comes to
           rest here.
         </Sidecar>
+        <a className="btn secondary" href="#/">
+          Back
+        </a>
+      </div>
+    </EntryShell>
+  );
+}
+
+/* #/join/<contextId> — the link a project shares. It carries one thing: the
+   programme the worker is being invited into. The door holds it for this
+   session and then behaves exactly as the front door does; nothing about a
+   membership is asserted by following a link. */
+export function Join() {
+  const s = useSession();
+  const { contextId } = useParams();
+  useEffect(() => {
+    if (contextId) s.setProgramme(decodeURIComponent(contextId));
+  }, [contextId]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <EntryShell>
+      <div className="pane-narrow screen">
+        <span className="eyebrow">CREST · Worker</span>
+        <h1 className="scr-title">You were invited to a programme</h1>
+        <p className="body-2">
+          The link names one programme: <span className="mono">{contextId ? decodeURIComponent(contextId) : "—"}</span>.
+          Sign in, and if you are new here your enrolment consent will be recorded against it — nothing else about you
+          is decided by this link.
+        </p>
+        <button className="btn" id="login-esignet" onClick={() => startEsignetLogin()}>
+          Continue with eSignet
+        </button>
         <a className="btn secondary" href="#/">
           Back
         </a>

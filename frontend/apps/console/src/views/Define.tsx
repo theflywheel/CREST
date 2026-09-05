@@ -76,7 +76,7 @@ import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, FIX, services } from "@crest/api";
 import {
-  Callout, Chip, GridTable, NextBlock, OpenNote, OptionCard, ProgressBar, RefField, Sidecar, StepCounter,
+  Callout, Chip, GridTable, NextBlock, OpenNote, OptionCard, ProgressBar, RefField, Sidecar, Stat, StepCounter,
   WizardContent,
 } from "@crest/ui";
 import { Card, CardTitled, Empty, KVR, Lede, LoadFrame, Mono, MonoShort, Title, useLoad, when } from "../ui";
@@ -113,7 +113,7 @@ type Doc = {
     summary?: string; evidenceInPlainLanguage?: string[]; tierCeiling?: number;
     checkIntensity?: string; tierMap?: TierRule[];
   };
-  validation?: { authorisedIssuers?: string[]; specifierPartyId?: string; posture?: string; delayDays?: number };
+  validation?: { authorisedIssuers?: string[]; specifierPartyId?: string; posture?: string; delayDays?: number; decidedBy?: string };
   sources?: { sourceSystems?: string[]; requiredFields?: string[]; schemaRef?: string; connections?: Connection[] };
   cascade?: { roleLevel?: string; trainedByDefinitionId?: string; trainedByVersion?: number };
   extensions?: Record<string, { label: string; valueType: string; value: string }>;
@@ -313,21 +313,29 @@ const ClosedNote = (p: { d: Draft }) =>
     </OpenNote>
   );
 
-// The L2 vocabulary read. Where the project's own configuration declares a
-// list this renders it; where it does not, the screen says why there is no
-// list and takes a typed answer (the Compose precedent).
+// The L2 vocabulary read. Two places a deployment can declare its words, both
+// its own: the project-creation payload (configuration.definitionVocabulary)
+// and — the self-serve path — the definition-vocabulary composition choice the
+// configurator writes through /vocabulary. The composition record wins because
+// it is the one with a decider and a timestamp attached, and it is the one
+// that can change after the project exists. Where neither declares anything,
+// the screen says why there is no list and takes a typed answer (the Compose
+// precedent).
 const useVocab = (projectId: string) =>
-  useLoad<Record<string, string[]>>(
-    () =>
-      api
-        .get("parties", `/v1/projects/${encodeURIComponent(projectId)}`)
-        .then((p) => {
-          const cfg = ((p.project || p).configuration || {}) as Record<string, unknown>;
-          return (cfg.definitionVocabulary || {}) as Record<string, string[]>;
-        })
-        .catch(() => ({}) as Record<string, string[]>),
-    [projectId],
-  );
+  useLoad<Record<string, string[]>>(async () => {
+    const pp = `/v1/projects/${encodeURIComponent(projectId)}`;
+    const [p, comp] = await Promise.all([
+      api.get("parties", pp).catch(() => null),
+      api.get("parties", `${pp}/composition`).catch(() => ({ choices: [] })),
+    ]);
+    const cfg = p ? (((p.project || p).configuration || {}) as Record<string, unknown>) : {};
+    const base = (cfg.definitionVocabulary || {}) as Record<string, string[]>;
+    const rec = ((comp.choices || []) as Array<{ kind?: string; payload?: { value?: unknown } }>).find(
+      (c) => (c.kind || "").replace(/^composition:/, "") === "definition-vocabulary",
+    );
+    const declared = ((rec?.payload as { value?: unknown } | undefined)?.value || {}) as Record<string, string[]>;
+    return { ...base, ...declared };
+  }, [projectId]);
 
 function Vocab(props: {
   label: string; hint?: ReactNode; declared?: string[]; value: string;
@@ -338,14 +346,30 @@ function Vocab(props: {
     <>
       <RefField label={props.label} hint={props.hint}>
         {has ? (
-          <select name={props.name} value={props.value} onChange={(e) => props.onChange(e.target.value)}>
-            <option value="">—</option>
-            {props.declared!.map((o) => (
-              <option key={o} value={o}>
-                {o}
-              </option>
-            ))}
-          </select>
+          // The reference's card grid. A declared entry is "value" or
+          // "value | descriptor": the value is what the definition records,
+          // the descriptor only helps the author choose.
+          <div className="vocab-cards" data-vocab={props.name}>
+            {props.declared!.map((entry) => {
+              const bar = entry.indexOf("|");
+              const val = (bar >= 0 ? entry.slice(0, bar) : entry).trim();
+              const hint = bar >= 0 ? entry.slice(bar + 1).trim() : "";
+              const on = props.value === val;
+              return (
+                <button
+                  key={entry}
+                  type="button"
+                  className={"vcard" + (on ? " on" : "")}
+                  data-pick={val}
+                  aria-pressed={on}
+                  onClick={() => props.onChange(val)}
+                >
+                  <span className="v-t">{val}</span>
+                  {hint ? <span className="v-s">{hint}</span> : null}
+                </button>
+              );
+            })}
+          </div>
         ) : (
           <input
             name={props.name}
@@ -394,13 +418,15 @@ export function Registry() {
   const [gen, setGen] = useState(0);
   const me = s.me!.partyId;
   const r = useLoad(async () => {
-    const [drafts, def] = await Promise.all([
+    const [drafts, defs] = await Promise.all([
       api.get("definitions", DRAFTS),
-      api.get("definitions", defpath(FIX.definition)).catch(() => null),
+      api.get("definitions", "/v1/definitions"),
     ]);
     return {
       drafts: (drafts.drafts || []) as Draft[],
-      def: def as { id: string; version: number; state: string; activity?: { label?: string } } | null,
+      defs: (defs.definitions || []) as Array<{
+        id: string; version: number; state: string; activity?: { label?: string };
+      }>,
     };
   }, [gen]);
   const start = async (clone?: { id: string; version: number }) => {
@@ -413,102 +439,130 @@ export function Registry() {
     setCurrentDraftId(d.id);
     nav("/define/sector");
   };
+  const [filter, setFilter] = useState<"all" | "active" | "draft">("all");
   return (
     <LoadFrame r={r}>
-      {({ drafts, def }) => {
+      {({ drafts, defs }) => {
         const open = drafts.filter((d) => d.state === "OPEN");
+        const latest = defs[0];
+        const total = drafts.length + defs.length;
+        const showActive = filter !== "draft";
+        const showDrafts = filter !== "active";
+        const fchip = (key: "all" | "active" | "draft", label: string, n: number) => (
+          <button
+            key={key}
+            className={"fchip" + (filter === key ? " on" : "")}
+            data-filter={key}
+            onClick={() => setFilter(key)}
+          >
+            {label} {n}
+          </button>
+        );
         return (
           <Frame
-            wide
             title="Work definitions"
-            chip={<Chip kind="plain">{drafts.length} drafts</Chip>}
-            lede={
-              <>
-                Two registers, and they are different kinds of thing. Below the line are immutable definition
-                versions — what credentials pin and verifiers resolve. Above it are drafts: the only mutable object
-                this service has, and the only place authoring happens.
-              </>
-            }
             btns={[
               {
                 label: "Clone a version",
                 role: "secondary",
-                onClick: () => (def ? start({ id: def.id, version: def.version }) : Promise.resolve()),
-                note: def ? undefined : "Nothing to clone: no definition version could be read from this deployment.",
+                onClick: () => (latest ? start({ id: latest.id, version: latest.version }) : Promise.resolve()),
               },
               { label: "Define new work", role: "primary", onClick: () => start() },
             ]}
           >
-            <CardTitled t="Drafts" chip={open.length ? <Chip kind="info">{open.length} open</Chip> : undefined}>
-              <GridTable cols="1.5fr 1fr .9fr .8fr 1.1fr" head={["Draft", "Author", "State", "Sections", "Updated"]}>
-                {drafts.length ? (
-                  drafts.slice(0, 12).map((d) => (
-                    <div className="g-row" key={d.id}>
-                      <span>
-                        <MonoShort id={d.id} />
-                      </span>
-                      <span>
-                        <MonoShort id={d.createdByPartyId} />
-                      </span>
-                      <span>{stateChip(d)}</span>
-                      <span>{Object.keys(d.doc || {}).length} of 9</span>
-                      <span>
-                        {when(d.updatedAt)}{" "}
-                        {d.state === "OPEN" && d.id !== currentDraftId() ? (
-                          <button
-                            className="btn secondary"
-                            data-resume={d.id}
-                            style={{ width: "auto", padding: "4px 9px", fontSize: 11.5 }}
-                            onClick={() => {
-                              setCurrentDraftId(d.id);
-                              setGen((g) => g + 1);
-                            }}
-                          >
-                            Resume
-                          </button>
-                        ) : null}
-                      </span>
+            <div className="fchips">
+              {fchip("all", "All", total)}
+              {fchip("active", "Active", defs.length)}
+              {fchip("draft", "Draft", drafts.length)}
+            </div>
+            <div className="def-list">
+              {showActive &&
+                defs.map((def) => (
+                  <div className="def-row" key={def.id}>
+                    <div style={{ flex: 1 }}>
+                      <div className="t">{def.activity?.label || def.id}</div>
+                      <div className="sub">
+                        <MonoShort id={def.id} /> v{def.version} · published · what credentials pin and verifiers
+                        resolve
+                      </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="g-row">
-                    <span style={{ gridColumn: "1 / -1", color: "var(--text-2)" }}>
-                      No draft has been started on this deployment. An unstarted definition is the absence of a
-                      record, not an empty one.
-                    </span>
+                    {def.state === "ACTIVE" ? (
+                      <Chip kind="ok">Active</Chip>
+                    ) : (
+                      <Chip kind="plain">{def.state.toLowerCase()}</Chip>
+                    )}
+                    <button
+                      className="btn secondary"
+                      data-clone={def.id}
+                      style={{ width: "auto", minWidth: 0, padding: "4px 9px", fontSize: 11.5 }}
+                      onClick={() => start({ id: def.id, version: def.version })}
+                    >
+                      Clone
+                    </button>
                   </div>
-                )}
-              </GridTable>
-              {currentDraftId() ? (
-                <p className="muted" style={{ marginTop: 8 }} data-authoring>
-                  This session is authoring <Mono>{currentDraftId()}</Mono>.
-                </p>
-              ) : null}
-            </CardTitled>
-            <CardTitled t="Published versions" chip={def ? <Chip kind="ok">{def.state}</Chip> : undefined}>
-              {def ? (
-                <KVR
-                  rows={[
-                    ["definition", <Mono>{def.id}</Mono>],
-                    ["activity", def.activity?.label || "—"],
-                    ["version", "v" + def.version],
-                  ]}
-                />
-              ) : (
-                <Empty>No definition version could be read.</Empty>
+                ))}
+              {showDrafts &&
+                drafts.slice(0, 12).map((d) => (
+                  <div className="def-row dim" key={d.id}>
+                    <div style={{ flex: 1 }}>
+                      <div className="t">{d.doc?.activity?.label || "Untitled definition"}</div>
+                      <div className="sub">
+                        <MonoShort id={d.id} /> · {Object.keys(d.doc || {}).length} of 9 sections ·{" "}
+                        {when(d.updatedAt)}
+                      </div>
+                    </div>
+                    {d.id === currentDraftId() ? <Chip kind="brand" sm>open · this session</Chip> : null}
+                    {stateChip(d)}
+                    {d.state === "OPEN" && d.id !== currentDraftId() ? (
+                      <button
+                        className="btn secondary"
+                        data-resume={d.id}
+                        style={{ width: "auto", minWidth: 0, padding: "4px 9px", fontSize: 11.5 }}
+                        onClick={() => {
+                          setCurrentDraftId(d.id);
+                          setGen((g) => g + 1);
+                        }}
+                      >
+                        Resume
+                      </button>
+                    ) : null}
+                    {d.state === "OPEN" && d.id === currentDraftId() ? (
+                      // The draft this session already holds: Resume would be
+                      // a no-op, so the row carries the way back into the
+                      // wizard instead of hiding its button.
+                      <button
+                        className="btn secondary"
+                        data-continue={d.id}
+                        style={{ width: "auto", minWidth: 0, padding: "4px 9px", fontSize: 11.5 }}
+                        onClick={() => nav("/define/sector")}
+                      >
+                        Continue
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              {(showDrafts && drafts.length) || (showActive && defs.length) ? null : (
+                <div className="def-row">
+                  <span className="sub">
+                    Nothing here. An unstarted definition is the absence of a record, not an empty one.
+                  </span>
+                </div>
               )}
-              <p className="muted" style={{ marginTop: 8 }}>
-                The definitions service has no list endpoint for published versions — it is a POST-only registry by
-                design — so this reads the one version the fixture world seeds. Cloning it opens a draft prefilled
-                from that version, and the version itself is untouched by anything the clone does.
-              </p>
-            </CardTitled>
-            <Callout kind="teal" title="What infrastructure contributes here">
-              The separation between the two registers. A draft can be half-finished for weeks and rewritten every
-              day; a version cannot be changed at all, because credentials name it. One function translates the
-              first into the second, and it is the same function the review screen runs — so the review can never
-              disagree with the submission it precedes.
-            </Callout>
+            </div>
+            {currentDraftId() ? (
+              <Callout kind="blue" title="Authoring in progress">
+                <span data-authoring>
+                  This session is authoring <Mono>{currentDraftId()}</Mono>
+                </span>
+                {open.length > 1 ? (
+                  <> — {open.length} drafts are open; a draft can sit half-finished for weeks, because only a
+                  submitted version is immutable.</>
+                ) : (
+                  <>. A draft is the only mutable object this service has; submitting compiles it into the next
+                  immutable version.</>
+                )}
+              </Callout>
+            ) : null}
           </Frame>
         );
       }}
@@ -525,14 +579,7 @@ function SectorBody({ d }: BodyProps) {
     <Frame
       counter="Sector · 1 of 9"
       title="What sector is this work in?"
-      chip={stateChip(d)}
-      lede={
-        <>
-          Sector first, because it scopes everything after it: the categories offered next, the vocabulary the
-          worker's own screen will use, the systems that plausibly hold the evidence. It is recorded as a
-          classification value and read by nothing in the infrastructure.
-        </>
-      }
+      lede="This scopes what we ask you next. It never limits what you can choose."
       btns={[
         { label: "Back", to: "/definework", role: "secondary" },
         {
@@ -544,27 +591,18 @@ function SectorBody({ d }: BodyProps) {
       ]}
     >
       <ClosedNote d={d} />
-      <Card>
-        <LoadFrame r={v}>
-          {(vocab) => (
-            <Vocab
-              name="sector"
-              label="Sector"
-              declared={vocab.sectors}
-              value={sector}
-              onChange={setSector}
-              placeholder="health"
-              hint="Recorded on the version as classification.sector."
-            />
-          )}
-        </LoadFrame>
-      </Card>
-      <Callout kind="green" title="What this screen never does">
-        Constrain what CREST will accept. The sector is not a permission, a schema or a rate: it is a word this
-        deployment uses to organise its own definitions. Another deployment could use an entirely different set and
-        still be running CREST — which is exactly why it is configuration and not a field the infrastructure
-        interprets.
-      </Callout>
+      <LoadFrame r={v}>
+        {(vocab) => (
+          <Vocab
+            name="sector"
+            label=""
+            declared={vocab.sectors}
+            value={sector}
+            onChange={setSector}
+            placeholder="health"
+          />
+        )}
+      </LoadFrame>
     </Frame>
   );
 }
@@ -584,14 +622,7 @@ function CountingBody({ d }: BodyProps) {
     <Frame
       counter="Counting basis · 2 of 9"
       title="How is this work counted?"
-      chip={stateChip(d)}
-      lede={
-        <>
-          This is the fork the rest of the definition hangs off. It decides what one unit of work <i>is</i>, and
-          therefore what a record has to say to prove one happened, and what a rate owner will be pricing. Choosing
-          again later does not adjust the definition — it makes a different one.
-        </>
-      }
+      lede="This decides what we ask you next. Get it right and the rest of the form gets shorter."
       btns={[
         { label: "Back", to: "/define/sector", role: "secondary" },
         { label: "Time-based instead", to: "/define/period", role: "secondary", onClick: () => write("time-period") },
@@ -601,37 +632,33 @@ function CountingBody({ d }: BodyProps) {
       <ClosedNote d={d} />
       <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
         <OptionCard
-          t="A countable event"
-          s="One record per thing done — a household visited, a bednet handed over, a session run. The unit is the event, and evidence names it individually."
+          t="Event"
+          s="Discrete things that happen and can be counted"
+          ex="A bednet handed over, a household visited, a dose given"
+          next="Next: category, then unit of work"
           on={basis === "event"}
           onPick={() => setBasis("event")}
-          tag={<Chip kind="ok" sm>counting.basis = event</Chip>}
         />
         <OptionCard
-          t="A period of engagement"
-          s="Paid for holding the post, not for a count — the daily centre run, the month attended. The unit is the period, and evidence proves engagement across it."
+          t="Time"
+          s="Paid for a period, not for a countable output"
+          ex="A monthly honorarium, a daily wage, a retainer"
+          next="Next: frequency. No category, no unit — they do not apply"
           on={basis === "time-period"}
           onPick={() => setBasis("time-period")}
-          tag={<Chip kind="info" sm>counting.basis = time-period</Chip>}
         />
         <OptionCard
-          t="A measured result"
-          s="Paid on a population-level indicator moving — coverage, completion, reduction. The unit is the result, and no individual record can prove it alone."
+          t="Outcome"
+          s="Paid on a result, often measured across a population"
+          ex="Coverage rate, treatment completion, learning gain"
+          next="Next: outcome indicator and aggregation level"
           on={basis === "outcome"}
           onPick={() => setBasis("outcome")}
-          tag={<Chip kind="warn" sm>counting.basis = outcome</Chip>}
         />
       </div>
-      <Callout kind="teal" title="Why this one is different">
-        The other answers in this wizard are descriptions. This one is structural: an outcome-based definition cannot
-        be evidenced by a per-event record, and an event-based one cannot be evidenced by a district statistic.
-        Getting it wrong is not a wording problem discovered in review — it is a definition whose evidence can never
-        satisfy it, and the worker is the one who finds out.
-      </Callout>
-      <Sidecar>
-        The three branch screens are all reachable from here: an event goes on to the category and unit screens, a
-        period to the period screen, and a result to the outcome screen. The buttons below write the basis before
-        they navigate, so the branch you land on is the branch the draft records.
+      <Sidecar warm>
+        A peer mental-health worker paid partly on retainer and partly per session is still an open question. Either
+        counting basis holds two values, or it is honestly two linked work definitions.
       </Sidecar>
     </Frame>
   );
@@ -643,19 +670,14 @@ function CategoryBody({ d }: BodyProps) {
   const s = useConsole();
   const v = useVocab(s.projectId);
   const [cat, setCat] = useState(d.doc.scope?.category || "");
+  const [desc, setDesc] = useState("");
+  const [showAll, setShowAll] = useState(false);
   const sector = d.doc.scope?.sector || "";
   return (
     <Frame
       counter="Category · 3 of 9"
       title="What kind of work is it?"
-      chip={stateChip(d)}
-      lede={
-        <>
-          Scoped to the sector answered on the first screen{sector ? <> — <Mono>{sector}</Mono></> : null}. The
-          categories a deployment offers here are its own; CREST has no taxonomy of work and could not usefully have
-          one.
-        </>
-      }
+      lede={<>Showing categories typical for {sector ? <Mono>{sector}</Mono> : "this sector"}. None of these is a restriction.</>}
       btns={[
         { label: "Back", to: "/define/counting", role: "secondary" },
         {
@@ -667,47 +689,74 @@ function CategoryBody({ d }: BodyProps) {
       ]}
     >
       <ClosedNote d={d} />
-      <Card>
-        <LoadFrame r={v}>
-          {(vocab) => {
-            // Scoped, honestly: a deployment that declares categories per
-            // sector gets the sector's own list; one that declares a flat list
-            // gets that; one that declares nothing gets a typed answer and the
-            // reason there is no list.
-            const perSector = sector ? vocab["categories:" + sector] : undefined;
-            const scoped = perSector || vocab.categories;
+      <LoadFrame r={v}>
+        {(vocab) => {
+          // A deployment that declares categories per sector gets the sector's
+          // own list; one that declares a flat list gets that; one that
+          // declares nothing gets a typed answer.
+          const perSector = sector ? vocab["categories:" + sector] : undefined;
+          const flat = vocab.categories;
+          const scoped = perSector || flat;
+          const hasWider = !!(perSector && flat && flat.some((e) => !perSector.includes(e)));
+          const declared = showAll && flat ? Array.from(new Set([...(perSector || []), ...flat])) : scoped;
+          if (!declared || !declared.length)
             return (
-              <>
-                <Vocab
-                  name="category"
-                  label="Category"
-                  declared={scoped}
-                  value={cat}
-                  onChange={setCat}
-                  placeholder="community-outreach"
-                  hint="Recorded on the version as classification.category."
-                />
-                {scoped && scoped.length ? (
-                  <p className="muted" style={{ fontSize: 12.3 }}>
-                    {perSector ? (
-                      <>
-                        Scoped to <Mono>{sector}</Mono>: this deployment declares a category list for that sector.
-                      </>
-                    ) : (
-                      <>This deployment declares one category list for every sector, so the sector does not narrow it.</>
-                    )}
-                  </p>
-                ) : null}
-              </>
+              <Vocab
+                name="category"
+                label="Category"
+                value={cat}
+                onChange={setCat}
+                placeholder="community-outreach"
+                hint="Recorded on the version as classification.category."
+              />
             );
-          }}
-        </LoadFrame>
-      </Card>
-      <Callout kind="green" title="What this screen never does">
-        Offer a category CREST invented. An empty picker here is an honest report that this deployment has not
-        declared its vocabulary yet — not a defect, and not something to paper over with a plausible-looking list,
-        because a category nobody chose would end up on a worker's record.
-      </Callout>
+          // The reference frame: the card grid, a "none of these fit?" row,
+          // a free-text description, and an honest suggestion drawn only from
+          // the deployment's own declared words — never one CREST invented.
+          const stop = new Set(["and", "the", "out", "for", "how", "are", "per", "with", "that", "many"]);
+          const words = Array.from(
+            new Set(desc.toLowerCase().split(/[^a-z0-9-]+/).filter((w) => w.length > 2 && !stop.has(w))),
+          );
+          let best: { val: string; hit: string[] } | null = null;
+          for (const entry of declared) {
+            const low = entry.toLowerCase();
+            const hit = words.filter((w) => low.includes(w));
+            if (hit.length && (!best || hit.length > best.hit.length))
+              best = { val: (entry.split("|")[0] || "").trim(), hit };
+          }
+          return (
+            <>
+              <Vocab name="category" label="" value={cat} onChange={setCat} declared={declared} />
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span className="muted" style={{ fontSize: 12.5 }}>None of these fit?</span>
+                {hasWider && !showAll ? (
+                  <button type="button" className="fchip" data-showall onClick={() => setShowAll(true)}>
+                    Show all categories
+                  </button>
+                ) : null}
+              </div>
+              <input
+                name="categoryDesc"
+                value={desc}
+                placeholder="Describe the work in your own words"
+                onChange={(e) => setDesc(e.target.value)}
+                style={{ width: "100%", border: "1px solid var(--divider)", borderRadius: 6, padding: "12px 13px", font: "400 13.3px/1.4 Roboto" }}
+              />
+              {best && best.val !== cat ? (
+                <div className="suggest" data-suggest={best.val}>
+                  <div>
+                    <div className="s-t">Suggested: {best.val}</div>
+                    <div className="s-s">Matched on {best.hit.map((w) => `“${w}”`).join(", ")} — from this deployment's own list</div>
+                  </div>
+                  <button type="button" className="s-use" data-use onClick={() => setCat(best!.val)}>
+                    Use this
+                  </button>
+                </div>
+              ) : null}
+            </>
+          );
+        }}
+      </LoadFrame>
     </Frame>
   );
 }
@@ -734,13 +783,6 @@ function UnitBody({ d }: BodyProps) {
     <Frame
       counter="Unit · 4 of 9"
       title="What exactly is counted?"
-      chip={stateChip(d)}
-      lede={
-        <>
-          The unit of work is the single most load-bearing string in the definition: it is what a record counts, what
-          a credential reports, and the one field a rate owner will price. Everything downstream counts in it.
-        </>
-      }
       btns={[
         { label: "Back", to: "/define/category", role: "secondary" },
         {
@@ -766,45 +808,39 @@ function UnitBody({ d }: BodyProps) {
       ]}
     >
       <ClosedNote d={d} />
-      <Card>
+      <div style={grid()}>
+        <RefField label="Unit of work" hint="One record equals one of these. The rate prices exactly this.">
+          <input name="outcomeUnit" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bednets-distributed" />
+        </RefField>
+        <RefField label="Frequency">
+          <input name="frequency" value={freq} onChange={(e) => setFreq(e.target.value)} placeholder="Per campaign day" />
+        </RefField>
+      </div>
+      <RefField label="Counting model">
+        <input name="countingModel" value={model} onChange={(e) => setModel(e.target.value)} placeholder="Individually countable — one record per unit" />
+      </RefField>
+      <div style={grid()}>
+        <RefField label="Activity code" hint="This deployment's own word for the work.">
+          <input name="activityCode" value={code} onChange={(e) => setCode(e.target.value)} placeholder="bednet-distribution" />
+        </RefField>
+        <RefField label="Activity label">
+          <input name="activityLabel" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Bednet distribution" />
+        </RefField>
+        <RefField label="Skill code" hint="Optional. The part of the record that travels between deployments.">
+          <input name="skillCode" value={skill} onChange={(e) => setSkill(e.target.value)} placeholder="CREST-SKILL:chw.bednet-distribution.v2" />
+        </RefField>
+      </div>
+      <RefField label="Aggregation level">
         <div style={grid()}>
-          <RefField label="Unit of work" hint="One record equals one of these. The rate prices exactly this.">
-            <input name="outcomeUnit" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="bednets-distributed" />
-          </RefField>
-          <RefField label="Frequency" hint="How often the work recurs. Programme policy (L2).">
-            <input name="frequency" value={freq} onChange={(e) => setFreq(e.target.value)} placeholder="Per campaign day" />
-          </RefField>
-          <RefField label="Counting model" hint="Recorded as counting.description — text the infrastructure never interprets.">
-            <input name="countingModel" value={model} onChange={(e) => setModel(e.target.value)} placeholder="Individually countable — one record per unit" />
-          </RefField>
-          <RefField label="Activity code" hint="This deployment's own word for the work.">
-            <input name="activityCode" value={code} onChange={(e) => setCode(e.target.value)} placeholder="bednet-distribution" />
-          </RefField>
-          <RefField label="Activity label">
-            <input name="activityLabel" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Bednet distribution" />
-          </RefField>
-          <RefField label="Skill code" hint="Optional. The part of the record that travels between deployments.">
-            <input name="skillCode" value={skill} onChange={(e) => setSkill(e.target.value)} placeholder="CREST-SKILL:chw.bednet-distribution.v2" />
-          </RefField>
-        </div>
-      </Card>
-      <CardTitled t="Aggregation level">
-        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
           {AGGREGATIONS.map(([t, sub]) => (
             <OptionCard key={t} t={t} s={sub} on={agg === t} onPick={() => setAgg(t)} />
           ))}
         </div>
-        <p className="muted" style={{ marginTop: 8 }}>
-          This decides what the rate multiplies, which is why it belongs to the definition rather than to the rate:
-          totalling per pay cycle before pricing and pricing each event are different amounts of money from the same
-          work.
-        </p>
-      </CardTitled>
-      <Callout kind="teal" title="The field the rate will price">
-        <b>{unit.trim() || "— not answered yet —"}</b>. The definition declares the unit and stops there: no amount,
-        no currency, no rate. Pricing is a separate record with a separate owner (F-1), attached to this definition
-        by reference, and the definition is complete and usable with nothing attached at all.
-      </Callout>
+      </RefField>
+      <Sidecar>
+        This unit{unit.trim() ? <> — <b>{unit.trim()}</b> —</> : null} is referenced by ID by any rate that prices
+        it. It is never re-entered as text on the rate record, so the two cannot silently drift apart.
+      </Sidecar>
     </Frame>
   );
 }
@@ -820,12 +856,9 @@ function CascadeBody({ d }: BodyProps) {
   return (
     <Frame
       title="Is this work part of a cascade?"
-      chip={stateChip(d)}
-      lede={
+      chip={
         <>
-          Training cascades are relationships between definitions, not fields on one. A level-2 worker's definition
-          names the definition that trained them, and that reference is a linked record — so the cascade can be
-          walked without the core object growing a limb for it.
+          <Chip kind="err">Proposed</Chip> <Chip kind="plain">Built nowhere</Chip>
         </>
       }
       btns={[
@@ -861,11 +894,14 @@ function CascadeBody({ d }: BodyProps) {
           <Mono>trained-by</Mono>. The service refuses a definition that names itself as its own prerequisite.
         </p>
       </Card>
-      <Callout kind="green" title="What this screen never does">
-        Make the cascade a permission. Naming a training definition records a relationship; it does not by itself
-        stop anyone from working or being paid. Whether an untrained worker's evidence is accepted is an
-        evidence-rules question and a programme decision, answered on its own screens and not smuggled in here.
-      </Callout>
+      <Sidecar>
+        Each level is a separate work definition with its own evidence rules and its own rate. The reference is what
+        makes the cascade auditable — a verifier can walk up the chain.
+      </Sidecar>
+      <Sidecar warm>
+        Undecided: whether a level-three definition can exist with no level two above it, and whether a trainer's own
+        credential should carry the outcomes of the people they trained.
+      </Sidecar>
       <Sidecar>
         The reference sends this screen's Continue on to the time-based period screen. On this draft the counting
         basis is <Mono>{basis}</Mono>, so Continue goes to that branch's next screen instead — writing the period
@@ -887,13 +923,12 @@ function PeriodBody({ d }: BodyProps) {
     <Frame
       counter="Period · 3 of 7"
       title="What period is this paid for?"
-      chip={stateChip(d)}
-      lede={
+      chip={
         <>
-          On this branch the unit is the period itself. Nobody counts anything: the question is whether the post was
-          held across the period, which makes attendance and engagement the evidence rather than a tally.
+          <Chip kind="info">Time-based</Chip> <Chip kind="ok">No category or unit required</Chip>
         </>
       }
+      lede="There is no countable unit here, and the form no longer pretends there is."
       btns={[
         { label: "Back", to: "/define/counting", role: "secondary" },
         { label: "Outcome-based", to: "/define/outcome", role: "secondary" },
@@ -939,11 +974,9 @@ function PeriodBody({ d }: BodyProps) {
           </RefField>
         </div>
       </Card>
-      <Callout kind="teal" title="What changes on this branch">
-        The evidence question. An event-based definition asks "did this thing happen, and who did it"; a period-based
-        one asks "was this post held across these dates". A period's proof is usually an attendance or roster system
-        rather than a per-item export, which is why the source screens later on will look different from the event
-        branch's.
+      <Callout kind="green">
+        Under the flat taxonomy this role had to be filed under a category built for countable campaign work. That is
+        the failure this fork removes.
       </Callout>
     </Frame>
   );
@@ -964,12 +997,9 @@ function OutcomeBody({ d }: BodyProps) {
     <Frame
       counter="Outcome · 3 of 7"
       title="What result is being paid for?"
-      chip={stateChip(d)}
-      lede={
+      chip={
         <>
-          On this branch the unit is a measured result, and the proof is population-level: a district statistic, not
-          a worker's record. That is the whole difficulty of it, and this screen's job is to make the difficulty
-          explicit rather than let it surface at payment time.
+          <Chip kind="info">Outcome-based</Chip> <Chip kind="warn">Proposal, not built</Chip>
         </>
       }
       btns={[
@@ -1016,18 +1046,15 @@ function OutcomeBody({ d }: BodyProps) {
           </RefField>
         </div>
       </Card>
-      <Callout kind="teal" title="Population-level proof, and what it costs">
-        An indicator moving is evidence about a district, not about a person. So a claim on this definition cannot be
-        proved by one worker's record, and the group the result is attributed to has to be decided before anyone is
-        paid — that is the aggregation level above, and leaving it open is how a cooperative bonus becomes an
-        argument with no record to settle it.
-      </Callout>
-      <Callout kind="green" title="What CREST will not do here">
-        Compute the indicator. Baseline, target and the measuring system are recorded as descriptive programme facts
-        and read by nothing in the infrastructure — no strength rule, no payment rule. CREST holds what was declared
-        and who declared it; whether 80% was reached is the measuring system's answer, and attributing it is the
-        programme's.
-      </Callout>
+      <Sidecar warm>
+        Who measures the outcome, and whether the cooperative can contest that measurement, is not specified
+        anywhere. It is the same question a worker-level dispute answers — at population scale. An indicator moving
+        is evidence about a district, not about a person.
+      </Sidecar>
+      <Sidecar warm>
+        If the group is paid as a group, how the payment splits back to individuals is a genuinely open question. It
+        needs a formula, not another field.
+      </Sidecar>
     </Frame>
   );
 }
@@ -1043,14 +1070,6 @@ function PartiesBody({ d }: BodyProps) {
     <Frame
       counter="Parties · 5 of 9"
       title="Who is involved?"
-      chip={stateChip(d)}
-      lede={
-        <>
-          Three different relationships, and the definition only fixes one of them. Who performs the work is part of
-          what the work <i>is</i>. Who pays and who validates are attached separately, because both can change
-          without the work changing.
-        </>
-      }
       btns={[
         { label: "Back", to: "/define/unit", role: "secondary" },
         {
@@ -1067,30 +1086,26 @@ function PartiesBody({ d }: BodyProps) {
       ]}
     >
       <ClosedNote d={d} />
-      <Card>
-        <div style={grid()}>
-          <RefField label="Who does the work" hint="Recorded as classification.performerRole — L2.">
-            <input name="performerRole" value={role} onChange={(e) => setRole(e.target.value)} placeholder="Community health worker" />
-          </RefField>
-          <RefField label="Party type">
-            <select name="partyType" value={kind} onChange={(e) => setKind(e.target.value)}>
-              {["Individual", "Group", "Organisation"].map((k) => (
-                <option key={k} value={k}>
-                  {k}
-                </option>
-              ))}
-            </select>
-          </RefField>
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <RefField
-            label="Who may attest evidence"
-            hint="Authorization functions, comma-separated. This one IS infrastructure: evidence submitted without one of these is refused."
-          >
-            <input name="attesterFunctions" value={fns} onChange={(e) => setFns(e.target.value)} />
-          </RefField>
-        </div>
-      </Card>
+      <div style={grid()}>
+        <RefField label="Who does the work" hint="Recorded as classification.performerRole — L2.">
+          <input name="performerRole" value={role} onChange={(e) => setRole(e.target.value)} placeholder="Community health worker" />
+        </RefField>
+        <RefField label="Party type">
+          <select name="partyType" value={kind} onChange={(e) => setKind(e.target.value)}>
+            {["Individual", "Group", "Organisation"].map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+        </RefField>
+      </div>
+      <RefField
+        label="Who may attest evidence"
+        hint="Authorization functions, comma-separated. This one IS infrastructure: evidence submitted without one of these is refused."
+      >
+        <input name="attesterFunctions" value={fns} onChange={(e) => setFns(e.target.value)} />
+      </RefField>
       <CardTitled t="Who sits between, and where each is recorded">
         <KVR
           rows={[
@@ -1105,11 +1120,20 @@ function PartiesBody({ d }: BodyProps) {
           survives, so disputing who did the work never destroys the record that it was done.
         </p>
       </CardTitled>
-      <Callout kind="teal" title="What infrastructure contributes here">
-        The attester list, and only that. Whether "Community health worker" is the right phrase is this deployment's
-        business; whether a party holding no authorization can put evidence against this definition is not — the
-        service refuses it, and this list is what it checks against.
-      </Callout>
+      <div className="proposal">
+        <div className="p-head">
+          <span className="p-t">Intermediary party — proposed</span>
+          <Chip kind="warn">Not built</Chip>
+        </div>
+        <div className="p-s">
+          Where a worker is engaged through a contractor or an implementing partner, that party sits between the fund
+          source and the worker. Nothing records it today.
+        </div>
+      </div>
+      <Sidecar warm>
+        Whether a fund split applies to every single unit or to the aggregate pay cycle is a proposed field,{" "}
+        <Mono>fundSplitLevel</Mono>. It changes what a worker is owed when only one payer confirms.
+      </Sidecar>
     </Frame>
   );
 }
@@ -1156,14 +1180,6 @@ function EvidenceBody({ d }: BodyProps) {
     <Frame
       counter="Evidence · 6 of 9"
       title="What counts as proof?"
-      chip={stateChip(d)}
-      lede={
-        <>
-          Not a single answer but a map: several kinds of evidence, each strong enough for a different tier. Read top
-          to bottom, the first rule whose conditions all hold wins, and the floor at the bottom has no requirements at
-          all — which is what keeps a worker with nothing but a supervisor's word payable.
-        </>
-      }
       btns={[
         { label: "Back", to: "/define/parties", role: "secondary" },
         {
@@ -1301,13 +1317,16 @@ function EvidenceBody({ d }: BodyProps) {
           </div>
         ) : null}
       </CardTitled>
-      <Callout kind="green" title="What is deliberately absent">
-        A tier. Nothing on this screen writes a strength onto a record, and nothing downstream stores one. What is
-        stored is provenance — which class of system a record came from, how the fact was captured, how well the
-        worker's identity is known — and the tier is computed from that at the moment somebody asks. A stored tier
-        would freeze a judgement verifiers should be free to make differently, and could never be raised when a
-        worker's identity assurance later improves.
-      </Callout>
+      <div className="proposal">
+        <div className="p-head">
+          <span className="p-t">Paired proof — proposed</span>
+          <Chip kind="warn">Not built</Chip>
+        </div>
+        <div className="p-s">
+          A before-and-after photo is one requirement, not two. Proof types are flat labels today and cannot express
+          that.
+        </div>
+      </div>
     </Frame>
   );
 }
@@ -1359,12 +1378,10 @@ function SourceBody({ d }: BodyProps) {
     <Frame
       counter="Source · 7 of 9"
       title="Where does this evidence come from?"
-      chip={stateChip(d)}
       lede={
         <>
-          This is a provenance choice, not a convenience one. What kind of system a record comes from, and how the
-          fact was captured in it, are the two facts the strength function reads — so this screen sets the ceiling on
-          how strong any record from this source can ever be.
+          Pick how records of this work will reach CREST. Every option is somewhere else: CREST reads or receives,
+          and never records. You can add more than one later, and the lowest-trust source in use caps the tier.
         </>
       }
       btns={[
@@ -1374,6 +1391,28 @@ function SourceBody({ d }: BodyProps) {
       ]}
     >
       <ClosedNote d={d} />
+      {/* The frame's four arrival routes. The first two are the forward
+          buttons below; the third is stated so nobody wonders whether it is
+          hidden — CREST attesting its own capture would break provenance. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        <OptionCard
+          t="A system CREST connects to"
+          s="An adaptor pulls records in on a schedule. Nobody retypes anything, which is the only way the strongest tier is reachable."
+        />
+        <OptionCard
+          t="A spreadsheet the team uploads"
+          s="You get a template generated from this definition. Sensible where the work happens outside any system."
+        />
+        <OptionCard
+          t="A worker typing it into CREST"
+          unavailable
+          s="Does not exist. CREST has no screen on which work is recorded, because evidence CREST captured itself would be CREST vouching for its own record."
+        />
+        <OptionCard
+          t="A supervisor confirming in the delivery platform's own app"
+          s="A named person vouches for it. Already covered by the attestation rule on the previous step."
+        />
+      </div>
       <Card>
         <div style={grid()}>
           <RefField label="Source class" hint="Attached by the adaptor, never asserted by the source itself.">
@@ -1473,7 +1512,6 @@ function TemplateBody({ d }: BodyProps) {
   return (
     <Frame
       title="Your spreadsheet template"
-      chip={stateChip(d)}
       lede={
         <>
           Nobody writes this file's header by hand. The columns are derived from the definition version itself — the
@@ -1559,38 +1597,42 @@ function AdaptorsBody({ d }: BodyProps) {
     [],
   );
   const src = d.doc.sources || {};
-  const pick = (ref: string) =>
-    save(d.id, "sources", {
+  const [sel, setSel] = useState(src.connections?.[0]?.adapterRef || "");
+  const pick = (ref: string) => {
+    setSel(ref);
+    return save(d.id, "sources", {
       ...src,
       connections: [
         { ...(src.connections?.[0] || { systemRef: "" }), adapterRef: ref },
         ...(src.connections || []).slice(1),
       ],
     });
+  };
   return (
     <LoadFrame r={r}>
       {(list) => {
         const real = list.filter((a) => a.status === "available");
         const absent = list.filter((a) => a.status !== "available");
         const digit = list.find((a) => a.class === "digit-hcm");
+        const selClass = list.find((a) => (a.ref || a.class) === sel)?.class;
         return (
           <Frame
             counter="Connection · 1 of 5"
             title="Choose a class adaptor"
-            chip={<Chip kind="info">{real.length} implemented</Chip>}
-            lede={
-              <>
-                An adaptor is per class of system, configured per deployment — not per partner. This is the catalogue
-                the service actually reports, including what it does not have, because a library screen padded with
-                logos is a promise the first partner conversation has to walk back.
-              </>
-            }
+            lede="Pick the one that matches the system on the other side. If nothing matches, build a new adaptor from a sample of their data."
             btns={[
               { label: "Back", to: "/define/source", role: "secondary" },
               { label: "Start a new one", to: "/define/mapping", role: "secondary" },
+              // A selected row makes the way forward the primary button; the
+              // reference's DIGIT HCM button stays, demoted, with its refusal.
+              ...(selClass
+                ? [{ label: `Continue with ${selClass}`, to: "/define/mapping", role: "primary" as const }]
+                : []),
               {
                 label: "Use DIGIT HCM",
-                role: "primary",
+                role: (selClass ? "secondary" : "primary") as "primary" | "secondary",
+                onClick: () =>
+                  document.querySelector(".open-note")?.scrollIntoView({ behavior: "smooth", block: "center" }),
                 note: (
                   <>
                     <b>DIGIT HCM is not an implemented adaptor class.</b>{" "}
@@ -1604,38 +1646,46 @@ function AdaptorsBody({ d }: BodyProps) {
             ]}
           >
             <ClosedNote d={d} />
-            <CardTitled t="Implemented" chip={<Chip kind="ok">available</Chip>}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-                {real.map((a) => (
-                  <OptionCard
-                    key={a.class}
-                    t={a.ref ? `${a.class} · ${a.ref}` : a.class}
-                    s={a.note || ""}
-                    on={src.connections?.[0]?.adapterRef === a.ref}
-                    onPick={() => pick(a.ref || a.class)}
-                    tag={<Chip kind="ok" sm>use this</Chip>}
-                  />
-                ))}
-              </div>
+            <CardTitled t="Built and tested" chip={<Chip kind="ok">{real.length} available</Chip>}>
+              <GridTable cols="1.2fr 2fr auto" head={["Adaptor", "What it reads", "Status"]}>
+                {real.map((a) => {
+                  const on = sel === (a.ref || a.class);
+                  return (
+                    <button
+                      key={a.class}
+                      type="button"
+                      className={"g-row" + (on ? " on" : "")}
+                      aria-pressed={on}
+                      data-pick={a.ref || a.class}
+                      onClick={() => pick(a.ref || a.class)}
+                    >
+                      <span className="g-strong">{a.ref ? `${a.class} · ${a.ref}` : a.class}</span>
+                      <span>{a.note || ""}</span>
+                      <Chip kind="ok" sm>{on ? "selected" : "available"}</Chip>
+                    </button>
+                  );
+                })}
+              </GridTable>
               {real.length ? null : <Empty>The service reports no implemented adaptor class.</Empty>}
             </CardTitled>
-            <CardTitled t="Named, and absent" chip={<Chip kind="warn">{absent.length} not implemented</Chip>}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            <CardTitled t="Named, not built" chip={<Chip kind="warn">{absent.length} not implemented</Chip>}>
+              <GridTable cols="1.2fr 2fr auto" head={["Adaptor", "Why it is not here yet", "Status"]}>
                 {absent.map((a) => (
-                  <OptionCard key={a.class} t={a.class} s={a.note || ""} unavailable />
+                  <div key={a.class} className="g-row dim">
+                    <span className="g-strong">{a.class}</span>
+                    <span>{a.note || ""}</span>
+                    <Chip kind="warn" sm>not-implemented</Chip>
+                  </div>
                 ))}
-              </div>
-              <p className="muted" style={{ marginTop: 8 }}>
-                These stay on the screen precisely so nobody wonders whether they were hidden. Each says
-                "not-implemented" because that is the word the service returns for it, not a judgement this screen
-                made.
+              </GridTable>
+            </CardTitled>
+            <CardTitled t="Start a new adaptor from a sample payload" chip={<Chip kind="info">open to anyone</Chip>}>
+              <p className="muted" style={{ margin: 0 }}>
+                Start a new one opens the mapping screen: name the source system's columns against CREST's canonical
+                fields. The result is a per-source mapping on this definition — honestly not yet a reusable adaptor
+                others inherit.
               </p>
             </CardTitled>
-            <Callout kind="green" title="What is deliberately absent">
-              A per-partner integration list. One implemented class covers every system that can produce a delimited
-              export, which is the lowest common denominator a programme with no API can always reach — and it is why
-              the tier map's floor exists at all.
-            </Callout>
           </Frame>
         );
       }}
@@ -1693,7 +1743,6 @@ function MappingBody({ d }: BodyProps) {
     <Frame
       counter="Connection · 2 of 5"
       title="Map their fields onto yours"
-      chip={stateChip(d)}
       lede={
         <>
           The source system's vocabulary is its own, and asking a partner to rename their columns is not an
@@ -1790,14 +1839,7 @@ function ConnectBody({ d }: BodyProps) {
     <Frame
       counter="Connection · 3 of 5"
       title="Connect to the system"
-      chip={stateChip(d)}
-      lede={
-        <>
-          Where the system is, what it is called, and the name of the place a secret will live. Not the secret. A
-          definition travels — it is reviewed, signed, published and read by verifiers — and a credential that
-          travelled with it would be a credential CREST promised never to hold.
-        </>
-      }
+      lede="Set where the records come from and how often. The partner's platform team supplies the credential separately — never here."
       btns={[
         { label: "Back", to: "/define/mapping", role: "secondary" },
         { label: "Continue", to: "/define/dryrun", role: "primary", onClick: persist },
@@ -1951,11 +1993,18 @@ function DryRunBody({ d }: BodyProps) {
       title="Test it against real records"
       chip={out ? <Chip kind="ok">nothing committed</Chip> : stateChip(d)}
       lede={
-        <>
-          The same CSV adaptor and the same strength function the real pipeline uses — not a simulation of them. So
-          what this screen shows is what ingestion would actually do with these rows, including the tier each one
-          would reach and why.
-        </>
+        out ? (
+          <>
+            {out.rows.length} record{out.rows.length === 1 ? "" : "s"} parsed from the sample. Nothing was written —
+            this is a dry run.
+          </>
+        ) : (
+          <>
+            The same CSV adaptor and the same strength function the real pipeline uses — not a simulation of them. So
+            what this screen shows is what ingestion would actually do with these rows, including the tier each one
+            would reach and why.
+          </>
+        )
       }
       btns={[
         { label: "Back", to: "/define/connect", role: "secondary" },
@@ -2014,6 +2063,13 @@ function DryRunBody({ d }: BodyProps) {
       </Card>
       {out ? (
         <>
+          {/* The frame's verdict trio, computed from the real rows rather
+              than illustrated: acceptable / not acceptable / refused. */}
+          <div style={{ display: "flex", gap: 12 }}>
+            <Stat n={out.rows.filter((r) => r.tier).length} label="would be acceptable" />
+            <Stat n={out.rows.filter((r) => !r.tier).length} label="would go to a human" />
+            <Stat n={out.rejections.length} label="would be refused" />
+          </div>
           <CardTitled
             t="What the pipeline would do with these rows"
             chip={<Chip kind={out.committed ? "err" : "ok"}>committed: {String(out.committed)}</Chip>}
@@ -2139,15 +2195,14 @@ function ValidationBody({ d }: BodyProps) {
   const [who, setWho] = useState(v.posture || "");
   const [delay, setDelay] = useState(v.delayDays != null ? String(v.delayDays) : "");
   const [spec, setSpec] = useState(v.specifierPartyId || "");
+  const [decidedBy, setDecidedBy] = useState(v.decidedBy || "author");
   return (
     <Frame
       counter="Validation · 8 of 9"
       title="Who decides how this is validated?"
-      chip={stateChip(d)}
-      lede={
+      chip={
         <>
-          Validation is somebody's job, and naming them is the point of this screen. An unowned validation posture is
-          the state in which a disputed record has no route to an answer.
+          <Chip kind="warn">Recommended, not built</Chip> <Chip kind="info">Symmetric with payment delegation</Chip>
         </>
       }
       btns={[
@@ -2162,11 +2217,26 @@ function ValidationBody({ d }: BodyProps) {
               specifierPartyId: spec.trim() || undefined,
               posture: who.trim() || undefined,
               delayDays: delay.trim() ? Number(delay.trim()) : undefined,
+              decidedBy,
             }),
         },
       ]}
     >
       <ClosedNote d={d} />
+      <div style={grid()}>
+        <OptionCard
+          t="I'll set it now"
+          s="You pick who validates, the timing and the intensity"
+          on={decidedBy === "author"}
+          onPick={() => setDecidedBy("author")}
+        />
+        <OptionCard
+          t="Someone else will"
+          s="Invite them. The field stays pending until they act."
+          on={decidedBy === "delegate"}
+          onPick={() => setDecidedBy("delegate")}
+        />
+      </div>
       <Card>
         <div style={grid()}>
           <RefField label="Who validates" hint="Recorded as classification.validationPosture — L2.">
@@ -2189,15 +2259,22 @@ function ValidationBody({ d }: BodyProps) {
           </RefField>
         </div>
       </Card>
-      <Callout kind="teal" title="The one line here that is not decoration">
-        The issuer list. Name an issuer this deployment does not sign with and every credential issued against this
-        definition fails verification — correctly, because that is the check doing its job. It is the difference
-        between a policy field and an infrastructure one, on the same screen, and the hint says which is which.
+      <RefField label="Validator party types">
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {["External Evidence Contact", "Supervisor", "Collective or community body", "External verifier"].map((t) => (
+            <Chip key={t} kind="plain">{t}</Chip>
+          ))}
+        </div>
+      </RefField>
+      <Callout kind="green">
+        A village water-point committee approving a mechanic broke the flat taxonomy: the validator list assumed
+        institutional hierarchy only, even though a matching validation tier already existed.
       </Callout>
-      <Callout kind="green" title="What a validation delay does not do">
-        Hold anyone's money. A validation that happens thirty days after payment is a check on the programme, not a
-        gate in front of the worker — and nothing on this screen can turn it into one.
-      </Callout>
+      <Sidecar>
+        Validation timing is now independent of payment timing. Paid immediately, validated 30 days later is a real
+        pattern the coupled version could not express — a validation that happens after payment is a check on the
+        programme, not a gate in front of the worker.
+      </Sidecar>
     </Frame>
   );
 }
@@ -2216,13 +2293,7 @@ function PaymentBody({ d }: BodyProps) {
     <Frame
       counter="Payment · 9 of 9"
       title="What does this pay?"
-      chip={stateChip(d)}
-      lede={
-        <>
-          The author does not have to answer this, and usually should not. Pricing is a separate authority with a
-          separate record; what this screen records is who will hold it — a delegation, not a price.
-        </>
-      }
+      lede="Optional. A definition is fully valid for issuing credentials with no rate attached at all."
       btns={[
         { label: "Back", to: "/define/validation", role: "secondary" },
         { label: "Rate structures", to: "/define/tranches", role: "secondary", onClick: persist },
@@ -2230,6 +2301,12 @@ function PaymentBody({ d }: BodyProps) {
       ]}
     >
       <ClosedNote d={d} />
+      {/* The frame's two-record split: the definition and the payment setup
+          are separate records with separate owners, joined by reference. */}
+      <div style={grid()}>
+        <OptionCard t="Work definition" s="Owns the unit of work and the minimum evidence tier" />
+        <OptionCard t="Payment set up" s="Owns the rate and the calculation once validated" />
+      </div>
       <Card>
         <div style={grid(250)}>
           <RefField label="Who sets the rate">
@@ -2256,11 +2333,16 @@ function PaymentBody({ d }: BodyProps) {
           a use of its own, and a worker's record of what they did does not depend on anyone having priced it yet.
         </p>
       </Card>
-      <Callout kind="green" title="What is deliberately absent">
-        An amount. There is no currency field on this screen and no way to type a number of shillings, because the
-        definition links to payment by reference and never embeds it. The rate is a versioned record with its own
-        owner, and this screen's most useful answer is the name of that owner.
-      </Callout>
+      <Sidecar>
+        A project can require stronger evidence to release money than it requires to issue the credential. A tier may
+        be enough for the credential to exist and count toward a history, and still not enough to pay against.
+      </Sidecar>
+      <Sidecar warm>
+        Worth clarifying in the spec: §8 says minimum_tier_for_payment must never be lower than the definition's
+        tier_ceiling, but the reference's numbering makes the strongest tier 1. Read numerically that makes the two
+        always equal and the field pointless. The prose intent is the opposite. The direction needs stating
+        explicitly before anyone builds it.
+      </Sidecar>
     </Frame>
   );
 }
@@ -2281,7 +2363,6 @@ function RolesBody({ d }: BodyProps) {
   return (
     <Frame
       title="Who holds which role"
-      chip={stateChip(d)}
       lede={
         <>
           Four roles, four different parties, and the reason they are separate is that each is a place a decision can
@@ -2323,12 +2404,15 @@ function RolesBody({ d }: BodyProps) {
           ))}
         </div>
       </CardTitled>
-      <Callout kind="teal" title="Where the authority actually lives">
-        Not here. This screen writes names onto a payment-structure record attached to the definition; the rate
-        owner's authority is a <Mono>RateOwnerAssignment</Mono> in the payments service, and the approver's is the
-        ratification refusal in this one. Naming somebody here does not grant them anything — which is why the
-        handoff screen after signing exists at all.
+      <Callout kind="green">
+        Two roles held by the same person remain distinct roles — a Ministry may delegate issuing to district offices
+        while keeping specification central. This screen writes names onto a payment-structure record; the authority
+        itself lives in the service that enforces it, which is why the handoff screen after signing exists at all.
       </Callout>
+      <Sidecar warm>
+        A standing role invite covers every definition in the project. A one-off validation delegation would cover
+        exactly one. Which of the two validation delegation should use is undecided.
+      </Sidecar>
     </Frame>
   );
 }
@@ -2344,7 +2428,11 @@ function TranchesBody({ d }: BodyProps) {
   return (
     <Frame
       title="Payment tranches"
-      chip={stateChip(d)}
+      chip={
+        <>
+          <Chip kind="err">Proposed</Chip> <Chip kind="plain">Built nowhere</Chip>
+        </>
+      }
       lede={
         <>
           Work that pays in stages — some on completion, some on a later check. Each tranche is a share of a rate
@@ -2416,10 +2504,21 @@ function TranchesBody({ d }: BodyProps) {
           </button>
         </form>
       </CardTitled>
-      <Callout kind="green" title="What is deliberately absent">
-        Money. A share is a proportion of a rate that does not exist yet, and the definition stays complete without
-        it — payment structure is a linked record attached by reference, never a field on the definition.
-      </Callout>
+      <RefField label="Rate structure types">
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {["Flat", "Volume band", "Geography", "Tenure", "Quality", "Rate table — per item", "Externally indexed"].map(
+            (t) => (
+              <Chip key={t} kind="plain">{t}</Chip>
+            ),
+          )}
+        </div>
+      </RefField>
+      <Sidecar warm>
+        Also unresolved here: gig-delivery surge pricing and market-price-indexed procurement both need a rate that
+        varies over time or against an external index. Neither is expressible today. And triggers are bare category
+        labels with no threshold — a response-time bonus needs a value and a unit attached to the trigger, not just a
+        name.
+      </Sidecar>
       <Sidecar>
         A tranche's condition is a release condition, not a hold. Every confirmation-window exit still creates its
         payment obligation; what a tranche decides is how that obligation is split across stages, and a stage that has
@@ -2440,7 +2539,6 @@ function RulesBody({ d }: BodyProps) {
   return (
     <Frame
       title="Before it counts, and what reduces it"
-      chip={stateChip(d)}
       lede={
         <>
           Two different kinds of rule, and confusing them is expensive. A precondition decides whether the work counts
@@ -2518,12 +2616,10 @@ function RulesBody({ d }: BodyProps) {
           </button>
         </form>
       </CardTitled>
-      <Callout kind="teal" title="Why the two are kept apart">
-        A precondition that fails means there is no unit to pay for, and the worker needs to know that before they do
-        the work. A deduction that applies means the work counted and the money is smaller, and the worker needs to
-        know <i>why</i> when the amount arrives. Filed as the same kind of rule, the second becomes a payment that is
-        quietly short with nothing attached explaining it.
-      </Callout>
+      <Sidecar>
+        A precondition is not evidence. It answers "was this work allowed to happen" rather than "did it happen", and
+        the two need different fields. Checked before the shift, not after.
+      </Sidecar>
       <Sidecar>
         Neither is a reason to withhold. A deduction reduces an amount and names itself while doing it; it never turns
         into a payment held with no explanation, because every held payment has to carry a reason with an owner.
@@ -2543,21 +2639,26 @@ function ExtendBody({ d }: BodyProps) {
   return (
     <Frame
       title="When the form does not have what you need"
-      chip={stateChip(d)}
-      lede={
-        <>
-          Two kinds of extension, and only one of them is this screen. A field an institution needs on its own records
-          goes here, namespaced, typed and read by nothing in the infrastructure. A field <i>CREST</i> is missing is a
-          different thing entirely — it is a design finding, and the answer to it is a change to the primitive, not a
-          row in this table.
-        </>
-      }
       btns={[
         { label: "Back", to: "/define/rules", role: "secondary" },
         { label: "Continue", to: "/define/open", role: "primary", onClick: () => save(d.id, "extensions", fields) },
       ]}
     >
       <ClosedNote d={d} />
+      <div style={grid()}>
+        <OptionCard
+          t="A new value in an existing slot"
+          tag={<Chip kind="ok" sm>Live today</Chip>}
+          s="A category name, a deduction reason, a party label"
+          ex="Free and immediate. No approval, no core change. Repeated independent use of the same value is the signal it should graduate into shared vocabulary."
+        />
+        <OptionCard
+          t="A genuinely new field"
+          tag={<Chip kind="warn" sm>This screen</Chip>}
+          s="A contractor reference, an accreditation number"
+          ex="Added under a namespaced key. No approval either — but only a screen built to read that key will understand it."
+        />
+      </div>
       <CardTitled t="Institution extension fields" chip={<Chip kind="info">{Object.keys(fields).length}</Chip>}>
         <GridTable cols="1.4fr 1.2fr .6fr 1.2fr auto" head={["Field key", "Label", "Type", "Value", ""]}>
           {Object.keys(fields).length ? (
@@ -2637,11 +2738,10 @@ function ExtendBody({ d }: BodyProps) {
         into a pilot wearing a passing test. That case is a design finding, raised against the blueprint and corrected
         there.
       </Callout>
-      <Callout kind="green" title="What the infrastructure does with these">
-        Nothing. It stores them, type-checks them at submit, and hands them back. No strength rule reads them, no
-        payment rule reads them, and no verifier is asked to understand them — which is exactly what makes the
-        extension point safe to offer.
-      </Callout>
+      <Sidecar>
+        Neither path sends the author somewhere else to file a request. The promotion of a repeated key into shared
+        vocabulary happens later, and invisibly to them.
+      </Sidecar>
     </Frame>
   );
 }
@@ -2889,13 +2989,7 @@ function HandoffBody({ d }: BodyProps) {
                 <Chip kind="warn">unpriced</Chip>
               )
             }
-            lede={
-              <>
-                This is not an error and not a half-finished state. A definition is complete with no rate attached —
-                recognition is a use of its own. What it is not is <i>payable</i>, and somebody has to be asked to
-                make it so.
-              </>
-            }
+            lede="Payment is optional, and it is not your role — but nobody has been given it."
             btns={[
               { label: "Back", to: "/ratified", role: "secondary" },
               {
@@ -2930,6 +3024,21 @@ function HandoffBody({ d }: BodyProps) {
                 ]}
               />
             </Card>
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              <OptionCard
+                t="Hand payment set up to someone else"
+                s="Send an invitation. They arrive with the project and the unit already explained."
+              />
+              <OptionCard t="Set it up myself" s="Only if you also hold the Rate Owner role on this project." />
+              <OptionCard
+                t="Leave payment unset"
+                s="A valid end state. The project recognises and credentials work without paying for it."
+              />
+            </div>
+            <Sidecar>
+              This is the third way into payment set up. The Project Configurator can assign owners up front, this
+              screen can hand it off after the fact, or an owner can be invited directly.
+            </Sidecar>
             <CardTitled t="Invite whoever will own the rate">
               <div style={grid()}>
                 <RefField label="Invited party">

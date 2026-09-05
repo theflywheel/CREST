@@ -70,6 +70,37 @@ func getDefinition(ctx context.Context, q store.Querier, defID string, version i
 	return d, json.Unmarshal(doc, &d)
 }
 
+// listDefinitions answers what work this deployment has defined — one row per
+// definition id, the version a resolver would follow: the newest ACTIVE one,
+// or the newest row of any state while none is active yet (a console showing
+// an author their own draft). Definitions carry no worker and no party's
+// private facts, and every ACTIVE one is already published to the registry
+// substrate, so a listing tells a caller nothing the registry does not.
+func listDefinitions(ctx context.Context, q store.Querier, state string, limit int) ([]schema.Definition, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := q.Query(ctx, `
+		SELECT DISTINCT ON (id) doc FROM definitions
+		WHERE ($1 = '' OR state = $1)
+		ORDER BY id,
+		         (state = 'ACTIVE') DESC,
+		         version DESC
+		LIMIT $2`, state, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.Collect(rows, func(r store.Row) (schema.Definition, error) {
+		var doc []byte
+		if err := r.Scan(&doc); err != nil {
+			return schema.Definition{}, err
+		}
+		var d schema.Definition
+		return d, json.Unmarshal(doc, &d)
+	})
+}
+
 // transition moves a version between states, refusing anything an ACTIVE
 // definition should not permit. The state is read and written in one statement
 // so two concurrent activations cannot both see DRAFT.

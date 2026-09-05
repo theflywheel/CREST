@@ -131,6 +131,28 @@ export async function whoAmI(): Promise<{ subjectRef: string; partyId: string; i
   return call("parties", "GET", "/v1/auth/me");
 }
 
+// Claiming an invitation (#123): the caller is signed in and holds no party
+// yet; the code binds THIS login to the record somebody already created. The
+// session token set by completeEsignet carries the request — the claim is the
+// claimant's own act, never an assertion made for them.
+//
+// provider/providerClass are derived from the issuer this deployment actually
+// authenticated against, not from a guess: an eSignet issuer is recorded as
+// eSignet, anything else as the generic OIDC provider the dev stack runs.
+export async function claimInvitation(code: string): Promise<{
+  partyId: string;
+  identityAssurance?: string;
+  because?: unknown;
+}> {
+  const who = await whoAmI();
+  const esignet = (who.issuer || "").toLowerCase().includes("esignet");
+  return call("parties", "POST", "/v1/party-invitations/claim", {
+    code: code.trim(),
+    provider: esignet ? "esignet" : "mock-oidc",
+    providerClass: esignet ? "esignet" : "generic-oidc",
+  });
+}
+
 // The deployment's own pairwise derivation (HMAC-SHA256 under its salt) runs
 // server-side; the browser cannot and must not know the salt. The dev issuer
 // and stack share CREST_SUBJECT_SALT, and the mock issuer exposes the
