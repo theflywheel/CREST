@@ -381,7 +381,11 @@ function flowStamp() {
 // seeder uses; returns its id (26-char suffix, walk-shaped, unique per call).
 async function flowPublishWiderTerms(request) {
   const id = "crest:terms:01JCRESTG2GATEX" + flowStamp() + "PAY00";
+  // Terms are the operator's to publish, and the fixture organisation is
+  // this stack's operator.
+  const token = await flowMintToken(request, FLOW_FIX.org);
   const r = await request.post(FLOW_API.parties + "/v1/terms", {
+    headers: { Authorization: "Bearer " + token },
     data: {
       id, version: 1, name: "Full delivery with payment",
       permissions: ["submit-work-evidence", "specify-definition", "ratify-definition", "set-rates", "instruct-payment"],
@@ -420,8 +424,8 @@ const CONSOLE_PERSONAS = {
   configurator: ["org", "Dr. Alice Mutua", "Project Configurator"],
   author: ["org", "Amina Yusuf", "Work Definition Author"],
   approver: ["org", "Prof. Ndegwa", "Work Definition Approver"],
-  rateowner: ["org", "Mutua", "Rate Owner"],
-  payowner: ["org", "Njeri", "Payment Mechanism Owner"],
+  rateowner: ["org", "Nadia Okoth", "Rate Owner"],
+  payowner: ["org", "Daniel Mwangi", "Payment Mechanism Owner"],
   instance: ["org", "Instance administrator", "Instance Admin"],
   custodian: ["custodian", "Otieno", "Registry Custodian"],
   support: ["custodian", "Naliaka", "Support Agent"],
