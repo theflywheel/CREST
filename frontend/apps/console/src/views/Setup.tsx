@@ -560,6 +560,7 @@ const CONSOLE_FUNCTIONS = [
   "act-for-party",
   "register-workers",
   "submit-evidence",
+  "resolve-unclear-evidence",
 ];
 
 function InvitePerson(props: {

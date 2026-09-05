@@ -636,6 +636,7 @@ const TERMS_PERMISSIONS = [
   "act-for-party",
   "register-workers",
   "submit-evidence",
+  "resolve-unclear-evidence",
 ];
 
 function TermsPublisher() {
