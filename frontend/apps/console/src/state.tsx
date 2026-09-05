@@ -259,12 +259,17 @@ export function ConsoleProvider(props: { children: ReactNode }) {
           .then((r) => ((r && r.mechanisms) || []) as Array<{ contextId?: string }>)
           .catch(() => []);
         const ctxIds = Array.from(new Set(mechs.map((m) => m.contextId).filter(Boolean) as string[]));
+        // The project read answers its owner and configurator; a mechanism
+        // owner is neither, and the context id is still theirs to work in.
         const fetched = await Promise.all(
           ctxIds.map((id) =>
-            api.get("parties", "/v1/projects/" + encodeURIComponent(id)).then((p) => p.project || p).catch(() => null),
+            api
+              .get("parties", "/v1/projects/" + encodeURIComponent(id))
+              .then((p) => (p.project || p) as ProjectRow)
+              .catch(() => ({ id, name: id }) as ProjectRow),
           ),
         );
-        list = fetched.filter(Boolean) as ProjectRow[];
+        list = fetched;
       }
       // A rate owner's definition is the one they were assigned, whatever
       // else is listed.
