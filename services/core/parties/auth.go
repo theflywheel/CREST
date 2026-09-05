@@ -198,9 +198,15 @@ func registerAuth(mux *http.ServeMux, d service.Deps, a *authConfig) {
 		http.Redirect(w, r, st.Door+"/#/auth?token="+url.QueryEscape(tokens.AccessToken), http.StatusFound)
 	})
 
-	// Who am I, as this deployment sees me: the pairwise reference and the
-	// party bound to it. An authenticated stranger gets their subjectRef and
-	// no partyId — the state phase B's self-registration acts on.
+}
+
+// registerWhoAmI serves GET /v1/auth/me whether or not an eSignet login
+// surface is configured: the question "who does this deployment take me
+// for" is about the token the caller holds, not about how they obtained it,
+// and a mock-issuer stack (the e2e harness, a local run without eSignet)
+// answers it the same way. The doors' return legs and the invitation claim
+// both depend on it.
+func registerWhoAmI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/auth/me", func(w http.ResponseWriter, r *http.Request) {
 		caller := identity.From(r.Context())
 		if !caller.Authenticated() {

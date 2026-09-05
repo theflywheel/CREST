@@ -52,6 +52,8 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/parties/{id}/assurance", h.getAssurance)
 	mux.HandleFunc("POST /v1/parties/{id}/roster-ids", h.addRosterID)
 	mux.HandleFunc("POST /v1/parties/{id}/identity-bindings", h.addIdentityBinding)
+	// Who the token makes the caller, served on every stack (see auth.go).
+	registerWhoAmI(mux)
 	// The invitation in front of the first-login bootstrap (finding #123):
 	// minted by the operator or an approved organisation for an unbound
 	// party, claimed by the invited person with their own login.
