@@ -310,15 +310,15 @@ export function App() {
       <Route path="/onboard/review" element={<OnboardReview />} />
       <Route path="/onboard/invited" element={<OnboardInvited />} />
       <Route path="/onboard/project" element={<OnboardProject />} />
+      {/* Claiming an invitation (#123): reachable with no session by design —
+          the person claiming has no party here yet, which is the point. */}
+      <Route path="/claim/:code" element={<Claim />} />
       <Route element={<Shell />}>
         {/* J3 — setting up a project */}
         <Route path="/org" element={<OrgHome />} />
         <Route path="/projects" element={<Navigation />} />
         <Route path="/projects/new" element={<NewProject />} />
         <Route path="/people" element={<People />} />
-      {/* Claiming an invitation (#123): reachable with no session by design —
-          the person claiming has no party here yet, which is the point. */}
-      <Route path="/claim/:code" element={<Claim />} />
         <Route path="/workers" element={<Workers />} />
         <Route path="/validation" element={<Validation />} />
         <Route path="/intake" element={<Intake />} />

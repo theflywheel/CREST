@@ -2575,6 +2575,7 @@ test("console: the oversight dashboards carry the p2_11–16, v4_1–2 and g4_4�
   await settle(page);
   await expect(body).toContainText("used by one project only");
   await expect(body).toContainText("used by two or more");
+  await expect(body).toContainText("never again, never retired");
   await expect(body).toContainText("You reviewed the registry");
   await expect(body).toContainText("An assigned gap that nobody works is not escalated.");
   await signedInAs(page, "Otieno");
@@ -2642,4 +2643,3 @@ test("console: an invited person claims their record with their own login, once"
   await page.evaluate((t) => { location.hash = "#/auth?token=" + encodeURIComponent(t); }, token2);
   await expect(body).toContainText("That invitation was already claimed", { timeout: 20000 });
 });
-  await expect(body).toContainText("never again, never retired");
