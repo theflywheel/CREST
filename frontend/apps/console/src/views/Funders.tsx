@@ -64,14 +64,16 @@ type Instruction = {
   state: string; held?: HeldReason;
 };
 
-const DEF = FIX.definition;
-const defPath = (tail: string) => `/v1/definitions/${encodeURIComponent(DEF)}${tail}`;
+// The definition a rate prices is the session's — assigned to a rate owner
+// by the organisation, chosen by everybody else — never a fixture's.
+const defPath = (def: string, tail: string) => `/v1/definitions/${encodeURIComponent(def)}${tail}`;
 
-async function loadRates() {
+async function loadRates(def: string) {
+  if (!def) throw new Error("no definition is selected; a rate prices a unit somebody defined");
   const [owner, rates, d] = await Promise.all([
-    api.get("payments", defPath("/rate-owner")),
-    api.get("payments", defPath("/rates")),
-    api.get("definitions", `/v1/definitions/${encodeURIComponent(DEF)}`).catch(() => null),
+    api.get("payments", defPath(def, "/rate-owner")),
+    api.get("payments", defPath(def, "/rates")),
+    api.get("definitions", `/v1/definitions/${encodeURIComponent(def)}`).catch(() => null),
   ]);
   return {
     current: (owner.current || null) as Assignment | null,
@@ -122,12 +124,12 @@ export function RateOwner() {
   const nav = useNavigate();
   const [gen, setGen] = useState(0);
   const [assignee, setAssignee] = useState<string>(FIX.org);
-  const r = useLoad(loadRates, [gen]);
+  const r = useLoad(() => loadRates(s.definitionId), [gen, s.definitionId]);
   const me = s.me!.partyId;
   const assign = async () => {
     s.clearErr();
     try {
-      await api.post("payments", defPath("/rate-owner"), {
+      await api.post("payments", defPath(s.definitionId, "/rate-owner"), {
         assigneePartyId: assignee.trim(),
         assignedByPartyId: me,
       });
@@ -209,7 +211,7 @@ export function RateAuthor() {
   const d0 = draft();
   const [amount, setAmount] = useState(d0.amount || "150.00");
   const [effective, setEffective] = useState(d0.effective || "");
-  const r = useLoad(loadRates);
+  const r = useLoad(() => loadRates(s.definitionId), [s.definitionId]);
   const me = s.me!.partyId;
   return (
     <LoadFrame r={r}>
@@ -268,14 +270,14 @@ export function RateAuthor() {
 export function RatePublish() {
   const s = useConsole();
   const nav = useNavigate();
-  const r = useLoad(loadRates);
+  const r = useLoad(() => loadRates(s.definitionId), [s.definitionId]);
   const me = s.me!.partyId;
   const d0 = draft();
   const publish = async () => {
     s.clearErr();
     const minor = Math.round(parseFloat(d0.amount || "0") * 100);
     try {
-      await api.post("payments", defPath("/rates"), {
+      await api.post("payments", defPath(s.definitionId, "/rates"), {
         authorPartyId: me,
         amountMinor: minor,
         currency: "KES",
@@ -354,7 +356,7 @@ export function RatePublish() {
 export function RateStanding() {
   const s = useConsole();
   const nav = useNavigate();
-  const rates = useLoad(loadRates);
+  const rates = useLoad(() => loadRates(s.definitionId), [s.definitionId]);
   const mech = useMech(s.projectId);
   return (
     <LoadFrame r={rates}>

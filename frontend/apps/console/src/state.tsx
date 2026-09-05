@@ -250,6 +250,28 @@ export function ConsoleProvider(props: { children: ReactNode }) {
         );
         list = fetched.filter(Boolean) as ProjectRow[];
       }
+      // A mechanism owner's projects are the contexts of the mechanisms they
+      // own — the record their persona derives from names the project too.
+      let ownedRates: string[] = [];
+      if (!list.length) {
+        const mechs = await api
+          .get("payments", "/v1/mechanisms/mine")
+          .then((r) => ((r && r.mechanisms) || []) as Array<{ contextId?: string }>)
+          .catch(() => []);
+        const ctxIds = Array.from(new Set(mechs.map((m) => m.contextId).filter(Boolean) as string[]));
+        const fetched = await Promise.all(
+          ctxIds.map((id) =>
+            api.get("parties", "/v1/projects/" + encodeURIComponent(id)).then((p) => p.project || p).catch(() => null),
+          ),
+        );
+        list = fetched.filter(Boolean) as ProjectRow[];
+      }
+      // A rate owner's definition is the one they were assigned, whatever
+      // else is listed.
+      ownedRates = await api
+        .get("payments", "/v1/rate-ownerships/mine")
+        .then((r) => ((r && r.definitionIds) || []) as string[])
+        .catch(() => []);
       if (!live) return;
       setProjects(list);
       setProjectId((cur) => (cur && list.some((p) => p.id === cur) ? cur : list[0]?.id || ""));
@@ -261,7 +283,11 @@ export function ConsoleProvider(props: { children: ReactNode }) {
       setDefinitionId((cur) =>
         cur && defs.some((d) => d.id === cur)
           ? cur
-          : defs.find((d) => d.state === "ACTIVE")?.id || defs[0]?.id || "",
+          : ownedRates.find((id) => defs.some((d) => d.id === id)) ||
+            ownedRates[0] ||
+            defs.find((d) => d.state === "ACTIVE")?.id ||
+            defs[0]?.id ||
+            "",
       );
     })();
     return () => {
