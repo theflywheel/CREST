@@ -599,17 +599,18 @@ function InvitePerson(props: {
         grantFailed =
           "no terms are recorded for this organisation, and a grant is made under terms — the role has to be granted once that is settled";
       } else if (fn) {
-        const now = new Date().toISOString();
         try {
+          // No period.start and no approvedAt: the registry's clock stamps
+          // both. A browser's wall time is nobody's authority on when a
+          // grant began.
           await api.post("parties", "/v1/authorizations", {
             partyId,
             terms: props.terms,
             scope: scope ? { kind: "context", contextId: scope } : { kind: "instance" },
             functions: [fn],
-            period: { start: now },
+            period: {},
             authorityPartyId: props.org,
             approvedByPartyId: props.org,
-            approvedAt: now,
             state: "ACTIVE",
           });
         } catch (e) {
