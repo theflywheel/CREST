@@ -312,6 +312,22 @@ export function ConsoleProvider(props: { children: ReactNode }) {
       } else if (fns.has("ratify-definition")) {
         key = "approver";
         role = "Work Definition Approver";
+      } else if (fns.has("resolve-unclear-evidence")) {
+        // The registry custodian holds the one decision the system refuses
+        // to make for itself — attributing a row nobody could match — and
+        // that grant is the fact the persona is read from.
+        key = "custodian";
+        role = "Registry Custodian";
+      } else if (
+        await api
+          .get("parties", `/v1/projects?configuratorPartyId=${encodeURIComponent(w.partyId)}`)
+          .then((r) => ((r && r.projects) || []).length > 0)
+          .catch(() => false)
+      ) {
+        // A configurator is named on a project by its owner (p1_3); the
+        // project's own record is the fact, not a grant.
+        key = "configurator";
+        role = "Project Configurator";
       } else {
         // The funder roles are not party grants — a rate owner is named by a
         // rate-owner assignment, a mechanism owner by owning a mechanism. So

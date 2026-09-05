@@ -9,6 +9,7 @@
 // versions, so the read-only stand-in has been removed rather than left
 // alongside as a second screen answering the same question differently.
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, FIX } from "@crest/api";
 import { Callout, Chip, OpenNote, NextBlock } from "@crest/ui";
 import { useConsole } from "../state";
@@ -36,6 +37,7 @@ async function loadDefinition(defId: string) {
 
 export function PaySetup() {
   const s = useConsole();
+  const nav = useNavigate();
   const r = useLoad<Awaited<ReturnType<typeof loadDefinition>>>(
     () => (s.definitionId ? loadDefinition(s.definitionId) : new Promise(() => {})),
     [s.definitionId],
@@ -61,6 +63,19 @@ export function PaySetup() {
               or two, and neither blocks the credential — work already done is already validated. The rate is a
               versioned linked record keyed to the definition; an old version is never overwritten.
             </Lede>
+            {s.persona === "orgadmin" ? (
+              <CardTitled t="Standing it up">
+                <p className="body-2">
+                  Before a rate owner or a mechanism owner exists, the organisation names them: assign who sets the
+                  rate, and create the mechanism under the person who will run it. Each derives their own role from
+                  that record the first time they sign in.
+                </p>
+                <div className="btn-row">
+                  <button className="btn secondary" data-act="to-rateowner" onClick={() => nav("/rateowner")}>Assign the rate owner</button>
+                  <button className="btn secondary" data-act="to-mech" onClick={() => nav("/mech/where")}>Stand up the payment mechanism</button>
+                </div>
+              </CardTitled>
+            ) : null}
             {pays ? (
               <CardTitled t="The rate (f1_3 / f1_4)">
                 <KVR rows={[

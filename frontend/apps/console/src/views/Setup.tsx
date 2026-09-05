@@ -650,7 +650,7 @@ function InvitePerson(props: {
         </div>
         <KVR
           rows={[
-            ["the record it claims", <MonoShort id={out.partyId} />],
+            ["the record it claims", <span data-invite-party={out.partyId}><MonoShort id={out.partyId} /></span>],
             ["expires", out.expiresAt ? when(out.expiresAt) : "—"],
             ["what claiming does", "binds the identity they sign in with to this record — nothing more"],
           ]}

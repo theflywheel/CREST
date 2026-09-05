@@ -244,7 +244,11 @@ const homeOf = (key: PersonaKey) =>
 // is reached from the queue.
 const G1_EXTRA = ["/instance/setup", "/instance/invite"];
 const allowed = (key: PersonaKey, path: string) =>
-  (isJ3(key) && J3_ROUTES.includes(path)) ||
+  // The organisation stands up F-1/F-2 before the owners exist: it assigns
+  // the rate owner and creates the mechanism naming its owner, and until it
+  // has, nobody derives as rate owner or mechanism owner. So the org admin
+  // holds the funders routes too; the configurator does not.
+  (isJ3(key) && (J3_ROUTES.includes(path) || (key === "orgadmin" && FUNDERS_ROUTES.includes(path)))) ||
   (key === "author" && AUTHOR_ROUTES.includes(path)) ||
   // The approver reads the record and the act, and holds no wizard route.
   (key === "approver" && P3_READS.includes(path)) ||

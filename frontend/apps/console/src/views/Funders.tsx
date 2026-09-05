@@ -566,6 +566,11 @@ export function MechRails() {
   const s = useConsole();
   const me = s.me!.partyId;
   const [picked, setPicked] = useState<string[]>([]);
+  // The owner the mechanism is created under. Every held payment has a
+  // reason with an owner, and this is where the owner is first named — by
+  // default the person configuring it, but an organisation standing up the
+  // mechanism before its owner has signed in names that owner here.
+  const [owner, setOwner] = useState(me);
   return (
     <MechFrame title="What carries the money?">
       {(m, reload) => {
@@ -579,7 +584,7 @@ export function MechRails() {
             if (!m.mechanism) {
               await api.post("payments", "/v1/mechanisms", {
                 contextId: s.projectId,
-                ownerPartyId: me,
+                ownerPartyId: owner.trim() || me,
                 createdByPartyId: me,
                 config: { rails: picked },
               });
@@ -615,9 +620,21 @@ export function MechRails() {
             {chosen ? (
               <RecordedAct rec={chosen} missing="" />
             ) : (
+              <>
+              {!m.mechanism ? (
+                <label className="field" style={{ marginTop: 12, display: "block" }}>
+                  <span className="eyebrow">Who owns this mechanism</span>
+                  <input name="mechowner" className="mono" value={owner} onChange={(e) => setOwner(e.target.value)} style={{ width: "100%" }} />
+                  <span className="muted" style={{ display: "block", marginTop: 4 }}>
+                    The party every held payment on this project will name. Yourself by default; the person who will
+                    run it if you are standing it up for them.
+                  </span>
+                </label>
+              ) : null}
               <button id="save-rails" className="btn inline" onClick={save} disabled={!picked.length} style={{ marginTop: 12 }}>
                 Set up the first rail
               </button>
+              </>
             )}
             <Sidecar>
               A worker is routed to whichever rail their payout details fit. Cash and in-kind are recorded the same
