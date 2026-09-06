@@ -16,7 +16,9 @@ import { useField, short, when } from "../state";
 
 type Win = { partyId?: string; closesAt?: string; exitRoute?: string };
 
-function useLoad<T>(fn: () => Promise<T>): T | undefined {
+// deps: what the load reads from the session. The project is discovered
+// after sign-in, so a scoped read must run again once it is known.
+function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []): T | undefined {
   const [data, setData] = useState<T>();
   useEffect(() => {
     let live = true;
@@ -24,7 +26,7 @@ function useLoad<T>(fn: () => Promise<T>): T | undefined {
     return () => {
       live = false;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
   return data;
 }
 
@@ -33,7 +35,10 @@ export function ToConfirm() {
   const s = useField();
   // A review list is always scoped to the project (§9): the substrate refuses
   // an unscoped read rather than exporting everybody's windows.
-  const out = useLoad(() => api.get("confirmation", "/v1/unreached?contextId=" + encodeURIComponent(s.contextId || "")));
+  const out = useLoad(
+    () => api.get("confirmation", "/v1/unreached?contextId=" + encodeURIComponent(s.contextId || "")),
+    [s.contextId],
+  );
   const list: Array<{ claimId: string; partyId?: string; closesAt?: string }> = out
     ? out.windows || out.unreached || []
     : [];
@@ -368,7 +373,7 @@ export function Handoff() {
       api.get("confirmation", "/v1/unreached?contextId=" + encodeURIComponent(s.contextId || "")).catch(() => ({ windows: [], unreached: [] })),
     ]);
     return { unclear, unreached };
-  });
+  }, [s.contextId]);
   const uc: Array<{ id?: string; rowRef?: string; kind?: string; reason?: string; resolvedAt?: string }> = data
     ? (data.unclear.unclear || []).filter((u: { resolvedAt?: string }) => !u.resolvedAt)
     : [];
