@@ -133,11 +133,11 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 				RowRef: row.Ref, Kind: kind, Reason: reason, Record: raw, CreatedAt: now,
 			})
 			if kind == unclearUnattributed && unit.ID != "" {
-				unresolved = append(unresolved, pending{unit: unit, evidenceFields: evidenceFields, dedupeKey: dedupeKey(unit, row.Record)})
+				unresolved = append(unresolved, pending{unit: unit, evidenceFields: evidenceFields, dedupeKey: dedupeKey(unit, redact(row.Record))})
 			}
 			continue
 		}
-		accepted = append(accepted, pending{unit: unit, evidenceFields: evidenceFields, claim: claim, dedupeKey: dedupeKey(unit, row.Record)})
+		accepted = append(accepted, pending{unit: unit, evidenceFields: evidenceFields, claim: claim, dedupeKey: dedupeKey(unit, redact(row.Record))})
 	}
 
 	// Accepted counts valid Units, including work whose worker claim is still
@@ -233,7 +233,14 @@ func unclearRecord(kind string, rec schema.CanonicalWorkEvidenceRecord) (json.Ra
 // else: the context and definition it was measured under, the activity, who it
 // joins to, when it happened and how much of it there was. A source's own
 // record reference is included when it supplies one, because a source that
-// numbers its rows is telling us which are distinct and we should believe it.
+// numbers its rows is telling us which are distinct and we should believe it —
+// namespaced by the system that issued it (the record's provenance carries
+// it), because "0001" from two systems is two records.
+//
+// "Who it joins to" is the joining identifier as the store holds it: callers
+// pass the redacted record, so a national identifier only ever enters as its
+// salted hash, and two workers' otherwise identical rows are two units — never
+// one worker's claim on the other's work.
 //
 // Deliberately excluded: the batch, the adapter, the transport and the
 // timestamp of ingestion. Two identical rows submitted an hour apart through
@@ -253,13 +260,19 @@ func dedupeKey(unit schema.Unit, record schema.CanonicalWorkEvidenceRecord) stri
 	}
 	ref := ""
 	if record.Provenance.SourceRecordRef != nil {
-		ref = *record.Provenance.SourceRecordRef
+		system := ""
+		if record.Provenance.SystemRef != nil {
+			system = *record.Provenance.SystemRef
+		}
+		ref = system + "\x1e" + *record.Provenance.SourceRecordRef
 	}
+	joins := record.WorkerJoiningIdentifier
 	parts := []string{
 		unit.ContextID,
 		unit.Definition.ID,
 		fmt.Sprint(unit.Definition.Version),
 		record.Activity,
+		string(joins.Kind) + "\x1e" + joins.Value,
 		unit.Period.Start.UTC().Format(time.RFC3339),
 		end,
 		fmt.Sprintf("%v %s", unit.Outcome.Value, unit.Outcome.Unit),

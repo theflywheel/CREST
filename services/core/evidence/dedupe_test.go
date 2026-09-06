@@ -71,6 +71,9 @@ func TestTheSameRecordTwiceCollidesOnTheDedupeKey(t *testing.T) {
 		"a different source record reference": func(_ *schema.Unit, r *schema.CanonicalWorkEvidenceRecord) {
 			r.Provenance.SourceRecordRef = ref("riverside-dhis2-0004")
 		},
+		"a different worker": func(_ *schema.Unit, r *schema.CanonicalWorkEvidenceRecord) {
+			r.WorkerJoiningIdentifier.Value = "+15550100012"
+		},
 		"a different period": func(u *schema.Unit, _ *schema.CanonicalWorkEvidenceRecord) {
 			u.Period.Start = u.Period.Start.AddDate(0, 0, 1)
 		},
@@ -91,15 +94,36 @@ func TestTheSameRecordTwiceCollidesOnTheDedupeKey(t *testing.T) {
 	}
 }
 
-func TestUnitIdentityDoesNotDependOnWorkerIdentifier(t *testing.T) {
+// The same record reference from two source systems is two records: a
+// reference is only unique within the system that issued it.
+func TestTheSameReferenceFromTwoSystemsIsTwoUnits(t *testing.T) {
+	unit := schema.Unit{ContextID: "ctx", Definition: schema.VersionedRef{ID: "def", Version: 1},
+		Outcome: schema.Outcome{Value: 1, Unit: "visit"}, Period: schema.Period{Start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}}
+	rec := schema.CanonicalWorkEvidenceRecord{Activity: "visit", WorkerJoiningIdentifier: schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifier{
+		Kind: schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifierKindPhone, Value: "+1"},
+		Provenance: schema.Provenance{SourceRecordRef: ref("0001"), SystemRef: ref("dhis2-riverside")}}
+	other := rec
+	other.Provenance.SystemRef = ref("csv-batch")
+	if dedupeKey(unit, rec) == dedupeKey(unit, other) {
+		t.Fatal("record 0001 from two systems collided: one system's row would be discarded as the other's duplicate")
+	}
+}
+
+// Two workers' otherwise identical rows are two units. The key is built over
+// the redacted record — the form the store holds — so a national identifier
+// enters only as its salted hash.
+func TestTwoWorkersRowsAreTwoUnits(t *testing.T) {
 	unit := schema.Unit{ContextID: "ctx", Definition: schema.VersionedRef{ID: "def", Version: 1},
 		Outcome: schema.Outcome{Value: 1, Unit: "visit"}, Period: schema.Period{Start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}}
 	a := schema.CanonicalWorkEvidenceRecord{Activity: "visit", WorkerJoiningIdentifier: schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifier{
-		Kind: schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifierKindPhone, Value: "+1"}}
+		Kind: schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifierKindNationalID, Value: "12345678"}}
 	b := a
-	b.WorkerJoiningIdentifier.Value = "+2"
-	if dedupeKey(unit, a) != dedupeKey(unit, b) {
-		t.Fatal("a unit dedupe key changed with the worker identifier; identity is a claim, not unit identity")
+	b.WorkerJoiningIdentifier.Value = "87654321"
+	if dedupeKey(unit, redact(a)) == dedupeKey(unit, redact(b)) {
+		t.Fatal("two workers' rows collided on the dedupe key")
+	}
+	if dedupeKey(unit, a) == dedupeKey(unit, redact(a)) {
+		t.Fatal("the raw and the redacted identifier keyed the same: the raw number reached the key")
 	}
 }
 
