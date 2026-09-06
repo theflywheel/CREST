@@ -17,6 +17,7 @@ var receivedAt = time.Date(2026, 3, 4, 9, 0, 0, 0, time.UTC)
 // A signed batch from a programme system: what a deployment configures once,
 // when the source is onboarded and assessed. Never read out of the payload.
 var source = adapters.Source{
+	AdapterRef:    adaptercsv.Version,
 	Class:         "programme-system",
 	CaptureMethod: "digital-capture",
 	Exposure:      "signed-batch",
@@ -290,6 +291,28 @@ func TestOmittedOptionalFieldsAreAbsentRatherThanEmpty(t *testing.T) {
 	}
 }
 
+func TestPreciseLocationAndIdentityEnrichmentAreRejected(t *testing.T) {
+	for name := range map[string]struct{}{
+		"coordinates in geography": {},
+		"phone enrichment":         {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var body string
+			if name == "coordinates in geography" {
+				body = "activity,outcome_value,outcome_unit,worker_id_kind,worker_id,period_start,geography\n" +
+					"bednet-distribution,12,bednets-distributed,phone,+15550100011,2026-03-02,1.2921,36.8219\n"
+			} else {
+				body = "activity,outcome_value,outcome_unit,worker_id_kind,worker_id,period_start,phone\n" +
+					"bednet-distribution,12,bednets-distributed,phone,+15550100011,2026-03-02,+15550100012\n"
+			}
+			rows, rejected := parse(t, body)
+			if len(rows) != 0 || len(rejected) != 1 {
+				t.Fatalf("rows=%d rejected=%d; precise or identifying data must not enter the record", len(rows), len(rejected))
+			}
+		})
+	}
+}
+
 // receivedAt is an argument so a harness running a seven-day window in
 // milliseconds produces records whose timestamps agree with the rest of the
 // run. An adapter that reached for time.Now() would make that run incoherent.
@@ -310,6 +333,17 @@ func TestRefIsTheVersionedAdapterIdentity(t *testing.T) {
 	if !strings.Contains(adaptercsv.Version, "@") {
 		t.Errorf("adapter ref %q carries no version; %q is not resolvable to a translator",
 			adaptercsv.Version, adaptercsv.Version)
+	}
+}
+
+func TestPluginRegistersTheCSVVersion(t *testing.T) {
+	r, err := adapters.NewRegistry(adaptercsv.Plugin())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := r.Lookup(adaptercsv.Version)
+	if !ok || got.Ref() != adaptercsv.Version {
+		t.Fatalf("CSV plugin lookup = %v, %v", got, ok)
 	}
 }
 

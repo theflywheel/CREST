@@ -14,7 +14,7 @@ package definitions
 import (
 	"net/http"
 
-	csvadapter "github.com/theflywheel/crest/adapters/csv"
+	"github.com/theflywheel/crest/adapters/csv"
 	"github.com/theflywheel/crest/pkg/httpx"
 )
 
@@ -31,7 +31,7 @@ type AdaptorEntry struct {
 func adaptorCatalogue() []AdaptorEntry {
 	return []AdaptorEntry{
 		{
-			Ref:    csvadapter.Adapter{}.Ref(),
+			Ref:    csv.Version,
 			Class:  "batch-file",
 			Status: "available",
 			Note: "the one implemented adapter class; serves any system that can export a delimited file, " +

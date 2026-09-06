@@ -9,10 +9,66 @@
 // transaction. No seeded party, no persona, no hidden admin step.
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, isLocalStack, loginAs, whoAmI } from "@crest/api";
+import { api, setSession, startEsignetLogin, whoAmI } from "@crest/api";
 import { Callout, Chip, ErrBar, GridTable, KV, NextBlock, Sidecar, Stat } from "@crest/ui";
 
 const OKEY = "crest.console.onboarding";
+const APPLICANT_SESSION_KEY = "crest.console.applicant-session";
+const APPLICANT_RETURN_KEY = "crest.console.applicant-return";
+
+// A verified eSignet stranger is allowed to apply, but is not a console
+// persona. Keep that short-lived access token separate from the role-derived
+// console session so a refresh can continue the application without granting
+// the applicant an invented role.
+export function rememberApplicantReturn(path = "/onboard") {
+  try {
+    sessionStorage.setItem(APPLICANT_RETURN_KEY, path === "/onboard" ? path : "/onboard");
+  } catch {
+    /* a blocked sessionStorage only costs the redirect convenience */
+  }
+}
+export function pendingApplicantReturn(): string | null {
+  try {
+    return sessionStorage.getItem(APPLICANT_RETURN_KEY) === "/onboard" ? "/onboard" : null;
+  } catch {
+    return null;
+  }
+}
+export function consumeApplicantReturn() {
+  const path = pendingApplicantReturn();
+  try {
+    sessionStorage.removeItem(APPLICANT_RETURN_KEY);
+  } catch {
+    /* best effort; the path is fixed and cannot become an open redirect */
+  }
+  return path;
+}
+export function storeApplicantSession(token: string) {
+  setSession(token);
+  try {
+    sessionStorage.setItem(APPLICANT_SESSION_KEY, token);
+  } catch {
+    /* the in-memory session still carries the current application */
+  }
+}
+export function restoreApplicantSession(): boolean {
+  try {
+    const token = sessionStorage.getItem(APPLICANT_SESSION_KEY);
+    if (!token) return false;
+    setSession(token);
+    return true;
+  } catch {
+    return false;
+  }
+}
+export function clearApplicantSessionStorage() {
+  try {
+    sessionStorage.removeItem(APPLICANT_SESSION_KEY);
+    sessionStorage.removeItem(APPLICANT_RETURN_KEY);
+  } catch {
+    /* best effort; no credential is sent from this slot after logout */
+  }
+}
 
 export type OrgProfile = {
   country: string;
@@ -43,30 +99,13 @@ export function updateOnboarding(patch: Record<string, unknown>) {
   if (cur) storeOnboarding({ ...cur, ...(patch as object) } as any);
 }
 
-// The organisation's own session. The onboarding flow is anonymous until the
-// application exists; the screens after it (invitations, terms requests) act
-// IN the organisation's name, and the services rightly refuse an asserted
-// party id. So the flow authenticates the same way a first login does: mint a
-// token from the deployment's issuer and self-bind, which the never-yet-bound
-// organisation accepts as bootstrap (#102). Idempotent per orgId.
-//
-// Since #123 the first question is whether a session is already the
-// organisation: somebody who claimed the organisation's invitation IS signed
-// in as it, and minting a second token for them would replace a real login
-// with a dev one. Only a local stack falls back to loginAs — on a deployment
-// there is no mock issuer to mint from, and pretending otherwise would hide
-// the missing claim behind a working-looking screen.
-let orgSessionFor: string | null = null;
+// Registration binds the verified applicant to the new organisation. Keep
+// that identity throughout onboarding and recheck it after session switches.
 export async function ensureOrgSession(orgId: string): Promise<void> {
-  if (orgSessionFor === orgId) return;
-  const already = await whoAmI().catch(() => null);
-  if (already && already.partyId === orgId) {
-    orgSessionFor = orgId;
-    return;
+  restoreApplicantSession();
+  if ((await whoAmI()).partyId !== orgId) {
+    throw new Error("Sign in as this organisation to continue.");
   }
-  if (!isLocalStack) return;
-  await loginAs(orgId);
-  orgSessionFor = orgId;
 }
 
 /* The reference's four-step flow. Since the G-2 screens wave, every step has
@@ -85,6 +124,9 @@ export function OnboardFrame(props: {
   counter?: boolean; // the reference omits the counter on some frames (g2_5)
   children: React.ReactNode;
 }) {
+  useEffect(() => {
+    restoreApplicantSession();
+  }, []);
   const active = STEPS[props.step - 1];
   return (
     <div className="console-shell">
@@ -172,6 +214,18 @@ export function OnboardApply() {
   const [sector, setSector] = useState("health");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [authState, setAuthState] = useState<"checking" | "ready" | "missing">("checking");
+  useEffect(() => {
+    restoreApplicantSession();
+    whoAmI().then(
+      (who) => setAuthState(who.subjectRef ? "ready" : "missing"),
+      () => setAuthState("missing"),
+    );
+  }, []);
+  const startApplicantLogin = () => {
+    rememberApplicantReturn();
+    startEsignetLogin();
+  };
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     setBusy(true);
@@ -264,12 +318,24 @@ export function OnboardApply() {
             >
               Why so little?
             </button>
-            <button className="btn dominant" disabled={busy}>
+            <button className="btn dominant" disabled={busy || authState !== "ready"}>
               {busy ? "Applying…" : "Continue"}
             </button>
           </div>
         </form>
         <div>
+          {authState === "checking" ? <p className="muted">Checking your verified sign-in…</p> : null}
+          {authState === "missing" ? (
+            <Callout kind="teal" title="Verify who is applying">
+              <p className="body-2" style={{ marginTop: 0 }}>
+                An application is bound to the verified person who submits it. Sign in with eSignet before continuing;
+                this does not assign a CREST console role.
+              </p>
+              <button className="btn" id="onboard-esignet" onClick={startApplicantLogin}>
+                Continue with eSignet
+              </button>
+            </Callout>
+          ) : null}
           <div className="card">
             <span className="eyebrow">Why the last field matters</span>
             <p className="body-2" style={{ marginTop: 6 }}>
@@ -354,6 +420,7 @@ export function OnboardTerms() {
     setBusy(true);
     setErr("");
     try {
+      await ensureOrgSession(ob.orgId);
       await api.post("parties", `/v1/organisations/${ob.orgId}/terms-acceptance`, {
         termsId: t.id,
         termsVersion: t.version,
@@ -374,6 +441,7 @@ export function OnboardTerms() {
     setErr("");
     try {
       try {
+        await ensureOrgSession(ob.orgId);
         await api.post("parties", `/v1/organisations/${ob.orgId}/terms-acceptance`, {
           termsId: t.id,
           termsVersion: t.version,

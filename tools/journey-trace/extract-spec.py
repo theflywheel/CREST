@@ -76,12 +76,22 @@ class Node:
     def text(self):
         """Normalized visible text: entities decoded, whitespace collapsed."""
         parts = []
-        for n in self.walk():
+
+        # Preserve DOM order. The old walk-then-own-children traversal emitted
+        # a parent's text first and every nested <b>/<span> afterwards, turning
+        # "the <b>highest</b> tier" into "the tier highest" in the generated
+        # contract. That made literal parity impossible for correctly rendered
+        # mixed-content prose.
+        def visit(n):
             if n.tag == "svg":
-                continue
+                return
             for c in n.children:
                 if isinstance(c, str):
                     parts.append(c)
+                else:
+                    visit(c)
+
+        visit(self)
         return normspace(" ".join(parts))
 
 

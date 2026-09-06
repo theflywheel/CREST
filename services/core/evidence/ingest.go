@@ -15,6 +15,7 @@ import (
 	"github.com/theflywheel/crest/pkg/id"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
+	"github.com/theflywheel/crest/pkg/strength"
 )
 
 // ingest turns a parsed batch into units and claims.
@@ -34,11 +35,9 @@ import (
 //  4. The worker is resolved. Exactly one match becomes a claim; no match and
 //     an ambiguous match both become unclear rows, and neither becomes a guess.
 //
-// A unit is created only for a row that produced a claim. That is a choice
-// worth stating: a unit with no claim is a defensible thing to want — the work
-// did happen — but it would let an unattributed row look like recorded work in
-// every count, while no worker can ever be paid for it. Keeping it in the
-// unclear queue keeps it visible as *unfinished*, which is what it is.
+// A sound row remains a Unit even when identity resolution is pending. The
+// unresolved claim stays visible in the unclear queue and can be attached
+// later, without discarding work that passed the evidence contract.
 type ingestor struct {
 	registry    *client.Client
 	definitions *client.Client
@@ -46,10 +45,11 @@ type ingestor struct {
 }
 
 type ingestParams struct {
-	ContextID    string
-	DefinitionID string
-	SubmittedBy  string
-	Source       adapters.Source
+	ContextID         string
+	DefinitionID      string
+	DefinitionVersion int
+	SubmittedBy       string
+	Source            adapters.Source
 }
 
 type ingestResult struct {
@@ -71,7 +71,7 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 			p.SubmittedBy, p.ContextID)
 	}
 
-	def, err := in.definition(ctx, p.DefinitionID)
+	def, err := in.definition(ctx, p.DefinitionID, p.DefinitionVersion)
 	if err != nil {
 		return ingestResult{}, err
 	}
@@ -79,25 +79,38 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 		return ingestResult{}, fmt.Errorf("definition %s is %s, not ACTIVE: evidence may only be "+
 			"submitted against a definition in force", def.ID, def.State)
 	}
+	if p.DefinitionVersion > 0 && def.Version != p.DefinitionVersion {
+		return ingestResult{}, fmt.Errorf("definition %s resolved version %d, requested version %d",
+			p.DefinitionID, def.Version, p.DefinitionVersion)
+	}
 
+	adapterRef := p.Source.AdapterRef
+	if adapterRef == "" && len(rows) > 0 {
+		adapterRef = rows[0].Record.Provenance.AdapterRef
+	}
 	batch := Batch{
 		ID:                id.New(in.clock, "batch"),
 		ContextID:         p.ContextID,
 		DefinitionID:      def.ID,
 		DefinitionVersion: def.Version,
 		SubmittedBy:       p.SubmittedBy,
-		AdapterRef:        p.Source.SystemRef,
+		AdapterRef:        adapterRef,
 		RowsTotal:         len(rows) + len(rejections),
 		CreatedAt:         now,
 	}
 
 	result := ingestResult{Unclear: []UnclearRow{}, Claims: []string{}}
 	type pending struct {
-		unit      schema.Unit
-		claim     schema.Claim
-		dedupeKey string
+		unit           schema.Unit
+		evidenceFields []string
+		claim          schema.Claim
+		dedupeKey      string
 	}
 	var accepted []pending
+	// Valid evidence remains a Unit even when identity resolution is pending.
+	// The claim is the worker assertion and can be added later from the unclear
+	// queue without losing the underlying work record.
+	var unresolved []pending
 
 	// Rows the adapter itself refused are unclear rows too. They describe work
 	// that may well have happened, and the file is the only record of it.
@@ -109,9 +122,9 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 	}
 
 	for _, row := range rows {
-		kind, reason, unit, claim := in.consider(ctx, row, def, p, now)
+		kind, reason, unit, evidenceFields, claim := in.consider(ctx, row, def, p, now)
 		if reason != "" {
-			raw, err := json.Marshal(redact(row.Record))
+			raw, err := unclearRecord(kind, row.Record)
 			if err != nil {
 				return ingestResult{}, err
 			}
@@ -119,12 +132,18 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 				ID: id.New(in.clock, "unclear"), BatchID: batch.ID,
 				RowRef: row.Ref, Kind: kind, Reason: reason, Record: raw, CreatedAt: now,
 			})
+			if kind == unclearUnattributed && unit.ID != "" {
+				unresolved = append(unresolved, pending{unit: unit, evidenceFields: evidenceFields, dedupeKey: dedupeKey(unit, row.Record)})
+			}
 			continue
 		}
-		accepted = append(accepted, pending{unit: unit, claim: claim, dedupeKey: dedupeKey(unit, row.Record)})
+		accepted = append(accepted, pending{unit: unit, evidenceFields: evidenceFields, claim: claim, dedupeKey: dedupeKey(unit, row.Record)})
 	}
 
-	batch.RowsAccepted = len(accepted)
+	// Accepted counts valid Units, including work whose worker claim is still
+	// unresolved. Claims are reported separately; an identity hold must not make
+	// a valid unit disappear from the batch receipt.
+	batch.RowsAccepted = len(accepted) + len(unresolved)
 	batch.RowsUnclear = len(result.Unclear)
 
 	// One transaction for the whole batch, including the outbox messages. A
@@ -144,7 +163,7 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 		// this watches whether the source is *sending*, not whether what it
 		// sends is any good. Bad rows are the unclear queue's problem and are
 		// visible there; silence is invisible everywhere else.
-		if err := markSeen(ctx, tx, batch.AdapterRef, batch.ContextID, now); err != nil {
+		if err := markSeen(ctx, tx, batch.AdapterRef, batch.ContextID, p.Source.SystemRef, now); err != nil {
 			return err
 		}
 		for _, u := range result.Unclear {
@@ -152,8 +171,13 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 				return err
 			}
 		}
+		for _, a := range unresolved {
+			if _, err := insertUnit(ctx, tx, batch.ID, a.unit, a.evidenceFields, a.dedupeKey); err != nil {
+				return err
+			}
+		}
 		for _, a := range accepted {
-			unitID, err := insertUnit(ctx, tx, batch.ID, a.unit, a.dedupeKey)
+			unitID, err := insertUnit(ctx, tx, batch.ID, a.unit, a.evidenceFields, a.dedupeKey)
 			if err != nil {
 				return err
 			}
@@ -191,6 +215,17 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 	return result, nil
 }
 
+// unclearRecord keeps a consent refusal from retaining the record it refused
+// to fetch or hold. Other unclear rows retain the redacted canonical record so
+// a custodian can resolve an otherwise sound row without asking the source to
+// resend it.
+func unclearRecord(kind string, rec schema.CanonicalWorkEvidenceRecord) (json.RawMessage, error) {
+	if kind == unclearWithdrawn {
+		return nil, nil
+	}
+	return json.Marshal(redact(rec))
+}
+
 // dedupeKey is a unit's identity, derived from the work it describes rather
 // than from when it was written.
 //
@@ -212,11 +247,6 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 // happen, and the queue of definitions that need one is a shorter conversation
 // than a queue of duplicate payments.
 func dedupeKey(unit schema.Unit, record schema.CanonicalWorkEvidenceRecord) string {
-	joining := record.WorkerJoiningIdentifier.Value
-	if record.WorkerJoiningIdentifier.Kind == schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifierKindNationalID {
-		// Never the raw number, here or anywhere else.
-		joining = hashNationalID(joining)
-	}
 	end := ""
 	if unit.Period.End != nil {
 		end = unit.Period.End.UTC().Format(time.RFC3339)
@@ -230,8 +260,6 @@ func dedupeKey(unit schema.Unit, record schema.CanonicalWorkEvidenceRecord) stri
 		unit.Definition.ID,
 		fmt.Sprint(unit.Definition.Version),
 		record.Activity,
-		string(record.WorkerJoiningIdentifier.Kind),
-		joining,
 		unit.Period.Start.UTC().Format(time.RFC3339),
 		end,
 		fmt.Sprintf("%v %s", unit.Outcome.Value, unit.Outcome.Unit),
@@ -280,45 +308,58 @@ type windowRequest struct {
 // consider decides one row's fate, returning a reason when it cannot become a
 // claim. It writes nothing.
 func (in *ingestor) consider(ctx context.Context, row adapters.Row, def schema.Definition,
-	p ingestParams, now time.Time) (kind, reason string, unit schema.Unit, claim schema.Claim) {
+	p ingestParams, now time.Time) (kind, reason string, unit schema.Unit, evidenceFields []string, claim schema.Claim) {
 	if err := schema.Validate(schema.IDEvidenceRecord, row.Record); err != nil {
 		return unclearContract,
-			"the record does not satisfy the canonical evidence contract: " + err.Error(), unit, claim
+			"the record does not satisfy the canonical evidence contract: " + err.Error(), unit, nil, claim
+	}
+	if err := privacyCheck(row.Record); err != nil {
+		return unclearContract, err.Error(), unit, nil, claim
 	}
 	if row.Record.Activity != def.Activity.Code {
 		return unclearContract, fmt.Sprintf("activity %q is not what %s@%d defines (%q)",
-			row.Record.Activity, def.ID, def.Version, def.Activity.Code), unit, claim
+			row.Record.Activity, def.ID, def.Version, def.Activity.Code), unit, nil, claim
 	}
 	if row.Record.Outcome.Unit != def.OutcomeUnit {
 		return unclearContract, fmt.Sprintf("outcome is counted in %q but the definition counts %q",
-			row.Record.Outcome.Unit, def.OutcomeUnit), unit, claim
+			row.Record.Outcome.Unit, def.OutcomeUnit), unit, nil, claim
 	}
+	evidenceFields = strength.EvidenceFields(row.Record)
 
 	match, err := in.resolveWorker(ctx, row.Record.WorkerJoiningIdentifier, p.ContextID)
 	if err != nil {
 		// The record is sound and only the person is missing, so this is the
 		// one kind a custodian can later re-attribute (0005).
-		return unclearUnattributed, err.Error(), unit, claim
+		unit = schema.Unit{
+			ID: id.New(in.clock, "unit"), Definition: schema.VersionedRef{ID: def.ID, Version: def.Version},
+			ContextID: p.ContextID, Outcome: row.Record.Outcome, Period: row.Record.Period,
+			Geography: row.Record.Geography, Enrichment: row.Record.Enrichment,
+			Provenance: row.Record.Provenance, CreatedAt: now,
+		}
+		// There is no worker assurance to pass yet. The evaluator still checks
+		// the canonical schema, definition rules, source allow-list, and required
+		// fields; a rule that explicitly requires identity is handled as contract
+		// failure until a person can be resolved.
+		if _, evalErr := strength.EvaluateEvidence(row.Record, def, p.Source.SystemRef, "", nil); evalErr != nil {
+			return unclearContract, evalErr.Error(), schema.Unit{}, nil, claim
+		}
+		return unclearUnattributed, err.Error(), unit, evidenceFields, claim
 	}
 
-	// §9 defines enrolment consent as the right to fetch and hold evidence
-	// about this worker. A worker who has withdrawn it has asked us to stop,
-	// and a withdrawal that does not stop anything is a checkbox.
-	//
-	// Only WITHDRAWN refuses. NONE does not, and that asymmetry is deliberate:
-	// a deployment that has not yet captured consent for its existing roster
-	// would otherwise stop recording work for everyone the day this shipped,
-	// and a worker whose evidence silently stopped counting because of a
-	// migration gap is exactly the harm this is supposed to prevent. Closing
-	// that gap is a deployment's own job and #24 says so.
-	//
-	// Work already recorded is untouched. Consent governs what may be
-	// collected next; taking away the record of work somebody did because they
-	// later withdrew would make withdrawal cost them their history.
-	if match.EnrolmentConsent == "WITHDRAWN" {
-		return unclearWithdrawn,
-			"this worker has withdrawn enrolment consent, so no new evidence about " +
-				"them is recorded (§9). Work already recorded is unaffected", unit, claim
+	// Enrolment consent covers the right to fetch and hold evidence about a
+	// worker. Only an affirmative GRANTED decision permits new evidence;
+	// missing consent and withdrawal both close that gate. Work already
+	// recorded is untouched.
+	if match.EnrolmentConsent != "GRANTED" {
+		reason := "this worker has not given affirmative enrolment consent, so no new evidence about them is recorded. Work already recorded is unaffected"
+		if match.EnrolmentConsent == "WITHDRAWN" {
+			reason = "this worker has withdrawn enrolment consent, so no new evidence about them is recorded. Work already recorded is unaffected"
+		}
+		return unclearWithdrawn, reason, schema.Unit{}, nil, claim
+	}
+	if _, err := strength.EvaluateEvidence(row.Record, def, p.Source.SystemRef,
+		match.IdentityAssurance, nil); err != nil {
+		return unclearContract, err.Error(), unit, nil, claim
 	}
 
 	unit = schema.Unit{
@@ -343,7 +384,7 @@ func (in *ingestor) consider(ctx context.Context, row adapters.Row, def schema.D
 		},
 		CreatedAt: now,
 	}
-	return "", "", unit, claim
+	return "", "", unit, evidenceFields, claim
 }
 
 // resolveWorker asks the registry. The raw identifier goes over the wire and is
@@ -382,19 +423,20 @@ func (in *ingestor) resolveWorker(ctx context.Context,
 }
 
 type match struct {
-	PartyID          string  `json:"partyId"`
-	Key              string  `json:"key"`
-	Confidence       float64 `json:"confidence"`
-	EnrolmentConsent string  `json:"enrolmentConsent"`
+	PartyID           string                   `json:"partyId"`
+	Key               string                   `json:"key"`
+	Confidence        float64                  `json:"confidence"`
+	EnrolmentConsent  string                   `json:"enrolmentConsent"`
+	IdentityAssurance schema.IdentityAssurance `json:"identityAssurance"`
 }
 
 func (in *ingestor) permits(ctx context.Context, p ingestParams) (bool, error) {
 	return in.permitsFunction(ctx, p.SubmittedBy, "submit-work-evidence", p.ContextID)
 }
 
-func (in *ingestor) definition(ctx context.Context, defID string) (schema.Definition, error) {
+func (in *ingestor) definition(ctx context.Context, defID string, version int) (schema.Definition, error) {
 	var def schema.Definition
-	if err := in.definitions.Get(ctx, "/v1/definitions/"+urlSafe(defID), &def); err != nil {
+	if err := in.definitions.Get(ctx, fmt.Sprintf("/v1/definitions/%s?version=%d", urlSafe(defID), version), &def); err != nil {
 		return def, fmt.Errorf("definitions service could not resolve %s: %w", defID, err)
 	}
 	return def, nil

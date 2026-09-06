@@ -28,7 +28,7 @@ func (w *world) confirmedCredential(t *testing.T, household string) map[string]a
 	if len(res.ClaimIDs) != 1 {
 		t.Fatalf("want one claim, got %+v", res)
 	}
-	claimID := res.ClaimIDs[0]
+	claimID := onlyClaim(t, res)
 	eventually(t, "the window opens", 15*time.Second, func() error {
 		_, err := w.window(claimID)
 		return err
@@ -76,12 +76,15 @@ func TestABatchCheckNeedsAPurposeAndStaysUnderTheCap(t *testing.T) {
 	}
 
 	// Over the cap, refused — with the number, so the caller knows what to
-	// take up with the deployment rather than what to retry.
+	// take up with the deployment rather than what to retry. The caller must
+	// be authenticated before the cap is evaluated; otherwise the auth guard
+	// would hide the size control behind a 401.
+	verifier := w.Verification.As(w.login(t, fixtures.OrgID))
 	over := make([]any, 101)
 	for i := range over {
 		over[i] = credA
 	}
-	code, body, _ = w.Verification.Status(w.ctx, http.MethodPost, "/v1/verify/batch",
+	code, body, _ = verifier.Status(w.ctx, http.MethodPost, "/v1/verify/batch",
 		map[string]any{
 			"credentials":        over,
 			"requestedByPartyId": fixtures.OrgID,
@@ -101,7 +104,7 @@ func TestABatchCheckNeedsAPurposeAndStaysUnderTheCap(t *testing.T) {
 		} `json:"verdicts"`
 		Count int `json:"count"`
 	}
-	if err := w.Verification.Post(w.ctx, "/v1/verify/batch", map[string]any{
+	if err := verifier.Post(w.ctx, "/v1/verify/batch", map[string]any{
 		"credentials":        []any{credA, credB},
 		"requestedByPartyId": fixtures.OrgID,
 		"purpose":            "Q1 payroll audit, Riverside district",

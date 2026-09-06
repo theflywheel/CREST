@@ -6,6 +6,7 @@ import (
 
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
+	"github.com/theflywheel/crest/pkg/idempotency"
 	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
@@ -18,13 +19,24 @@ import (
 // it, and a Party with no application is a Party no approval path can ever
 // reach — it would simply sit there looking legitimate.
 func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) {
+	if !identity.Authenticated(w, r, h.d.Log, true) {
+		return
+	}
+	caller := identity.From(r.Context())
+	if caller.PartyID != "" {
+		httpx.WriteError(w, http.StatusConflict, "already_enrolled", "this identity already has a party")
+		return
+	}
 	var p schema.Party
 	if !httpx.ReadJSON(w, r, &p) {
 		return
 	}
-	if p.ID == "" {
-		p.ID = id.Party(h.d.Clock)
+	if p.ID != "" || len(p.IdentityBindings) != 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "server_managed_identity", "party IDs and identity bindings cannot be supplied at registration")
+		return
 	}
+	p.ID = id.Party(h.d.Clock)
+	p.IdentityBindings = []schema.PartyIdentityBindingsItem{{Provider: caller.Issuer, ProviderClass: schema.PartyIdentityBindingsItemProviderClassGenericOidc, SubjectRef: caller.Subject, AssertedAt: h.d.Clock.Now()}}
 	if p.CreatedAt.IsZero() {
 		p.CreatedAt = h.d.Clock.Now()
 	}
@@ -62,8 +74,7 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 		// own login claims the unbound organisation party (g2_13's "copy the
 		// key"). Invited by the party itself — nobody with standing exists
 		// yet, and that is the honest record of an open-door registration.
-		inviteCode, err = mintInvitation(r.Context(), tx, p.ID, p.ID, h.d.Clock.Now(), 0)
-		return err
+		return nil
 	})
 	switch {
 	case errors.Is(err, ErrAlreadyApplied):
@@ -75,6 +86,9 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 		// approved organisation, and an append-only log that recorded every
 		// application as an existing organisation could not later distinguish
 		// the two (§3).
+		if h.d.ForgetSubject != nil {
+			h.d.ForgetSubject(caller.Subject)
+		}
 		httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 			"party": p, "registration": reg, "inviteCode": inviteCode,
 		})
@@ -88,7 +102,7 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 // display name and self-declared attributes, the same facts the
 // applicant-facing registration read already serves (#168).
 func (h *handlers) listRegistrations(w http.ResponseWriter, r *http.Request) {
-	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+	if _, ok := requireRegistryCustodian(w, r, h.d, ""); !ok {
 		return
 	}
 	state := r.URL.Query().Get("state")
@@ -156,6 +170,14 @@ func (h *handlers) acceptTerms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	partyID := r.PathValue("id")
+	actor, ok := identity.Authorize(w, r, h.d.Log, partyID, "", true, h.d.Permits)
+	if !ok {
+		return
+	}
+	if body.AcceptedBy != actor {
+		httpx.WriteError(w, http.StatusForbidden, "actor_mismatch", "terms acceptance must name the authenticated organisation")
+		return
+	}
 
 	var reg Registration
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
@@ -204,6 +226,9 @@ func (h *handlers) acceptTerms(w http.ResponseWriter, r *http.Request) {
 const approvalByPolicy = "crest:policy:on-terms-acceptance"
 
 func (h *handlers) decideRegistration(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireRegistryCustodian(w, r, h.d, ""); !ok {
+		return
+	}
 	var body struct {
 		Approve   bool   `json:"approve"`
 		DecidedBy string `json:"decidedBy"`
@@ -290,7 +315,12 @@ func (h *handlers) assistedEnrolment(w http.ResponseWriter, r *http.Request) {
 		Method     string       `json:"method"`
 		Note       *string      `json:"note,omitempty"`
 	}
-	if !httpx.ReadJSON(w, r, &body) {
+	raw, ok := readIdempotentJSON(w, r, &body)
+	if !ok {
+		return
+	}
+	key, ok := requireIdempotencyKey(w, r)
+	if !ok {
 		return
 	}
 	if body.EnrolledBy == "" {
@@ -305,8 +335,35 @@ func (h *handlers) assistedEnrolment(w http.ResponseWriter, r *http.Request) {
 	if body.ContextID != nil {
 		ctxID = *body.ContextID
 	}
-	if _, ok := identity.Authorize(w, r, h.d.Log, body.EnrolledBy, ctxID,
+	caller := identity.From(r.Context())
+	if caller.PartyID == "" || body.EnrolledBy != caller.PartyID {
+		httpx.WriteError(w, http.StatusForbidden, "actor_mismatch",
+			"enrolledBy must be the authenticated registering agent; an actor cannot be supplied in the request body")
+		return
+	}
+	if h.d.Permits == nil {
+		httpx.WriteError(w, http.StatusForbidden, "registering_agent_required",
+			"the enrolment caller has no verified registering-agent identity")
+		return
+	}
+	if _, ok := identity.Authorize(w, r, h.d.Log, caller.PartyID, ctxID,
 		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
+	if ctxID == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "context_required",
+			"assisted enrolment must name the project whose registering-workers assignment authorizes it")
+		return
+	}
+	permitted, err := h.d.Permits(r.Context(), caller.PartyID, "register-workers", ctxID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "authorization_unavailable",
+			"the registering-agent assignment could not be checked")
+		return
+	}
+	if !permitted {
+		httpx.WriteError(w, http.StatusForbidden, "registering_agent_not_assigned",
+			"the caller is not assigned to register workers in this project")
 		return
 	}
 	if !validEnrolmentMethod(body.Method) {
@@ -342,19 +399,64 @@ func (h *handlers) assistedEnrolment(w http.ResponseWriter, r *http.Request) {
 
 	enrolment := Enrolment{
 		PartyID:    p.ID,
-		EnrolledBy: body.EnrolledBy,
+		EnrolledBy: caller.PartyID,
 		ContextID:  body.ContextID,
 		Method:     body.Method,
 		Note:       body.Note,
 		EnrolledAt: h.d.Clock.Now(),
 	}
+	var replay bool
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+		reservation, err := beginIdempotency(r.Context(), tx, r, key, caller.PartyID, raw)
+		if err != nil {
+			if errors.Is(err, idempotency.ErrFingerprint) || errors.Is(err, idempotency.ErrInProgress) {
+				return err
+			}
+			return err
+		}
+		if reservation.Replay() {
+			if reservation.Result().ResourceType != "enrolment" || reservation.Result().ResourceID == "" {
+				return errors.New("idempotency replay has no enrolment resource")
+			}
+			// The first request may have omitted party.id, in which case the
+			// server-generated id is available only from the durable replay ref.
+			p.ID = reservation.Result().ResourceID
+			replay = true
+			return nil
+		}
 		if err := insertParty(r.Context(), tx, p); err != nil {
 			return err
 		}
-		return insertEnrolment(r.Context(), tx, enrolment)
+		if err := insertEnrolment(r.Context(), tx, enrolment); err != nil {
+			return err
+		}
+		return reservation.Complete(r.Context(), tx, idempotency.Result{
+			Status: http.StatusCreated, ResourceType: "enrolment", ResourceID: p.ID,
+		})
 	}); err != nil {
+		if errors.Is(err, idempotency.ErrFingerprint) || errors.Is(err, idempotency.ErrInProgress) {
+			writeIdempotencyError(w, h.d.Log, err)
+			return
+		}
 		httpx.Fail(w, h.d.Log, "assisted enrolment", err)
+		return
+	}
+	if replay {
+		stored, err := getEnrolment(r.Context(), h.d.DB.Q(), p.ID)
+		if err != nil {
+			httpx.Fail(w, h.d.Log, "reconstruct assisted enrolment", err)
+			return
+		}
+		storedParty, err := getParty(r.Context(), h.d.DB.Q(), p.ID)
+		if err != nil {
+			httpx.Fail(w, h.d.Log, "reconstruct enrolled party", err)
+			return
+		}
+		level, because := assuranceOf(storedParty, h.d.Clock.Now())
+		httpx.WriteJSON(w, http.StatusCreated, map[string]any{
+			"party": storedParty, "enrolment": stored,
+			"identityAssurance": level, "because": because,
+		})
 		return
 	}
 	// No publication. A worker is personal data and never reaches the node —

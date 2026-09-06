@@ -33,10 +33,10 @@ const oldest = (arr: Array<Record<string, string | undefined>>, field: string) =
 };
 const median = (xs: number[]) => (xs.length ? xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)] : null);
 
-async function projectRead(defId: string) {
+async function projectRead(contextId: string, defId: string) {
   const [claims, unclear, unreleased, unreached, instr, metrics, def] = await Promise.all([
-    api.get("evidence", "/v1/claims").catch(() => ({ claims: [] })),
-    api.get("evidence", "/v1/unclear").catch(() => ({ unclear: [] })),
+    api.get("evidence", "/v1/claims?contextId=" + encodeURIComponent(contextId)).catch(() => ({ claims: [] })),
+    api.get("evidence", "/v1/unclear?contextId=" + encodeURIComponent(contextId)).catch(() => ({ unclear: [] })),
     api.get("confirmation", "/v1/unreleased").catch(() => ({ windows: [] })),
     api.get("confirmation", "/v1/unreached").catch(() => ({ windows: [] })),
     api.get("payments", "/v1/instructions").catch(() => ({ instructions: [] })),
@@ -61,7 +61,7 @@ const projectTitle = (projectId: string, def: { activity?: { label?: string } } 
 export function Status() {
   const nav = useNavigate();
   const s = useConsole();
-  const r = useLoad(() => projectRead(s.definitionId), [s.definitionId]);
+  const r = useLoad(() => projectRead(s.projectId, s.definitionId), [s.projectId, s.definitionId]);
   return (
     <LoadFrame r={r}>
       {(f) => {
@@ -146,7 +146,7 @@ export function Status() {
 export function Stp() {
   const nav = useNavigate();
   const s = useConsole();
-  const r = useLoad(() => projectRead(s.definitionId), [s.definitionId]);
+  const r = useLoad(() => projectRead(s.projectId, s.definitionId), [s.projectId, s.definitionId]);
   return (
     <LoadFrame r={r}>
       {(f) => {
@@ -229,7 +229,7 @@ export function Quality() {
   const s = useConsole();
   const r = useLoad(async () => {
     const [sources, assess, def] = await Promise.all([
-      api.get("evidence", "/v1/sources").catch(() => ({ sources: [] })),
+      api.get("evidence", "/v1/sources?contextId=" + encodeURIComponent(s.projectId)).catch(() => ({ sources: [] })),
       api.get("verification", "/v1/source-assessments").catch(() => ({ assessments: [] })),
       s.definitionId ? api.get("definitions", `/v1/definitions/${encodeURIComponent(s.definitionId)}`).catch(() => null) : Promise.resolve(null),
     ]);
@@ -599,7 +599,7 @@ export function Reports() {
   const s = useConsole();
   const nav = useNavigate();
   const [reportNote, setReportNote] = useState<string | null>(null);
-  const r = useLoad(() => projectRead(s.definitionId), [s.definitionId]);
+  const r = useLoad(() => projectRead(s.projectId, s.definitionId), [s.projectId, s.definitionId]);
   return (
     <LoadFrame r={r}>
       {(f) => {

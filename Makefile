@@ -5,7 +5,8 @@
 # than a red one, because it launders absence as proof.
 
 SHELL := bash
-COMPOSE := docker compose -f infra/compose/docker-compose.yml
+LOCAL_AUTH := tools/local-service-auth.sh
+COMPOSE := $(LOCAL_AUTH) compose
 # One infrastructure service and one application since #150; notifications
 # and their mock are gone with notify.
 SERVICES := core payments
@@ -88,14 +89,14 @@ test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
 	@# reports one line — "container X is unhealthy" — naming no cause at all.
 	@# That is the same shape as #79: a failure nobody can read gets re-run
 	@# rather than investigated.
-	@$(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES) || { \
+	@PAYMENT_SUBSCRIBER_ENABLED=true $(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES) || { \
 		echo "── the stack did not come up; logs follow ──" ; \
 		$(COMPOSE) ps ; \
 		$(COMPOSE) logs --tail=60 postgres objectstore mock-rail $(SERVICES) ; \
 		$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 ; \
 		exit 1 ; \
 	}
-	@$(GO) test -tags=e2e -count=1 -timeout=10m ./harness/... ; \
+	@$(LOCAL_AUTH) run -- $(GO) test -tags=e2e -count=1 -timeout=10m ./harness/... ; \
 		status=$$? ; \
 		if [ $$status -ne 0 ]; then \
 			echo "── logs from the failing run ──" ; \
@@ -106,12 +107,12 @@ test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
 
 poc: ## End-to-end PoC: a month of real-shaped evidence in, cards out (#25)
 	@# Needs a stack. `make e2e-up` first, or point the *_URL variables at one.
-	@$(GO) run ./tools/poc
+	@$(LOCAL_AUTH) run -- $(GO) run ./tools/poc
 
 poc-dhis2: ## The same PoC on a DHIS2-native export, read through a configured mapping (#25)
 	@POC_BATCH=tests/fixtures/poc/riverside-dhis2-native-export.csv \
 		POC_MAPPING=tests/fixtures/poc/riverside-dhis2-mapping.json \
-		$(GO) run ./tools/poc
+		$(LOCAL_AUTH) run -- $(GO) run ./tools/poc
 
 poc-batch: ## Regenerate the PoC batches from their generators
 	@python3 tools/poc/generate.py > tests/fixtures/poc/riverside-dhis2-march-2026.csv
@@ -120,11 +121,11 @@ poc-batch: ## Regenerate the PoC batches from their generators
 	@echo "wrote tests/fixtures/poc/*.csv"
 
 e2e-up: ## Bring up just what the spine needs, and leave it running
-	$(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES)
+	PAYMENT_SUBSCRIBER_ENABLED=true $(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES)
 
 web-up: e2e-up ## Bring up the stack with the web app, seeded and ready to click
 	@$(COMPOSE) up -d --wait web
-	@$(GO) run ./tools/seed
+	@$(LOCAL_AUTH) run -- $(GO) run ./tools/seed
 	@echo "open http://localhost:59100"
 
 apps-build: ## Build the rebuilt doors (frontend/ pnpm workspace) and assemble the compose docroot
@@ -135,11 +136,11 @@ apps-dev: ## Vite dev servers for the rebuilt doors (services on their compose p
 
 apps-up: e2e-up apps-build ## Bring up the stack with the journey apps, story-seeded
 	@$(COMPOSE) up -d --wait apps
-	@SEED_STORY=true $(GO) run ./tools/seed
+	@SEED_STORY=true $(LOCAL_AUTH) run -- $(GO) run ./tools/seed
 	@echo "open http://localhost:59110"
 
 e2e-apps: ## Walk every journey-app route with Playwright (needs apps-up; BASE_URL overrides)
-	@cd tests/e2e-apps && npm ci --no-audit --no-fund >/dev/null && npx playwright test apps.spec.js
+	@cd tests/e2e-apps && npm ci --no-audit --no-fund >/dev/null && npx playwright test apps.spec.js review-token.spec.js dev-login.spec.js merge-confirm.spec.js field-queue-migration.spec.js
 
 # The fidelity gate: every in-scope screen held to its docs/journey-spec.json
 # entry on the real stack (needs apps-up; BASE_URL overrides). Two commands
@@ -165,8 +166,8 @@ test-e2e-sweep: ## Prove the auto-confirm sweep runs on its own, with nobody ask
 	@# suite needs it off: every other T=7 scenario advances the clock and then
 	@# posts /v1/sweep, and a background sweeper would take the window first.
 	@$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true
-	SWEEP_EVERY=2s $(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES)
-	SWEEP_EVERY=2s $(GO) test -tags=e2e -count=1 -timeout=5m -run TestScheduledSweepPaysWithNobodyAsking ./harness/scenarios/
+	PAYMENT_SUBSCRIBER_ENABLED=true SWEEP_EVERY=2s $(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES)
+	SWEEP_EVERY=2s $(LOCAL_AUTH) run -- $(GO) test -tags=e2e -count=1 -timeout=5m -run TestScheduledSweepPaysWithNobodyAsking ./harness/scenarios/
 	@$(COMPOSE) down -v --remove-orphans
 
 test-e2e-short-window: ## Prove the window length is configuration: seconds-long windows pay by real time alone
@@ -174,12 +175,12 @@ test-e2e-short-window: ## Prove the window length is configuration: seconds-long
 	@# assumes the 168h default, and a seconds-long window would auto-confirm
 	@# claims out from under them.
 	@$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true
-	CONFIRMATION_WINDOW=6s SWEEP_EVERY=2s $(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES)
-	CONFIRMATION_WINDOW=6s SWEEP_EVERY=2s $(GO) test -tags=e2e -count=1 -timeout=5m -run TestAShortWindowPaysByRealTimeAlone ./harness/scenarios/
+	PAYMENT_SUBSCRIBER_ENABLED=true CONFIRMATION_WINDOW=6s SWEEP_EVERY=2s $(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES)
+	CONFIRMATION_WINDOW=6s SWEEP_EVERY=2s $(LOCAL_AUTH) run -- $(GO) test -tags=e2e -count=1 -timeout=5m -run TestAShortWindowPaysByRealTimeAlone ./harness/scenarios/
 	@$(COMPOSE) down -v --remove-orphans
 
 e2e-run: ## Run the spine against an already-running stack (fast iteration)
-	$(GO) test -tags=e2e -count=1 -timeout=10m ./harness/...
+	$(LOCAL_AUTH) run -- $(GO) test -tags=e2e -count=1 -timeout=10m ./harness/...
 
 test-invariants: ## W1-W10 as executable acceptance tests
 	@if [ -d harness/invariants ]; then $(GO) test -tags=invariants ./harness/invariants/...; \

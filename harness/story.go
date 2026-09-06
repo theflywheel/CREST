@@ -2,8 +2,10 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -56,7 +58,15 @@ func (s *Stack) SeedStory(ctx context.Context, w *fixtures.World) error {
 			SystemRef string `json:"systemRef"`
 		} `json:"sources"`
 	}
-	if err := s.Evidence.Get(ctx, "/v1/sources", &sources); err != nil {
+	// Source enumeration is a private, project-scoped operations read. Use the
+	// same authenticated operator that owns the seeded project and carry the
+	// scope explicitly; an anonymous or unscoped probe would be rejected.
+	operator, err := st.login(fixtures.SupervisorID)
+	if err != nil {
+		return fmt.Errorf("authenticate source preflight: %w", err)
+	}
+	if err := s.Evidence.As(operator).Get(ctx,
+		"/v1/sources?contextId="+url.QueryEscape(fixtures.ProjectID), &sources); err != nil {
 		return fmt.Errorf("list sources: %w", err)
 	}
 	for _, src := range sources.Sources {
@@ -163,6 +173,108 @@ func (st *story) assist(actor, forParty string) (Caller, error) {
 	return c, nil
 }
 
+// callerForClaim returns the supervisor's authenticated view acting for the
+// worker named by a claim. Private claim, window, and payment reads must carry
+// the same project-scoped act-for-party grant as the corresponding write.
+func (st *story) callerForClaim(claimID string) (Caller, error) {
+	sup, err := st.login(fixtures.SupervisorID)
+	if err != nil {
+		return Caller{}, err
+	}
+	var claim schema.Claim
+	if err := st.Evidence.As(sup).Get(st.ctx, "/v1/claims/"+url.PathEscape(claimID), &claim); err != nil {
+		return Caller{}, fmt.Errorf("read claim %s for scoped caller: %w", claimID, err)
+	}
+	if claim.PartyID == "" {
+		return Caller{}, fmt.Errorf("claim %s has no worker party", claimID)
+	}
+	sup.OnBehalfOf = claim.PartyID
+	return sup, nil
+}
+
+// workerForClaim returns the worker's own authenticated caller. It is kept
+// separate from callerForClaim because a supervisor acting for a worker is not
+// valid evidence that the worker reached a notification link.
+func (st *story) workerForClaim(claimID string) (Caller, error) {
+	sup, err := st.login(fixtures.SupervisorID)
+	if err != nil {
+		return Caller{}, err
+	}
+	var claim schema.Claim
+	if err := st.Evidence.As(sup).Get(st.ctx, "/v1/claims/"+url.PathEscape(claimID), &claim); err != nil {
+		return Caller{}, fmt.Errorf("read claim %s for worker caller: %w", claimID, err)
+	}
+	if claim.PartyID == "" {
+		return Caller{}, fmt.Errorf("claim %s has no worker party", claimID)
+	}
+	return st.login(claim.PartyID)
+}
+
+// acknowledgeNotification drives the development transport's inbox through
+// the public review endpoint. Provider acceptance alone is deliberately not a
+// reach result; the token is used with the worker's own bearer caller here.
+func (st *story) acknowledgeNotification(claimID string) error {
+	poll := env("NOTIFY_POLL_URL", "http://localhost:59104/messages")
+	var inbox struct {
+		Messages []struct {
+			ClaimID        string `json:"claimId"`
+			Acknowledgment string `json:"acknowledgmentUrl"`
+		} `json:"messages"`
+	}
+	if err := st.eventually("notification for "+claimID, func() error {
+		req, err := http.NewRequestWithContext(st.ctx, http.MethodGet,
+			poll+"?claimId="+url.QueryEscape(claimID), nil)
+		if err != nil {
+			return err
+		}
+		if token := env("NOTIFY_HTTP_TOKEN", "dev-notify-token"); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := st.http.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("notification inbox returned HTTP %d: %s", resp.StatusCode, body)
+		}
+		inbox.Messages = nil
+		if err := json.Unmarshal(body, &inbox); err != nil {
+			return err
+		}
+		for _, msg := range inbox.Messages {
+			if msg.ClaimID == claimID && msg.Acknowledgment != "" {
+				u, parseErr := url.Parse(msg.Acknowledgment)
+				if parseErr != nil {
+					return parseErr
+				}
+				fragment, parseErr := url.Parse("http://notify" + u.Fragment)
+				if parseErr != nil {
+					return parseErr
+				}
+				token := fragment.Query().Get("token")
+				if token == "" {
+					return fmt.Errorf("notification for %s has no acknowledgement token", claimID)
+				}
+				worker, callerErr := st.workerForClaim(claimID)
+				if callerErr != nil {
+					return callerErr
+				}
+				return st.Confirmation.As(worker).Post(st.ctx,
+					"/v1/windows/"+url.PathEscape(claimID)+"/ack?token="+url.QueryEscape(token), nil, nil)
+			}
+		}
+		return fmt.Errorf("notification inbox has no message for %s", claimID)
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
 // eventually waits for something the outbox relay carries across a service
 // boundary. Real time, briefly — the relay runs on real time even when the
 // domain clock is frozen.
@@ -193,12 +305,16 @@ func (st *story) enrolmentConsents() error {
 		if err != nil {
 			return err
 		}
+		c.IdempotencyKey = IdempotencyKey("story-consent", fixtures.SupervisorID, worker, fixtures.ProjectID)
 		path := fmt.Sprintf(
 			"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 			worker, url.QueryEscape("work-history-and-payment"),
 			url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(fixtures.ProjectID))
+		// Keep this as a real short Ogg recording, rather than a byte prefix that
+		// only resembles one; the fixture can be decoded independently with a
+		// media tool before it is sent through the endpoint.
 		if err := st.Parties.As(c).PostRaw(st.ctx, path, "audio/ogg",
-			[]byte("a recording of the worker agreeing at enrolment"), nil); err != nil {
+			fixtures.ConsentOgg, nil); err != nil {
 			return fmt.Errorf("consent for %s: %w", worker, err)
 		}
 	}
@@ -208,29 +324,48 @@ func (st *story) enrolmentConsents() error {
 // 2. The evidence source the batches will arrive from, and a graded source on
 // the assessments screen.
 func (st *story) registerSources() error {
-	org, err := st.login(fixtures.OrgID)
+	operator, err := st.login(fixtures.SupervisorID)
 	if err != nil {
 		return err
 	}
-	if err := st.Evidence.As(org).Post(st.ctx, "/v1/sources", map[string]any{
-		"adapterRef":    "csv-batch@1",
-		"contextId":     fixtures.ProjectID,
-		"systemRef":     storySourceRef,
-		"expectedEvery": "24h",
-		"ownerPartyId":  fixtures.SupervisorID,
+	if err := st.Evidence.As(operator).Post(st.ctx, "/v1/sources", map[string]any{
+		"adapterRef":     "csv-batch@1",
+		"contextId":      fixtures.ProjectID,
+		"systemRef":      storySourceRef,
+		"sourceClass":    "programme-system",
+		"captureMethod":  "digital-capture",
+		"sourceExposure": "signed-batch",
+		"expectedEvery":  "24h",
+		"ownerPartyId":   fixtures.SupervisorID,
 	}, nil); err != nil {
 		return fmt.Errorf("register source: %w", err)
 	}
-	// The assessment grades an adapter the story's credentials do NOT come
-	// from. Assessing csv-batch@1 would cap the tier of every credential the
-	// story issues — a true capability of the system, but a confusing first
-	// impression when the demo's point is that the spine works. The sources
-	// screen still gets a graded row; the story's credentials stay clean.
-	if err := st.Verification.As(org).Post(st.ctx, "/v1/source-assessments", map[string]any{
-		"adapterRef":        "legacy-paper-import",
-		"maxTier":           1,
+	// Keep the assessed feed separate from the story feed. The assessment API
+	// requires the adapter and system reference to identify an actual
+	// registration; grading this second, paper-import feed leaves the story's
+	// signed-batch credentials at their normal strength.
+	if err := st.Evidence.As(operator).Post(st.ctx, "/v1/sources", map[string]any{
+		"adapterRef":     "csv-batch@1",
+		"contextId":      fixtures.ProjectID,
+		"systemRef":      "legacy-paper-import",
+		"sourceClass":    "programme-system",
+		"captureMethod":  "supervised-manual",
+		"sourceExposure": "supervised-upload",
+		"expectedEvery":  "168h",
+		"ownerPartyId":   fixtures.SupervisorID,
+	}, nil); err != nil {
+		return fmt.Errorf("register assessed source: %w", err)
+	}
+	// The assessment grades the separate paper-import source, so the story's
+	// signed-batch credentials remain unaffected while the sources screen still
+	// carries a real graded row.
+	if err := st.Verification.As(operator).Post(st.ctx, "/v1/source-assessments", map[string]any{
+		"adapterRef":        "csv-batch@1",
+		"contextId":         fixtures.ProjectID,
+		"systemRef":         "legacy-paper-import",
+		"maxTier":           3,
 		"reason":            "paper registers re-keyed by hand; no capture-time provenance",
-		"assessedByPartyId": fixtures.OrgID,
+		"assessedByPartyId": fixtures.SupervisorID,
 	}, nil); err != nil {
 		return fmt.Errorf("assess source: %w", err)
 	}
@@ -251,12 +386,16 @@ func storyRow(kind, id string, count int, day, ref string) string {
 		count, kind, id, day, day, ref, count, ref)
 }
 
+func (st *story) storyDay(offset time.Duration) string {
+	return st.w.Instance.Epoch.Add(offset).Format("2006-01-02")
+}
+
 func (st *story) submit(csv []byte) (ingest, error) {
 	sup, err := st.login(fixtures.SupervisorID)
 	if err != nil {
 		return ingest{}, err
 	}
-	path := fmt.Sprintf("/v1/batches?contextId=%s&definitionId=%s&submittedBy=%s"+
+	path := fmt.Sprintf("/v1/batches?contextId=%s&definitionId=%s&definitionVersion=1&submittedBy=%s"+
 		"&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch"+
 		"&systemRef="+storySourceRef,
 		fixtures.ProjectID, fixtures.DefinitionID, fixtures.SupervisorID)
@@ -274,6 +413,10 @@ type ingest struct {
 		RowsUnclear  int    `json:"rowsUnclear"`
 	} `json:"batch"`
 	ClaimIDs []string `json:"claimIds"`
+	Unclear  []struct {
+		Kind   string `json:"kind"`
+		Reason string `json:"reason"`
+	} `json:"unclear"`
 }
 
 // 3. Batch #1: a real week of work, including the rows the rest of the story
@@ -304,31 +447,32 @@ func (st *story) submitFirstBatch() error {
 	if err != nil {
 		return err
 	}
+	workDay := st.storyDay(24 * time.Hour)
 	res, err := st.submit(storyCSV(
-		storyRow("phone", phoneA, 12, "2026-03-02", "story-HH-A1"),
-		storyRow("phone", phoneA, 7, "2026-03-02", "story-HH-A2"),
-		storyRow("phone", phoneA, 0, "2026-03-02", "story-HH-A3"),
-		storyRow("phone", phoneB, 9, "2026-03-02", "story-HH-B1"),
-		storyRow("roster-id", "RIV-STORY-0003", 5, "2026-03-02", "story-HH-C1"),
-		storyRow("phone", "+15550109999", 7, "2026-03-02", "story-HH-X1"),
+		storyRow("phone", phoneA, 12, workDay, "story-HH-A1"),
+		storyRow("phone", phoneA, 7, workDay, "story-HH-A2"),
+		storyRow("phone", phoneA, 0, workDay, "story-HH-A3"),
+		storyRow("phone", phoneB, 9, workDay, "story-HH-B1"),
+		storyRow("roster-id", "RIV-STORY-0003", 5, workDay, "story-HH-C1"),
+		storyRow("phone", "+15550109999", 7, workDay, "story-HH-X1"),
 	))
 	if err != nil {
 		return err
 	}
-	if res.Batch.RowsAccepted != 5 || res.Batch.RowsUnclear != 1 {
-		return fmt.Errorf("batch #1: %d accepted / %d unclear, wanted 5 / 1",
-			res.Batch.RowsAccepted, res.Batch.RowsUnclear)
+	if res.Batch.RowsAccepted != 6 || res.Batch.RowsUnclear != 1 || len(res.ClaimIDs) != 5 {
+		return fmt.Errorf("batch #1: %d accepted units / %d unclear / %d claims, wanted 6 / 1 / 5: %+v",
+			res.Batch.RowsAccepted, res.Batch.RowsUnclear, len(res.ClaimIDs), res.Unclear)
 	}
 
 	// The claim list does not say which row each claim came from, so ask the
 	// records themselves: the claim names its worker, the unit its outcome.
 	for _, claimID := range res.ClaimIDs {
 		var claim schema.Claim
-		if err := st.Evidence.Get(st.ctx, "/v1/claims/"+claimID, &claim); err != nil {
+		if err := st.Evidence.As(sup).Get(st.ctx, "/v1/claims/"+claimID, &claim); err != nil {
 			return fmt.Errorf("read claim %s: %w", claimID, err)
 		}
 		var unit schema.Unit
-		if err := st.Evidence.Get(st.ctx, "/v1/units/"+claim.UnitID, &unit); err != nil {
+		if err := st.Evidence.As(sup).Get(st.ctx, "/v1/units/"+claim.UnitID, &unit); err != nil {
 			return fmt.Errorf("read unit %s: %w", claim.UnitID, err)
 		}
 		switch {
@@ -354,8 +498,15 @@ func (st *story) submitFirstBatch() error {
 	for _, id := range []string{st.confirmed, st.zero, st.disputed, st.binas, st.chandras} {
 		claimID := id
 		if err := st.eventually("window for "+claimID, func() error {
-			return st.Confirmation.Get(st.ctx, "/v1/windows/"+claimID, nil)
+			caller, err := st.callerForClaim(claimID)
+			if err != nil {
+				return err
+			}
+			return st.Confirmation.As(caller).Get(st.ctx, "/v1/windows/"+claimID, nil)
 		}); err != nil {
+			return err
+		}
+		if err := st.acknowledgeNotification(claimID); err != nil {
 			return err
 		}
 	}
@@ -375,6 +526,7 @@ func (st *story) anayaResponds() error {
 			return fmt.Errorf("confirm %s: %w", claimID, err)
 		}
 	}
+	anaya.IdempotencyKey = IdempotencyKey("story-dispute", st.disputed, fixtures.WorkerAID, fixtures.ProjectID)
 	if err := st.Confirmation.As(anaya).Post(st.ctx,
 		"/v1/claims/"+st.disputed+"/dispute", map[string]any{
 			"reason":          "count too low — I distributed 11",
@@ -399,7 +551,7 @@ func (st *story) assistedConfirm() error {
 	return nil
 }
 
-// 6. Seven days pass and Bina never answers. The sweep auto-confirms — the
+// 6. Seven days pass after Bina has acknowledged the review link. The sweep auto-confirms — the
 // fourth exit, and with it all four now exist on this stack.
 func (st *story) autoConfirmSweep() error {
 	if err := st.Advance(st.ctx, 7*24*time.Hour+2*time.Hour); err != nil {
@@ -408,7 +560,11 @@ func (st *story) autoConfirmSweep() error {
 	var swept struct {
 		AutoConfirmed []string `json:"autoConfirmed"`
 	}
-	if err := st.Confirmation.Post(st.ctx, "/v1/sweep", nil, &swept); err != nil {
+	cust, err := st.login(fixtures.CustodianID)
+	if err != nil {
+		return err
+	}
+	if err := st.Confirmation.As(cust).Post(st.ctx, "/v1/sweep?contextId="+url.QueryEscape(fixtures.ProjectID), nil, &swept); err != nil {
 		return fmt.Errorf("sweep: %w", err)
 	}
 	found := false
@@ -433,7 +589,11 @@ func (st *story) paymentsMaterialised() error {
 	for _, claimID := range []string{st.confirmed, st.zero, st.disputed, st.chandras, st.binas} {
 		id := claimID
 		if err := st.eventually("payment instruction for "+id, func() error {
-			return st.Payments.Get(st.ctx, "/v1/instructions/by-claim/"+id, nil)
+			caller, err := st.callerForClaim(id)
+			if err != nil {
+				return err
+			}
+			return st.Payments.As(caller).Get(st.ctx, "/v1/instructions/by-claim/"+id, nil)
 		}); err != nil {
 			return err
 		}
@@ -447,11 +607,34 @@ func (st *story) paymentsMaterialised() error {
 			Code string `json:"code"`
 		} `json:"held"`
 	}
-	if err := st.Payments.Get(st.ctx, "/v1/instructions/by-claim/"+st.zero, &inst); err != nil {
+	caller, err := st.callerForClaim(st.zero)
+	if err != nil {
+		return err
+	}
+	if err := st.Payments.As(caller).Get(st.ctx, "/v1/instructions/by-claim/"+st.zero, &inst); err != nil {
 		return fmt.Errorf("read the zero-outcome instruction: %w", err)
 	}
 	if inst.State != "HELD" || inst.Held == nil || inst.Held.Code != "nothing_to_pay" {
 		return fmt.Errorf("the zero-outcome instruction is %s (%+v), want HELD nothing_to_pay", inst.State, inst.Held)
+	}
+	for _, claimID := range []string{st.confirmed, st.disputed, st.chandras, st.binas} {
+		var positive struct {
+			AmountMinor  int64      `json:"amountMinor"`
+			Currency     string     `json:"currency"`
+			RateRecordID string     `json:"rateRecordId"`
+			RateVersion  int        `json:"rateVersion"`
+			PricingAt    *time.Time `json:"pricingAt"`
+		}
+		caller, err := st.callerForClaim(claimID)
+		if err != nil {
+			return err
+		}
+		if err := st.Payments.As(caller).Get(st.ctx, "/v1/instructions/by-claim/"+claimID, &positive); err != nil {
+			return fmt.Errorf("read positive instruction %s: %w", claimID, err)
+		}
+		if positive.AmountMinor <= 0 || positive.Currency == "" || positive.RateRecordID == "" || positive.RateVersion < 1 || positive.PricingAt == nil {
+			return fmt.Errorf("positive instruction %s lacks immutable pricing: %+v", claimID, positive)
+		}
 	}
 	return nil
 }
@@ -473,8 +656,12 @@ func (st *story) verifications() error {
 	if len(out.Credentials) == 0 {
 		return fmt.Errorf("anaya has no credentials to verify")
 	}
+	org, err := st.login(fixtures.OrgID)
+	if err != nil {
+		return err
+	}
 	for _, purpose := range []string{"pre-employment check", "programme audit"} {
-		if err := st.Verification.Post(st.ctx, "/v1/verify", map[string]any{
+		if err := st.Verification.As(org).Post(st.ctx, "/v1/verify", map[string]any{
 			"credential":         out.Credentials[0],
 			"requestedByPartyId": fixtures.OrgID,
 			"purpose":            purpose,
@@ -500,6 +687,7 @@ func (st *story) duplicateHold() error {
 	}
 	const shared = "+15550100777"
 	for _, name := range []string{"Worker Devika", "Worker Deepa"} {
+		sup.IdempotencyKey = IdempotencyKey("story-enrolment", name, shared, fixtures.ProjectID)
 		if err := st.Parties.As(sup).Post(st.ctx, "/v1/enrolments", map[string]any{
 			"party": schema.Party{
 				Kind:        schema.PartyKindPerson,
@@ -575,7 +763,7 @@ func (st *story) overdueAuthorization() error {
 			Kind:      schema.AuthorizationScopeKindContext,
 			ContextID: ptrTo(fixtures.ProjectID),
 		},
-		Functions:         []string{"field-data-clerk"},
+		Functions:         []string{"work-definition-author"},
 		Period:            schema.Period{Start: epoch, End: &end},
 		AuthorityPartyID:  fixtures.OrgID,
 		ApprovedByPartyID: fixtures.OrgID,
@@ -603,10 +791,11 @@ func (st *story) submitLiveBatch() error {
 	if err != nil {
 		return err
 	}
+	workDay := st.storyDay(7 * 24 * time.Hour)
 	res, err := st.submit(storyCSV(
-		storyRow("phone", phoneA, 6, "2026-03-08", "story-HH-A4"),
-		storyRow("phone", phoneB, 4, "2026-03-08", "story-HH-B2"),
-		storyRow("roster-id", "RIV-STORY-0003", 3, "2026-03-08", "story-HH-C2"),
+		storyRow("phone", phoneA, 6, workDay, "story-HH-A4"),
+		storyRow("phone", phoneB, 4, workDay, "story-HH-B2"),
+		storyRow("roster-id", "RIV-STORY-0003", 3, workDay, "story-HH-C2"),
 	))
 	if err != nil {
 		return err
@@ -621,8 +810,15 @@ func (st *story) submitLiveBatch() error {
 	for _, claimID := range res.ClaimIDs {
 		id := claimID
 		if err := st.eventually("live window for "+id, func() error {
-			return st.Confirmation.Get(st.ctx, "/v1/windows/"+id, nil)
+			caller, err := st.callerForClaim(id)
+			if err != nil {
+				return err
+			}
+			return st.Confirmation.As(caller).Get(st.ctx, "/v1/windows/"+id, nil)
 		}); err != nil {
+			return err
+		}
+		if err := st.acknowledgeNotification(id); err != nil {
 			return err
 		}
 	}

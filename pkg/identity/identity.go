@@ -167,10 +167,7 @@ func (c Caller) RequestedFor() string { return c.requestedFor }
 // anywhere it would matter.
 func Actor(ctx context.Context, c Caller, claimed, contextID string, enforced bool, permits PermitsFunc) (string, error) {
 	if !c.Authenticated() {
-		if enforced {
-			return "", ErrNoCaller
-		}
-		return claimed, nil
+		return "", ErrNoCaller
 	}
 	proven, err := Acting(ctx, c, contextID, permits)
 	if err != nil {

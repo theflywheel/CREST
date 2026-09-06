@@ -1,11 +1,15 @@
 package evidence
 
 import (
+	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/theflywheel/crest/pkg/pii"
 	"github.com/theflywheel/crest/pkg/schema"
+	"github.com/theflywheel/crest/pkg/strength"
 )
 
 // The hasher is normally built at route registration, from deployment
@@ -67,9 +71,6 @@ func TestTheSameRecordTwiceCollidesOnTheDedupeKey(t *testing.T) {
 		"a different source record reference": func(_ *schema.Unit, r *schema.CanonicalWorkEvidenceRecord) {
 			r.Provenance.SourceRecordRef = ref("riverside-dhis2-0004")
 		},
-		"a different worker": func(_ *schema.Unit, r *schema.CanonicalWorkEvidenceRecord) {
-			r.WorkerJoiningIdentifier.Value = "+15550100012"
-		},
 		"a different period": func(u *schema.Unit, _ *schema.CanonicalWorkEvidenceRecord) {
 			u.Period.Start = u.Period.Start.AddDate(0, 0, 1)
 		},
@@ -87,6 +88,59 @@ func TestTheSameRecordTwiceCollidesOnTheDedupeKey(t *testing.T) {
 				t.Errorf("%s collided with the original: real work would be discarded as a duplicate", name)
 			}
 		})
+	}
+}
+
+func TestUnitIdentityDoesNotDependOnWorkerIdentifier(t *testing.T) {
+	unit := schema.Unit{ContextID: "ctx", Definition: schema.VersionedRef{ID: "def", Version: 1},
+		Outcome: schema.Outcome{Value: 1, Unit: "visit"}, Period: schema.Period{Start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}}
+	a := schema.CanonicalWorkEvidenceRecord{Activity: "visit", WorkerJoiningIdentifier: schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifier{
+		Kind: schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifierKindPhone, Value: "+1"}}
+	b := a
+	b.WorkerJoiningIdentifier.Value = "+2"
+	if dedupeKey(unit, a) != dedupeKey(unit, b) {
+		t.Fatal("a unit dedupe key changed with the worker identifier; identity is a claim, not unit identity")
+	}
+}
+
+func TestStoredUnitPreservesOnlyCanonicalEvidencePresence(t *testing.T) {
+	unit := schema.Unit{
+		ID:        "unit-1",
+		ContextID: "ctx-1",
+		Outcome:   schema.Outcome{Value: 0, Unit: "visits"},
+		Period:    schema.Period{Start: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)},
+		Enrichment: map[string]any{
+			"beneficiaryCount": 0,
+			"blank":            "",
+		},
+	}
+	rec := schema.CanonicalWorkEvidenceRecord{
+		Activity:   "visit",
+		Outcome:    unit.Outcome,
+		Period:     unit.Period,
+		Enrichment: unit.Enrichment,
+		WorkerJoiningIdentifier: schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifier{
+			Kind:  schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifierKindRosterID,
+			Value: "roster-secret",
+		},
+	}
+	fields := strength.EvidenceFields(rec)
+	raw, err := json.Marshal(storedUnit{Unit: unit, EvidenceFields: fields})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "roster-secret") {
+		t.Fatal("stored unit unexpectedly contains the joining identifier")
+	}
+	var got storedUnit
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.EvidenceFields, fields) {
+		t.Fatalf("stored evidence presence = %#v, want %#v", got.EvidenceFields, fields)
+	}
+	if got.ID != unit.ID || got.ContextID != unit.ContextID {
+		t.Fatalf("stored unit identity changed: %#v", got.Unit)
 	}
 }
 

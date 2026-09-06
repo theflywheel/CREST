@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/theflywheel/crest/pkg/httpx"
-	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -175,9 +174,9 @@ const defaultWorklistPageSize = 200
 
 // qualityWorklist is g4_5's endpoint: GET /v1/quality-worklist?kind=&limit=&offset=
 func (h *handlers) qualityWorklist(w http.ResponseWriter, r *http.Request) {
-	// A custodian queue over every party's gaps, not one worker's own record:
-	// signed-in callers only (#102), same standing as /v1/holds.
-	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+	// This queue includes worker names and identity gaps. It is assigned to the
+	// registry custodian, not a general authenticated caller.
+	if _, ok := requireRegistryCustodian(w, r, h.d, ""); !ok {
 		return
 	}
 	q := r.URL.Query()

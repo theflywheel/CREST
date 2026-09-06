@@ -11,6 +11,7 @@ import { V11, V12, V13 } from "./screens/V1";
 import { V21, V22, V23, Person } from "./screens/V2";
 import { Requests } from "./screens/Requests";
 import { W61, W62 } from "./screens/Panel";
+import { AuthReturn } from "./screens/Auth";
 
 const NAV: NavGroup[] = [
   {
@@ -58,7 +59,7 @@ function ConsoleScreen(props: { children: React.ReactNode }) {
   }, [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
   const who =
     s.orgSession && ORG_ROUTES.has(loc.pathname)
-      ? "Ministry of Health — onboarded verifier"
+      ? (s.orgParty?.displayName || "Signed in institution") + " — onboarded verifier"
       : "Not signed in — verification does not need an account";
   return (
     <ConsoleShell appName="CREST · Checking a credential" who={who} nav={NAV}>
@@ -95,6 +96,7 @@ function PanelScreen(props: { children: React.ReactNode }) {
 export function App() {
   return (
     <Routes>
+      <Route path="/auth" element={<AuthReturn />} />
       <Route path="/v1_1" element={<ConsoleScreen><V11 /></ConsoleScreen>} />
       <Route path="/v1_2" element={<ConsoleScreen><V12 /></ConsoleScreen>} />
       <Route path="/v1_3" element={<ConsoleScreen><V13 /></ConsoleScreen>} />

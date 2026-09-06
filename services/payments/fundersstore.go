@@ -283,7 +283,8 @@ func heldForMechanism(ctx context.Context, q store.Querier, contextID string) ([
 	rows, err := q.Query(ctx, `
 		SELECT doc FROM instructions
 		WHERE context_id = $1 AND state = 'HELD' AND held_code = 'mechanism_not_live'
-		ORDER BY created_at, id`, contextID)
+		ORDER BY created_at, id
+		FOR UPDATE`, contextID)
 	if err != nil {
 		return nil, err
 	}
@@ -296,6 +297,14 @@ func heldForMechanism(ctx context.Context, q store.Querier, contextID string) ([
 		var in Instruction
 		return in, json.Unmarshal(doc, &in)
 	})
+}
+
+// releaseMechanismHeld clears only the mechanism gate. Pricing fields are
+// intentionally untouched: activation is not a new pricing event.
+func releaseMechanismHeld(in Instruction) Instruction {
+	in.State = "RELEASED"
+	in.Held = nil
+	return in
 }
 
 // releaseHeldInstruction moves one held instruction to RELEASED with its
@@ -317,6 +326,20 @@ func releaseHeldInstruction(ctx context.Context, tx store.Querier, in Instructio
 		WHERE id = $1`,
 		in.ID, in.State, in.AmountMinor, in.Currency, code, reason, owner, doc)
 	return err
+}
+
+// releaseHeldInstructionAndEnqueue persists the already-decided instruction
+// state and schedules the rail send in the same transaction. Callers must set
+// the state and hold first; this helper deliberately does no pricing, because
+// a retry or mechanism activation must never change a priced obligation.
+func releaseHeldInstructionAndEnqueue(ctx context.Context, tx store.Querier, in Instruction) error {
+	if err := releaseHeldInstruction(ctx, tx, in); err != nil {
+		return err
+	}
+	if in.State == "RELEASED" {
+		return store.Enqueue(ctx, tx, topicRailSend, in)
+	}
+	return nil
 }
 
 // ─── the reconciliation file and statements ─────────────────────────────────

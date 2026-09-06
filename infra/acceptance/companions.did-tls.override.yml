@@ -1,0 +1,42 @@
+# Private development overlay for standards-compliant did:web resolution.
+#
+# The resolver in Inji's verifier uses HTTPS on the DID authority's default
+# port.  This sidecar therefore has no host port: it is reachable only on the
+# Compose network as certify.crest.test.  The certificate and truststore are
+# operator-provided ignored files; this overlay never creates key material.
+services:
+  certify-did-tls:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    volumes:
+      - ../acceptance/certify-did-tls.conf:/etc/nginx/nginx.conf:ro
+      - ../acceptance/private/companion-tls.crt:/etc/nginx/tls/companion-tls.crt:ro
+      - ../acceptance/private/companion-tls.key:/etc/nginx/tls/companion-tls.key:ro
+    networks:
+      default:
+        aliases:
+          - certify.crest.test
+    depends_on:
+      - inji-certify
+    profiles: [substrate, full]
+
+  mimoto:
+    environment:
+      JAVA_TOOL_OPTIONS: "${JAVA_TOOL_OPTIONS:-} -Djavax.net.ssl.trustStore=/home/mosip/companion-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
+    volumes:
+      - ../acceptance/private/companion-truststore.p12:/home/mosip/companion-truststore.p12:ro
+
+  inji-verify-service:
+    environment:
+      JAVA_TOOL_OPTIONS: "${JAVA_TOOL_OPTIONS:-} -Djavax.net.ssl.trustStore=/home/mosip/companion-truststore.p12 -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=PKCS12"
+    volumes:
+      - ../acceptance/private/companion-truststore.p12:/home/mosip/companion-truststore.p12:ro

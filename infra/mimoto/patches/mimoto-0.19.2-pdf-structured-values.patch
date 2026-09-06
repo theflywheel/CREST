@@ -1,0 +1,199 @@
+diff --git a/src/main/java/io/mosip/mimoto/service/CredentialPDFGeneratorService.java b/src/main/java/io/mosip/mimoto/service/CredentialPDFGeneratorService.java
+index 8232e500..e1ce057f 100644
+--- a/src/main/java/io/mosip/mimoto/service/CredentialPDFGeneratorService.java
++++ b/src/main/java/io/mosip/mimoto/service/CredentialPDFGeneratorService.java
+@@ -23,6 +23,7 @@ import io.mosip.mimoto.dto.openid.presentation.PresentationDefinitionDTO;
+ import io.mosip.mimoto.model.QRCodeType;
+ import io.mosip.mimoto.service.impl.PresentationServiceImpl;
+ import io.mosip.mimoto.util.LocaleUtils;
++import io.mosip.mimoto.util.IssuerConfigUtil;
+ import io.mosip.mimoto.util.Utilities;
+ import io.mosip.pixelpass.PixelPass;
+ import lombok.extern.slf4j.Slf4j;
+@@ -181,28 +182,54 @@ public class CredentialPDFGeneratorService {
+     }
+ 
+     private String formatValue(Object val, String locale) {
+-        if (val instanceof Map) {
+-            return Optional.ofNullable(((Map<?, ?>) val).get("value")).map(Object::toString).orElse("");
+-        } else if (val instanceof List) {
+-            List<?> list = (List<?>) val;
++        if (val instanceof Map<?, ?> map) {
++            // Outcome-like maps use a value/unit wrapper. Keep both facts visible.
++            if (map.containsKey("value")) {
++                String value = formatValue(map.get("value"), locale);
++                Object unit = map.get("unit");
++                if (unit != null && !unit.toString().isBlank()) {
++                    return value.isBlank() ? formatValue(unit, locale)
++                            : value + " " + formatValue(unit, locale);
++                }
++                return value;
++            }
++
++            // Structured claims such as period and provenance have no single
++            // `value`; render each source field without changing the VC.
++            return map.entrySet().stream()
++                    .filter(entry -> entry.getKey() != null && entry.getValue() != null)
++                    .map(entry -> IssuerConfigUtil.camelToTitleCase(entry.getKey().toString())
++                            + ": " + formatValue(entry.getValue(), locale))
++                    .filter(entry -> !entry.endsWith(": "))
++                    .collect(Collectors.joining("; "));
++        } else if (val instanceof List<?> list) {
+             if (list.isEmpty()) return "";
+-            if (list.getFirst() instanceof String) {
+-                return String.join(", ", (List<String>) list);
+-            } else if (list.getFirst() instanceof Map<?, ?>) {
+-                return list.stream()
+-                        .filter(Objects::nonNull)
++            List<?> nonNull = list.stream().filter(Objects::nonNull).toList();
++            if (nonNull.isEmpty()) return "";
++            if (nonNull.stream().allMatch(String.class::isInstance)) {
++                return nonNull.stream().map(String.class::cast).collect(Collectors.joining(", "));
++            }
++            if (nonNull.stream().allMatch(item -> item instanceof Map<?, ?>)) {
++                List<Map<?, ?>> maps = nonNull.stream()
+                         .map(item -> (Map<?, ?>) item)
+-                        .filter(m -> {
+-                            Object lang = m.get("language");  // Safely get language
+-                            return lang != null && LocaleUtils.matchesLocale(lang.toString(), locale);
+-                        })
+-                        .map(m -> {
+-                            Object value = m.get("value");  // Safely get value
+-                            return value != null ? value.toString() : null;
+-                        })
+-                        .filter(Objects::nonNull)
+-                        .findFirst()
+-                        .orElse("");
++                        .collect(Collectors.toList());
++                // Preserve the existing localized-display behavior for
++                // language/value entries, including its locale selection.
++                if (maps.stream().anyMatch(map -> map.containsKey("language"))) {
++                    return maps.stream()
++                            .filter(map -> {
++                                Object language = map.get("language");
++                                return language != null && LocaleUtils.matchesLocale(language.toString(), locale);
++                            })
++                            .map(map -> formatValue(map.get("value"), locale))
++                            .filter(value -> !value.isBlank())
++                            .findFirst()
++                            .orElse("");
++                }
++                return maps.stream()
++                        .map(map -> formatValue(map, locale))
++                        .filter(value -> !value.isBlank())
++                        .collect(Collectors.joining("; "));
+             }
+         }
+         return val != null ? val.toString() : "";
+@@ -252,4 +279,3 @@ public class CredentialPDFGeneratorService {
+         return Utilities.encodeToString(qrImage, "png");
+     }
+ }
+-
+diff --git a/src/test/java/io/mosip/mimoto/service/CredentialPDFGeneratorServiceTest.java b/src/test/java/io/mosip/mimoto/service/CredentialPDFGeneratorServiceTest.java
+index 7bf7ea18..f624682a 100644
+--- a/src/test/java/io/mosip/mimoto/service/CredentialPDFGeneratorServiceTest.java
++++ b/src/test/java/io/mosip/mimoto/service/CredentialPDFGeneratorServiceTest.java
+@@ -28,6 +28,7 @@ import org.springframework.test.util.ReflectionTestUtils;
+ import java.io.ByteArrayInputStream;
+ import java.util.*;
+ 
++import static org.junit.jupiter.api.Assertions.assertEquals;
+ import static org.junit.jupiter.api.Assertions.assertNotNull;
+ import static org.mockito.ArgumentMatchers.any;
+ import static org.mockito.ArgumentMatchers.anyString;
+@@ -609,4 +610,94 @@ class CredentialPDFGeneratorServiceTest {
+ 
+         assertNotNull(result);  // Verifies formatValue converted 25 to "25"
+     }
++
++    @Test
++    void testFormatValueRendersStructuredMapsAndUnits() {
++        Map<String, Object> period = new LinkedHashMap<>();
++        period.put("start", "2026-03-01T00:00:00Z");
++        period.put("end", "2026-03-01T23:59:59Z");
++        Map<String, Object> provenance = new LinkedHashMap<>();
++        provenance.put("sourceClass", "programme-system");
++        provenance.put("captureMethod", "digital-capture");
++        provenance.put("sourceExposure", "signed-batch");
++
++        String periodText = ReflectionTestUtils.invokeMethod(
++                credentialPDFGeneratorService, "formatValue", period, "en");
++        String provenanceText = ReflectionTestUtils.invokeMethod(
++                credentialPDFGeneratorService, "formatValue", provenance, "en");
++        String outcomeText = ReflectionTestUtils.invokeMethod(
++                credentialPDFGeneratorService, "formatValue",
++                new LinkedHashMap<>(Map.of("value", 0, "unit", "bednets")), "en");
++
++        assertEquals("Start: 2026-03-01T00:00:00Z; End: 2026-03-01T23:59:59Z", periodText);
++        assertEquals("Source Class: programme-system; Capture Method: digital-capture; Source Exposure: signed-batch", provenanceText);
++        assertEquals("0 bednets", outcomeText);
++    }
++
++    @Test
++    @SuppressWarnings("unchecked")
++    void testStructuredClaimsReachPdfRowsWithTheirConfiguredLabels() throws Exception {
++        when(credentialFormatHandlerFactory.getHandler("ldp_vc")).thenReturn(credentialFormatHandler);
++        Map<String, Object> period = new LinkedHashMap<>();
++        period.put("start", "2026-03-01T00:00:00Z");
++        period.put("end", "2026-03-01T23:59:59Z");
++        Map<String, Object> provenance = new LinkedHashMap<>();
++        provenance.put("sourceClass", "programme-system");
++        provenance.put("captureMethod", "digital-capture");
++
++        LinkedHashMap<String, Map<CredentialIssuerDisplayResponse, Object>> displayProperties = new LinkedHashMap<>();
++        displayProperties.put("period", Map.of(createDisplayResponse("Period", "en"), period));
++        displayProperties.put("provenance", Map.of(createDisplayResponse("Where this record came from", "en"), provenance));
++        issuerDTO.setQr_code_type(null);
++
++        Map<String, Object> data = ReflectionTestUtils.invokeMethod(
++                credentialPDFGeneratorService, "getPdfResourceFromVcProperties", displayProperties,
++                credentialsSupportedResponse, vcCredentialResponse, issuerDTO, "", "");
++        Map<String, Object> rows = (Map<String, Object>) data.get("rowProperties");
++
++        assertEquals("Start: 2026-03-01T00:00:00Z; End: 2026-03-01T23:59:59Z",
++                ((Map<?, ?>) rows.get("period")).get("Period"));
++        assertEquals("Source Class: programme-system; Capture Method: digital-capture",
++                ((Map<?, ?>) rows.get("provenance")).get("Where this record came from"));
++    }
++
++    @Test
++    void testFormatValuePreservesLocalizedValuesAndLeavesEscapingToTemplate() {
++        List<Map<String, Object>> localized = Arrays.asList(
++                Map.of("language", "en", "value", "English <label> & value"),
++                Map.of("language", "fr", "value", "French value"),
++                null);
++
++        String rendered = ReflectionTestUtils.invokeMethod(
++                credentialPDFGeneratorService, "formatValue", localized, "en");
++
++        assertEquals("English <label> & value", rendered);
++    }
++
++    @Test
++    void testEmbeddedQrSerializesOriginalCredentialObjectUnchanged() throws Exception {
++        when(credentialFormatHandlerFactory.getHandler("ldp_vc")).thenReturn(credentialFormatHandler);
++        issuerDTO.setQr_code_type(QRCodeType.EmbeddedVC);
++        Map<String, Object> credentialPayload = new LinkedHashMap<>();
++        credentialPayload.put("credentialSubject", Map.of(
++                "period", Map.of("start", "2026-03-01T00:00:00Z"),
++                "provenance", Map.of("sourceClass", "programme-system")));
++        vcCredentialResponse.setCredential(credentialPayload);
++        when(objectMapper.writeValueAsString(same(credentialPayload))).thenReturn("{\"credentialSubject\":{}}");
++        when(pixelPass.generateQRData(anyString(), anyString())).thenReturn("generated-qr-data");
++        when(utilities.getCredentialSupportedTemplateString(anyString(), anyString()))
++                .thenReturn("<html><body>Test</body></html>");
++
++        try (MockedStatic<Utilities> mocked = mockStatic(Utilities.class)) {
++            mocked.when(() -> Utilities.encodeToString(any(), anyString()))
++                    .thenReturn("base64-encoded-qr");
++
++            credentialPDFGeneratorService.generatePdfForVerifiableCredential(
++                    "TestCredential", vcCredentialResponse, issuerDTO, credentialsSupportedResponse,
++                    "", "", "en");
++
++            verify(objectMapper).writeValueAsString(same(credentialPayload));
++            verify(pixelPass).generateQRData("{\"credentialSubject\":{}}", "");
++        }
++    }
+ }

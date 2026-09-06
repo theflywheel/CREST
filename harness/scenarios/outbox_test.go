@@ -4,6 +4,7 @@ package scenarios
 
 import (
 	"fmt"
+	"net/url"
 	"testing"
 	"time"
 
@@ -41,7 +42,7 @@ func TestAPaymentReleaseSurvivesThePaymentsServiceBeingKilled(t *testing.T) {
 	if len(result.ClaimIDs) != 1 {
 		t.Fatalf("want one claim, got %d", len(result.ClaimIDs))
 	}
-	claimID := result.ClaimIDs[0]
+	claimID := onlyClaim(t, result)
 
 	eventually(t, "the confirmation window opens", 15*time.Second, func() error {
 		_, err := w.window(claimID)
@@ -99,7 +100,9 @@ func TestAPaymentReleaseSurvivesThePaymentsServiceBeingKilled(t *testing.T) {
 			ClaimID string `json:"claimId"`
 		} `json:"instructions"`
 	}
-	if err := w.Payments.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/instructions", &all); err != nil {
+	if err := w.Payments.As(w.login(t, fixtures.WorkerAID)).Get(w.ctx,
+		"/v1/instructions?partyId="+url.QueryEscape(fixtures.WorkerAID)+
+			"&contextId="+url.QueryEscape(fixtures.ProjectID), &all); err != nil {
 		t.Fatalf("list instructions: %v", err)
 	}
 	n := 0

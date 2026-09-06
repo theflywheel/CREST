@@ -299,6 +299,28 @@ export function Roster() {
             )}
           </label>
           <label className="body-2">
+            Registered source this roster came from
+            {s.sources.length ? (
+              <select
+                id="source-select"
+                value={s.sourceSystemRef || ""}
+                onChange={(e) => s.setSourceSystemRef(e.target.value)}
+                style={{ width: "100%", marginTop: 4, font: "inherit" }}
+              >
+                <option value="">Choose a registered source…</option>
+                {s.sources.map((source) => (
+                  <option key={source.systemRef} value={source.systemRef}>
+                    {source.systemRef} · {source.sourceClass || "approved class"} · {source.captureMethod || "approved capture"} · {source.sourceExposure || "approved exposure"}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="muted" style={{ display: "block", marginTop: 4 }}>
+                No source is registered for this project. Register and approve the source in the console before sending a roster.
+              </span>
+            )}
+          </label>
+          <label className="body-2">
             CSV file
             <input type="file" name="file" accept=".csv,text/csv" onChange={(e) => setFile(e.target.files?.[0] || null)} style={{ font: "inherit", marginTop: 4 }} />
           </label>
@@ -339,7 +361,7 @@ export function Handoff() {
   const s = useField();
   const data = useLoad(async () => {
     const [unclear, unreached] = await Promise.all([
-      api.get("evidence", "/v1/unclear").catch(() => ({ unclear: [] })),
+      api.get("evidence", "/v1/unclear?contextId=" + encodeURIComponent(s.contextId || "")).catch(() => ({ unclear: [] })),
       api.get("confirmation", "/v1/unreached").catch(() => ({ windows: [], unreached: [] })),
     ]);
     return { unclear, unreached };

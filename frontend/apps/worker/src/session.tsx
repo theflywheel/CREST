@@ -46,6 +46,19 @@ const SKEY = "crest.worker.session";
 // typed off whatever their project gave them. Session-scoped: it is a
 // pointer, not a membership.
 const PKEY = "crest.worker.programme";
+const CKEY = "crest.worker.pending-consent";
+type PendingConsent = { token: string; partyId: string; contextId: string; purpose: string; idempotencyKey: string };
+function readPendingConsent(): PendingConsent | null {
+  try {
+    const raw = sessionStorage.getItem(CKEY);
+    return raw ? (JSON.parse(raw) as PendingConsent) : null;
+  } catch { return null; }
+}
+function writePendingConsent(v: PendingConsent | null) {
+  try {
+    v ? sessionStorage.setItem(CKEY, JSON.stringify(v)) : sessionStorage.removeItem(CKEY);
+  } catch { /* retry state is a convenience; the server still rejects a missing key */ }
+}
 
 export function readProgramme(): string | null {
   try {
@@ -98,6 +111,7 @@ export function SessionProvider(props: { children: ReactNode }) {
   // A real deployment logs in through eSignet only.
   const login = useCallback(async (who: string, label?: string) => {
     const token = await loginAs(who);
+    who = (await whoAmI()).partyId;
     store({ token, me: who, label });
     setMe(who);
     setMeLabel(label || null);
@@ -135,19 +149,38 @@ export function SessionProvider(props: { children: ReactNode }) {
   const signUp = useCallback(
     async (name: string, phone: string, consentPurpose: string, contextId?: string | null) => {
     const joining = contextId === undefined ? programme : contextId;
-    const who = await whoAmI();
-    const party = await api.post("parties", "/v1/parties", {
-      displayName: name,
-      kind: "person",
-      contactRoutes: [{ kind: "phone", value: phone }],
-    });
-    // No assertedAt: the registry's clock is the authority for when a
-    // binding was asserted, not this browser's.
-    await api.post("parties", `/v1/parties/${party.id}/identity-bindings`, {
-      provider: "esignet",
-      providerClass: "esignet",
-      subjectRef: who.subjectRef,
-    });
+    const pending = readPendingConsent();
+    let partyId: string;
+    let consentKey: string | undefined;
+    let purpose = consentPurpose;
+    if (joining && pending && pending.contextId === joining) {
+      // A lost response after party creation must resume the same consent
+      // operation. Reusing its stored token and key also survives a reload.
+      setSession(pending.token);
+      pendingToken.current = pending.token;
+      partyId = pending.partyId;
+      consentKey = pending.idempotencyKey;
+      purpose = pending.purpose;
+    } else {
+      const who = await whoAmI();
+      const party = await api.post("parties", "/v1/parties", {
+        displayName: name,
+        kind: "person",
+        contactRoutes: [{ kind: "phone", value: phone }],
+      });
+      partyId = party.id as string;
+      // No assertedAt: the registry's clock is the authority for when a
+      // binding was asserted, not this browser's.
+      await api.post("parties", `/v1/parties/${partyId}/identity-bindings`, {
+        provider: "esignet",
+        providerClass: "esignet",
+        subjectRef: who.subjectRef,
+      });
+      if (joining) {
+        consentKey = "self-registration-consent:" + crypto.randomUUID();
+        writePendingConsent({ token: pendingToken.current, partyId, contextId: joining, purpose, idempotencyKey: consentKey });
+      }
+    }
     // Enrolment consent is scoped to a programme context (§9), and this
     // deployment tells a stranger nothing about which programmes exist — an
     // unnarrowed listing would answer who-works-where to anybody who asks.
@@ -159,17 +192,18 @@ export function SessionProvider(props: { children: ReactNode }) {
     if (joining) {
       const q = new URLSearchParams({
         moment: "enrolment",
-        purpose: consentPurpose,
+        purpose,
         captureMethod: "screen",
         contextId: joining,
       });
-      await api.post("parties", `/v1/parties/${party.id}/consents?${q}`);
+      await api.post("parties", `/v1/parties/${partyId}/consents?${q}`, undefined, consentKey);
+      writePendingConsent(null);
       consentRecorded = true;
     }
-    store({ token: pendingToken.current, me: party.id });
-    setMe(party.id);
+    store({ token: pendingToken.current, me: partyId });
+    setMe(partyId);
     setErr(null);
-    return { partyId: party.id as string, consentRecorded };
+    return { partyId, consentRecorded };
     },
     [programme],
   );
@@ -177,6 +211,7 @@ export function SessionProvider(props: { children: ReactNode }) {
   const logout = useCallback(() => {
     setSession(null);
     store(null);
+    writePendingConsent(null);
     setMe(null);
     setMeLabel(null);
     setFlash(null);

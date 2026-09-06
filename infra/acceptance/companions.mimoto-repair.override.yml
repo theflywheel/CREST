@@ -1,0 +1,15 @@
+# Optional overlay for the repaired Mimoto keystore volume.
+#
+# The original crest_mimotocerts volume is retained for rollback.  This file
+# expects the operator to create crest_mimotocerts-repaired by copying the
+# original volume and restoring the aliases recorded in the Mimoto database.
+# It does not contain key material and cannot create that volume implicitly.
+services:
+  mimoto:
+    volumes:
+      - mimotocerts-repaired:/home/mosip/certs
+
+volumes:
+  mimotocerts-repaired:
+    name: crest_mimotocerts-repaired
+    external: true

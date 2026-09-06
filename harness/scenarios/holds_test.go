@@ -42,6 +42,7 @@ type holdResolution struct {
 	Merged             []string  `json:"merged"`
 	ConfirmedBy        string    `json:"confirmedBy"`
 	ConfirmationMethod string    `json:"confirmationMethod"`
+	ResponseBody       string    `json:"-"`
 }
 
 // sharedNumber is a phone number unique to this run.
@@ -67,7 +68,7 @@ func (w *world) twoPartiesOneNumber(t *testing.T, phone string) (string, string,
 	ids := make([]string, 0, 2)
 	for _, name := range []string{"Shared Handset A ", "Shared Handset B "} {
 		var created schema.Party
-		if err := w.Parties.Post(w.ctx, "/v1/parties", schema.Party{
+		if err := w.Parties.As(w.login(t, fixtures.OrgID)).Post(w.ctx, "/v1/parties", schema.Party{
 			Kind:        schema.PartyKindPerson,
 			DisplayName: name + runID,
 			ContactRoutes: []schema.PartyContactRoutesItem{
@@ -106,7 +107,8 @@ func (w *world) resolveHold(t *testing.T, holdID string, body map[string]any) (i
 		resolver = fixtures.CustodianID
 	}
 	code, raw, err := w.Parties.As(w.login(t, resolver)).
-		Status(w.ctx, http.MethodPost, "/v1/holds/"+holdID+"/resolve", body)
+		Status(w.ctx, http.MethodPost, "/v1/holds/"+holdID+"/resolve?contextId="+
+			url.QueryEscape(fixtures.ProjectID), body)
 	if err != nil {
 		t.Fatalf("resolve hold: %v", err)
 	}
@@ -115,6 +117,7 @@ func (w *world) resolveHold(t *testing.T, holdID string, body map[string]any) (i
 			t.Fatalf("read the resolution: %v (%s)", err, raw)
 		}
 	}
+	out.ResponseBody = string(raw)
 	return code, out
 }
 
@@ -127,7 +130,7 @@ func TestAMergeWithoutTheWorkersConfirmationCannotBeExpressed(t *testing.T) {
 	code, _ := w.resolveHold(t, hold.ID, map[string]any{
 		"decision": "merge", "partyId": a, "resolvedByPartyId": fixtures.CustodianID,
 	})
-	if code != http.StatusBadRequest {
+	if code != http.StatusConflict {
 		t.Fatalf("an unconfirmed merge was accepted with %d", code)
 	}
 
@@ -136,7 +139,7 @@ func TestAMergeWithoutTheWorkersConfirmationCannotBeExpressed(t *testing.T) {
 	var metrics struct {
 		MergesWithoutConfirmation int `json:"mergesWithoutConfirmation"`
 	}
-	if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/holds/metrics", &metrics); err != nil {
+	if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/holds/metrics?contextId="+url.QueryEscape(fixtures.ProjectID), &metrics); err != nil {
 		t.Fatal(err)
 	}
 	if metrics.MergesWithoutConfirmation != 0 {
@@ -151,12 +154,21 @@ func TestAConfirmedMergeMakesTheIdentifierResolveToTheSurvivor(t *testing.T) {
 	phone := sharedNumber(2)
 	survivor, absorbed, hold := w.twoPartiesOneNumber(t, phone)
 
+	// Worker confirmation is a separate authenticated operation. Body fields on
+	// the custodian's resolve request cannot stand in for the worker's caller.
+	confirmCode, _, confirmErr := w.Parties.As(w.login(t, survivor)).Status(w.ctx, http.MethodPost,
+		"/v1/holds/"+hold.ID+"/confirm", map[string]any{
+			"survivorPartyId": survivor, "confirmationMethod": "voice",
+		})
+	if confirmErr != nil || confirmCode != http.StatusOK {
+		t.Fatalf("worker hold confirmation: %d %v", confirmCode, confirmErr)
+	}
+
 	code, res := w.resolveHold(t, hold.ID, map[string]any{
 		"decision": "merge", "partyId": survivor, "resolvedByPartyId": fixtures.CustodianID,
-		"confirmedByPartyId": survivor, "confirmationMethod": "voice",
 	})
 	if code != http.StatusOK {
-		t.Fatalf("a confirmed merge was refused with %d", code)
+		t.Fatalf("a confirmed merge was refused with %d: %s", code, res.ResponseBody)
 	}
 	if len(res.Merged) != 1 || res.Merged[0] != absorbed {
 		t.Fatalf("merged %v, want [%s]", res.Merged, absorbed)
@@ -200,7 +212,7 @@ func TestTwoPeopleSharingAPhoneAreNotMerged(t *testing.T) {
 		"decision": "distinct", "partyId": owner, "resolvedByPartyId": fixtures.CustodianID,
 	})
 	if code != http.StatusOK {
-		t.Fatalf("a distinct decision was refused with %d", code)
+		t.Fatalf("a distinct decision was refused with %d: %s", code, res.ResponseBody)
 	}
 	if len(res.Merged) != 0 {
 		t.Errorf("a distinct decision merged %v", res.Merged)
@@ -239,7 +251,7 @@ func TestTheHoldQueueDoesNotHandOutTheCollidingIdentifier(t *testing.T) {
 	phone := sharedNumber(4)
 	w.twoPartiesOneNumber(t, phone)
 
-	code, raw, err := w.Parties.As(w.login(t, fixtures.CustodianID)).Status(w.ctx, http.MethodGet, "/v1/holds", nil)
+	code, raw, err := w.Parties.As(w.login(t, fixtures.CustodianID)).Status(w.ctx, http.MethodGet, "/v1/holds?contextId="+url.QueryEscape(fixtures.ProjectID), nil)
 	if err != nil || code != http.StatusOK {
 		t.Fatalf("list holds: %d %v", code, err)
 	}

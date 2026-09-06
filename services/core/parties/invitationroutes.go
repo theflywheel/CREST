@@ -2,6 +2,7 @@ package parties
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -262,7 +263,7 @@ func (h *g2Handlers) decideInvitation(w http.ResponseWriter, r *http.Request) {
 				},
 				Functions:         next.Functions,
 				Period:            next.Period,
-				ApprovedByPartyID: cmpOr(actor, next.PartyID),
+				ApprovedByPartyID: identity.From(r.Context()).PartyID,
 				ApprovedAt:        now,
 				State:             schema.AuthorizationStateACTIVE,
 			}
@@ -273,6 +274,13 @@ func (h *g2Handlers) decideInvitation(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 			a.AuthorityPartyID = c.OwnerPartyID
+			ownerTerms, termsErr := acceptedTerms(r.Context(), tx, c.OwnerPartyID)
+			if termsErr != nil {
+				return termsErr
+			}
+			if missing := narrowerThanTerms(a.Functions, ownerTerms.Permissions); len(missing) > 0 {
+				return fmt.Errorf("invitation exceeds authority terms: %s", strings.Join(missing, ", "))
+			}
 			if err := schema.Validate(schema.IDAuthorization, a); err != nil {
 				return err
 			}

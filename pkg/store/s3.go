@@ -88,12 +88,30 @@ func NewS3(cfg S3Config) (*S3, error) {
 	}, nil
 }
 
-// EnsureBucket creates the bucket if it is not there.
+// CheckBucket verifies that the configured bucket is available.
 //
 // Not on the Blobs interface: creating a container is an S3 concept, and a
 // deployment pointed at a national cloud will more likely have had its bucket
 // provisioned with a retention and lifecycle policy attached by someone whose
 // job that is. This exists so a local stack and a test can start from nothing.
+func (s *S3) CheckBucket(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, s.cfg.Endpoint+"/"+s.cfg.Bucket, nil)
+	if err != nil {
+		return err
+	}
+	s.sign(req, nil)
+	resp, err := s.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("object store bucket unavailable: status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// EnsureBucket creates the bucket if it is not there.
 func (s *S3) EnsureBucket(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.cfg.Endpoint+"/"+s.cfg.Bucket, nil)
 	if err != nil {
@@ -119,14 +137,30 @@ func (s *S3) EnsureBucket(ctx context.Context) error {
 // Put stores an artefact under a minted key. See Blobs.Put — the caller names
 // a kind and never a key, which is what stops an object key carrying identity.
 func (s *S3) Put(ctx context.Context, kind string, r io.Reader, contentType string) (Blob, error) {
-	body, digest, err := readCapped(r, s.cfg.MaxBytes)
-	if err != nil {
-		return Blob{}, err
-	}
 	key, err := mintKey(kind)
 	if err != nil {
 		return Blob{}, err
 	}
+	return s.PutPrepared(ctx, key, r, contentType)
+}
+
+// PutPrepared stores an artefact under a previously prepared opaque key.
+func (s *S3) PutPrepared(ctx context.Context, key string, r io.Reader, contentType string) (Blob, error) {
+	parts := strings.Split(key, "/")
+	if len(parts) != 2 || len(parts[1]) != 32 {
+		return Blob{}, fmt.Errorf("invalid prepared blob key")
+	}
+	if _, err := hex.DecodeString(parts[1]); err != nil {
+		return Blob{}, fmt.Errorf("invalid prepared blob key")
+	}
+	if _, err := mintKey(parts[0]); err != nil {
+		return Blob{}, err
+	}
+	body, digest, err := readCapped(r, s.cfg.MaxBytes)
+	if err != nil {
+		return Blob{}, err
+	}
+
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}

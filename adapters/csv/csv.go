@@ -44,6 +44,13 @@ const (
 // Adapter is the batch-file adapter.
 type Adapter struct{}
 
+// Plugin is the statically linked catalogue entry used by evidence service
+// wiring. Adding a future adapter means adding its package plugin there; the
+// intake route never constructs an adapter from request input.
+func Plugin() adapters.Plugin {
+	return adapters.Plugin{Ref: Version, New: func() adapters.Adapter { return Adapter{} }}
+}
+
 // Ref returns the adapter reference recorded in provenance.
 func (Adapter) Ref() string { return Version }
 
@@ -51,6 +58,9 @@ func (Adapter) Ref() string { return Version }
 //
 // A row is either a record or a rejection; nothing is dropped in between.
 func (a Adapter) Parse(r io.Reader, src adapters.Source, receivedAt time.Time) ([]adapters.Row, []adapters.Rejection, error) {
+	if !src.ValidProvenance() {
+		return nil, nil, fmt.Errorf("source provenance is incomplete or unsupported; use registered deployment configuration")
+	}
 	reader := csv.NewReader(r)
 	reader.TrimLeadingSpace = true
 	// Variable field counts are a malformed file, not a shape to accommodate:
@@ -174,6 +184,11 @@ func (a Adapter) row(header []string, index map[string]int, record []string,
 	}
 	for i, name := range header {
 		key := strings.TrimSpace(strings.ToLower(name))
+		if sensitiveField(key) && !known[key] {
+			if i < len(record) && strings.TrimSpace(record[i]) != "" {
+				return adapters.Row{}, fmt.Sprintf("enrichment field %q contains personal or precise-location data", key)
+			}
+		}
 		// A column the mapping consumed is not an extra. Keeping it would file
 		// the same fact twice — once interpreted, once raw — and a tier map
 		// reading the raw copy would be reading around the adapter.
@@ -181,6 +196,9 @@ func (a Adapter) row(header []string, index map[string]int, record []string,
 			continue
 		}
 		if v := strings.TrimSpace(record[i]); v != "" {
+			if sensitiveField(key) {
+				return adapters.Row{}, fmt.Sprintf("enrichment field %q contains personal or precise-location data", key)
+			}
 			// Filed under the deployment's name for it where one is
 			// configured. A definition's tier map names the fields it
 			// requires, and it names them in the deployment's vocabulary.
@@ -202,6 +220,7 @@ func (a Adapter) row(header []string, index map[string]int, record []string,
 		// the whole point of §8's rule.
 		Provenance: schema.Provenance{
 			SourceClass:    src.Class,
+			SystemRef:      &src.SystemRef,
 			CaptureMethod:  src.CaptureMethod,
 			SourceExposure: src.Exposure,
 			AdapterRef:     a.Ref(),
@@ -209,6 +228,9 @@ func (a Adapter) row(header []string, index map[string]int, record []string,
 		},
 	}
 	if g := get(colGeography); g != "" {
+		if looksLikePreciseLocation(g) {
+			return adapters.Row{}, "geography contains a precise location; only a coarse geography may be stored"
+		}
 		rec.Geography = &g
 	}
 	if r := get(colRecordRef); r != "" {
@@ -218,6 +240,36 @@ func (a Adapter) row(header []string, index map[string]int, record []string,
 		rec.Enrichment = enrichment
 	}
 	return adapters.Row{Record: rec, Ref: ref}, ""
+}
+
+// Sensitive values are rejected before they can enter a canonical record. A
+// source may carry these fields for its own purposes, but the evidence ledger
+// has no reason to retain them.
+func sensitiveField(name string) bool {
+	n := strings.NewReplacer("_", "", "-", "", " ", "", ".", "").Replace(strings.ToLower(name))
+	switch n {
+	case "lat", "latitude", "lon", "lng", "longitude", "gps", "geolocation", "coordinates",
+		"name", "fullname", "firstname", "lastname", "email", "emailaddress", "address", "streetaddress",
+		"workername", "legalname", "nationalid", "nationalidentifier", "governmentid", "phone", "phonenumber", "mobile", "contactnumber":
+		return true
+	default:
+		return strings.HasSuffix(n, "email") || strings.HasSuffix(n, "phone") || strings.HasSuffix(n, "address") ||
+			strings.HasSuffix(n, "latitude") || strings.HasSuffix(n, "longitude") ||
+			strings.Contains(n, "coordinate") || strings.Contains(n, "geolocation")
+	}
+}
+
+func looksLikePreciseLocation(value string) bool {
+	parts := strings.Split(strings.TrimSpace(value), ",")
+	if len(parts) != 2 {
+		return false
+	}
+	for _, part := range parts {
+		if _, err := strconv.ParseFloat(strings.TrimSpace(part), 64); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // parseTime accepts a date or a full timestamp. Source systems export both, and

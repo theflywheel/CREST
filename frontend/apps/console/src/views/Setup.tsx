@@ -775,10 +775,11 @@ export function Workers() {
   const s = useConsole();
   const [err, setErr] = useState<string | null>(null);
   const [gen, setGen] = useState(0);
+  const [sourceForm, setSourceForm] = useState({ systemRef: "", sourceClass: "", captureMethod: "", sourceExposure: "", expectedEvery: "" });
   const r = useLoad(async () => {
     const [comp, src] = await Promise.all([
       api.get("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/composition`).catch(() => ({ choices: [] })),
-      api.get("evidence", "/v1/sources").catch(() => ({ sources: [] })),
+      api.get("evidence", "/v1/sources?contextId=" + encodeURIComponent(s.projectId)).catch(() => ({ sources: [] })),
     ]);
     const rec = ((comp.choices || []) as Array<{ kind?: string; payload?: { value?: unknown } }>).find(
       (c) => (c.kind || "").replace(/^composition:/, "") === "worker-sourcing",
@@ -792,6 +793,29 @@ export function Workers() {
     setErr(null);
     try {
       await api.put("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/composition/worker-sourcing`, { value: v });
+      setGen((g) => g + 1);
+    } catch (e) {
+      setErr(errText(e));
+    }
+  };
+  const registerSource = async () => {
+    setErr(null);
+    try {
+      if (!sourceForm.systemRef.trim() || !sourceForm.sourceClass || !sourceForm.captureMethod || !sourceForm.sourceExposure || !sourceForm.expectedEvery.trim()) {
+        throw new Error("source identity, approved provenance, and cadence are required");
+      }
+      await api.post("evidence", "/v1/sources", {
+        adapterRef: "csv-batch@1",
+        contextId: s.projectId,
+        systemRef: sourceForm.systemRef.trim(),
+        sourceClass: sourceForm.sourceClass,
+        captureMethod: sourceForm.captureMethod,
+        sourceExposure: sourceForm.sourceExposure,
+        expectedEvery: sourceForm.expectedEvery.trim(),
+        ownerPartyId: s.me!.partyId,
+        mapping: {},
+      });
+      setSourceForm({ systemRef: "", sourceClass: "", captureMethod: "", sourceExposure: "", expectedEvery: "" });
       setGen((g) => g + 1);
     } catch (e) {
       setErr(errText(e));
@@ -859,6 +883,17 @@ export function Workers() {
                 />
               )}
             </RefField>
+            <CardTitled t="Register a source feed">
+              <p className="muted">The operator declares the source identity and approved provenance once. Evidence uploads can then select this registered source; the upload cannot invent these facts.</p>
+              <div className="form-grid">
+                <RefField label="System reference"><input value={sourceForm.systemRef} onChange={(e) => setSourceForm({ ...sourceForm, systemRef: e.target.value })} placeholder="dhis2-riverside" /></RefField>
+                <RefField label="Source class"><select value={sourceForm.sourceClass} onChange={(e) => setSourceForm({ ...sourceForm, sourceClass: e.target.value })}><option value="">Choose…</option>{["national-system", "institutional-system", "programme-system", "supervised-capture", "self-reported"].map((v) => <option key={v} value={v}>{v}</option>)}</select></RefField>
+                <RefField label="Capture method"><select value={sourceForm.captureMethod} onChange={(e) => setSourceForm({ ...sourceForm, captureMethod: e.target.value })}><option value="">Choose…</option>{["system-of-record", "digital-capture", "supervised-manual", "unsupervised-manual"].map((v) => <option key={v} value={v}>{v}</option>)}</select></RefField>
+                <RefField label="Source exposure"><select value={sourceForm.sourceExposure} onChange={(e) => setSourceForm({ ...sourceForm, sourceExposure: e.target.value })}><option value="">Choose…</option>{["push-api", "consent-pull", "signed-batch", "supervised-upload"].map((v) => <option key={v} value={v}>{v}</option>)}</select></RefField>
+                <RefField label="Expected cadence" hint="A positive duration, such as 24h"><input value={sourceForm.expectedEvery} onChange={(e) => setSourceForm({ ...sourceForm, expectedEvery: e.target.value })} placeholder="24h" /></RefField>
+              </div>
+              <button className="btn dominant" type="button" onClick={registerSource}>Register approved source</button>
+            </CardTitled>
             <Callout kind="teal">
               Importing does not create identities. It links an existing identifier to a Crest identity, so a worker
               already known to the county is not enrolled a second time under a new number.
@@ -924,7 +959,7 @@ export function Intake() {
   const [err, setErr] = useState<string | null>(null);
   const r = useLoad(async () => {
     const [out, comp] = await Promise.all([
-      api.get("evidence", "/v1/sources").catch(() => ({ sources: [] })),
+      api.get("evidence", "/v1/sources?contextId=" + encodeURIComponent(s.projectId)).catch(() => ({ sources: [] })),
       api.get("parties", `/v1/projects/${encodeURIComponent(s.projectId)}/composition`).catch(() => ({ choices: [] })),
     ]);
     const rec = ((comp.choices || []) as Array<{ kind?: string; payload?: { value?: unknown } }>).find(
@@ -1037,6 +1072,11 @@ export function SpreadsheetArrived() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [sourceSystemRef, setSourceSystemRef] = useState("");
+  const sourceRead = useLoad(async () => api.get("evidence", "/v1/sources?contextId=" + encodeURIComponent(s.projectId)).catch(() => ({ sources: [] })), [s.projectId]);
+  const sources = ((sourceRead.data && sourceRead.data.sources) || []) as Array<{
+    systemRef?: string; adapterRef?: string; sourceClass?: string; captureMethod?: string; sourceExposure?: string;
+  }>;
   const [result, setResult] = useState<{
     batch?: { id?: string };
     claimIds?: string[];
@@ -1049,14 +1089,16 @@ export function SpreadsheetArrived() {
     setErr(null);
     setBusy(true);
     try {
+      const source = sources.find((x) => x.systemRef === sourceSystemRef);
+      const def = s.definitions.find((x) => x.id === s.definitionId);
+      if (!def?.version) throw new Error("choose an active definition version before uploading evidence");
+      if (!source?.systemRef) throw new Error("choose a registered source before uploading evidence");
       const qs = new URLSearchParams({
         contextId: s.projectId,
         definitionId: s.definitionId,
+        definitionVersion: String(def.version),
         submittedBy: s.me!.partyId,
-        sourceClass: "programme-system",
-        captureMethod: "unsupervised-manual",
-        sourceExposure: "supervised-upload",
-        systemRef: fileName || "console-upload",
+        systemRef: source.systemRef,
       });
       setResult(await api.postRaw("evidence", "/v1/batches?" + qs.toString(), text, "text/csv"));
     } catch (e) {
@@ -1084,6 +1126,19 @@ export function SpreadsheetArrived() {
             frame then accepts files against it.
           </Callout>
         ) : null}
+        <div className="form-grid" style={{ marginBottom: 12 }}>
+          <RefField label="Registered source" hint="The source's approved provenance is registered by its operator; this upload chooses that identity.">
+            <select value={sourceSystemRef} onChange={(e) => setSourceSystemRef(e.target.value)} required>
+              <option value="">Choose a registered source…</option>
+              {sources.map((source) => (
+                <option key={source.systemRef} value={source.systemRef}>
+                  {source.systemRef} · {source.sourceClass || "approved class"} · {source.captureMethod || "approved capture"} · {source.sourceExposure || "approved exposure"}
+                </option>
+              ))}
+            </select>
+          </RefField>
+          {s.definitionId ? <RefField label="Definition version" value={s.definitions.find((d) => d.id === s.definitionId)?.version ? "v" + s.definitions.find((d) => d.id === s.definitionId)?.version : "selected definition has no version"} /> : null}
+        </div>
         <div
           style={{ padding: "12px 14px", border: "1px dashed var(--line, #DDD9D3)", borderRadius: 8, marginBottom: 12, display: "flex", gap: 12, alignItems: "center" }}
         >

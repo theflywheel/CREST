@@ -25,6 +25,15 @@ export async function loadCreds(me: string): Promise<any[]> {
   const out = await soft(api.get("verification", `/v1/parties/${encodeURIComponent(me)}/credentials`));
   return (out && out.credentials) || [];
 }
+export async function loadCredsStatus(me: string): Promise<{ credentials: any[]; unavailable: boolean }> {
+  if (!me || !navigator.onLine) return { credentials: [], unavailable: true };
+  try {
+    const out = await api.get("verification", `/v1/parties/${encodeURIComponent(me)}/credentials`);
+    return { credentials: (out && out.credentials) || [], unavailable: false };
+  } catch {
+    return { credentials: [], unavailable: true };
+  }
+}
 export async function loadWindows(me: string): Promise<any[]> {
   const out = await soft(api.get("confirmation", `/v1/windows?partyId=${encodeURIComponent(me)}`));
   return (out && out.windows) || [];

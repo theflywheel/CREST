@@ -38,9 +38,10 @@ func New(name, addr string, mux *http.ServeMux, clk clock.Clock, log *slog.Logge
 	mw ...Middleware) *Server {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"service": name,
-			"status":  "ok",
-			"time":    clk.Now(),
+			"service":  name,
+			"revision": buildRevision(),
+			"status":   "ok",
+			"time":     clk.Now(),
 		})
 	})
 	// readyz is separate on purpose: a service can be alive but not yet able to

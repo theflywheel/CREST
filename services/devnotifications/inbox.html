@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CREST development notification inbox</title>
+    <style>
+      body { font: 16px system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
+      label { display: block; margin: .75rem 0 .25rem; }
+      input { box-sizing: border-box; max-width: 32rem; width: 100%; padding: .55rem; }
+      button { margin-top: 1rem; padding: .55rem .8rem; }
+      article { border: 1px solid #ccc; margin: 1rem 0; padding: 1rem; white-space: pre-wrap; }
+      .muted { color: #666; }
+      .error { color: #a00; }
+    </style>
+  </head>
+  <body>
+    <h1>Development notification inbox</h1>
+    <p class="muted">Viewing a message does not acknowledge the worker or mark delivery reach.</p>
+    <form id="load">
+      <label for="token">Inbox token</label>
+      <input id="token" type="password" autocomplete="off" required>
+      <label for="to">Recipient (optional)</label>
+      <input id="to" type="text" autocomplete="off">
+      <button type="submit">Load messages</button>
+    </form>
+    <p id="status" role="status"></p>
+    <main id="messages"></main>
+    <script>
+      const form = document.getElementById("load");
+      const status = document.getElementById("status");
+      const messages = document.getElementById("messages");
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        status.className = "";
+        status.textContent = "Loading…";
+        messages.replaceChildren();
+        const token = document.getElementById("token").value;
+        const to = document.getElementById("to").value;
+        try {
+          const response = await fetch("/v1/inbox?to=" + encodeURIComponent(to), {
+            headers: { Authorization: "Bearer " + token }
+          });
+          if (!response.ok) throw new Error("Inbox request failed (" + response.status + ")");
+          const result = await response.json();
+          for (const message of result.messages || []) {
+            const article = document.createElement("article");
+            const heading = document.createElement("h2");
+            heading.textContent = message.subject;
+            const recipient = document.createElement("div");
+            recipient.textContent = "To: " + message.to;
+            const body = document.createElement("p");
+            body.textContent = message.body;
+            article.append(heading, recipient, body);
+            if (/^https?:\/\//i.test(message.acknowledgmentUrl || "")) {
+              const link = document.createElement("a");
+              link.href = message.acknowledgmentUrl;
+              link.target = "_blank";
+              link.rel = "noopener";
+              link.textContent = "Open worker review link";
+              article.append(link);
+            }
+            messages.append(article);
+          }
+          status.textContent = result.count + " message(s)";
+        } catch (error) {
+          status.className = "error";
+          status.textContent = String(error.message || error);
+        }
+      });
+    </script>
+  </body>
+</html>

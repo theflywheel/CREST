@@ -19,12 +19,18 @@ type Instruction struct {
 	// ContextID is which project's mechanism governs disbursement (f2_9).
 	// Empty on instructions released before it was recorded; those predate
 	// the mechanism gate and are not gated by it.
-	ContextID   string    `json:"contextId,omitempty"`
-	AmountMinor int64     `json:"amountMinor"`
-	Currency    string    `json:"currency"`
-	ReleasedBy  string    `json:"releasedBy"`
-	ReleasedAt  time.Time `json:"releasedAt"`
-	State       string    `json:"state"`
+	ContextID   string `json:"contextId,omitempty"`
+	AmountMinor int64  `json:"amountMinor"`
+	Currency    string `json:"currency"`
+	// RateRecordID, RateVersion and PricingAt are the immutable pricing audit
+	// trail. A retry must carry the same price and provenance even if a newer
+	// rate is now in force.
+	RateRecordID string     `json:"rateRecordId,omitempty"`
+	RateVersion  int        `json:"rateVersion,omitempty"`
+	PricingAt    *time.Time `json:"pricingAt,omitempty"`
+	ReleasedBy   string     `json:"releasedBy"`
+	ReleasedAt   time.Time  `json:"releasedAt"`
+	State        string     `json:"state"`
 
 	// Held is present exactly when State is HELD. A worker must never see a
 	// missing payment with no explanation attached (W10), so this carries the
@@ -91,19 +97,51 @@ func getInstructionByClaim(ctx context.Context, q store.Querier, claimID string)
 	return in, json.Unmarshal(doc, &in)
 }
 
+func getInstructionByID(ctx context.Context, q store.Querier, instructionID string, forUpdate bool) (Instruction, error) {
+	query := `SELECT doc FROM instructions WHERE id = $1`
+	if forUpdate {
+		query += ` FOR UPDATE`
+	}
+	var doc []byte
+	if err := q.QueryRow(ctx, query, instructionID).Scan(&doc); err != nil {
+		return Instruction{}, err
+	}
+	var in Instruction
+	return in, json.Unmarshal(doc, &in)
+}
+
+func heldInstructions(ctx context.Context, q store.Querier) ([]Instruction, error) {
+	rows, err := q.Query(ctx, `
+		SELECT doc FROM instructions WHERE state = 'HELD'
+		ORDER BY created_at, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.Collect(rows, func(r store.Row) (Instruction, error) {
+		var doc []byte
+		if err := r.Scan(&doc); err != nil {
+			return Instruction{}, err
+		}
+		var in Instruction
+		return in, json.Unmarshal(doc, &in)
+	})
+}
+
 // listInstructions returns a worker's payment instructions, across any merge
 // (#100). See listClaims in the evidence service for why this takes a list:
 // instructions raised before a merge still name the absorbed party, and a
 // worker whose duplicate was closed must not find their payments split across
 // two records neither of which is complete.
-func listInstructions(ctx context.Context, q store.Querier, partyIDs []string, state string) ([]Instruction, error) {
+func listInstructions(ctx context.Context, q store.Querier, partyIDs []string, state, contextID string) ([]Instruction, error) {
 	rows, err := q.Query(ctx, `
 		SELECT doc FROM instructions
 		-- COALESCE for the same reason as listClaims: a NULL array is not an
 		-- empty one, and cardinality(NULL) is NULL.
 		WHERE (COALESCE(cardinality($1::text[]), 0) = 0 OR party_id = ANY($1))
 		  AND ($2 = '' OR state = $2)
-		ORDER BY created_at, id`, partyIDs, state)
+		  AND ($3 = '' OR context_id = $3)
+		ORDER BY created_at, id`, partyIDs, state, contextID)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +193,7 @@ type gap struct {
 	State         string      `json:"state"`
 }
 
-func reconcile(ctx context.Context, q store.Querier) ([]gap, error) {
+func reconcile(ctx context.Context, q store.Querier, contextID string) ([]gap, error) {
 	rows, err := q.Query(ctx, `
 		SELECT i.id, i.claim_id, i.party_id, i.amount_minor, i.currency,
 		       COALESCE(c.state, CASE WHEN i.state = 'HELD' THEN 'HELD' ELSE 'NOT_SENT' END),
@@ -165,7 +203,8 @@ func reconcile(ctx context.Context, q store.Querier) ([]gap, error) {
 		FROM instructions i
 		LEFT JOIN compensations c ON c.instruction_id = i.id
 		WHERE c.state IS DISTINCT FROM 'CONFIRMED'
-		ORDER BY i.created_at`)
+		  AND ($1 = '' OR i.context_id = $1)
+		ORDER BY i.created_at`, contextID)
 	if err != nil {
 		return nil, err
 	}

@@ -5,9 +5,29 @@
 # The one thing NOT baked is the OIDC keystore — that is a private key, and a
 # key in an image layer is a key anyone who can pull the image has.
 ARG MIMOTO_IMAGE=mosipid/mimoto:0.19.2
+
+# Rebuild the exact upstream source revision so structured period/provenance
+# claims survive PDF display mapping. The source commit is pinned and checked
+# before Maven runs; this avoids mutating a released binary in place.
+FROM maven:3.9-eclipse-temurin-21 AS mimoto-build
+ARG MIMOTO_SOURCE_COMMIT=e1fedbb9dce6a8c3dd9b5b8e75423d636a0704cf
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --filter=blob:none https://github.com/mosip/mimoto.git /src/mimoto \
+    && cd /src/mimoto \
+    && git checkout --detach "${MIMOTO_SOURCE_COMMIT}" \
+    && test "$(git rev-parse HEAD)" = "${MIMOTO_SOURCE_COMMIT}"
+COPY infra/mimoto/patches/mimoto-0.19.2-pdf-structured-values.patch /tmp/mimoto-pdf.patch
+RUN --mount=type=cache,id=crest-mimoto-maven,target=/root/.m2 cd /src/mimoto \
+    && git apply --check /tmp/mimoto-pdf.patch \
+    && git apply /tmp/mimoto-pdf.patch \
+    && mvn -q -B package
+
 FROM ${MIMOTO_IMAGE}
 
 USER root
+COPY --from=mimoto-build /src/mimoto/target/mimoto-0.19.2.jar /home/mosip/mimoto.jar
 COPY infra/mimoto/config/mimoto-default.properties      /home/mosip/mimoto-default.properties
 COPY infra/mimoto/config/mimoto-bootstrap.properties    /home/mosip/mimoto-bootstrap.properties
 COPY infra/mimoto/config/mimoto-issuers-config.json     /home/mosip/mimoto-issuers-config.json

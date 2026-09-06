@@ -34,11 +34,12 @@ func TestScheduledSweepPaysWithNobodyAsking(t *testing.T) {
 	w := setup(t)
 	phone, _ := harness.PhoneOf(w.w, fixtures.WorkerBID)
 	result := w.submit(t, batch(row(phone, 3, "HH-SWEEP")))
-	claimID := result.ClaimIDs[0]
+	claimID := onlyClaim(t, result)
 	eventually(t, "the window opens", 15*time.Second, func() error {
 		_, err := w.window(claimID)
 		return err
 	})
+	w.acknowledgeClaim(t, claimID)
 
 	if err := w.Advance(w.ctx, window+time.Minute); err != nil {
 		t.Fatal(err)

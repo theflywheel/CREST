@@ -12,84 +12,149 @@
     "did": {
       "type": "string",
       "pattern": "^did:crest:party:[0-9A-HJKMNP-TV-Z]{26}$",
-      "description": "A Party's deployment-local, pairwise DID. 'party', not 'worker': worker is a role a Party holds (§2), and an identifier that names a role cannot be reused when the same person is a supervisor."
+      "description": "A Party's deployment-local, pairwise DID. 'party', not 'worker': worker is a role a Party holds (\u00a72), and an identifier that names a role cannot be reused when the same person is a supervisor."
     },
-    "timestamp": { "type": "string", "format": "date-time" },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
     "period": {
       "type": "object",
       "properties": {
-        "start": { "$ref": "#/$defs/timestamp" },
-        "end": { "$ref": "#/$defs/timestamp" }
+        "start": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "end": {
+          "$ref": "#/$defs/timestamp"
+        }
       },
-      "required": ["start"],
+      "required": [
+        "start"
+      ],
       "additionalProperties": false
     },
     "versionedRef": {
       "type": "object",
-      "description": "Everything references by versioned identifier (§2). A bare id is a reference that changes meaning underneath the thing holding it.",
+      "description": "Everything references by versioned identifier (\u00a72). A bare id is a reference that changes meaning underneath the thing holding it.",
       "properties": {
-        "id": { "$ref": "#/$defs/id" },
-        "version": { "type": "integer", "minimum": 1 }
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
       },
-      "required": ["id", "version"],
+      "required": [
+        "id",
+        "version"
+      ],
       "additionalProperties": false
     },
     "outcome": {
       "type": "object",
       "description": "A quantity of a defined activity. The unit comes from the definition, never from the source system.",
       "properties": {
-        "value": { "type": "number", "minimum": 0 },
-        "unit": { "type": "string", "minLength": 1 }
+        "value": {
+          "type": "number",
+          "minimum": 0
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        }
       },
-      "required": ["value", "unit"],
+      "required": [
+        "value",
+        "unit"
+      ],
       "additionalProperties": false
     },
     "sourceClass": {
       "type": "string",
-      "enum": ["national-system", "institutional-system", "programme-system", "supervised-capture", "self-reported"],
-      "description": "What kind of system the record came from. Adapter-attached, never source-asserted (§8)."
+      "enum": [
+        "national-system",
+        "institutional-system",
+        "programme-system",
+        "supervised-capture",
+        "self-reported"
+      ],
+      "description": "What kind of system the record came from. Adapter-attached, never source-asserted (\u00a78)."
     },
     "captureMethod": {
       "type": "string",
-      "enum": ["system-of-record", "digital-capture", "supervised-manual", "unsupervised-manual"],
+      "enum": [
+        "system-of-record",
+        "digital-capture",
+        "supervised-manual",
+        "unsupervised-manual"
+      ],
       "description": "How the fact was captured at source."
     },
     "provenance": {
       "type": "object",
-      "description": "Attached by the adapter and validated by the pipeline. Whatever the source asserts about its own trustworthiness is ignored (§8). These are the facts the strength function reads; the tier itself is never stored (§6).",
+      "description": "Attached by the adapter and validated by the pipeline. Whatever the source asserts about its own trustworthiness is ignored (\u00a78). These are the facts the strength function reads; the tier itself is never stored (\u00a76).",
       "properties": {
-        "sourceClass": { "$ref": "#/$defs/sourceClass" },
-        "captureMethod": { "$ref": "#/$defs/captureMethod" },
+        "sourceClass": {
+          "$ref": "#/$defs/sourceClass"
+        },
+        "captureMethod": {
+          "$ref": "#/$defs/captureMethod"
+        },
         "adapterRef": {
           "type": "string",
           "minLength": 1,
           "description": "Which adapter version translated the record. Resolvable in the adapter registry, so a verifier can walk evidence back to a known translator."
         },
-        "receivedAt": { "$ref": "#/$defs/timestamp" },
+        "receivedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
         "sourceRecordRef": {
           "type": "string",
           "description": "The source system's own identifier for the record. Opaque to CREST."
         },
-        "sourceExposure": { "$ref": "#/$defs/sourceExposure" }
+        "sourceExposure": {
+          "$ref": "#/$defs/sourceExposure"
+        },
+        "systemRef": {
+          "type": "string",
+          "minLength": 1
+        }
       },
-      "required": ["sourceClass", "captureMethod", "adapterRef", "receivedAt", "sourceExposure"],
+      "required": [
+        "sourceClass",
+        "captureMethod",
+        "adapterRef",
+        "receivedAt",
+        "sourceExposure"
+      ],
       "additionalProperties": false
     },
     "sourceExposure": {
       "type": "string",
-      "enum": ["push-api", "consent-pull", "signed-batch", "supervised-upload"],
-      "description": "The transport a record arrived by. Recorded, and deliberately not an input to strength (\u00a78) — an attester who could raise a tier by choosing how to send the file would have found a way to assert strength."
+      "enum": [
+        "push-api",
+        "consent-pull",
+        "signed-batch",
+        "supervised-upload"
+      ],
+      "description": "The transport a record arrived by. Recorded, and deliberately not an input to strength (\u00a78) \u2014 an attester who could raise a tier by choosing how to send the file would have found a way to assert strength."
     },
     "identityAssurance": {
       "type": "string",
-      "enum": ["IA-0", "IA-1", "IA-2", "IA-3"],
-      "description": "Derived from a Party's identity bindings, never asserted (§4.1). Present in a computed view; never a stored field on Party."
+      "enum": [
+        "IA-0",
+        "IA-1",
+        "IA-2",
+        "IA-3"
+      ],
+      "description": "Derived from a Party's identity bindings, never asserted (\u00a74.1). Present in a computed view; never a stored field on Party."
     },
     "tier": {
       "type": "integer",
       "minimum": 1,
       "maximum": 3,
-      "description": "Never stored. Computed by the strength function at presentation time (§6). Appears only in responses."
+      "description": "Never stored. Computed by the strength function at presentation time (\u00a76). Appears only in responses."
     }
   }
 }

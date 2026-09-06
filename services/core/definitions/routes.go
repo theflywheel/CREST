@@ -40,6 +40,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/definition-drafts/{id}/discard", dh.discard)
 	mux.HandleFunc("POST /v1/definition-drafts/{id}/validate", dh.validate)
 	mux.HandleFunc("POST /v1/definition-drafts/{id}/dry-run", dh.dryRun)
+	mux.HandleFunc("GET /v1/definition-drafts/{id}/template", dh.template)
 	mux.HandleFunc("POST /v1/definition-drafts/{id}/submit", dh.submit)
 }
 
@@ -67,22 +68,47 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 	if def.State == "" {
 		def.State = schema.DefinitionStateDRAFT
 	}
-	if def.State != schema.DefinitionStateDRAFT && def.RatifiedByPartyID == nil {
+	// POST is the low-level creation step. It can only create an unratified
+	// DRAFT; accepting RATIFIED or ACTIVE here would let a caller skip the
+	// authenticated ratification and publication acts below.
+	if def.State != schema.DefinitionStateDRAFT || def.RatifiedByPartyID != nil {
 		httpx.WriteError(w, http.StatusUnprocessableEntity, "unratified",
-			"a definition past DRAFT needs a ratifier; ratify it rather than declaring it approved")
+			"a definition starts in DRAFT; ratify and activate it through their lifecycle endpoints")
 		return
 	}
-	if def.RatifiedByPartyID != nil && *def.RatifiedByPartyID == def.AuthoredByPartyID {
-		httpx.WriteError(w, http.StatusConflict, "self_ratified", "%s", ErrSelfRatified)
+	if def.ContextID == nil || contextValue(*def.ContextID) == "" {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "no_context",
+			"a new definition must name the project whose authority governs it")
 		return
 	}
+	ctxID := contextValue(*def.ContextID)
+	def.ContextID = &ctxID
+	if def.TierSemantics == nil || *def.TierSemantics != schema.DefinitionTierSemanticsReferenceV1 {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "invalid_tier_semantics",
+			"new definitions must use the reference-v1 tier semantics")
+		return
+	}
+	if err := validateDefinitionSchemaRef(def.Faces.Platform.SchemaRef); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "unknown_schema_ref", "%s", err)
+		return
+	}
+	actor, ok := authorizeFunction(w, r, h.d, def.AuthoredByPartyID,
+		ctxID, FunctionDefinitionAuthor)
+	if !ok {
+		return
+	}
+	def.AuthoredByPartyID = actor
 	if err := schema.Validate(schema.IDDefinition, def); err != nil {
 		writeValidation(w, err)
 		return
 	}
 
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
-		return insertDefinition(r.Context(), tx, def)
+		if err := insertDefinition(r.Context(), tx, def); err != nil {
+			return err
+		}
+		return appendEvent(r.Context(), tx, def.ID, def.Version, eventCreated, actor,
+			def.CreatedAt, nil)
 	}); err != nil {
 		if errors.Is(err, ErrAlreadyExists) {
 			httpx.WriteError(w, http.StatusConflict, "already_exists", "%s", ErrAlreadyExists)
@@ -97,11 +123,27 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 // list answers which definitions exist, one entry per id — the version a
 // resolver would follow. Optional ?state= narrows; ?limit= caps (default 100).
 func (h *handlers) list(w http.ResponseWriter, r *http.Request) {
+	state := r.URL.Query().Get("state")
+	if state != "" && state != string(schema.DefinitionStateACTIVE) {
+		if _, ok := authorizeFunction(w, r, h.d, "", contextID(r),
+			FunctionDefinitionApprover); !ok {
+			return
+		}
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	defs, err := listDefinitions(r.Context(), h.d.DB.Q(), r.URL.Query().Get("state"), limit)
+	defs, err := listDefinitions(r.Context(), h.d.DB.Q(), state, limit)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list definitions", err)
 		return
+	}
+	if state != "" && state != string(schema.DefinitionStateACTIVE) {
+		scoped := make([]schema.Definition, 0, len(defs))
+		for _, def := range defs {
+			if definitionContext(r, def) == contextID(r) {
+				scoped = append(scoped, def)
+			}
+		}
+		defs = scoped
 	}
 	if defs == nil {
 		defs = []schema.Definition{}
@@ -175,6 +217,16 @@ func (h *handlers) publication(w http.ResponseWriter, r *http.Request) {
 		}
 		version = def.Version
 	}
+	if version != 0 && r.URL.Query().Get("version") != "" {
+		def, err := getDefinition(r.Context(), h.d.DB.Q(), r.PathValue("id"), version)
+		if err != nil {
+			httpx.NotFoundOr(w, h.d.Log, "definition version", err, store.ErrNotFound)
+			return
+		}
+		if !authorizeDefinitionRead(w, r, h.d, def) {
+			return
+		}
+	}
 	pub, err := publicationOf(r.Context(), h.d.DB.Q(), r.PathValue("id"), version)
 	if errors.Is(err, store.ErrNotFound) {
 		// Distinguished from "no such definition" on purpose: a version that
@@ -198,6 +250,11 @@ func (h *handlers) ratify(w http.ResponseWriter, r *http.Request) {
 		// judged acceptable to leave open. RATIFIED-with-pending is a real
 		// state, not a blocked one, and only the approver may declare it.
 		PendingFields []string `json:"pendingFields,omitempty"`
+		// Publish makes the reference's "Sign and publish" one service act:
+		// ratification, activation, both audit events and the durable outbox
+		// message either commit together or none of them do. Omitting it keeps
+		// the lower-level two-step API backwards compatible.
+		Publish bool `json:"publish,omitempty"`
 	}
 	if !httpx.ReadJSON(w, r, &body) {
 		return
@@ -206,9 +263,29 @@ func (h *handlers) ratify(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if body.RatifiedByPartyID == "" {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "no_ratifier",
+			"ratification must name the authenticated approver")
+		return
+	}
+	def, err := getDefinition(r.Context(), h.d.DB.Q(), r.PathValue("id"), version)
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "definition version", err, store.ErrNotFound)
+		return
+	}
+	if err := validateDefinitionSchemaRef(def.Faces.Platform.SchemaRef); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "unknown_schema_ref", "%s", err)
+		return
+	}
+	actor, ok := authorizeFunction(w, r, h.d, body.RatifiedByPartyID,
+		definitionContext(r, def), FunctionDefinitionApprover)
+	if !ok {
+		return
+	}
 
 	var out schema.Definition
-	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+		now := h.d.Clock.Now()
 		var err error
 		out, err = transition(r.Context(), tx, r.PathValue("id"), version,
 			schema.DefinitionStateDRAFT, schema.DefinitionStateRATIFIED,
@@ -224,8 +301,27 @@ func (h *handlers) ratify(w http.ResponseWriter, r *http.Request) {
 		if len(out.PendingFields) > 0 {
 			detail["pendingFields"] = out.PendingFields
 		}
-		return appendEvent(r.Context(), tx, out.ID, out.Version,
-			eventRatified, body.RatifiedByPartyID, h.d.Clock.Now(), detail)
+		if err := appendEvent(r.Context(), tx, out.ID, out.Version,
+			eventRatified, actor, now, detail); err != nil {
+			return err
+		}
+		if !body.Publish {
+			return nil
+		}
+		out, err = transition(r.Context(), tx, out.ID, out.Version,
+			schema.DefinitionStateRATIFIED, schema.DefinitionStateACTIVE,
+			func(d *schema.Definition) error {
+				d.ActivatedAt = &now
+				return nil
+			})
+		if err != nil {
+			return err
+		}
+		if err := appendEvent(r.Context(), tx, out.ID, out.Version,
+			eventActivated, actor, now, nil); err != nil {
+			return err
+		}
+		return enqueuePublication(r.Context(), tx, out.ID, out.Version)
 	})
 	switch {
 	case errors.Is(err, ErrSelfRatified):
@@ -251,9 +347,32 @@ func (h *handlers) activate(w http.ResponseWriter, r *http.Request) {
 		ActivatedByPartyID string `json:"activatedByPartyId"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
+	def, err := getDefinition(r.Context(), h.d.DB.Q(), r.PathValue("id"), version)
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "definition version", err, store.ErrNotFound)
+		return
+	}
+	if err := validateDefinitionSchemaRef(def.Faces.Platform.SchemaRef); err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "unknown_schema_ref", "%s", err)
+		return
+	}
+	claimed := body.ActivatedByPartyID
+	if claimed == "" && def.RatifiedByPartyID != nil {
+		claimed = *def.RatifiedByPartyID
+	}
+	if claimed == "" {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "no_approver",
+			"activation must name the authenticated approver or ratifier")
+		return
+	}
+	actor, ok := authorizeFunction(w, r, h.d, claimed, definitionContext(r, def),
+		FunctionDefinitionApprover)
+	if !ok {
+		return
+	}
 
 	var out schema.Definition
-	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		var err error
 		out, err = transition(r.Context(), tx, r.PathValue("id"), version,
 			schema.DefinitionStateRATIFIED, schema.DefinitionStateACTIVE,
@@ -264,10 +383,6 @@ func (h *handlers) activate(w http.ResponseWriter, r *http.Request) {
 			})
 		if err != nil {
 			return err
-		}
-		actor := body.ActivatedByPartyID
-		if actor == "" && out.RatifiedByPartyID != nil {
-			actor = *out.RatifiedByPartyID
 		}
 		if err := appendEvent(r.Context(), tx, out.ID, out.Version,
 			eventActivated, actor, h.d.Clock.Now(), nil); err != nil {
@@ -307,6 +422,33 @@ func (h *handlers) addLinkedRecord(w http.ResponseWriter, r *http.Request) {
 	}
 	if lr.State == "" {
 		lr.State = "ACTIVE"
+	}
+	def, err := getDefinition(r.Context(), h.d.DB.Q(), r.PathValue("id"), 0)
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "definition", err, store.ErrNotFound)
+		return
+	}
+	claimed, function := def.AuthoredByPartyID, FunctionDefinitionAuthor
+	// A linked record is still a mutation of the definition registry. The
+	// record's own author is used where the profile carries one, so a caller
+	// cannot submit a payment setup or source binding under somebody else's
+	// name. The permission remains project scoped through contextId.
+	if lr.Payload != nil {
+		if v, ok := lr.Payload["authoredByPartyId"].(string); ok && v != "" {
+			claimed = v
+		}
+		if v, ok := lr.Payload["invitedByPartyId"].(string); ok && v != "" {
+			claimed = v
+		}
+	}
+	switch lr.Type {
+	case "source-binding":
+		function = FunctionDefinitionSource
+	case "payment-setup":
+		function = FunctionRateOwner
+	}
+	if _, ok := authorizeFunction(w, r, h.d, claimed, definitionContext(r, def), function); !ok {
+		return
 	}
 	lr.KeyedTo = schema.LinkedRecordKeyedTo{
 		Kind: schema.LinkedRecordKeyedToKindDefinition,
@@ -394,10 +536,15 @@ func (h *handlers) paymentHandoff(w http.ResponseWriter, r *http.Request) {
 		httpx.NotFoundOr(w, h.d.Log, "definition version", err, store.ErrNotFound)
 		return
 	}
+	actor, ok := authorizeFunction(w, r, h.d, body.InvitedByPartyID,
+		definitionContext(r, def), FunctionDefinitionAuthor)
+	if !ok {
+		return
+	}
 	now := h.d.Clock.Now()
 	payload := map[string]any{
 		"definitionVersion": def.Version,
-		"invitedByPartyId":  body.InvitedByPartyID,
+		"invitedByPartyId":  actor,
 		"invitedAt":         now.UTC().Format(time.RFC3339),
 	}
 	if body.InvitedPartyID != "" {
@@ -428,7 +575,7 @@ func (h *handlers) paymentHandoff(w http.ResponseWriter, r *http.Request) {
 			detail["invitedPartyId"] = body.InvitedPartyID
 		}
 		return appendEvent(r.Context(), tx, def.ID, def.Version,
-			eventHandoff, body.InvitedByPartyID, now, detail)
+			eventHandoff, actor, now, detail)
 	}); err != nil {
 		httpx.Fail(w, h.d.Log, "record payment handoff", err)
 		return
@@ -450,6 +597,9 @@ func (h *handlers) lookup(w http.ResponseWriter, r *http.Request) (schema.Defini
 	if err != nil {
 		httpx.NotFoundOr(w, h.d.Log, "definition", err, store.ErrNotFound)
 		return schema.Definition{}, err
+	}
+	if !authorizeDefinitionRead(w, r, h.d, def) {
+		return schema.Definition{}, errors.New("definition read not authorized")
 	}
 	return def, nil
 }

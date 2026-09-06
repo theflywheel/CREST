@@ -47,9 +47,6 @@ func Authorize(w http.ResponseWriter, r *http.Request, log *slog.Logger,
 // name wants Authorize instead, and using this one there is the #102 mistake
 // with a seatbelt on.
 func Authenticated(w http.ResponseWriter, r *http.Request, log *slog.Logger, enforced bool) bool {
-	if !enforced {
-		return true
-	}
 	caller := From(r.Context())
 	if caller.Authenticated() {
 		return true

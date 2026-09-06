@@ -275,6 +275,8 @@ func compile(doc DraftDoc, defID string, version int, authoredBy string, at time
 		AuthoredByPartyID: authoredBy,
 		CreatedAt:         at,
 	}
+	semantics := schema.DefinitionTierSemanticsReferenceV1
+	d.TierSemantics = &semantics
 
 	// Activity and counting.
 	if a := doc.Activity; a != nil {
@@ -362,7 +364,7 @@ func compile(doc DraftDoc, defID string, version int, authoredBy string, at time
 			need("evidence", "tierMap", "at least one evidence-to-tier rule")
 		}
 		for i, rule := range e.TierMap {
-			if e.TierCeiling >= 1 && rule.Tier > e.TierCeiling {
+			if e.TierCeiling >= 1 && rule.Tier < e.TierCeiling {
 				problems = append(problems, Problem{Section: "evidence",
 					Field:  fmt.Sprintf("tierMap[%d]", i),
 					Reason: fmt.Sprintf("rule grants tier %d above the ceiling %d the worker face promises; the two faces are one record and may not disagree", rule.Tier, e.TierCeiling)})
@@ -374,10 +376,14 @@ func compile(doc DraftDoc, defID string, version int, authoredBy string, at time
 
 	// Platform face.
 	if s := doc.Sources; s != nil {
+		schemaRef := s.SchemaRef
+		if schemaRef == "" {
+			schemaRef = schema.IDEvidenceRecord
+		}
 		d.Faces.Platform = schema.DefinitionFacesPlatform{
 			SourceSystems:  s.SourceSystems,
 			RequiredFields: s.RequiredFields,
-			SchemaRef:      s.SchemaRef,
+			SchemaRef:      schemaRef,
 		}
 		if len(s.SourceSystems) == 0 {
 			need("sources", "sourceSystems", "where evidence comes from")
@@ -385,8 +391,8 @@ func compile(doc DraftDoc, defID string, version int, authoredBy string, at time
 		if len(s.RequiredFields) == 0 {
 			need("sources", "requiredFields", "which fields a record must carry")
 		}
-		if s.SchemaRef == "" {
-			d.Faces.Platform.SchemaRef = schema.IDEvidenceRecord
+		if err := validateDefinitionSchemaRef(schemaRef); err != nil {
+			problems = append(problems, schemaRefProblem(schemaRef))
 		}
 	} else {
 		need("sources", "", "the evidence source section")

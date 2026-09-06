@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -23,16 +24,13 @@ import (
 )
 
 func routes(mux *http.ServeMux, d service.Deps) {
-	// The issuer lives here, in the credential substrate, since #137. A fixed
-	// development seed keeps a local stack reproducible; it is not a secret
-	// and is not pretending to be. A deployment holds the real seed in Vault
-	// (VAULT_ADDR + VAULT_SECRET_PATH, #130's custody ruling) — and when
-	// Vault is configured but cannot answer, this service refuses to start
-	// rather than sign with a key nobody escrowed.
-	rawSeed, err := config.SecretStr("ISSUER_SEED",
-		"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")
+	rawSeed, err := config.SecretStr("ISSUER_SEED", "")
 	if err != nil {
 		d.Log.Error("issuer seed unavailable", "error", err)
+		panic(err)
+	}
+	issuerID := config.Str("ISSUER_ID", "")
+	if err := validateIssuerDeployment(d.Config.Env, issuerID, rawSeed); err != nil {
 		panic(err)
 	}
 	seed, err := credential.SeedFromBase64(rawSeed)
@@ -40,22 +38,34 @@ func routes(mux *http.ServeMux, d service.Deps) {
 		d.Log.Error("issuer seed unusable", "error", err)
 		panic(err)
 	}
-	issuer, err := credential.NewIssuer(config.Str("ISSUER_ID", "did:crest:issuer:local"), seed)
+	issuer, err := credential.NewIssuer(issuerID, seed)
 	if err != nil {
 		d.Log.Error("issuer unusable", "error", err)
+		panic(err)
+	}
+	issuerKeys, err := loadIssuerKeys(issuer)
+	if err != nil {
+		d.Log.Error("historical issuer keys unusable", "error", err)
+		panic(err)
+	}
+	trustedIssuers, err := loadTrustedIssuers(issuer, issuerKeys)
+	if err != nil {
+		d.Log.Error("trusted issuer configuration unusable", "error", err)
 		panic(err)
 	}
 	d.Log.Info("issuer ready", "issuer", issuer.ID(), "key", issuer.PublicKeyMultibase())
 
 	h := &handlers{
-		d:             d,
-		definitions:   client.New(config.Str("DEFINITIONS_URL", "http://definitions:8080")),
-		registry:      client.New(config.Str("PARTIES_URL", "http://parties:8080")),
-		confirmation:  client.New(config.Str("CONFIRMATION_URL", "http://payments:8080")),
-		evidence:      client.New(config.Str("EVIDENCE_URL", "http://evidence:8080")),
-		dediURL:       config.Str("DEDI_URL", ""),
-		issuer:        issuer,
-		statusListURL: config.Str("STATUS_LIST_URL", "http://verification:8080/v1/status-list"),
+		d:              d,
+		definitions:    client.New(config.Str("DEFINITIONS_URL", "http://definitions:8080")),
+		registry:       client.New(config.Str("PARTIES_URL", "http://parties:8080")),
+		confirmation:   client.New(config.Str("CONFIRMATION_URL", "http://payments:8080")),
+		evidence:       client.New(config.Str("EVIDENCE_URL", "http://evidence:8080")),
+		dediURL:        config.Str("DEDI_URL", ""),
+		issuer:         issuer,
+		issuerKeys:     issuerKeys,
+		trustedIssuers: trustedIssuers,
+		statusListURL:  config.Str("STATUS_LIST_URL", "http://verification:8080/v1/status-list"),
 	}
 	mux.HandleFunc("POST /v1/verify", h.verify)
 	mux.HandleFunc("POST /v1/verify/batch", h.verifyBatch)
@@ -76,6 +86,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	// here so the salt never leaves this deployment. See certify.go.
 	mux.HandleFunc("GET /internal/certify/work-events", h.certifyWorkEvents)
 	mux.HandleFunc("GET /internal/credentials", h.listCredentialsRaw)
+	mux.HandleFunc("GET /internal/credentials/{id}", h.getCredentialInternal)
 	mux.HandleFunc("GET /internal/credentials/by-claim/{claimId}", h.credentialForClaim)
 	mux.HandleFunc("POST /internal/credentials/{id}/revoke", h.revokeInternal)
 	mux.HandleFunc("GET /v1/credentials", h.listCredentials)
@@ -86,6 +97,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	// own stationery.
 	mux.HandleFunc("GET /v1/credentials/{id}/card", h.credentialCard)
 	mux.HandleFunc("POST /v1/credentials/{id}/revoke", h.revoke)
+	mux.HandleFunc("POST /v1/credentials/{id}/custody-transfer", h.transferCustody)
 	mux.HandleFunc("GET /v1/status-list", h.statusList)
 	mux.HandleFunc("GET /v1/issuer", h.issuerInfo)
 }
@@ -103,8 +115,89 @@ type handlers struct {
 	confirmation *client.Client
 	evidence     *client.Client
 
-	issuer        *credential.Issuer
-	statusListURL string
+	issuer         *credential.Issuer
+	issuerKeys     map[string]string
+	trustedIssuers map[string]trustedIssuer
+	statusListURL  string
+}
+
+// trustedIssuer is deployment configuration, never data taken from a
+// credential. Keys and resolver URLs must be registered by the operator before
+// an external issuer can affect a verdict.
+type trustedIssuer struct {
+	Keys           map[string]string `json:"keys"`
+	Definitions    string            `json:"definitions"`
+	DefinitionURLs []string          `json:"definitionURLs"`
+	StatusList     string            `json:"statusList"`
+	StatusListURLs []string          `json:"statusListURLs"`
+}
+
+func loadIssuerKeys(current *credential.Issuer) (map[string]string, error) {
+	keys := map[string]string{current.VerificationMethod(): current.PublicKeyMultibase()}
+	raw := config.Str("ISSUER_HISTORICAL_KEYS_JSON", "")
+	if raw == "" {
+		return keys, nil
+	}
+	var historical map[string]string
+	if err := json.Unmarshal([]byte(raw), &historical); err != nil {
+		return nil, fmt.Errorf("ISSUER_HISTORICAL_KEYS_JSON: %w", err)
+	}
+	for method, key := range historical {
+		if strings.TrimSpace(method) != "" && strings.TrimSpace(key) != "" {
+			keys[method] = key
+		}
+	}
+	return keys, nil
+}
+
+func loadTrustedIssuers(current *credential.Issuer, currentKeys map[string]string) (map[string]trustedIssuer, error) {
+	out := map[string]trustedIssuer{current.ID(): {Keys: currentKeys}}
+	raw := config.Str("TRUSTED_ISSUERS_JSON", "")
+	if raw == "" {
+		return out, nil
+	}
+	var configured map[string]trustedIssuer
+	if err := json.Unmarshal([]byte(raw), &configured); err != nil {
+		return nil, fmt.Errorf("TRUSTED_ISSUERS_JSON: %w", err)
+	}
+	for issuerID, item := range configured {
+		if strings.TrimSpace(issuerID) == "" || len(item.Keys) == 0 {
+			return nil, fmt.Errorf("trusted issuer %q must name at least one public key", issuerID)
+		}
+		for method, key := range item.Keys {
+			if !strings.HasPrefix(method, issuerID+"#") || strings.TrimSpace(key) == "" {
+				return nil, fmt.Errorf("trusted issuer %q has an invalid verification method", issuerID)
+			}
+		}
+		for name, value := range map[string]string{"definitions": item.Definitions, "statusList": item.StatusList} {
+			if value != "" && !trustedResolverURL(value) {
+				return nil, fmt.Errorf("trusted issuer %q has an unsafe %s resolver URL", issuerID, name)
+			}
+		}
+		for _, value := range append(append([]string{}, item.DefinitionURLs...), item.StatusListURLs...) {
+			if !trustedResolverURL(value) {
+				return nil, fmt.Errorf("trusted issuer %q has an unsafe historical resolver URL", issuerID)
+			}
+		}
+		if issuerID == current.ID() {
+			merged := trustedIssuer{
+				Keys: currentKeys, Definitions: item.Definitions, DefinitionURLs: item.DefinitionURLs,
+				StatusList: item.StatusList, StatusListURLs: item.StatusListURLs,
+			}
+			for method, key := range item.Keys {
+				merged.Keys[method] = key
+			}
+			out[issuerID] = merged
+		} else {
+			out[issuerID] = item
+		}
+	}
+	return out, nil
+}
+
+func trustedResolverURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil && u.RawQuery == "" && u.Fragment == ""
 }
 
 // Verdict is what a verifier is handed.
@@ -159,6 +252,9 @@ type Verdict struct {
 
 	SignatureValid bool `json:"signatureValid"`
 	Revoked        bool `json:"revoked"`
+	// The online status check time is explicit so a consumer never mistakes a
+	// cached verdict for an offline freshness guarantee.
+	StatusCheckedAt time.Time `json:"statusCheckedAt,omitempty"`
 }
 
 // ContestStanding is where one dispute stands. Standing only — see Verdict.
@@ -221,6 +317,9 @@ func (h *handlers) verify(w http.ResponseWriter, r *http.Request) {
 	scope := "bare"
 	if req.RequestedByPartyID != "" || req.Purpose != "" {
 		scope = "scoped"
+		if req.RequestedByPartyID == "" || !authorizeParty(w, r, h.d, req.RequestedByPartyID) {
+			return
+		}
 	}
 	if err := h.record(r.Context(), presentation{
 		ID: id.New(h.d.Clock, "presentation"), CredentialID: credID,
@@ -269,6 +368,7 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 		return v, subjectRef, credID
 	}
 	v.Revoked = revoked
+	v.StatusCheckedAt = h.d.Clock.Now()
 	if revoked {
 		v.Reasons = append(v.Reasons, "this credential has been withdrawn")
 		return v, subjectRef, credID
@@ -286,7 +386,7 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 		return v, subjectRef, credID
 	}
 
-	def, err := h.definition(ctx, cred.CredentialSubject.WorkEvent.Definition)
+	def, err := h.definition(ctx, cred.CredentialSubject.WorkEvent.Definition, issuerID)
 	if err != nil {
 		v.Reasons = append(v.Reasons, "the definition it names could not be resolved: "+err.Error())
 		return v, subjectRef, credID
@@ -310,7 +410,7 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 	// that gets published.
 	v.TrustChain = append(v.TrustChain, issuerLink(v.TrustChain, issuerID, def))
 
-	assessment, err := h.assessmentFor(ctx, cred.CredentialSubject.Provenance.AdapterRef)
+	assessment, err := h.assessmentFor(ctx, provenanceSystemRef(cred.CredentialSubject.Provenance), cred.CredentialSubject.Provenance.AdapterRef)
 	if err != nil {
 		v.Reasons = append(v.Reasons, "the source assessment could not be read: "+err.Error())
 		return v, subjectRef, credID
@@ -471,6 +571,9 @@ func statusListURL(doc map[string]any) string {
 // check like any other (§9).
 func (h *handlers) partyCredentials(w http.ResponseWriter, r *http.Request) {
 	partyID := r.PathValue("id")
+	if !authorizeParty(w, r, h.d, partyID) {
+		return
+	}
 	// The credential record is local since #137, but the merge expansion is
 	// still the registry's answer. Refused rather than emptied when it cannot
 	// be read: an empty list reads as "this person has no history", which is a
@@ -493,6 +596,15 @@ func (h *handlers) partyCredentials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	requestedBy := r.URL.Query().Get("requestedByPartyId")
+	caller := identity.From(r.Context())
+	if requestedBy != "" && requestedBy != caller.PartyID {
+		httpx.WriteError(w, http.StatusForbidden, "requester_mismatch",
+			"requestedByPartyId must identify the verified caller")
+		return
+	}
+	if requestedBy == "" {
+		requestedBy = caller.PartyID
+	}
 	purpose := r.URL.Query().Get("purpose")
 	scope := "bare"
 	if requestedBy != "" || purpose != "" {
@@ -567,10 +679,33 @@ func (h *handlers) contests(ctx context.Context, credentialID, claimID string) [
 // that path exists.
 func (h *handlers) issuerKey(_ context.Context, doc map[string]any) (string, string, error) {
 	issuerID, _ := doc["issuer"].(string)
+	if issuerID == "" {
+		return "", issuerID, errors.New("the credential carries no issuer")
+	}
+	proof, _ := doc["proof"].(map[string]any)
+	method, _ := proof["verificationMethod"].(string)
+	if method == "" {
+		method = issuerID + "#key-1"
+	}
+	if !strings.HasPrefix(method, issuerID+"#") {
+		return "", issuerID, fmt.Errorf("verification method %s is not under issuer %s", method, issuerID)
+	}
+	if trusted, ok := h.trustedIssuers[issuerID]; ok {
+		if key, found := trusted.Keys[method]; found {
+			return key, issuerID, nil
+		}
+		return "", issuerID, fmt.Errorf("no trusted key for verification method %s", method)
+	}
+	if key, ok := h.issuerKeys[method]; ok {
+		return key, issuerID, nil
+	}
+	if method == h.issuer.VerificationMethod() && issuerID == h.issuer.ID() {
+		return h.issuer.PublicKeyMultibase(), issuerID, nil
+	}
 	if issuerID != "" && h.issuer.ID() != issuerID {
 		return "", issuerID, fmt.Errorf("this deployment does not hold a key for %s", issuerID)
 	}
-	return h.issuer.PublicKeyMultibase(), h.issuer.ID(), nil
+	return "", issuerID, fmt.Errorf("no trusted key for verification method %s", method)
 }
 
 // revoked fetches the whole status list and reads one bit of it.
@@ -589,6 +724,44 @@ func (h *handlers) revoked(ctx context.Context, doc map[string]any) (bool, error
 		return false, fmt.Errorf("status index %q is not a number", indexText)
 	}
 
+	issuerID, _ := doc["issuer"].(string)
+	statusURL, _ := status["statusListCredential"].(string)
+	if issuerID == h.issuer.ID() {
+		if statusURL != h.statusListURL {
+			return false, fmt.Errorf("credential names an untrusted status list %s", statusURL)
+		}
+	}
+	if trusted, ok := h.trustedIssuers[issuerID]; ok && issuerID != h.issuer.ID() {
+		statusEndpoint := trustedStatusEndpoint(trusted, statusURL)
+		if statusEndpoint == "" {
+			return false, fmt.Errorf("credential names a status list that is not registered for issuer %s", issuerID)
+		}
+		statusDoc, err := fetchJSON(ctx, statusEndpoint)
+		if err != nil {
+			return false, fmt.Errorf("fetch trusted status list: %w", err)
+		}
+		key, _, err := h.issuerKey(ctx, statusDoc)
+		if err != nil {
+			return false, err
+		}
+		if err := credential.Verify(statusDoc, key); err != nil {
+			return false, fmt.Errorf("trusted status list signature: %w", err)
+		}
+		if statusDoc["issuer"] != issuerID || statusDoc["id"] != statusEndpoint {
+			return false, errors.New("trusted status list identity does not match its configured issuer")
+		}
+		if !statusFresh(statusDoc, h.d.Clock.Now()) {
+			return false, errors.New("trusted status list is outside its signed validity window")
+		}
+		subject, _ := statusDoc["credentialSubject"].(map[string]any)
+		encoded, _ := subject["encodedList"].(string)
+		list, err := credential.DecodeStatusList(encoded)
+		if err != nil {
+			return false, err
+		}
+		return list.Revoked(index), nil
+	}
+
 	// The list is local since #137 — this service is the issuer, and the row
 	// it reads is the row it signs for everyone else. A remote verifier still
 	// fetches the signed document from /v1/status-list and checks the
@@ -601,11 +774,98 @@ func (h *handlers) revoked(ctx context.Context, doc map[string]any) (bool, error
 	return list.Revoked(index), nil
 }
 
-func (h *handlers) definition(ctx context.Context, ref schema.VersionedRef) (schema.Definition, error) {
+func (h *handlers) definition(ctx context.Context, ref schema.VersionedRef, issuerID string) (schema.Definition, error) {
+	if trusted, ok := h.trustedIssuers[issuerID]; ok && issuerID != h.issuer.ID() {
+		bases := append([]string{}, trusted.DefinitionURLs...)
+		if trusted.Definitions != "" {
+			bases = append([]string{trusted.Definitions}, bases...)
+		}
+		var lastErr error
+		for _, base := range bases {
+			var def schema.Definition
+			path := strings.TrimRight(base, "/") + "/" + url.PathEscape(ref.ID) + "?version=" + url.QueryEscape(fmt.Sprint(ref.Version))
+			if err := fetchJSONInto(ctx, path, &def); err == nil {
+				if def.ID != ref.ID || def.Version != ref.Version {
+					lastErr = fmt.Errorf("trusted definition resolver returned %s@%d for requested %s@%d",
+						def.ID, def.Version, ref.ID, ref.Version)
+					continue
+				}
+				return def, nil
+			} else {
+				lastErr = err
+			}
+		}
+		if lastErr != nil {
+			return schema.Definition{}, fmt.Errorf("fetch trusted definition: %w", lastErr)
+		}
+		return schema.Definition{}, errors.New("no trusted definition resolver configured")
+	}
 	var def schema.Definition
 	err := h.definitions.Get(ctx, fmt.Sprintf("/v1/definitions/%s?version=%d",
 		url.PathEscape(ref.ID), ref.Version), &def)
 	return def, err
+}
+
+func trustedStatusEndpoint(trusted trustedIssuer, statusURL string) string {
+	if trusted.StatusList != "" && trusted.StatusList == statusURL {
+		return trusted.StatusList
+	}
+	for _, candidate := range trusted.StatusListURLs {
+		if candidate == statusURL {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func fetchJSON(ctx context.Context, endpoint string) (map[string]any, error) {
+	var out map[string]any
+	err := fetchJSONInto(ctx, endpoint, &out)
+	return out, err
+}
+
+func fetchJSONInto(ctx context.Context, endpoint string, out any) error {
+	if !safeFetchURL(endpoint) {
+		return errors.New("resolver URL is not an absolute HTTP(S) URL")
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+		return errors.New("resolver redirects are refused")
+	}}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("resolver answered HTTP %d", resp.StatusCode)
+	}
+	return json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(out)
+}
+
+func safeFetchURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil && u.Fragment == ""
+}
+
+func statusFresh(doc map[string]any, now time.Time) bool {
+	from, okFrom := parseTimestamp(doc["validFrom"])
+	until, okUntil := parseTimestamp(doc["validUntil"])
+	return okFrom && okUntil && !now.Before(from) && now.Before(until)
+}
+
+func parseTimestamp(v any) (time.Time, bool) {
+	s, ok := v.(string)
+	if !ok {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	return t, err == nil
 }
 
 func (h *handlers) assurance(ctx context.Context, partyID string) schema.IdentityAssurance {
@@ -658,11 +918,10 @@ func parse(doc map[string]any) (schema.WorkEventCredential, error) {
 // every credential that source produced, immediately and with no reissuance.
 func (h *handlers) assess(w http.ResponseWriter, r *http.Request) {
 	// Re-grading a source moves every affected credential's tier — a signed-in operations surface (#102).
-	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
-		return
-	}
 	var req struct {
 		AdapterRef string `json:"adapterRef"`
+		ContextID  string `json:"contextId"`
+		SystemRef  string `json:"systemRef"`
 		MaxTier    int    `json:"maxTier"`
 		Reason     string `json:"reason"`
 		AssessedBy string `json:"assessedByPartyId"`
@@ -670,23 +929,31 @@ func (h *handlers) assess(w http.ResponseWriter, r *http.Request) {
 	if !httpx.ReadJSON(w, r, &req) {
 		return
 	}
-	if req.AdapterRef == "" || req.Reason == "" || req.AssessedBy == "" {
+	if req.AdapterRef == "" || req.ContextID == "" || req.SystemRef == "" || req.Reason == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body",
-			"downgrading a source needs the source, a reason and whoever decided it")
+			"downgrading a source needs its registered adapter, context, system reference and reason")
 		return
 	}
-	if req.MaxTier < 0 || req.MaxTier > 3 {
-		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "maxTier is 0 to 3")
+	if req.MaxTier < 1 || req.MaxTier > 3 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "maxTier is 1 to 3 (reference numbering)")
 		return
 	}
+	assessor, ok := h.authorizeSourceAssessment(w, r, req.AdapterRef, req.ContextID, req.SystemRef)
+	if !ok {
+		return
+	}
+	// Never persist the party name supplied in JSON as the actor. The body is
+	// only a source selector; the authenticated principal is the audit actor.
+	req.AssessedBy = assessor
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		_, err := tx.Exec(r.Context(), `
-			INSERT INTO source_assessments (adapter_ref, max_tier, reason, assessed_by, assessed_at)
-			VALUES ($1,$2,$3,$4,$5)
-			ON CONFLICT (adapter_ref) DO UPDATE
+			INSERT INTO source_assessments (adapter_ref, system_ref, max_tier, reason, assessed_by, assessed_at)
+			VALUES ($1,$2,$3,$4,$5,$6)
+			ON CONFLICT (system_ref) WHERE system_ref IS NOT NULL DO UPDATE
 			SET max_tier = EXCLUDED.max_tier, reason = EXCLUDED.reason,
-			    assessed_by = EXCLUDED.assessed_by, assessed_at = EXCLUDED.assessed_at`,
-			req.AdapterRef, req.MaxTier, req.Reason, req.AssessedBy, h.d.Clock.Now())
+			    assessed_by = EXCLUDED.assessed_by, assessed_at = EXCLUDED.assessed_at,
+			    adapter_ref = EXCLUDED.adapter_ref`,
+			req.AdapterRef, req.SystemRef, req.MaxTier, req.Reason, req.AssessedBy, h.d.Clock.Now())
 		return err
 	}); err != nil {
 		httpx.Fail(w, h.d.Log, "record source assessment", err)
@@ -704,12 +971,14 @@ func (h *handlers) assess(w http.ResponseWriter, r *http.Request) {
 // ratchets one way and eventually trusts nothing.
 func (h *handlers) clearAssessment(w http.ResponseWriter, r *http.Request) {
 	// Lifting a downgrade restores trust — a signed-in operations surface (#102).
-	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+	contextID := strings.TrimSpace(r.URL.Query().Get("contextId"))
+	systemRef := strings.TrimSpace(r.URL.Query().Get("systemRef"))
+	if _, ok := h.authorizeSourceAssessment(w, r, r.PathValue("adapterRef"), contextID, systemRef); !ok {
 		return
 	}
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		_, err := tx.Exec(r.Context(),
-			`DELETE FROM source_assessments WHERE adapter_ref = $1`, r.PathValue("adapterRef"))
+			`DELETE FROM source_assessments WHERE system_ref = $1`, systemRef)
 		return err
 	}); err != nil {
 		httpx.Fail(w, h.d.Log, "clear source assessment", err)
@@ -718,12 +987,22 @@ func (h *handlers) clearAssessment(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *handlers) assessmentFor(ctx context.Context, adapterRef string) (*strength.SourceAssessment, error) {
+func (h *handlers) assessmentFor(ctx context.Context, systemRef, adapterRef string) (*strength.SourceAssessment, error) {
 	var maxTier int
 	var reason string
-	err := h.d.DB.Q().QueryRow(ctx,
-		`SELECT max_tier, reason FROM source_assessments WHERE adapter_ref = $1`, adapterRef).
-		Scan(&maxTier, &reason)
+	var err error
+	if systemRef != "" {
+		err = h.d.DB.Q().QueryRow(ctx,
+			`SELECT max_tier, reason FROM source_assessments WHERE system_ref = $1`, systemRef).
+			Scan(&maxTier, &reason)
+	} else {
+		// A credential without systemRef predates the scoped provenance field.
+		// Only those historical credentials may consult the legacy adapter key;
+		// a current credential must never fall back to a shared adapter class.
+		err = h.d.DB.Q().QueryRow(ctx,
+			`SELECT max_tier, reason FROM source_assessments WHERE system_ref IS NULL AND adapter_ref = $1`, adapterRef).
+			Scan(&maxTier, &reason)
+	}
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, nil // no concerns recorded
 	}
@@ -733,20 +1012,95 @@ func (h *handlers) assessmentFor(ctx context.Context, adapterRef string) (*stren
 	return &strength.SourceAssessment{MaxTier: maxTier, Reason: reason}, nil
 }
 
+// provenanceSystemRef reads the optional field by JSON name so this service
+// remains compatible with credentials issued before the generated schema
+// gained the scoped systemRef field. An absent field is the only case allowed
+// to use the historical adapter assessment fallback.
+func provenanceSystemRef(provenance schema.Provenance) string {
+	raw, err := json.Marshal(provenance)
+	if err != nil {
+		return ""
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return ""
+	}
+	value, _ := fields["systemRef"].(string)
+	return strings.TrimSpace(value)
+}
+
+type registeredSourceView struct {
+	AdapterRef   string `json:"adapterRef"`
+	ContextID    string `json:"contextId"`
+	SystemRef    string `json:"systemRef"`
+	OwnerPartyID string `json:"ownerPartyId"`
+}
+
+// authorizeSourceAssessment binds the mutation to a source registration and
+// to the actual authenticated source owner/operator. AdapterRef alone is an
+// adapter class shared by many feeds and is never sufficient authority.
+func (h *handlers) authorizeSourceAssessment(w http.ResponseWriter, r *http.Request,
+	adapterRef, contextID, systemRef string) (string, bool) {
+	if !identity.Authenticated(w, r, h.d.Log, true) {
+		return "", false
+	}
+	caller := identity.From(r.Context())
+	if caller.PartyID == "" || caller.Assisting() {
+		httpx.WriteError(w, http.StatusForbidden, "direct_source_operator_required",
+			"source assessments must be performed directly by an enrolled source owner or operator")
+		return "", false
+	}
+	var source registeredSourceView
+	path := "/internal/sources/by-system/" + url.PathEscape(systemRef) + "?contextId=" + url.QueryEscape(contextID)
+	if err := h.evidence.Get(r.Context(), path, &source); err != nil {
+		httpx.WriteError(w, http.StatusForbidden, "source_not_registered",
+			"the source assessment must name a registered source in this project")
+		return "", false
+	}
+	if source.AdapterRef != adapterRef || source.ContextID != contextID || source.SystemRef != systemRef {
+		httpx.WriteError(w, http.StatusConflict, "source_identity_mismatch",
+			"the adapter, context and system reference do not match the registered source")
+		return "", false
+	}
+	// The registered source owner may act directly. A different operator must
+	// hold the source-owner function in this project; this keeps a random
+	// signed-in worker from changing every credential produced by a feed.
+	if caller.PartyID != source.OwnerPartyID {
+		if h.d.Permits == nil {
+			httpx.WriteError(w, http.StatusServiceUnavailable, "authorization_unavailable",
+				"the source operator assignment is unavailable")
+			return "", false
+		}
+		allowed, err := h.d.Permits(r.Context(), caller.PartyID, "work-definition-source-owner", contextID)
+		if err != nil {
+			httpx.WriteError(w, http.StatusServiceUnavailable, "authorization_unavailable",
+				"the source operator assignment could not be checked")
+			return "", false
+		}
+		if !allowed {
+			httpx.WriteError(w, http.StatusForbidden, "not_permitted",
+				"the caller is not the registered source owner or an assigned source operator")
+			return "", false
+		}
+	}
+	return caller.PartyID, true
+}
+
 func (h *handlers) assessments(w http.ResponseWriter, r *http.Request) {
 	// The current view of every source — a signed-in operations surface (#102).
-	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+	if !identity.Authenticated(w, r, h.d.Log, true) {
 		return
 	}
 	rows, err := h.d.DB.Q().Query(r.Context(),
-		`SELECT adapter_ref, max_tier, reason, assessed_by, assessed_at
-		 FROM source_assessments ORDER BY adapter_ref`)
+		`SELECT coalesce(system_ref,''), adapter_ref, max_tier, reason, assessed_by, assessed_at
+		 FROM source_assessments ORDER BY coalesce(system_ref, adapter_ref)`)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list assessments", err)
 		return
 	}
 	defer rows.Close()
 	type row struct {
+		SystemRef  string    `json:"systemRef,omitempty"`
 		AdapterRef string    `json:"adapterRef"`
 		MaxTier    int       `json:"maxTier"`
 		Reason     string    `json:"reason"`
@@ -755,7 +1109,7 @@ func (h *handlers) assessments(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := store.Collect(rows, func(r store.Row) (row, error) {
 		var v row
-		return v, r.Scan(&v.AdapterRef, &v.MaxTier, &v.Reason, &v.AssessedBy, &v.AssessedAt)
+		return v, r.Scan(&v.SystemRef, &v.AdapterRef, &v.MaxTier, &v.Reason, &v.AssessedBy, &v.AssessedAt)
 	})
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "read assessments", err)
@@ -797,20 +1151,21 @@ func (h *handlers) presentations(w http.ResponseWriter, r *http.Request) {
 	// unfiltered one a signed-in operator (#102). The verify endpoints
 	// themselves stay open by design — an offline stranger with a credential
 	// is the whole point (§11).
-	if subject := r.URL.Query().Get("subjectRef"); subject != "" {
-		if _, ok := identity.Authorize(w, r, h.d.Log, subject, "",
-			h.d.Authenticating, h.d.Permits); !ok {
-			return
-		}
-	} else if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+	subject := r.URL.Query().Get("subjectRef")
+	if subject == "" {
+		// An unfiltered audit read is a cross-worker disclosure. Resolve it to
+		// the authenticated caller rather than accepting a global operator list.
+		subject = identity.From(r.Context()).PartyID
+	}
+	if !authorizeParty(w, r, h.d, subject) {
 		return
 	}
 	rows, err := h.d.DB.Q().Query(r.Context(), `
 		SELECT id, coalesce(credential_id,''), coalesce(subject_ref,''), coalesce(requested_by,''),
 		       coalesce(purpose,''), scope, outcome, tier, created_at
 		FROM presentations
-		WHERE ($1 = '' OR subject_ref = $1)
-		ORDER BY created_at, id`, r.URL.Query().Get("subjectRef"))
+		WHERE subject_ref = $1
+		ORDER BY created_at, id`, subject)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list presentations", err)
 		return

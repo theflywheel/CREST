@@ -5,7 +5,8 @@
 // startLogin with an eSignet redirect — the shape of everything after the
 // token is identical, which is the point of #89.
 
-import { services, type ServiceName } from "./config";
+import { isLocalStack, services, type ServiceName } from "./config";
+import { FIX } from "./fixtures";
 
 let token: string | null = null;
 let onBehalfOf: string | null = null;
@@ -34,9 +35,11 @@ async function call(
   path: string,
   body?: unknown,
   contentType?: string,
+  idempotencyKey?: string,
 ): Promise<any> {
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = "Bearer " + token;
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
   if (onBehalfOf) headers["X-CREST-On-Behalf-Of"] = onBehalfOf;
   let payload: BodyInit | undefined;
   if (body !== undefined && body !== null) {
@@ -75,22 +78,21 @@ async function callText(service: ServiceName, path: string): Promise<{ text: str
 export const api = {
   get: (svc: ServiceName, path: string) => call(svc, "GET", path),
   getText: (svc: ServiceName, path: string) => callText(svc, path),
-  post: (svc: ServiceName, path: string, body?: unknown) => call(svc, "POST", path, body),
+  post: (svc: ServiceName, path: string, body?: unknown, key?: string) => call(svc, "POST", path, body, undefined, key),
   // The J3 configuration endpoints are PUTs by design: one record per key,
   // idempotent, re-answering replaces the answer rather than appending one.
   put: (svc: ServiceName, path: string, body?: unknown) => call(svc, "PUT", path, body),
-  postRaw: (svc: ServiceName, path: string, body: unknown, ct: string) => call(svc, "POST", path, body, ct),
+  postRaw: (svc: ServiceName, path: string, body: unknown, ct: string, key?: string) => call(svc, "POST", path, body, ct, key),
   del: (svc: ServiceName, path: string) => call(svc, "DELETE", path),
 };
 
-// Dev login: mint a token from the mock issuer for the story seeder's own
-// subject for this party, then bind it through the real endpoint. Self-bind is
-// accepted only for a never-bound party or the exact subject already bound
-// (#102) — so the dev login IS the story's person: the same "story|" subject,
-// making the bind the idempotent same-subject re-bind, and a first-login
-// bootstrap on anything the story never bound.
+// Development identities must already be enrolled. A claimed party ID is
+// never a binding credential; invitations use the ordinary claim flow.
 export async function loginAs(partyId: string): Promise<string> {
-  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  if (!isLocalStack) {
+    throw new Error("development loginAs is available only on the local stack; use the configured OIDC login");
+  }
+  const sub = partyId === FIX.specifier ? "seed|specifier" : "story|" + partyId.replace("did:crest:party:", "");
   const minted = await fetch(services.oidc + "/token", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -101,15 +103,8 @@ export async function loginAs(partyId: string): Promise<string> {
   token = t;
   onBehalfOf = null;
   try {
-    // Idempotent: appendBinding returns the party unchanged when this exact
-    // binding already exists.
-    const cfg = await fetch(services.oidc + "/.well-known/openid-configuration").then((r) => r.json());
-    const subject = await pairwise(cfg.issuer, sub);
-    await call("parties", "POST", "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
-      provider: "mock-oidc",
-      providerClass: "generic-oidc",
-      subjectRef: subject,
-    });
+    const who = await whoAmI();
+    if (!who.partyId) throw new Error("This development identity is not enrolled. Claim its invitation first.");
   } catch (e) {
     token = prev;
     throw e;
@@ -151,15 +146,4 @@ export async function claimInvitation(code: string): Promise<{
     provider: esignet ? "esignet" : "mock-oidc",
     providerClass: esignet ? "esignet" : "generic-oidc",
   });
-}
-
-// The deployment's own pairwise derivation (HMAC-SHA256 under its salt) runs
-// server-side; the browser cannot and must not know the salt. The dev issuer
-// and stack share CREST_SUBJECT_SALT, and the mock issuer exposes the
-// derivation for dev.
-async function pairwise(_issuer: string, sub: string): Promise<string> {
-  const r = await fetch(services.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub));
-  if (!r.ok) throw new Error("the dev issuer cannot derive the pairwise subject; is mock-oidc current?");
-  const d = await r.json();
-  return d.subject;
 }

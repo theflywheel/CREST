@@ -24,6 +24,9 @@ import (
 // configuration, established when the source is onboarded and assessed — never
 // read out of the payload.
 type Source struct {
+	// AdapterRef identifies the registered adapter class. It is supplied by the
+	// ingestion route, never by the payload.
+	AdapterRef    string
 	Class         schema.SourceClass
 	CaptureMethod schema.CaptureMethod
 	Exposure      schema.SourceExposure
@@ -41,6 +44,29 @@ type Source struct {
 	// and it is the constraint that would have shaped the first partner
 	// conversation.
 	Mapping Mapping
+}
+
+// ValidProvenance reports whether a complete, recognised provenance tuple was
+// supplied by deployment configuration. Adapters never infer these values
+// from a payload.
+func (s Source) ValidProvenance() bool {
+	if s.AdapterRef == "" || s.SystemRef == "" || s.Class == "" || s.CaptureMethod == "" || s.Exposure == "" {
+		return false
+	}
+	validClass := map[schema.SourceClass]bool{
+		schema.SourceClassNationalSystem: true, schema.SourceClassInstitutionalSystem: true,
+		schema.SourceClassProgrammeSystem: true, schema.SourceClassSupervisedCapture: true,
+		schema.SourceClassSelfReported: true,
+	}
+	validCapture := map[schema.CaptureMethod]bool{
+		schema.CaptureMethodSystemOfRecord: true, schema.CaptureMethodDigitalCapture: true,
+		schema.CaptureMethodSupervisedManual: true, schema.CaptureMethodUnsupervisedManual: true,
+	}
+	validExposure := map[schema.SourceExposure]bool{
+		schema.SourceExposurePushAPI: true, schema.SourceExposureConsentPull: true,
+		schema.SourceExposureSignedBatch: true, schema.SourceExposureSupervisedUpload: true,
+	}
+	return validClass[s.Class] && validCapture[s.CaptureMethod] && validExposure[s.Exposure]
 }
 
 // Mapping translates one source system's file into the canonical field set.

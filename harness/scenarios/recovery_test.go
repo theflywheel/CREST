@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/theflywheel/crest/harness"
 	"github.com/theflywheel/crest/harness/fixtures"
 	"github.com/theflywheel/crest/pkg/schema"
 )
@@ -29,7 +30,7 @@ type recoveryView struct {
 
 // vouchedParty creates a person holding an ACTIVE authorization from the given
 // authority, which is what makes them an eligible recovery confirmer.
-func (w *world) vouchedParty(t *testing.T, name, authority string) string {
+func (w *world) vouchedParty(t *testing.T, name, authority, contextID string, authorityCaller harness.Caller) string {
 	t.Helper()
 	party := w.newWorker(t, name)
 	epoch := w.w.Instance.Epoch
@@ -37,14 +38,11 @@ func (w *world) vouchedParty(t *testing.T, name, authority string) string {
 	// As the authority itself: minting a grant is the named authority saying
 	// so, and the registry now refuses a caller who is not the authority the
 	// grant names (#124 review).
-	if err := w.Parties.As(w.login(t, authority)).Post(
+	if err := w.Parties.As(authorityCaller).Post(
 		w.ctx, "/v1/authorizations", schema.Authorization{
-			PartyID: party,
-			Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
-			Scope: schema.AuthorizationScope{
-				Kind:      schema.AuthorizationScopeKindContext,
-				ContextID: ptr(fixtures.ProjectID),
-			},
+			PartyID:           party,
+			Terms:             schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
+			Scope:             schema.AuthorizationScope{Kind: schema.AuthorizationScopeKindContext, ContextID: ptr(contextID)},
 			Functions:         []string{"submit-work-evidence"},
 			Period:            schema.Period{Start: epoch.Add(-30 * 24 * time.Hour), End: &end},
 			AuthorityPartyID:  authority,
@@ -65,10 +63,11 @@ func (w *world) newOrganisation(t *testing.T, name string) string {
 	// not an authority until the registry's decision says so, and the grant
 	// gate reads the registration. A helper that skipped the decision would
 	// hand scenarios an authority the real system refuses.
+	applicant := w.registrationApplicant(t, name)
 	var out struct {
 		Party schema.Party `json:"party"`
 	}
-	if err := w.Parties.Post(w.ctx, "/v1/organisations", schema.Party{
+	if err := w.Parties.As(applicant).Post(w.ctx, "/v1/organisations", schema.Party{
 		Kind:        schema.PartyKindOrganisation,
 		DisplayName: name,
 		ContactRoutes: []schema.PartyContactRoutesItem{{
@@ -79,7 +78,7 @@ func (w *world) newOrganisation(t *testing.T, name string) string {
 	}
 	orgID := out.Party.ID
 	terms := w.w.Terms[0]
-	if err := w.Parties.Post(w.ctx, "/v1/organisations/"+orgID+"/terms-acceptance",
+	if err := w.Parties.As(applicant).Post(w.ctx, "/v1/organisations/"+orgID+"/terms-acceptance",
 		map[string]any{"termsId": terms.ID, "termsVersion": terms.Version, "acceptedBy": orgID},
 		nil); err != nil {
 		t.Fatalf("accept terms: %v", err)
@@ -96,10 +95,24 @@ func TestTwoVoicesFromDistinctAuthoritiesRecoverAWorker(t *testing.T) {
 	w := setup(t)
 
 	worker := w.newWorker(t, "Lost Handset "+runID)
-	orgB := w.newOrganisation(t, "Second Authority "+runID)
-	confirmerA := w.vouchedParty(t, "Confirmer A "+runID, fixtures.OrgID)
-	confirmerA2 := w.vouchedParty(t, "Confirmer A2 "+runID, fixtures.OrgID)
-	confirmerB := w.vouchedParty(t, "Confirmer B "+runID, orgB)
+	orgBName := "Second Authority " + runID
+	orgB := w.newOrganisation(t, orgBName)
+	orgBCaller := w.registrationApplicant(t, orgBName)
+	var secondProject struct {
+		ID string `json:"id"`
+	}
+	if err := w.Parties.As(orgBCaller).Post(w.ctx, "/v1/projects", map[string]any{
+		"kind": "project", "name": "Second authority project " + runID, "ownerPartyId": orgB,
+	}, &secondProject); err != nil {
+		t.Fatalf("create second authority project: %v", err)
+	}
+	if err := w.Parties.As(orgBCaller).Post(w.ctx,
+		"/v1/projects/"+secondProject.ID+"/activation", nil, nil); err != nil {
+		t.Fatalf("activate second authority project: %v", err)
+	}
+	confirmerA := w.vouchedParty(t, "Confirmer A "+runID, fixtures.OrgID, fixtures.ProjectID, w.login(t, fixtures.OrgID))
+	confirmerA2 := w.vouchedParty(t, "Confirmer A2 "+runID, fixtures.OrgID, fixtures.ProjectID, w.login(t, fixtures.OrgID))
+	confirmerB := w.vouchedParty(t, "Confirmer B "+runID, orgB, secondProject.ID, orgBCaller)
 
 	var rec recoveryView
 	if err := w.Parties.As(w.login(t, fixtures.SupervisorID)).Post(w.ctx, "/v1/recoveries", map[string]any{
@@ -282,7 +295,7 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	// The override is readable afterwards — by the worker, by an auditor, by
 	// anybody asking whether this power is being used well.
 	var read recoveryView
-	if err := w.Parties.Get(w.ctx, "/v1/recoveries/"+rec.ID, &read); err != nil {
+	if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/recoveries/"+rec.ID, &read); err != nil {
 		t.Fatalf("read the recovery back: %v", err)
 	}
 	if read.OverrideBy == nil || read.OverrideRsn == nil {

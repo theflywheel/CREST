@@ -13,6 +13,7 @@ import (
 	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
+	"github.com/theflywheel/crest/pkg/strength"
 )
 
 // Working the unclear queue (#25).
@@ -54,6 +55,9 @@ import (
 // active today would fail rows for having been ingested before a definition was
 // revised — the stranding that pinning at ingestion exists to prevent (§7).
 func (h *handlers) resolveUnclear(w http.ResponseWriter, r *http.Request) {
+	if !requirePrivateCaller(w, r, h.d) {
+		return
+	}
 	var body struct {
 		PartyID    string `json:"partyId"`
 		ResolvedBy string `json:"resolvedByPartyId"`
@@ -125,8 +129,8 @@ func (h *handlers) resolveUnclear(w http.ResponseWriter, r *http.Request) {
 
 	// The same rule ingestion applies, applied again here: a worker who has
 	// withdrawn enrolment consent has asked us to stop recording evidence about
-	// them (§9), and resolving a row onto them would record it anyway. NONE
-	// still passes, for the same migration-gap reason ingestion gives.
+	// them (§9), and resolving a row onto them would record it anyway. Consent
+	// must be affirmative; an absent decision is not permission to store work.
 	consent, err := h.in.enrolmentConsent(r.Context(), body.PartyID, batch.ContextID)
 	switch {
 	case errors.Is(err, errNoSuchParty):
@@ -136,16 +140,20 @@ func (h *handlers) resolveUnclear(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		httpx.Fail(w, h.d.Log, "read the worker's enrolment consent", err)
 		return
-	case consent == "WITHDRAWN":
+	case consent != "GRANTED":
 		httpx.WriteError(w, http.StatusConflict, "consent_withdrawn",
-			"%s has withdrawn enrolment consent in %s, so no new evidence about them is "+
-				"recorded (§9)", body.PartyID, batch.ContextID)
+			"%s has not given affirmative enrolment consent in %s, so no new evidence about them is recorded",
+			body.PartyID, batch.ContextID)
 		return
 	}
 
 	var rec schema.CanonicalWorkEvidenceRecord
 	if err := json.Unmarshal(row.Record, &rec); err != nil {
 		httpx.Fail(w, h.d.Log, "read the stored record", err)
+		return
+	}
+	if err := privacyCheck(rec); err != nil {
+		httpx.WriteError(w, http.StatusConflict, "privacy_violation", "%v", err)
 		return
 	}
 
@@ -189,7 +197,7 @@ func (h *handlers) resolveUnclear(w http.ResponseWriter, r *http.Request) {
 		if locked.Kind != unclearUnattributed {
 			return errNotReattributable
 		}
-		unitID, err := insertUnit(r.Context(), tx, locked.BatchID, unit, dedupeKey(unit, rec))
+		unitID, err := insertUnit(r.Context(), tx, locked.BatchID, unit, strength.EvidenceFields(rec), dedupeKey(unit, rec))
 		if err != nil {
 			return err
 		}

@@ -548,10 +548,23 @@ func (h *recoveryHandlers) complete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *recoveryHandlers) get(w http.ResponseWriter, r *http.Request) {
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
+	callerID, callerOK := actualCaller(r)
+	if !callerOK {
+		httpx.WriteError(w, http.StatusForbidden, "recovery_access_denied", "a recovery is visible only to its worker or assigned custodian")
+		return
+	}
 	rec, err := getRecovery(r.Context(), h.d.DB.Q(), r.PathValue("id"))
 	if err != nil {
 		httpx.NotFoundOr(w, h.d.Log, "recovery", err, store.ErrNotFound)
 		return
+	}
+	if callerID != rec.PartyID {
+		if _, ok := requireRegistryCustodian(w, r, h.d, ""); !ok {
+			return
+		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, rec)
 }
@@ -583,11 +596,11 @@ func (h *recoveryHandlers) list(w http.ResponseWriter, r *http.Request) {
 		h.writeRecoveryList(w, r, rows)
 		return
 	}
-	// The audit surface: signed-in callers (#102). Reading ONE recovery stays
+	// The audit surface: the assigned registry custodian. Reading ONE recovery stays
 	// open below — the id is unguessable and the worker it belongs to may
 	// hold it printed on paper, which is exactly who must never be locked out
 	// of reading it.
-	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+	if _, ok := requireRegistryCustodian(w, r, h.d, ""); !ok {
 		return
 	}
 	where, args := ``, []any{}

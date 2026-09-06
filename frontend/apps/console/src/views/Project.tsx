@@ -213,13 +213,14 @@ function DefinitionRead() {
 }
 
 export function Sources() {
+  const s = useConsole();
   const r = useLoad(async () => {
     const [out, assess] = await Promise.all([
-      api.get("evidence", "/v1/sources").catch(() => ({ sources: [], silent: 0 })),
+      api.get("evidence", "/v1/sources?contextId=" + encodeURIComponent(s.projectId)).catch(() => ({ sources: [], silent: 0 })),
       api.get("verification", "/v1/source-assessments").catch(() => ({ assessments: [] })),
     ]);
     return { sources: out.sources || [], assessments: assess.assessments || [] };
-  });
+  }, [s.projectId]);
   return (
     <LoadFrame r={r}>
       {({ sources, assessments }) => {
@@ -356,4 +357,3 @@ export function Receipt() {
     </>
   );
 }
-

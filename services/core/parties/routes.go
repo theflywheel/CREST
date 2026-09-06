@@ -80,6 +80,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("GET /v1/holds", h.listHolds)
 	// Closing a hold, not only listing it (§4, W7). See holds.go.
 	mux.HandleFunc("POST /v1/holds/{id}/resolve", h.resolveHold)
+	mux.HandleFunc("POST /v1/holds/{id}/confirm", h.confirmHold)
 	mux.HandleFunc("GET /v1/holds/metrics", h.mergeMetrics)
 	// g4_4: coverage-by-place. See coverage.go.
 	mux.HandleFunc("GET /v1/coverage", h.coverage)
@@ -130,6 +131,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	// The deployment's public self-description (#70). Unauthenticated: one
 	// nobody outside can read is one nobody outside can check.
 	mux.HandleFunc("GET /v1/instance", h.getInstance)
+	mux.HandleFunc("POST /v1/instance/setup", h.setupInstance)
 
 	// The skill list (#16). Reference data rather than a primitive — §3 files
 	// it beside credential shapes and adapters.
@@ -144,12 +146,31 @@ type handlers struct {
 }
 
 func (h *handlers) createParty(w http.ResponseWriter, r *http.Request) {
+	if !identity.Authenticated(w, r, h.d.Log, true) {
+		return
+	}
+	caller := identity.From(r.Context())
+	if caller.PartyID != "" {
+		if err := h.canInvite(r.Context(), h.d.DB.Q(), caller.PartyID); err != nil {
+			httpx.WriteError(w, http.StatusForbidden, "cannot_register_party", "use the authorized assisted-enrolment flow")
+			return
+		}
+	}
 	var p schema.Party
 	if !httpx.ReadJSON(w, r, &p) {
 		return
 	}
-	if p.ID == "" {
-		p.ID = id.Party(h.d.Clock)
+	if p.ID != "" || len(p.IdentityBindings) != 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "server_managed_identity", "party IDs and identity bindings cannot be supplied at registration")
+		return
+	}
+	p.ID = id.Party(h.d.Clock)
+	if caller.PartyID == "" {
+		if p.Kind != schema.PartyKindPerson {
+			httpx.WriteError(w, http.StatusBadRequest, "use_organisation_registration", "organizations register through the organization workflow")
+			return
+		}
+		p.IdentityBindings = []schema.PartyIdentityBindingsItem{{Provider: caller.Issuer, ProviderClass: schema.PartyIdentityBindingsItemProviderClassGenericOidc, SubjectRef: caller.Subject, AssertedAt: h.d.Clock.Now()}}
 	}
 	if p.CreatedAt.IsZero() {
 		p.CreatedAt = h.d.Clock.Now()
@@ -166,6 +187,9 @@ func (h *handlers) createParty(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		httpx.Fail(w, h.d.Log, "create party", err)
 		return
+	}
+	if h.d.ForgetSubject != nil {
+		h.d.ForgetSubject(caller.Subject)
 	}
 	httpx.WriteJSON(w, http.StatusCreated, p)
 }
@@ -290,6 +314,7 @@ func (h *handlers) resolve(w http.ResponseWriter, r *http.Request) {
 			Candidates: candidates,
 			Reason:     "more than one party carries this identifier",
 			CreatedAt:  h.d.Clock.Now(),
+			ContextID:  contextID,
 		}
 		if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 			return insertHold(r.Context(), tx, hold)
@@ -321,13 +346,16 @@ func (h *handlers) resolve(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) listHolds(w http.ResponseWriter, r *http.Request) {
-	// A custodian queue. It shows existence rather than content — key values
-	// are deliberately not serialised — so any signed-in caller may read it;
-	// deciding one is the authorized act (#102).
-	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+	contextID := r.URL.Query().Get("contextId")
+	if contextID == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "context_required",
+			"a hold queue must name the project scope assigned to its custodian")
 		return
 	}
-	holds, err := openHolds(r.Context(), h.d.DB.Q())
+	if _, ok := requireRegistryCustodian(w, r, h.d, contextID); !ok {
+		return
+	}
+	holds, err := openHoldsForContext(r.Context(), h.d.DB.Q(), contextID)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list holds", err)
 		return
@@ -402,6 +430,10 @@ func (h *handlers) createTerms(w http.ResponseWriter, r *http.Request) {
 		// verifier can reach.
 		return enqueueFact(r.Context(), tx, "terms", t.ID, t.Version)
 	}); err != nil {
+		if errors.Is(err, errImmutableTerms) {
+			httpx.WriteError(w, http.StatusConflict, "immutable_terms", "%s", err)
+			return
+		}
 		httpx.Fail(w, h.d.Log, "create terms", err)
 		return
 	}
@@ -427,12 +459,19 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
-	// approvedByPartyId stays a recorded fact rather than a cross-checked
-	// claim: the fixture world already holds a grant approved by a custodian
-	// person under the organisation's authority, and requiring it to equal
-	// the acting party would make that history unloadable. The gate above is
-	// the one that matters — whoever the record names as approver, only the
-	// authority (or somebody proven to act for it) can put the record here.
+	callerID, callerOK := actualCaller(r)
+	if !callerOK {
+		httpx.WriteError(w, http.StatusForbidden, "caller_identity_required", "an authorization must record the authenticated approver")
+		return
+	}
+	if a.ApprovedByPartyID != "" && a.ApprovedByPartyID != callerID {
+		httpx.WriteError(w, http.StatusForbidden, "approver_mismatch", "approvedByPartyId must equal the authenticated caller")
+		return
+	}
+	a.ApprovedByPartyID = callerID
+	// approvedByPartyId is derived from the authenticated caller. The authority
+	// gate establishes who may issue the grant; this field establishes who
+	// actually clicked the approval, including an assistant acting for it.
 	// And the authority must be an organisation — the same line
 	// listAuthorizations draws. A person naming themselves as their own
 	// authority is the self-mint above wearing different field names.
@@ -461,6 +500,41 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusForbidden, "organisation_not_approved",
 			"authorityPartyId must name an APPROVED organisation; a party of the right shape "+
 				"is not an authority until the registry's decision says so")
+		return
+	}
+	terms, err := getTerms(r.Context(), h.d.DB.Q(), a.Terms.ID, a.Terms.Version)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "terms_not_found", "the authorization must cite an existing terms version")
+		return
+	}
+	if a.Scope.Kind == schema.AuthorizationScopeKindContext {
+		if a.Scope.ContextID == nil || *a.Scope.ContextID == "" {
+			httpx.WriteError(w, http.StatusBadRequest, "context_required", "a context authorization must name its project")
+			return
+		}
+		c, contextErr := getContext(r.Context(), h.d.DB.Q(), *a.Scope.ContextID)
+		if contextErr != nil || c.OwnerPartyID != a.AuthorityPartyID {
+			httpx.WriteError(w, http.StatusForbidden, "unrelated_project", "a grant may only target a project owned by its authority")
+			return
+		}
+	}
+	accepted, acceptedErr := acceptedTerms(r.Context(), h.d.DB.Q(), a.AuthorityPartyID)
+	if acceptedErr == nil {
+		if accepted.ID != terms.ID || accepted.Version != terms.Version {
+			httpx.WriteError(w, http.StatusForbidden, "terms_not_accepted", "the authority may grant only under the terms version it accepted")
+			return
+		}
+	} else {
+		// First-run root may publish terms and immediately create the initial
+		// grants through the ordinary API; there is no seeded acceptance to cite.
+		inst, instanceErr := loadInstance(h.d.Config)
+		if instanceErr != nil || inst.OperatorPartyID != a.AuthorityPartyID {
+			httpx.WriteError(w, http.StatusForbidden, "terms_not_accepted", "the authority has accepted no terms")
+			return
+		}
+	}
+	if missing := narrowerThanTerms(a.Functions, terms.Permissions); len(missing) > 0 {
+		httpx.WriteProblems(w, "wider_than_terms", "a grant cannot exceed the cited terms permissions", missing)
 		return
 	}
 	if a.ID == "" {
@@ -636,6 +710,21 @@ func (h *handlers) listAuthorizationsBody(w http.ResponseWriter, r *http.Request
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_query", "scope is instance or context")
 		return
 	}
+	contextID := q.Get("contextId")
+	if scopeKind == "context" && contextID == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "context_required", "a context authorization listing must name one project")
+		return
+	}
+	if scopeKind == "instance" && contextID != "" {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_query", "an instance authorization listing cannot name a project")
+		return
+	}
+	if !strings.HasPrefix(r.URL.Path, "/internal/") {
+		if _, ok := identity.Authorize(w, r, h.d.Log, partyID, contextID,
+			h.d.Authenticating, h.d.Permits); !ok {
+			return
+		}
+	}
 	party, err := getParty(r.Context(), h.d.DB.Q(), partyID)
 	if err != nil {
 		httpx.NotFoundOr(w, h.d.Log, "party", err, store.ErrNotFound)
@@ -659,7 +748,7 @@ func (h *handlers) listAuthorizationsBody(w http.ResponseWriter, r *http.Request
 		}
 		at = parsed
 	}
-	list, err := authorizationsFor(r.Context(), h.d.DB.Q(), partyID, scopeKind, q.Get("contextId"), at)
+	list, err := authorizationsFor(r.Context(), h.d.DB.Q(), partyID, scopeKind, contextID, at)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list authorizations", err)
 		return
@@ -704,9 +793,38 @@ func (h *handlers) createContext(w http.ResponseWriter, r *http.Request) {
 	if !httpx.ReadJSON(w, r, &c) {
 		return
 	}
-	if c.ID == "" {
-		c.ID = id.New(h.d.Clock, "context")
+	if c.OwnerPartyID == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "owner_required", "a context must name its owning organisation")
+		return
 	}
+	if _, ok := identity.Authorize(w, r, h.d.Log, c.OwnerPartyID, "",
+		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
+	authority, err := getParty(r.Context(), h.d.DB.Q(), c.OwnerPartyID)
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "context owner", err, store.ErrNotFound)
+		return
+	}
+	if authority.Kind != schema.PartyKindOrganisation {
+		httpx.WriteError(w, http.StatusForbidden, "not_an_organisation", "context owner must be an organisation")
+		return
+	}
+	reg, err := getRegistration(r.Context(), h.d.DB.Q(), c.OwnerPartyID)
+	if err != nil || reg.State != stateApproved {
+		httpx.WriteError(w, http.StatusForbidden, "organisation_not_approved", "context owner must be approved")
+		return
+	}
+	if c.ID != "" {
+		httpx.WriteError(w, http.StatusBadRequest, "server_managed_id", "context ids are assigned by the server")
+		return
+	}
+	c.ID = id.New(h.d.Clock, "context")
+	if c.State != "" && c.State != schema.ContextStateDRAFT {
+		httpx.WriteError(w, http.StatusBadRequest, "draft_required", "new contexts start as DRAFT and activate through their project gates")
+		return
+	}
+	c.State = schema.ContextStateDRAFT
 	if err := schema.Validate(schema.IDContext, c); err != nil {
 		writeValidation(w, err)
 		return
@@ -728,7 +846,7 @@ func (h *handlers) createContext(w http.ResponseWriter, r *http.Request) {
 func (h *handlers) overdueAuthorizations(w http.ResponseWriter, r *http.Request) {
 	// The review queue is a custodian surface like /v1/holds: signed-in
 	// callers only (#102).
-	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+	if _, ok := requireRegistryCustodian(w, r, h.d, ""); !ok {
 		return
 	}
 	list, err := overdueAuthorizations(r.Context(), h.d.DB.Q(), h.d.Clock.Now())

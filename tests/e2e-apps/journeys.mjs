@@ -19,10 +19,11 @@ const W = BASE + "/worker/";
 const F = BASE + "/enrolment/";
 const C = BASE + "/console/";
 const V = BASE + "/verify/";
-const FIXWORKER = "did:crest:party:01JCREST00000000000000WRKA";
-const FIXORG = "did:crest:party:01JCREST000000000000000RGN";
-const FIXSPVR = "did:crest:party:01JCREST00000000000000SPVR";
-const FIXCSTD = "did:crest:party:01JCREST00000000000000CSTD";
+let FIXWORKER = "did:crest:party:01JCREST00000000000000WRKA";
+let FIXORG = "did:crest:party:01JCREST000000000000000RGN";
+let FIXSPVR = "did:crest:party:01JCREST00000000000000SPVR";
+let FIXCSTD = "did:crest:party:01JCREST00000000000000CSTD";
+let FIXPROJECT = "crest:context:01JCREST00000000000000PRJC";
 const STAMP = Date.now().toString().slice(-6);
 
 // Bearer-authenticated service calls for the acts that are not the recorded
@@ -36,17 +37,72 @@ const OIDCBASE = LOCAL
   ? `http://${new URL(BASE).hostname}:59103`
   : BASE.replace(/\/$/, "") + "/api/crest-mock-oidc";
 
-async function mintToken(partyId) {
+const FIXTURE_IDS = Object.freeze({
+  worker: FIXWORKER, org: FIXORG, supervisor: FIXSPVR, custodian: FIXCSTD,
+  project: FIXPROJECT,
+});
+const FIXTURE_SUBJECTS = {
+  worker: "story|01JCREST00000000000000WRKA",
+  org: "story|01JCREST000000000000000RGN",
+  supervisor: "story|01JCREST00000000000000SPVR",
+  custodian: "story|01JCREST00000000000000CSTD",
+};
+let runtimeReady;
+
+function fixtureKeyForParty(partyId) {
+  return Object.keys(FIXTURE_IDS).find(key =>
+    ({ worker: FIXWORKER, org: FIXORG, supervisor: FIXSPVR, custodian: FIXCSTD,
+      project: FIXPROJECT })[key] === partyId || FIXTURE_IDS[key] === partyId);
+}
+
+function providerSubject(partyId) {
+  const key = fixtureKeyForParty(partyId);
+  if (key && FIXTURE_SUBJECTS[key]) return FIXTURE_SUBJECTS[key];
+  return "story|" + partyId.replace("did:crest:party:", "");
+}
+
+async function mintSubjectToken(sub, label = sub) {
   const r = await fetch(OIDCBASE + "/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sub: "story|" + partyId.replace("did:crest:party:", ""),
-      aud: "crest", expiresIn: "1h",
-    }),
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sub, aud: "crest", expiresIn: "1h" }),
   });
+  if (!r.ok) throw new Error(`the dev issuer cannot mint ${label}: ${r.status}`);
   const d = await r.json();
   return d.accessToken || d.access_token || d.token;
+}
+
+async function ensureRuntime() {
+  if (runtimeReady) return runtimeReady;
+  runtimeReady = (async () => {
+    for (const key of ["org", "supervisor", "custodian", "worker"]) {
+      const token = await mintSubjectToken(FIXTURE_SUBJECTS[key], key);
+      const r = await fetch(SVCBASE + "/v1/auth/me", {
+        headers: { Authorization: "Bearer " + token },
+      });
+      if (!r.ok) throw new Error(`story seed did not bind ${key}: ${r.status}`);
+      const me = await r.json();
+      if (!me.partyId) throw new Error(`story seed returned no runtime id for ${key}`);
+      if (key === "worker") FIXWORKER = me.partyId;
+      if (key === "org") FIXORG = me.partyId;
+      if (key === "supervisor") FIXSPVR = me.partyId;
+      if (key === "custodian") FIXCSTD = me.partyId;
+    }
+    const token = await mintSubjectToken(FIXTURE_SUBJECTS.org, "org");
+    const r = await fetch(SVCBASE + "/v1/projects?ownerPartyId=" + encodeURIComponent(FIXORG), {
+      headers: { Authorization: "Bearer " + token },
+    });
+    if (!r.ok) throw new Error(`seeded organisation cannot list projects: ${r.status}`);
+    const projects = (await r.json()).projects || [];
+    const project = projects.find(p => p.name === "Riverside Health Programme") || projects[0];
+    if (!project?.id) throw new Error("story seed returned no runtime project id");
+    FIXPROJECT = project.id;
+  })();
+  return runtimeReady;
+}
+
+async function mintToken(partyId) {
+  await ensureRuntime();
+  return mintSubjectToken(providerSubject(partyId), partyId);
 }
 
 const VERIFBASE = LOCAL
@@ -54,6 +110,12 @@ const VERIFBASE = LOCAL
   : BASE.replace(/\/$/, "") + "/api/crest-verification";
 
 async function asParty(partyId, method, path, body, base = SVCBASE) {
+  await ensureRuntime();
+  const key = fixtureKeyForParty(partyId);
+  if (key === "worker") partyId = FIXWORKER;
+  if (key === "org") partyId = FIXORG;
+  if (key === "supervisor") partyId = FIXSPVR;
+  if (key === "custodian") partyId = FIXCSTD;
   const token = await mintToken(partyId);
   return fetch(base + path, {
     method,
@@ -131,22 +193,24 @@ const hash = async (p, h, ms = 1800) => {
 // door offers only eSignet now, so the recorder signs in underneath — the same
 // mint-and-bind the persona cards performed.
 const CONSOLE_PERSONAS = {
-  orgadmin: [FIXORG, "Peter Otieno", "Org Admin"],
-  configurator: [FIXORG, "Dr. Alice Mutua", "Project Configurator"],
-  author: [FIXORG, "Amina Yusuf", "Work Definition Author"],
-  approver: [FIXORG, "Prof. Ndegwa", "Work Definition Approver"],
-  rateowner: [FIXORG, "Mutua", "Rate Owner"],
-  payowner: [FIXORG, "Njeri", "Payment Mechanism Owner"],
-  instance: [FIXORG, "Instance administrator", "Instance Admin"],
-  custodian: [FIXCSTD, "Otieno", "Registry Custodian"],
-  support: [FIXCSTD, "Naliaka", "Support Agent"],
-  funder: [FIXORG, "Funding oversight", "Funding Viewer"],
+  orgadmin: ["org", "Peter Otieno", "Org Admin"],
+  configurator: ["org", "Dr. Alice Mutua", "Project Configurator"],
+  author: ["org", "Amina Yusuf", "Work Definition Author"],
+  approver: ["org", "Prof. Ndegwa", "Work Definition Approver"],
+  rateowner: ["org", "Mutua", "Rate Owner"],
+  payowner: ["org", "Njeri", "Payment Mechanism Owner"],
+  instance: ["org", "Instance administrator", "Instance Admin"],
+  custodian: ["custodian", "Otieno", "Registry Custodian"],
+  support: ["custodian", "Naliaka", "Support Agent"],
+  funder: ["org", "Funding oversight", "Funding Viewer"],
 };
 
 async function consoleLogin(p, persona) {
-  const [partyId, who, role] = CONSOLE_PERSONAS[persona];
+  await ensureRuntime();
+  const [key, who, role] = CONSOLE_PERSONAS[persona];
+  const partyId = key === "org" ? FIXORG : FIXCSTD;
   const token = await mintToken(partyId);
-  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const sub = providerSubject(partyId);
   const pw = await (await fetch(OIDCBASE + "/dev/pairwise?sub=" + encodeURIComponent(sub))).json();
   await fetch(SVCBASE + "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
     method: "POST",
@@ -166,8 +230,14 @@ async function consoleLogin(p, persona) {
 // signs in underneath the way the dev card used to — mock-issuer token, the
 // same idempotent identity-binding append, session handed to the door.
 async function workerSignIn(p, partyId, label) {
+  await ensureRuntime();
+  const key = fixtureKeyForParty(partyId);
+  if (key === "worker") partyId = FIXWORKER;
+  if (key === "org") partyId = FIXORG;
+  if (key === "supervisor") partyId = FIXSPVR;
+  if (key === "custodian") partyId = FIXCSTD;
   const token = await mintToken(partyId);
-  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const sub = providerSubject(partyId);
   const pw = await (await fetch(OIDCBASE + "/dev/pairwise?sub=" + encodeURIComponent(sub))).json();
   await fetch(SVCBASE + "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
     method: "POST",

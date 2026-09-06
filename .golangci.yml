@@ -36,10 +36,28 @@ linters:
             - "**/services/core/definitions/**"
             - "**/services/core/evidence/**"
             - "**/services/core/verification/**"
-            - "**/services/payments/**"
+            - "**/services/core/attestation/**"
           deny:
             - pkg: github.com/theflywheel/crest/services
               desc: "services must not import each other — talk over HTTP, like in production"
+
+        payments-boundary:
+          files:
+            - "**/services/payments/**"
+          deny:
+            - pkg: github.com/theflywheel/crest/services/core
+              desc: "payments talks to core over HTTP"
+            - pkg: github.com/theflywheel/crest/services/devnotifications
+              desc: "payments must not import the development notification service"
+
+        development-notifications-boundary:
+          files:
+            - "**/services/devnotifications/**"
+          deny:
+            - pkg: github.com/theflywheel/crest/services/core
+              desc: "notification delivery must not import core"
+            - pkg: github.com/theflywheel/crest/services/payments
+              desc: "notification delivery must not import payments"
 
         # Shared code cannot depend on a particular service, or it stops being shared.
         pkg-stays-generic:

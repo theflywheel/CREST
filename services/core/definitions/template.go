@@ -97,7 +97,38 @@ func (h *handlers) template(w http.ResponseWriter, r *http.Request) {
 		httpx.NotFoundOr(w, h.d.Log, "definition version", err, store.ErrNotFound)
 		return
 	}
-	t := templateFor(def)
+	if !authorizeDefinitionRead(w, r, h.d, def) {
+		return
+	}
+	writeTemplate(w, r, templateFor(def))
+}
+
+// template serves the authoring-time form of p3_23. A draft already knows
+// which version it will become (base+1), so the file can be generated at the
+// point the reference asks for it without minting or persisting a definition.
+// Submission derives the same columns again from the immutable version.
+func (h *draftHandlers) template(w http.ResponseWriter, r *http.Request) {
+	draft, err := getDraft(r.Context(), h.d.DB.Q(), r.PathValue("id"))
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "draft", err, store.ErrNotFound)
+		return
+	}
+	if !authorizeDraft(w, r, h.d, draft, false) {
+		return
+	}
+	defID := draft.DefinitionID
+	if defID == "" {
+		defID = previewDefinitionID
+	}
+	def, _ := compile(draft.Doc, defID, draft.BaseVersion+1, draft.CreatedBy, draft.UpdatedAt)
+	if draft.ContextID != "" {
+		ctxID := draft.ContextID
+		def.ContextID = &ctxID
+	}
+	writeTemplate(w, r, templateFor(def))
+}
+
+func writeTemplate(w http.ResponseWriter, r *http.Request, t Template) {
 	if r.URL.Query().Get("format") == "csv" {
 		w.Header().Set("Content-Type", "text/csv")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", t.Filename))
