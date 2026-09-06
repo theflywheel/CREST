@@ -111,8 +111,16 @@ export function VerifyProvider(props: { children: ReactNode }) {
 
   const ensureOrg = async () => {
     if (orgSession) return;
-    const caller = await whoAmI();
-    if (!caller.partyId) throw new Error("sign in with the configured identity provider before using institutional verification");
+    // Logged out is a state V-2 renders (its sign-in button), not an error
+    // to bar the screen with: only a session that exists and is refused is.
+    let caller: { partyId?: string };
+    try {
+      caller = await whoAmI();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      throw e;
+    }
+    if (!caller.partyId) return;
     try {
       setOrgParty(await api.get("parties", `/v1/parties/${encodeURIComponent(caller.partyId)}`));
       setOrgSession(true);

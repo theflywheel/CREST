@@ -168,7 +168,11 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
   approver: [
     {
       caption: "Definition approver · P-3",
-      items: P3_RAIL,
+      items: [
+        { to: "/ratify", label: "Ratify" },
+        { to: "/define/anatomy", label: "The record itself" },
+        { to: "/definition", label: "As published" },
+      ],
     },
   ],
   // F-1 and F-2 navigate by the reference's own setup rail (railFor), exactly
@@ -186,6 +190,9 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
       caption: "Instance admin · G-1",
       items: [
         { to: "/instance/covers", label: "Instance" },
+        // The reference's G-1 rail lists the admissions queue; the decision
+        // itself is the registry custodian's, which the service enforces.
+        { to: "/admissions", label: "Organisations" },
         { to: "/instance/consent", label: "Consent & data" },
         { to: "/instance/services", label: "Platform services" },
         { to: "/instance/people", label: "People & roles" },
@@ -259,7 +266,7 @@ const allowed = (key: PersonaKey, path: string) =>
   // The approver reads the record and the act, and holds no wizard route.
   (key === "approver" && (P3_READS.includes(path) || path === "/ratify" || path === "/definition")) ||
   (isFunder(key) && (J3_ROUTES.includes(path) || FUNDERS_ROUTES.includes(path))) ||
-  (key === "instance" && G1_EXTRA.includes(path)) ||
+  (key === "instance" && (G1_EXTRA.includes(path) || path === "/admissions" || path.startsWith("/admissions/"))) ||
   (key === "custodian" && (path === "/admissions" || path.startsWith("/admissions/"))) ||
   ((key !== "author" && key !== "approver") && NAV[key].some((g) => g.items.some((i) => i.to === path)));
 
@@ -289,7 +296,10 @@ function Shell() {
       </div>
     );
   }
-  const p3nav = s.persona === "author" || s.persona === "approver"
+  // The author's rail is the reference's five wizard entries. The approver
+  // ratifies and never drafts, so their rail is their own (no wizard entry —
+  // the second of the three mechanisms named above AUTHOR_ROUTES).
+  const p3nav = s.persona === "author"
     ? [{ items: loc.pathname === "/define/anatomy" ? P3_ANATOMY_RAIL
       : loc.pathname === "/define/open" ? P3_OPEN_RAIL
         : loc.pathname === "/handoff" ? SETUP_RAIL : P3_RAIL }]

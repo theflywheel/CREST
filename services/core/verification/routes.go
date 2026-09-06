@@ -410,7 +410,8 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 	// that gets published.
 	v.TrustChain = append(v.TrustChain, issuerLink(v.TrustChain, issuerID, def))
 
-	assessment, err := h.assessmentFor(ctx, provenanceSystemRef(cred.CredentialSubject.Provenance), cred.CredentialSubject.Provenance.AdapterRef)
+	assessment, err := h.assessmentFor(ctx, h.credentialContext(ctx, credID),
+		provenanceSystemRef(cred.CredentialSubject.Provenance), cred.CredentialSubject.Provenance.AdapterRef)
 	if err != nil {
 		v.Reasons = append(v.Reasons, "the source assessment could not be read: "+err.Error())
 		return v, subjectRef, credID
@@ -947,13 +948,13 @@ func (h *handlers) assess(w http.ResponseWriter, r *http.Request) {
 	req.AssessedBy = assessor
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		_, err := tx.Exec(r.Context(), `
-			INSERT INTO source_assessments (adapter_ref, system_ref, max_tier, reason, assessed_by, assessed_at)
-			VALUES ($1,$2,$3,$4,$5,$6)
-			ON CONFLICT (system_ref) WHERE system_ref IS NOT NULL DO UPDATE
+			INSERT INTO source_assessments (adapter_ref, context_id, system_ref, max_tier, reason, assessed_by, assessed_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7)
+			ON CONFLICT (context_id, system_ref) WHERE system_ref IS NOT NULL AND context_id IS NOT NULL DO UPDATE
 			SET max_tier = EXCLUDED.max_tier, reason = EXCLUDED.reason,
 			    assessed_by = EXCLUDED.assessed_by, assessed_at = EXCLUDED.assessed_at,
 			    adapter_ref = EXCLUDED.adapter_ref`,
-			req.AdapterRef, req.SystemRef, req.MaxTier, req.Reason, req.AssessedBy, h.d.Clock.Now())
+			req.AdapterRef, req.ContextID, req.SystemRef, req.MaxTier, req.Reason, req.AssessedBy, h.d.Clock.Now())
 		return err
 	}); err != nil {
 		httpx.Fail(w, h.d.Log, "record source assessment", err)
@@ -978,7 +979,8 @@ func (h *handlers) clearAssessment(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		_, err := tx.Exec(r.Context(),
-			`DELETE FROM source_assessments WHERE system_ref = $1`, systemRef)
+			`DELETE FROM source_assessments WHERE system_ref = $1
+			   AND (context_id = $2 OR context_id IS NULL)`, systemRef, contextID)
 		return err
 	}); err != nil {
 		httpx.Fail(w, h.d.Log, "clear source assessment", err)
@@ -987,13 +989,18 @@ func (h *handlers) clearAssessment(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *handlers) assessmentFor(ctx context.Context, systemRef, adapterRef string) (*strength.SourceAssessment, error) {
+// assessmentFor answers with the project's own assessment of a source. A row
+// assessed before assessments were scoped (context_id NULL) still applies to
+// every project until it is re-assessed or cleared in one; a scoped row wins.
+func (h *handlers) assessmentFor(ctx context.Context, contextID, systemRef, adapterRef string) (*strength.SourceAssessment, error) {
 	var maxTier int
 	var reason string
 	var err error
 	if systemRef != "" {
 		err = h.d.DB.Q().QueryRow(ctx,
-			`SELECT max_tier, reason FROM source_assessments WHERE system_ref = $1`, systemRef).
+			`SELECT max_tier, reason FROM source_assessments
+			  WHERE system_ref = $1 AND (context_id = $2 OR context_id IS NULL)
+			  ORDER BY context_id NULLS LAST LIMIT 1`, systemRef, contextID).
 			Scan(&maxTier, &reason)
 	} else {
 		// A credential without systemRef predates the scoped provenance field.
@@ -1016,6 +1023,18 @@ func (h *handlers) assessmentFor(ctx context.Context, systemRef, adapterRef stri
 // remains compatible with credentials issued before the generated schema
 // gained the scoped systemRef field. An absent field is the only case allowed
 // to use the historical adapter assessment fallback.
+// credentialContext is the project a credential this deployment issued was
+// issued in; "" for a credential issued elsewhere, which then meets only the
+// unscoped assessments.
+func (h *handlers) credentialContext(ctx context.Context, credID string) string {
+	var contextID *string
+	if err := h.d.DB.Q().QueryRow(ctx,
+		`SELECT context_id FROM credentials WHERE id = $1`, credID).Scan(&contextID); err != nil || contextID == nil {
+		return ""
+	}
+	return *contextID
+}
+
 func provenanceSystemRef(provenance schema.Provenance) string {
 	raw, err := json.Marshal(provenance)
 	if err != nil {
@@ -1092,14 +1111,15 @@ func (h *handlers) assessments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := h.d.DB.Q().Query(r.Context(),
-		`SELECT coalesce(system_ref,''), adapter_ref, max_tier, reason, assessed_by, assessed_at
-		 FROM source_assessments ORDER BY coalesce(system_ref, adapter_ref)`)
+		`SELECT coalesce(context_id,''), coalesce(system_ref,''), adapter_ref, max_tier, reason, assessed_by, assessed_at
+		 FROM source_assessments ORDER BY coalesce(system_ref, adapter_ref), context_id`)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list assessments", err)
 		return
 	}
 	defer rows.Close()
 	type row struct {
+		ContextID  string    `json:"contextId,omitempty"`
 		SystemRef  string    `json:"systemRef,omitempty"`
 		AdapterRef string    `json:"adapterRef"`
 		MaxTier    int       `json:"maxTier"`
@@ -1109,7 +1129,7 @@ func (h *handlers) assessments(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := store.Collect(rows, func(r store.Row) (row, error) {
 		var v row
-		return v, r.Scan(&v.SystemRef, &v.AdapterRef, &v.MaxTier, &v.Reason, &v.AssessedBy, &v.AssessedAt)
+		return v, r.Scan(&v.ContextID, &v.SystemRef, &v.AdapterRef, &v.MaxTier, &v.Reason, &v.AssessedBy, &v.AssessedAt)
 	})
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "read assessments", err)

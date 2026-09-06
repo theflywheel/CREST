@@ -62,7 +62,7 @@ function ConsoleScreen(props: { children: React.ReactNode }) {
       ? (s.orgParty?.displayName || "Signed in institution") + " — onboarded verifier"
       : "Not signed in — verification does not need an account";
   return (
-    <ConsoleShell appName="CREST · Checking a credential" who={who} nav={NAV}>
+    <ConsoleShell appName="CREST · Checking a credential" who={<span className="who-label">{who}</span>} nav={NAV}>
       <div className="pane-narrow screen" key={loc.pathname}>
         {s.err ? <ErrBar>{s.err}</ErrBar> : null}
         {props.children}

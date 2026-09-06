@@ -37,9 +37,9 @@ async function projectRead(contextId: string, defId: string) {
   const [claims, unclear, unreleased, unreached, instr, metrics, def] = await Promise.all([
     api.get("evidence", "/v1/claims?contextId=" + encodeURIComponent(contextId)).catch(() => ({ claims: [] })),
     api.get("evidence", "/v1/unclear?contextId=" + encodeURIComponent(contextId)).catch(() => ({ unclear: [] })),
-    api.get("confirmation", "/v1/unreleased").catch(() => ({ windows: [] })),
-    api.get("confirmation", "/v1/unreached").catch(() => ({ windows: [] })),
-    api.get("payments", "/v1/instructions").catch(() => ({ instructions: [] })),
+    api.get("confirmation", "/v1/unreleased?contextId=" + encodeURIComponent(contextId)).catch(() => ({ windows: [] })),
+    api.get("confirmation", "/v1/unreached?contextId=" + encodeURIComponent(contextId)).catch(() => ({ windows: [] })),
+    api.get("payments", "/v1/instructions?contextId=" + encodeURIComponent(contextId)).catch(() => ({ instructions: [] })),
     api.get("parties", "/v1/holds/metrics").catch(() => null),
     defId ? api.get("definitions", `/v1/definitions/${encodeURIComponent(defId)}`).catch(() => null) : Promise.resolve(null),
   ]);

@@ -102,8 +102,13 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 // display name and self-declared attributes, the same facts the
 // applicant-facing registration read already serves (#168).
 func (h *handlers) listRegistrations(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireRegistryCustodian(w, r, h.d, ""); !ok {
-		return
+	// The queue is read by the instance operator (the G-1 rail's
+	// "Organisations") and by the registry custodian who decides it; the
+	// decision itself stays the custodian's (decideRegistration).
+	if !h.callerIsInstanceOperator(r) {
+		if _, ok := requireRegistryCustodian(w, r, h.d, ""); !ok {
+			return
+		}
 	}
 	state := r.URL.Query().Get("state")
 	switch state {
@@ -529,4 +534,15 @@ func (h *handlers) publication(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, pub)
+}
+
+// callerIsInstanceOperator says whether the authenticated caller is the
+// deployment's published operator party, acting directly.
+func (h *handlers) callerIsInstanceOperator(r *http.Request) bool {
+	c := identity.From(r.Context())
+	if !c.Authenticated() || c.PartyID == "" || c.Assisting() {
+		return false
+	}
+	inst, err := loadInstance(h.d.Config)
+	return err == nil && inst.OperatorPartyID != "" && inst.OperatorPartyID == c.PartyID
 }

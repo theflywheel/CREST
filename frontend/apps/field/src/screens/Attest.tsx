@@ -30,7 +30,10 @@ function useLoad<T>(fn: () => Promise<T>): T | undefined {
 
 export function ToConfirm() {
   const nav = useNavigate();
-  const out = useLoad(() => api.get("confirmation", "/v1/unreached"));
+  const s = useField();
+  // A review list is always scoped to the project (§9): the substrate refuses
+  // an unscoped read rather than exporting everybody's windows.
+  const out = useLoad(() => api.get("confirmation", "/v1/unreached?contextId=" + encodeURIComponent(s.contextId || "")));
   const list: Array<{ claimId: string; partyId?: string; closesAt?: string }> = out
     ? out.windows || out.unreached || []
     : [];
@@ -362,7 +365,7 @@ export function Handoff() {
   const data = useLoad(async () => {
     const [unclear, unreached] = await Promise.all([
       api.get("evidence", "/v1/unclear?contextId=" + encodeURIComponent(s.contextId || "")).catch(() => ({ unclear: [] })),
-      api.get("confirmation", "/v1/unreached").catch(() => ({ windows: [], unreached: [] })),
+      api.get("confirmation", "/v1/unreached?contextId=" + encodeURIComponent(s.contextId || "")).catch(() => ({ windows: [], unreached: [] })),
     ]);
     return { unclear, unreached };
   });

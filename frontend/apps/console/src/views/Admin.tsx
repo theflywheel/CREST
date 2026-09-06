@@ -358,7 +358,7 @@ export function Portfolio() {
       truncated: cl.length > DRILL_UNIT_CAP,
       defs: Object.fromEntries(defs) as Record<string, PDef>,
     };
-  });
+  }, [s.projectId]);
   return (
     <LoadFrame r={r}>
       {({ claims, list, unitById, truncated, defs }) => {

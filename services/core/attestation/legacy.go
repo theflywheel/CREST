@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
@@ -34,13 +35,28 @@ func adoptLegacyOpenWindows(ctx context.Context, d service.Deps) error {
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
+		// Drain the cursor before writing: pgx serves one statement per
+		// connection, and an UPDATE issued while rows are still open fails
+		// with "conn busy".
+		type legacyWindow struct {
+			claimID, partyID, contextID string
+			closesAt                    time.Time
+		}
+		var pending []legacyWindow
 		for rows.Next() {
-			var claimID, partyID, contextID string
-			var closesAt = d.Clock.Now()
-			if err := rows.Scan(&claimID, &partyID, &contextID, &closesAt); err != nil {
+			var lw legacyWindow
+			if err := rows.Scan(&lw.claimID, &lw.partyID, &lw.contextID, &lw.closesAt); err != nil {
+				rows.Close()
 				return err
 			}
+			pending = append(pending, lw)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, lw := range pending {
+			claimID, partyID, contextID, closesAt := lw.claimID, lw.partyID, lw.contextID, lw.closesAt
 			token, err := newReviewToken()
 			if err != nil {
 				return fmt.Errorf("generate legacy review token: %w", err)
@@ -80,6 +96,6 @@ func adoptLegacyOpenWindows(ctx context.Context, d service.Deps) error {
 				}
 			}
 		}
-		return rows.Err()
+		return nil
 	})
 }

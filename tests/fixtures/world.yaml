@@ -151,7 +151,9 @@ authorizations:
     partyId: did:crest:party:01JCREST00000000000000SPVR
     terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
     scope: { kind: context, contextId: crest:context:01JCREST00000000000000PRJC }
-    functions: [submit-work-evidence, read-work-evidence, register-workers, act-for-party, work-definition-source-owner]
+    # claim-review: the supervisor is the assisted route for an open window
+    # whose worker could not be told, and that list is a scoped review read.
+    functions: [submit-work-evidence, read-work-evidence, register-workers, act-for-party, work-definition-source-owner, claim-review]
     period: { start: 2026-01-06T00:00:00Z, end: 2026-12-31T23:59:59Z }
     authorityPartyId: did:crest:party:01JCREST000000000000000RGN
     approvedByPartyId: did:crest:party:01JCREST000000000000000RGN
@@ -247,7 +249,7 @@ authorizations:
   - id: crest:authorization:01JCREST00000000000000CSCP
     partyId: did:crest:party:01JCREST000000000000000RGN
     scope: { kind: context, contextId: crest:context:01JCREST00000000000000PRJC }
-    functions: [attest-work, submit-work-evidence, read-work-evidence, payment-owner]
+    functions: [attest-work, submit-work-evidence, read-work-evidence, payment-owner, claim-review]
     authorityPartyId: did:crest:party:01JCREST000000000000000RGN
     approvedByPartyId: did:crest:party:01JCREST00000000000000SPEC
     approvedAt: 2026-01-05T09:00:00Z

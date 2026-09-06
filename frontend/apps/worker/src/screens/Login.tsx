@@ -52,7 +52,7 @@ export function Login() {
             Continue with eSignet
           </button>
           <p className="muted" style={{ marginTop: 8 }}>
-            Sign in with this deployment’s configured identity provider. CREST keeps the verified identity binding.
+            Sign in with this deployment’s configured identity provider. CREST never stores the document. Only the result of the check is kept.
           </p>
         </div>
         <div className="card" data-pathway="assisted">

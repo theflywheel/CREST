@@ -237,12 +237,17 @@ export function ConsoleProvider(props: { children: ReactNode }) {
         // Neither owner nor configurator: the projects this person holds a
         // grant on (an author's world is where somebody granted them a role).
         const mine = await api.get("parties", "/v1/authorizations/mine").catch(() => null);
-        const ctxIds = Array.from(
-          new Set(
-            ((mine && mine.authorizations) || [])
-              .map((a: { scope?: { contextId?: string }; contextId?: string }) => a.contextId || a.scope?.contextId)
-              .filter(Boolean) as string[],
-          ),
+        type Grant = { scope?: { contextId?: string }; contextId?: string; functions?: string[] };
+        const grants = ((mine && mine.authorizations) || []) as Grant[];
+        const ctxOf = (a: Grant) => a.contextId || a.scope?.contextId;
+        // Every console read is an evidence read, so the working project is
+        // one this person may read — a write-only grant elsewhere (a second
+        // authority's submit role, say) must not become their landing place.
+        const readable = new Set(
+          grants.filter((a) => (a.functions || []).includes("read-work-evidence")).map(ctxOf).filter(Boolean),
+        );
+        const ctxIds = Array.from(new Set(grants.map(ctxOf).filter(Boolean) as string[])).sort(
+          (a, b) => Number(readable.has(b)) - Number(readable.has(a)),
         );
         const fetched = await Promise.all(
           ctxIds.map((id) =>

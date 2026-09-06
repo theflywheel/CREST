@@ -225,7 +225,9 @@ for (const [personaIdx, personaName, who, views] of [
       "define/roles", "define/tranches", "define/rules", "define/extend", "define/open",
       "define/anatomy", "handoff"]],
   [3, "Prof. Ndegwa (definition approver, P-3)", "Prof. Ndegwa",
-    ["ratify", "definition", "define/anatomy", "ratified"]],
+    // #/ratified is the reference's confirmation panel (p3_16), drawn
+    // without the shell; the wizard walk below proves it.
+    ["ratify", "definition", "define/anatomy"]],
   [4, "Nadia Okoth (rate owner, F-1)", "Nadia Okoth",
     ["paysetup", "rateowner", "rate", "ratepublish", "ratestanding"]],
   [5, "Daniel Mwangi (payment mechanism owner, F-2)", "Daniel Mwangi",
@@ -978,6 +980,10 @@ async function workerSignIn(page, request, partyId, label) {
 // enrolled organisation bearer instead of relying on a stale page token.
 async function verifyOrgSignIn(page, request, partyId) {
   await ensureRuntime(request);
+  // The same idempotent self-bind every other door's sign-in performs: the
+  // callback resolves a party only for a subject the registry has bound.
+  const bound = await bindParty(request, partyId);
+  expect(bound.ok(), "the verifier's self-bind is accepted for " + partyId).toBeTruthy();
   const token = await mintToken(request, partyId);
   await page.goto("/verify/#/auth?token=" + encodeURIComponent(token));
   await settle(page);
@@ -1421,6 +1427,7 @@ test("per-share consent: the presentation loop on both faces, and the decline pa
   await page.evaluate(() => { location.hash = "#/requests"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("Ask to see more");
+  await page.fill('[name="sharesubject"]', FIX.workerA);
   await page.fill('[name="sharepurpose"]', "Hiring for a private clinic " + stamp);
   await page.click("#share-create");
   const card = page.locator("[data-vshare]", { hasText: stamp }).first();
@@ -1890,6 +1897,10 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   await expect(page.locator("body")).toContainText("bednets");
   await expect(page.locator('input[name="unitofwork"]')).toHaveCount(0);
   await page.fill('[name="rateamount"]', "175.00");
+  // Work is priced by the version in force when its period started, never
+  // the latest (f1_4). The walk's work below is dated 1 Sep, so this version
+  // is effective from then; the seeded v1 keeps pricing anything earlier.
+  await page.fill('[name="rateeffective"]', "2026-09-01");
   await page.click("#rate-continue");
   await settle(page);
   expect(page.url()).toContain("#/ratepublish");
@@ -1938,12 +1949,50 @@ test("console: the funders walk — rate as terms, held with an owner, released 
     partyId: SPVR,
     terms: { id: TERM, version: 1 },
     scope: { kind: "context", contextId: projId },
-    functions: ["submit-work-evidence"],
+    // Evidence arrives only from a registered source (§9), and only about a
+    // worker who consented to this programme — so the supervisor also owns
+    // the walk's source and acts for the worker at the consent moment.
+    functions: ["submit-work-evidence", "work-definition-source-owner", "act-for-party"],
     period: { start: "2026-01-01T00:00:00Z", end: "2027-12-31T00:00:00Z" },
     authorityPartyId: me, approvedByPartyId: me,
     approvedAt: "2026-09-01T00:00:00Z", state: "ACTIVE",
   });
   expect(r.status(), "the supervisor's grant on the walk's project").toBe(201);
+  // The mechanism owner reads the project's instructions as the finance
+  // surface does — payment-owner on the walk's project, the grant the fixture
+  // world holds on the seeded one.
+  r = await asParty(request, me, "POST", "/v1/authorizations", {
+    id: "crest:authorization:" + fakeUlid(),
+    partyId: me,
+    terms: { id: TERM, version: 1 },
+    scope: { kind: "context", contextId: projId },
+    functions: ["payment-owner", "claim-review", "read-work-evidence"],
+    period: { start: "2026-01-01T00:00:00Z", end: "2027-12-31T00:00:00Z" },
+    authorityPartyId: me, approvedByPartyId: me,
+    approvedAt: "2026-09-01T00:00:00Z", state: "ACTIVE",
+  });
+  expect(r.status(), "the owner's finance grant on the walk's project").toBe(201);
+  const walkSource = await asPartyOn(request, PAYSVC.evidence, SPVR, "POST", "/v1/sources", {
+    adapterRef: "csv-batch@1",
+    contextId: projId,
+    systemRef: "csv-batch",
+    sourceClass: "programme-system",
+    captureMethod: "digital-capture",
+    sourceExposure: "signed-batch",
+    expectedEvery: "24h",
+    ownerPartyId: SPVR,
+  });
+  expect(walkSource.status(), "the walk's source is registered by its owner").toBe(201);
+  const consentPath = `/v1/parties/${encodeURIComponent(FIX.workerA)}/consents?moment=enrolment&captureMethod=assisted` +
+    `&purpose=work-history-and-payment&capturedBy=${encodeURIComponent(SPVR)}&contextId=${encodeURIComponent(projId)}`;
+  const walkConsent = await request.post(G2.parties + consentPath, {
+    headers: {
+      Authorization: "Bearer " + (await mintToken(request, SPVR)),
+      "X-CREST-On-Behalf-Of": FIX.workerA,
+      "Idempotency-Key": mutationKey(SPVR, "POST", consentPath, null),
+    },
+  });
+  expect(walkConsent.status(), "the worker's consent to the walk's programme").toBe(201);
 
   // ── F-2: the mechanism owner configures — and no further. ──
   await consoleSignIn(page, request, "payowner");
@@ -2018,7 +2067,7 @@ test("console: the funders walk — rate as terms, held with an owner, released 
     "period_start,period_end,geography,household_id,beneficiary_count,source_record_ref\n" +
     `bednet-distribution,3,bednets-distributed,phone,+15550100011,2026-09-01,2026-09-01,Riverside,funders-HH-${stamp},3,funders-${stamp}\n`;
   const batchPath = `/v1/batches?contextId=${encodeURIComponent(projId)}&definitionId=${encodeURIComponent(DEFN)}&definitionVersion=1` +
-    `&submittedBy=${encodeURIComponent(SPVR)}&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch&systemRef=funders-walk`;
+    `&submittedBy=${encodeURIComponent(SPVR)}&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch&systemRef=csv-batch`;
   const batch = await request.fetch(PAYSVC.evidence + batchPath, {
     method: "POST",
     headers: {
@@ -2032,16 +2081,17 @@ test("console: the funders walk — rate as terms, held with an owner, released 
 
   // The window opens through the outbox — poll, then the worker confirms.
   await expect.poll(async () =>
-    (await asPartyOn(request, PAYSVC.payments, FIX.workerA, "GET", `/v1/windows/${claimId}`)).status(),
+    (await asPartyOn(request, PAYSVC.evidence, FIX.workerA, "GET", `/v1/windows/${claimId}`)).status(),
   { timeout: 60000 }).toBe(200);
-  r = await asPartyOn(request, PAYSVC.payments, FIX.workerA, "POST", `/v1/claims/${claimId}/confirm`, {});
+  r = await asPartyOn(request, PAYSVC.evidence, FIX.workerA, "POST", `/v1/claims/${claimId}/confirm`, {});
   expect(r.status(), "the worker's confirmation exit").toBe(200);
 
   // The exit released the obligation; the not-live mechanism turned it into a
   // HELD instruction with a reason and a named owner — never a missing one.
   let instruction;
   await expect.poll(async () => {
-    const res = await asPartyOn(request, PAYSVC.payments, me, "GET", `/v1/instructions/by-claim/${claimId}`);
+    // The instruction is the worker's own record: read it as them.
+    const res = await asPartyOn(request, PAYSVC.payments, FIX.workerA, "GET", `/v1/instructions/by-claim/${claimId}`);
     if (res.status() !== 200) return "no instruction yet";
     instruction = await res.json();
     return instruction.state;
@@ -2159,15 +2209,17 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   await expect(page.locator("body")).toContainText(/live/);
   await expect(page.locator("body")).toContainText("went live");
   // What the last gate opened: the very instruction the walk watched being
-  // held is now released, re-priced at its own release moment, with money on it.
+  // held is now released, priced by the version in force when the work
+  // happened, with money on it.
   const released = page.locator(`[data-released="${instruction.id}"]`);
   await expect(released).toBeVisible({ timeout: 20000 });
   await expect(released).toContainText(/RELEASED|SETTLED/);
   await expect(released).toContainText("KES");
   await expect(released).toContainText("opened by this activation");
   // …and the service agrees: the held state is gone, the amount is real
-  // (3 units at the version in force at release: v-latest, 175.00 → 525.00).
-  r = await asPartyOn(request, PAYSVC.payments, me, "GET", `/v1/instructions/by-claim/${claimId}`);
+  // (3 units at the version in force on 1 Sep: 175.00 KES → 525.00).
+  r = await asPartyOn(request, PAYSVC.payments, FIX.workerA, "GET", `/v1/instructions/by-claim/${claimId}`);
+  expect(r.status(), "the worker reads their released instruction").toBe(200);
   const after = await r.json();
   expect(after.state === "RELEASED" || after.state === "SETTLED").toBeTruthy();
   expect(after.held).toBeFalsy();
@@ -2299,7 +2351,9 @@ test("console: the registry metrics read real counts, and the receipt shows a re
   // project side. ──
   const stamp = Date.now().toString().slice(-6);
   const supTok = await mintToken(request, SPVR);
-  const sourceRef = "receipt-walk-" + stamp;
+  // The pinned definition admits only its declared source systems; the walk
+  // registers one of them on the project rather than inventing a name.
+  const sourceRef = "csv-batch";
   const source = await asPartyOn(request, PAYSVC.evidence, SPVR, "POST", "/v1/sources", {
     adapterRef: "csv-batch@1",
     contextId: FIX.project,
@@ -2448,14 +2502,15 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await expect(page.locator("#stepcounter")).toContainText("Evidence · 6 of 9");
   await expect(page.locator("body")).toContainText("the floor — no requirements");
   await expect(page.locator("body")).toContainText("Tier 1 is strongest, Tier 2 is supervised evidence, and Tier 3 is worker asserted evidence.");
-  await choose(page, "tierCeiling", "3");
+  // Reference numbering: 1 is strongest, so a ceiling of 1 caps nothing.
+  await choose(page, "tierCeiling", "1");
   await fill(page, "checkIntensity", "Sample — 1 in 10");
   await fill(page, "workerSummary", "You handed out bednets and recorded each household you visited.");
   await fill(page, "evidencePlain",
     "The programme's own system has your visit recorded.\nYour supervisor confirmed the day's round.");
-  // Tier 2 requires the household id; tier 3 requires both. This is what the
-  // dry run will judge rows against.
-  await page.locator('[data-requires="3"]').fill("household_id, beneficiary_count");
+  // Tier 2 requires the household id; tier 1 (the strongest) requires both.
+  // This is what the dry run will judge rows against.
+  await page.locator('[data-requires="1"]').fill("household_id, beneficiary_count");
   await page.locator('[data-requires="2"]').fill("household_id");
   // p3_8 was redrawn to the design pack's frame (75f02b7), which carries no
   // green callout here; the stored-tier sentence lives on p3_22's derived
@@ -2560,7 +2615,7 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   // cannot have been stored on them.
   await choose(page, "drySourceClass", "self-reported");
   await press(page, "Run the sample");
-  await expect(page.locator('[data-dryrow="row 2"]')).toContainText("Tier 1", { timeout: 25000 });
+  await expect(page.locator('[data-dryrow="row 2"]')).toContainText("Tier 3", { timeout: 25000 });
   await choose(page, "drySourceClass", "programme-system");
   await press(page, "Run the sample");
   await expect(page.locator('[data-dryrow="row 2"]')).toContainText("Tier 2", { timeout: 25000 });
@@ -2684,7 +2739,9 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await expect(page.locator("body")).toContainText("Review and sign");
   await expect(page.locator("body")).toContainText("awaiting ratification");
   await expect(page.locator("#ratify-read")).toContainText("bednets-distributed");
-  await expect(page.locator("#ratify-read")).toContainText(/01JCREST00000000000000SPEC|SPEC/);
+  // The author is the runtime's specifier party (server-assigned on a fresh
+  // stack), shown shortened: its tail is what the read carries.
+  await expect(page.locator("#ratify-read")).toContainText(FIX.specifier.slice(-6));
   // The ratifier names what is still open. Nothing prices this unit yet, and
   // that is a real pending field derived from the real record.
   await page.locator('[data-pending="ratePerOutcomeUnit"]').check();
@@ -2700,7 +2757,7 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await expect(page.locator("[data-event='SUBMITTED']")).toBeVisible();
   // Every act names its actor, and the two names are different parties.
   const trail = await page.locator(".grid-tbl").first().innerText();
-  expect(trail, "the submission is the author's act").toMatch(/SPEC/);
+  expect(trail, "the submission is the author's act").toContain(FIX.specifier.slice(-6));
   expect(trail, "the signature is the approver's act").toMatch(/RGN/);
   // Ratified WITH pending fields — a real recorded state, named by the
   // ratifier and not by the author.

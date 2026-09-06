@@ -78,6 +78,10 @@ function fold(s) {
     .replace(/[–—−]/g, "-")
     .replace(/[   ]/g, " ")
     .replace(/\s+/g, " ")
+    // The spec is cut from the reference's HTML, where an inline <b> leaves
+    // a space before the punctuation that follows it ("a policy ."); the
+    // rendered screen has none. Punctuation binds to the word before it.
+    .replace(/\s+([.,;:!?])/g, "$1")
     .trim()
     .toLowerCase();
 }
@@ -237,12 +241,41 @@ async function flowFundersArrive(page, request, mode, route) {
       partyId: FLOW_FIX.supervisor,
       terms: { id: "crest:terms:01JCREST00000000000000TERM", version: 1 },
       scope: { kind: "context", contextId: projId },
-      functions: ["submit-work-evidence"],
+      functions: ["submit-work-evidence", "work-definition-source-owner", "act-for-party"],
       period: { start: "2026-01-01T00:00:00Z", end: "2027-12-31T00:00:00Z" },
       authorityPartyId: me, approvedByPartyId: me,
       approvedAt: "2026-09-01T00:00:00Z", state: "ACTIVE",
     });
     if (r.status() !== 201) return `the supervisor's grant on the flow's project was refused (${r.status()})`;
+    r = await flowAsPartyOn(request, FLOW_API.parties, me, "POST", "/v1/authorizations", {
+      id: "crest:authorization:" + fakeUlid(),
+      partyId: me,
+      terms: { id: "crest:terms:01JCREST00000000000000TERM", version: 1 },
+      scope: { kind: "context", contextId: projId },
+      functions: ["payment-owner", "claim-review", "read-work-evidence"],
+      period: { start: "2026-01-01T00:00:00Z", end: "2027-12-31T00:00:00Z" },
+      authorityPartyId: me, approvedByPartyId: me,
+      approvedAt: "2026-09-01T00:00:00Z", state: "ACTIVE",
+    });
+    if (r.status() !== 201) return `the owner's finance grant on the flow's project was refused (${r.status()})`;
+    // Evidence arrives only from a registered source the definition admits,
+    // and only about a worker who consented to this programme (§9).
+    r = await flowAsPartyOn(request, FLOW_API.evidence, FLOW_FIX.supervisor, "POST", "/v1/sources", {
+      adapterRef: "csv-batch@1", contextId: projId, systemRef: "csv-batch",
+      sourceClass: "programme-system", captureMethod: "digital-capture", sourceExposure: "signed-batch",
+      expectedEvery: "24h", ownerPartyId: FLOW_FIX.supervisor,
+    });
+    if (r.status() !== 201) return `the flow's source registration was refused (${r.status()})`;
+    const consentPath = `/v1/parties/${encodeURIComponent(FLOW_FIX.workerA)}/consents?moment=enrolment&captureMethod=assisted` +
+      `&purpose=work-history-and-payment&capturedBy=${encodeURIComponent(FLOW_FIX.supervisor)}&contextId=${encodeURIComponent(projId)}`;
+    r = await request.post(FLOW_API.parties + consentPath, {
+      headers: {
+        Authorization: "Bearer " + (await flowMintToken(request, FLOW_FIX.supervisor)),
+        "X-CREST-On-Behalf-Of": FLOW_FIX.workerA,
+        "Idempotency-Key": mutationKey(FLOW_FIX.supervisor, "POST", consentPath, null),
+      },
+    });
+    if (r.status() !== 201) return `the worker's consent to the flow's programme was refused (${r.status()})`;
 
     let p = await flowConsolePersona(page, request, "payowner");
     if (p) return p;
@@ -273,7 +306,7 @@ async function flowFundersArrive(page, request, mode, route) {
       `bednet-distribution,3,bednets-distributed,phone,+15550100011,2026-09-01,2026-09-01,` +
       `Riverside,fidelity-HH-${stamp},3,fidelity-funders-${stamp}\n`;
     const batchPath = `/v1/batches?contextId=${encodeURIComponent(projId)}&definitionId=${encodeURIComponent(FUNDERS_DEFN)}&definitionVersion=1` +
-      `&submittedBy=${encodeURIComponent(FLOW_FIX.supervisor)}&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch&systemRef=fidelity-gate`;
+      `&submittedBy=${encodeURIComponent(FLOW_FIX.supervisor)}&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch&systemRef=csv-batch`;
     const batch = await request.fetch(FLOW_API.evidence + batchPath, {
       method: "POST",
       headers: {
@@ -287,18 +320,18 @@ async function flowFundersArrive(page, request, mode, route) {
 
     let windowUp = false;
     for (let i = 0; i < 30 && !windowUp; i++) {
-      const w = await flowAsPartyOn(request, FLOW_API.payments, FLOW_FIX.workerA, "GET", `/v1/windows/${claimId}`);
+      const w = await flowAsPartyOn(request, FLOW_API.evidence, FLOW_FIX.workerA, "GET", `/v1/windows/${claimId}`);
       windowUp = w.status() === 200;
       if (!windowUp) await page.waitForTimeout(2000);
     }
     if (!windowUp) return "the confirmation window never opened within 60s";
-    r = await flowAsPartyOn(request, FLOW_API.payments, FLOW_FIX.workerA, "POST", `/v1/claims/${claimId}/confirm`, {});
+    r = await flowAsPartyOn(request, FLOW_API.evidence, FLOW_FIX.workerA, "POST", `/v1/claims/${claimId}/confirm`, {});
     if (r.status() !== 200) return `the worker's confirmation exit was refused (${r.status()})`;
 
     let instruction;
     let held = false;
     for (let i = 0; i < 30 && !held; i++) {
-      const res = await flowAsPartyOn(request, FLOW_API.payments, me, "GET", `/v1/instructions/by-claim/${claimId}`);
+      const res = await flowAsPartyOn(request, FLOW_API.payments, FLOW_FIX.workerA, "GET", `/v1/instructions/by-claim/${claimId}`);
       if (res.status() === 200) {
         instruction = await res.json();
         held = instruction.state === "HELD";
@@ -371,7 +404,11 @@ async function flowMintToken(request, partyId) {
     data: { sub, aud: "crest", expiresIn: "1h" },
   });
   if (!r.ok()) throw new Error(`the dev issuer refused a token for ${partyId} (${r.status()})`);
-  const d = await r.json();
+  return flowTokenOf(await r.json());
+}
+
+// The dev issuer's token answer, whichever spelling it uses.
+function flowTokenOf(d) {
   return d.accessToken || d.access_token || d.token;
 }
 
@@ -383,7 +420,7 @@ async function flowEnsureRuntime(request) {
         data: { sub: FLOW_SUBJECTS[key], aud: "crest", expiresIn: "1h" },
       });
       if (!r.ok()) throw new Error(`the dev issuer refused the seeded ${key} subject`);
-      const token = (await r.json()).accessToken;
+      const token = flowTokenOf(await r.json());
       const me = await request.get(FLOW_API.parties + "/v1/auth/me", {
         headers: { Authorization: "Bearer " + token },
       });
@@ -394,7 +431,7 @@ async function flowEnsureRuntime(request) {
     }
     const token = await request.post(FLOW_API.oidc + "/token", {
       data: { sub: FLOW_SUBJECTS.org, aud: "crest", expiresIn: "1h" },
-    }).then(r => r.json()).then(d => d.accessToken);
+    }).then(r => r.json()).then(flowTokenOf);
     const projects = await request.get(
       FLOW_API.parties + "/v1/projects?ownerPartyId=" + encodeURIComponent(FLOW_FIX.org),
       { headers: { Authorization: "Bearer " + token } },
@@ -406,7 +443,7 @@ async function flowEnsureRuntime(request) {
     FLOW_FIX.project = project.id;
     const custodianToken = await request.post(FLOW_API.oidc + "/token", {
       data: { sub: FLOW_SUBJECTS.custodian, aud: "crest", expiresIn: "1h" },
-    }).then(r => r.json()).then(d => d.accessToken);
+    }).then(r => r.json()).then(flowTokenOf);
     const resolved = await request.get(
       FLOW_API.parties + "/v1/resolve?kind=contact-route&value=" +
         encodeURIComponent("worker-chandra@riverside.invalid") +
@@ -542,6 +579,8 @@ async function flowDefiningWorkArrive(page, request, mode) {
   const seededDefinition = "crest:definition:01JCREST00000000000000DEFN";
   let r = await flowAsPartyOn(request, FLOW_API.parties, author, "POST", "/v1/definition-drafts", {
     createdByPartyId: author,
+    // A draft names the project whose authority governs it.
+    contextId: FLOW_FIX.project,
     cloneFromDefinitionId: seededDefinition,
     cloneFromVersion: 1,
   });
@@ -833,10 +872,10 @@ async function flowArrive(page, request, mode) {
   if (mode === "admissions-queue" || mode === "admissions-review") {
     // g4_1–g4_3 — the operator's side of the same door. The registration
     // above is the queue's real pending row; the reviewer is the instance
-    // administrator, signed in through the door's own persona card — the same
-    // first-login path every console: arrival takes. The token lives in
-    // memory, so the arrival must never reload after signing in; it lands by
-    // hash navigation, which mounts the screen fresh over live reads.
+    // administrator, signed in the way every console: arrival is. The decision
+    // itself is the registry custodian's act (the flow posts it as them). The
+    // token lives in memory, so the arrival must never reload after signing
+    // in; it lands by hash navigation, which mounts the screen fresh.
     {
       const p = await flowConsoleLogin(page, request, "instance");
       if (p) return p;

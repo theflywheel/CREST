@@ -396,7 +396,7 @@ export function G1Services() {
               </div>
             ))}
           </div>
-          <WalkButtons back="/instance/invite" next="/instance/people" nextLabel="Done — hand to the registry custodian" />
+          <WalkButtons back="/instance/invite" next="/instance/people" nextLabel="Done — awaiting the organisation" />
         </>
       )}
     </LoadFrame>
