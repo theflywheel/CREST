@@ -49,6 +49,7 @@ type Hold struct {
 	Candidates []string  `json:"candidates"`
 	Reason     string    `json:"reason"`
 	CreatedAt  time.Time `json:"createdAt"`
+	ContextID  string    `json:"contextId,omitempty"`
 }
 
 // Confidence per key kind. A salted national-ID hash is an exact match on a
@@ -217,15 +218,15 @@ func resolve(ctx context.Context, q store.Querier, kind, value, contextID string
 
 func insertHold(ctx context.Context, tx store.Querier, h Hold) error {
 	_, err := tx.Exec(ctx,
-		`INSERT INTO match_holds (id, key_kind, key_value, candidates, reason, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		h.ID, h.KeyKind, h.KeyValue, h.Candidates, h.Reason, h.CreatedAt)
+		`INSERT INTO match_holds (id, key_kind, key_value, candidates, reason, created_at, context_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''))`,
+		h.ID, h.KeyKind, h.KeyValue, h.Candidates, h.Reason, h.CreatedAt, h.ContextID)
 	return err
 }
 
 func openHolds(ctx context.Context, q store.Querier) ([]Hold, error) {
 	rows, err := q.Query(ctx,
-		`SELECT id, key_kind, key_value, candidates, reason, created_at
+		`SELECT id, key_kind, key_value, candidates, reason, created_at, COALESCE(context_id, '')
 		 FROM match_holds WHERE resolved_at IS NULL ORDER BY created_at`)
 	if err != nil {
 		return nil, err
@@ -233,7 +234,21 @@ func openHolds(ctx context.Context, q store.Querier) ([]Hold, error) {
 	defer rows.Close()
 	return store.Collect(rows, func(r store.Row) (Hold, error) {
 		var h Hold
-		return h, r.Scan(&h.ID, &h.KeyKind, &h.KeyValue, &h.Candidates, &h.Reason, &h.CreatedAt)
+		return h, r.Scan(&h.ID, &h.KeyKind, &h.KeyValue, &h.Candidates, &h.Reason, &h.CreatedAt, &h.ContextID)
+	})
+}
+
+func openHoldsForContext(ctx context.Context, q store.Querier, contextID string) ([]Hold, error) {
+	rows, err := q.Query(ctx,
+		`SELECT id, key_kind, key_value, candidates, reason, created_at, COALESCE(context_id, '')
+		 FROM match_holds WHERE resolved_at IS NULL AND context_id = $1 ORDER BY created_at`, contextID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return store.Collect(rows, func(r store.Row) (Hold, error) {
+		var h Hold
+		return h, r.Scan(&h.ID, &h.KeyKind, &h.KeyValue, &h.Candidates, &h.Reason, &h.CreatedAt, &h.ContextID)
 	})
 }
 
@@ -272,6 +287,18 @@ func insertAuthorization(ctx context.Context, tx store.Querier, a schema.Authori
 // must not withhold a worker's payment. One current authorization among
 // several overdue ones reads as not overdue — the permission is current.
 func permits(ctx context.Context, q store.Querier, partyID, function, contextID string, at time.Time) (bool, bool, error) {
+	// An instance-scoped grant covers every real context, but it cannot create
+	// a context by being queried for one. Check the registry's context first so
+	// a phantom id never receives a positive authorization answer.
+	if contextID != "" {
+		var exists bool
+		if err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM contexts WHERE id = $1)`, contextID).Scan(&exists); err != nil {
+			return false, false, err
+		}
+		if !exists {
+			return false, false, nil
+		}
+	}
 	var n, current int
 	err := q.QueryRow(ctx, `
 		SELECT count(*),
@@ -370,14 +397,23 @@ func insertContext(ctx context.Context, tx store.Querier, c schema.Context) erro
 	return err
 }
 
+var errImmutableTerms = errors.New("published terms are immutable; use a new version")
+
 func insertTerms(ctx context.Context, tx store.Querier, t schema.Terms) error {
 	doc, err := json.Marshal(t)
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx,
+	tag, err := tx.Exec(ctx,
 		`INSERT INTO terms (id, version, doc, published_at) VALUES ($1, $2, $3, $4)
 		 ON CONFLICT (id, version) DO NOTHING`, t.ID, t.Version, doc, t.PublishedAt)
+	if err == nil && tag == 0 {
+		var identical bool
+		err = tx.QueryRow(ctx, `SELECT doc=$3::jsonb FROM terms WHERE id=$1 AND version=$2`, t.ID, t.Version, doc).Scan(&identical)
+		if err == nil && !identical {
+			return errImmutableTerms
+		}
+	}
 	return err
 }
 
@@ -620,10 +656,29 @@ func mergedInto(ctx context.Context, q store.Querier, partyID string) (*string, 
 func openHold(ctx context.Context, tx store.Querier, holdID string) (Hold, error) {
 	var h Hold
 	err := tx.QueryRow(ctx, `
-		SELECT id, key_kind, key_value, candidates, reason, created_at
+		SELECT id, key_kind, key_value, candidates, reason, created_at, COALESCE(context_id, '')
 		FROM match_holds WHERE id = $1 AND resolved_at IS NULL FOR UPDATE`, holdID).
-		Scan(&h.ID, &h.KeyKind, &h.KeyValue, &h.Candidates, &h.Reason, &h.CreatedAt)
+		Scan(&h.ID, &h.KeyKind, &h.KeyValue, &h.Candidates, &h.Reason, &h.CreatedAt, &h.ContextID)
 	return h, err
+}
+
+func holdConfirmation(ctx context.Context, q store.Querier, holdID, survivor string) (confirmedBy, method, evidence string, err error) {
+	err = q.QueryRow(ctx, `
+		SELECT confirmed_by, confirmation_method, COALESCE(evidence_ref, '')
+		FROM match_hold_confirmations
+		WHERE hold_id = $1 AND survivor_party_id = $2`, holdID, survivor).
+		Scan(&confirmedBy, &method, &evidence)
+	return
+}
+
+func insertHoldConfirmation(ctx context.Context, tx store.Querier, holdID, survivor,
+	confirmedBy, method, evidence string, at time.Time) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO match_hold_confirmations
+			(hold_id, survivor_party_id, confirmed_by, confirmation_method, evidence_ref, confirmed_at)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6)`,
+		holdID, survivor, confirmedBy, method, evidence, at)
+	return err
 }
 
 // markHoldResolved closes a hold, recording the decision, who took it, and —

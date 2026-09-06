@@ -22,6 +22,7 @@ var batchReceivedAt = time.Date(2026, 3, 4, 9, 0, 0, 0, time.UTC)
 // onboarded and assessed, held in configuration. Nothing in any file below can
 // change any of it, and that is the point of every test in this file.
 var configuredSource = adapters.Source{
+	AdapterRef:    adaptercsv.Version,
 	Class:         schema.SourceClassProgrammeSystem,
 	CaptureMethod: schema.CaptureMethodDigitalCapture,
 	Exposure:      schema.SourceExposureSignedBatch,
@@ -275,6 +276,10 @@ func TestTheSameFileByADifferentTransportDiffersOnlyInExposure(t *testing.T) {
 			t.Errorf("%s: transport changed the source record ref", byBatch[i].Ref)
 		}
 		b.Provenance.SourceRecordRef = a.Provenance.SourceRecordRef
+		if deref(a.Provenance.SystemRef) != deref(b.Provenance.SystemRef) {
+			t.Errorf("%s: transport changed the source system ref", byBatch[i].Ref)
+		}
+		b.Provenance.SystemRef = a.Provenance.SystemRef
 		if a.Provenance != b.Provenance {
 			t.Errorf("%s: transport changed provenance beyond the exposure field: %+v vs %+v",
 				byBatch[i].Ref, a.Provenance, b.Provenance)

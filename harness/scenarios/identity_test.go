@@ -112,21 +112,19 @@ func (w *world) assist(t *testing.T, actor, forParty string) harness.Caller {
 }
 
 // consentOf records an enrolment consent for a party and returns its id.
-//
-// Recorded rather than looked up, because the fixture world's consents are
-// shared and a scenario that withdraws one takes it away from every scenario
-// that runs after it — which is exactly the isolation bug that made the suite
-// pass only on a fresh database once already.
+// Each caller supplies a new worker created for its own scenario.
 func (w *world) consentOf(t *testing.T, party string) string {
 	t.Helper()
 	var consent struct {
 		ID string `json:"id"`
 	}
-	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).PostRaw(w.ctx, fmt.Sprintf(
+	c := w.assist(t, fixtures.SupervisorID, party)
+	c.IdempotencyKey = harness.IdempotencyKey("identity-consent", t.Name(), runID, party, fixtures.ProjectID)
+	if err := w.Parties.As(c).PostRaw(w.ctx, fmt.Sprintf(
 		"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 		party, url.QueryEscape("hold and fetch evidence of my work"),
 		url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(fixtures.ProjectID)),
-		"audio/ogg", []byte("a recording of the worker agreeing"), &consent); err != nil {
+		"audio/ogg", fixtures.ConsentOgg, &consent); err != nil {
 		t.Fatalf("record consent for %s: %v", party, err)
 	}
 	return consent.ID
@@ -155,7 +153,7 @@ func (w *world) consentState(t *testing.T, party string) string {
 func (w *world) newWorker(t *testing.T, name string) string {
 	t.Helper()
 	var created schema.Party
-	if err := w.Parties.Post(w.ctx, "/v1/parties", schema.Party{
+	if err := w.Parties.As(w.login(t, fixtures.OrgID)).Post(w.ctx, "/v1/parties", schema.Party{
 		Kind:        schema.PartyKindPerson,
 		DisplayName: name,
 		// Reachable through their supervisor and by no other route. That is
@@ -443,8 +441,8 @@ func TestAnOrganisationApprovalNamesSomebodyWhoProvedIt(t *testing.T) {
 	if code != http.StatusForbidden {
 		t.Fatalf("approving while naming somebody else was answered %d, not 403: %s", code, body)
 	}
-	if !strings.Contains(string(body), "party_not_proven") {
-		t.Fatalf("the refusal does not name the impersonation: %s", body)
+	if !strings.Contains(string(body), "custodian_not_assigned") {
+		t.Fatalf("the refusal does not name the missing registry-custodian authority: %s", body)
 	}
 }
 
@@ -477,7 +475,9 @@ func (w *world) disputeClaim(t *testing.T, claimID string, body map[string]any, 
 	if raisedBy == "" {
 		t.Fatalf("a dispute needs a raisedByPartyId to authenticate as")
 	}
-	return w.Confirmation.As(w.login(t, raisedBy)).
+	c := w.login(t, raisedBy)
+	c.IdempotencyKey = harness.IdempotencyKey("dispute", t.Name(), runID, claimID, raisedBy)
+	return w.Confirmation.As(c).
 		Post(w.ctx, "/v1/claims/"+claimID+"/dispute", body, out)
 }
 
@@ -498,11 +498,12 @@ func TestASupervisorConfirmsForAWorkerAndItIsRecordedAsAssisted(t *testing.T) {
 	// exists for.
 	phone := sharedNumber(201)
 	worker := newWorkerWithPhone(t, w, "Assisted Confirmer", phone)
+	w.consentOf(t, worker)
 	res := w.submit(t, batch(row(phone, 7, "HH-assisted-"+runID)))
 	if len(res.ClaimIDs) != 1 {
 		t.Fatalf("expected one claim, got %+v", res)
 	}
-	claimID := res.ClaimIDs[0]
+	claimID := onlyClaim(t, res)
 	eventually(t, "the window opens", 15*time.Second, func() error {
 		_, err := w.window(claimID)
 		return err
@@ -541,12 +542,13 @@ func TestAConfirmationCannotClaimToBeSomethingItIsNot(t *testing.T) {
 	// by the same check — because a route nobody can rely on is a route that
 	// says nothing about whether the worker was ever asked.
 	phone := sharedNumber(202)
-	newWorkerWithPhone(t, w, "Honest Route", phone)
+	worker := newWorkerWithPhone(t, w, "Honest Route", phone)
+	w.consentOf(t, worker)
 	res := w.submit(t, batch(row(phone, 5, "HH-route-"+runID)))
 	if len(res.ClaimIDs) != 1 {
 		t.Fatalf("expected one claim, got %+v", res)
 	}
-	claimID := res.ClaimIDs[0]
+	claimID := onlyClaim(t, res)
 	eventually(t, "the window opens", 15*time.Second, func() error {
 		_, err := w.window(claimID)
 		return err

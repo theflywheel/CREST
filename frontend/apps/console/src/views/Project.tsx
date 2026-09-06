@@ -213,13 +213,14 @@ function DefinitionRead() {
 }
 
 export function Sources() {
+  const s = useConsole();
   const r = useLoad(async () => {
     const [out, assess] = await Promise.all([
-      api.get("evidence", "/v1/sources").catch(() => ({ sources: [], silent: 0 })),
-      api.get("verification", "/v1/source-assessments").catch(() => ({ assessments: [] })),
+      api.get("evidence", "/v1/sources?contextId=" + encodeURIComponent(s.projectId)).catch(() => ({ sources: [], silent: 0 })),
+      api.get("verification", "/v1/source-assessments?contextId=" + encodeURIComponent(s.projectId)).catch(() => ({ assessments: [] })),
     ]);
     return { sources: out.sources || [], assessments: assess.assessments || [] };
-  });
+  }, [s.projectId]);
   return (
     <LoadFrame r={r}>
       {({ sources, assessments }) => {
@@ -255,7 +256,10 @@ export function Sources() {
             ) : null}
             <CardTitled t="Current assessments">
               {assessments.length ? (
-                <KVR rows={assessments.map((a: { adapterRef: string; maxTier: number; reason?: string }) => [a.adapterRef, "capped at tier " + a.maxTier + " — " + (a.reason || "")])} />
+                <KVR rows={assessments.map((a: { contextId?: string; systemRef?: string; adapterRef: string; maxTier: number; reason?: string }) => [
+                  (a.systemRef || a.adapterRef) + (a.contextId ? "" : a.systemRef ? " · every project (assessed before scoping)" : " · legacy, by adapter"),
+                  "capped at tier " + a.maxTier + " — " + (a.reason || ""),
+                ])} />
               ) : (
                 <div className="muted">
                   No source is downgraded. A downgrade moves every affected credential's tier instantly, with nothing
@@ -356,4 +360,3 @@ export function Receipt() {
     </>
   );
 }
-

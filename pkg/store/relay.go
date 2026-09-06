@@ -30,7 +30,7 @@ type Relay struct {
 // NewRelay builds a relay. every is how often it looks when there is nothing to
 // do; a batch that delivered work is followed immediately by another look.
 func NewRelay(db *DB, deliver Deliverer, log *slog.Logger, clk clock.Clock, every time.Duration) *Relay {
-	return &Relay{db: db, deliver: deliver, log: log, clk: clk, every: every, batch: 32}
+	return &Relay{db: db, deliver: deliver, log: log, clk: clk, every: every, batch: 1}
 }
 
 // Run drains until the context is cancelled.
@@ -61,15 +61,18 @@ func (r *Relay) Drain(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	for _, m := range msgs {
-		if err := r.deliver(ctx, m.Topic, m.Payload); err != nil {
+		deliveryCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		deliveryErr := r.deliver(deliveryCtx, m.Topic, m.Payload)
+		cancel()
+		if err := deliveryErr; err != nil {
 			r.log.Warn("outbox delivery failed, will retry",
 				"topic", m.Topic, "id", m.ID, "attempts", m.Attempts, "error", err)
-			if err := r.db.Failed(ctx, m.ID, err.Error()); err != nil {
+			if err := r.db.Failed(ctx, m.ID, m.Attempts, err.Error()); err != nil {
 				return len(msgs), err
 			}
 			continue
 		}
-		if err := r.db.Delivered(ctx, m.ID); err != nil {
+		if err := r.db.Delivered(ctx, m.ID, m.Attempts); err != nil {
 			return len(msgs), err
 		}
 	}

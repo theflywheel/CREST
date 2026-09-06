@@ -67,6 +67,7 @@ func rateAuthoring(current *RateOwnerAssignment, author string) error {
 // publication is a new LinkedRecord version naming what it supersedes, and no
 // code path in this repository edits one.
 type rateVersion struct {
+	ID      string
 	Version int
 	Payload schema.PaymentSetupLinkedRecordPayload
 }
@@ -84,9 +85,9 @@ func nextRateVersion(existing []rateVersion) int {
 }
 
 // rateInForceAt picks the version in force at a moment: among versions whose
-// effectiveFrom is not after `at`, the highest version wins. Payments read
-// the version in force at the relevant time — the release — so a rate change
-// after the work never reprices it, in either direction.
+// effectiveFrom is not after `at`, the highest version wins. Payments pass the
+// work period start as `at`, so a rate change after the work never reprices it,
+// in either direction.
 //
 // The bool is false when versions exist but none is yet effective; that is
 // not the same as no rate at all, and the caller words the hold differently.

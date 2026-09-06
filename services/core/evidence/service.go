@@ -15,9 +15,11 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/config"
+	"github.com/theflywheel/crest/pkg/notify"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -27,9 +29,22 @@ var migrations embed.FS
 
 // Service is this member's wiring, composed into the core binary (#150).
 func Service() service.Options {
-	confirmation := client.New(config.Str("CONFIRMATION_URL", "http://payments:8080"))
+	confirmation := client.New(config.Str("CONFIRMATION_URL", "http://core:8080"))
 
+	notifier, err := notify.Configured()
+	if err != nil {
+		panic(err)
+	}
+	parties := client.New(config.Str("PARTIES_URL", ""))
 	return service.Options{
+		OnStart: func(ctx context.Context, d service.Deps) error {
+			every, err := config.Duration("SOURCE_MONITOR_EVERY", time.Minute)
+			if err != nil || every <= 0 {
+				return fmt.Errorf("SOURCE_MONITOR_EVERY must be positive")
+			}
+			go monitorLoop(ctx, d, every)
+			return nil
+		},
 		Migrations: migrations,
 		Dir:        "migrations",
 		Routes:     routes,
@@ -42,20 +57,9 @@ func Service() service.Options {
 			return func(ctx context.Context, topic string, payload json.RawMessage) error {
 				switch topic {
 				case topicClaimCreated:
-					return confirmation.Do(ctx, "POST", "/v1/windows", json.RawMessage(payload), nil)
+					return confirmation.Do(ctx, "POST", "/internal/windows", json.RawMessage(payload), nil)
 				case topicSourceQuiet:
-					// Notifications are dropped (#150): the outage is still
-					// detected and still lands in the log loudly, but nobody
-					// is paged. The send returns here when a channel exists.
-					return func() error {
-						var q struct {
-							SystemRef string `json:"systemRef"`
-						}
-						_ = json.Unmarshal(payload, &q)
-						d.Log.Warn("evidence source is quiet and nobody was told: no notification channel (#150)",
-							"systemRef", q.SystemRef)
-						return nil
-					}()
+					return notifyQuietSource(ctx, d, parties, notifier, payload)
 				default:
 					return fmt.Errorf("no delivery route for topic %q", topic)
 				}

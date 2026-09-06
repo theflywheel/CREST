@@ -14,6 +14,7 @@ FROM ${INJI_WEB_IMAGE}
 COPY infra/injiweb/nginx.conf                           /etc/nginx/conf.d/default.conf
 COPY infra/mimoto/config/mimoto-issuers-config.json     /home/mosip/mimoto-issuers-config.json
 COPY infra/mimoto/config/mimoto-trusted-verifiers.json  /home/mosip/mimoto-trusted-verifiers.json
+COPY infra/injiweb/CREST-WorkEventCredential-template.html /home/mosip/CREST-WorkEventCredential-template.html
 
 COPY --chmod=0755 infra/injiweb/injiweb-start.sh        /injiweb-start.sh
 

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:crest:schema:primitives:definition:1",
   "title": "Definition",
-  "description": "What counts as a completed instance of an activity, what evidence proves it at which strength, who may attest. Versioned, immutable once ACTIVE, three faces of one signed record (§7).",
+  "description": "What counts as a completed instance of an activity, what evidence proves it at which strength, who may attest. Versioned, immutable once ACTIVE, three faces of one signed record (\u00a77).",
   "type": "object",
   "properties": {
     "id": {
@@ -42,7 +42,7 @@
     "skillCode": {
       "type": "string",
       "pattern": "^CREST-SKILL:[a-z0-9]+(\\.[a-z0-9-]+)*\\.v[0-9]+$",
-      "description": "The skill this definition evidences (urn:crest:schema:reference:skill:1).\n\nDistinct from `activity`, which names what this definition is about in this deployment's own words. The skill code is the part that means the same thing somewhere else — it is what makes a worker's record portable across programmes and eventually across borders, and `activity.code` deliberately is not.\n\nOPTIONAL, because a deployment can define work before it has adopted a skill taxonomy, and refusing to let it record work until it has is the wrong trade for a worker whose payment depends on the record existing. A definition with no skill code produces credentials with no skill code, which are still perfectly valid evidence of the work — just not yet portable in the way §3 intends."
+      "description": "The skill this definition evidences (urn:crest:schema:reference:skill:1).\n\nDistinct from `activity`, which names what this definition is about in this deployment's own words. The skill code is the part that means the same thing somewhere else \u2014 it is what makes a worker's record portable across programmes and eventually across borders, and `activity.code` deliberately is not.\n\nOPTIONAL, because a deployment can define work before it has adopted a skill taxonomy, and refusing to let it record work until it has is the wrong trade for a worker whose payment depends on the record existing. A definition with no skill code produces credentials with no skill code, which are still perfectly valid evidence of the work \u2014 just not yet portable in the way \u00a73 intends."
     },
     "outcomeUnit": {
       "type": "string",
@@ -51,63 +51,134 @@
     },
     "classification": {
       "type": "object",
-      "description": "Descriptive taxonomy facts about the defined activity — sector, category, performer role (P-3 authoring). L1 holds the map, never the vocabulary: which keys exist and which values are legal is deployment configuration, per the layering test and the Party.attributes precedent (#168). Small bounded strings only; never provenance, never anything the strength function reads.",
+      "description": "Descriptive taxonomy facts about the defined activity \u2014 sector, category, performer role (P-3 authoring). L1 holds the map, never the vocabulary: which keys exist and which values are legal is deployment configuration, per the layering test and the Party.attributes precedent (#168). Small bounded strings only; never provenance, never anything the strength function reads.",
       "maxProperties": 16,
-      "propertyNames": { "minLength": 1, "maxLength": 64 },
-      "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 200 }
+      "propertyNames": {
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
     },
     "counting": {
       "type": "object",
-      "description": "How a completed instance is counted. Generic across domains — a visit, a paid period, a measured result; a training session or an assessment count the same way — so the shape is L1 while every value inside it is this deployment's own vocabulary. Optional because the seeded pre-authoring definitions never carried it; a definition without it counts by outcomeUnit alone.",
+      "description": "How a completed instance is counted. Generic across domains \u2014 a visit, a paid period, a measured result; a training session or an assessment count the same way \u2014 so the shape is L1 while every value inside it is this deployment's own vocabulary. Optional because the seeded pre-authoring definitions never carried it; a definition without it counts by outcomeUnit alone.",
       "properties": {
         "basis": {
           "type": "string",
-          "enum": ["event", "time-period", "outcome"],
+          "enum": [
+            "event",
+            "time-period",
+            "outcome"
+          ],
           "description": "The counting fork (p3_3): discrete attested events, elapsed periods of engagement, or a measured result."
         },
-        "frequency": { "type": "string", "minLength": 1, "maxLength": 100 },
-        "aggregationLevel": { "type": "string", "minLength": 1, "maxLength": 100 },
-        "description": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "frequency": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "aggregationLevel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
         "outcome": {
           "type": "object",
           "description": "Present only when basis is outcome: what result is paid for and how it is measured. Descriptive programme facts, not inputs to the strength function.",
           "properties": {
-            "indicator": { "type": "string", "minLength": 1, "maxLength": 200 },
-            "baseline": { "type": "string", "minLength": 1, "maxLength": 100 },
-            "target": { "type": "string", "minLength": 1, "maxLength": 100 },
-            "measuredBy": { "type": "string", "minLength": 1, "maxLength": 200 }
+            "indicator": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "baseline": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "target": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "measuredBy": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
           },
-          "required": ["indicator"],
+          "required": [
+            "indicator"
+          ],
           "additionalProperties": false
         }
       },
-      "required": ["basis"],
+      "required": [
+        "basis"
+      ],
       "additionalProperties": false
     },
     "extensions": {
       "type": "object",
-      "description": "The honest escape hatch (p3_14): typed, labelled fields the authoring form did not have, keyed by the author's own name for them. L1 holds the slot; what goes in it is deployment content. Never identity data, never provenance, never money — payment structure is a LinkedRecord by reference (§7), and a value here is read by nothing in the infrastructure.",
+      "description": "The honest escape hatch (p3_14): typed, labelled fields the authoring form did not have, keyed by the author's own name for them. L1 holds the slot; what goes in it is deployment content. Never identity data, never provenance, never money \u2014 payment structure is a LinkedRecord by reference (\u00a77), and a value here is read by nothing in the infrastructure.",
       "maxProperties": 32,
-      "propertyNames": { "minLength": 1, "maxLength": 64 },
+      "propertyNames": {
+        "minLength": 1,
+        "maxLength": 64
+      },
       "additionalProperties": {
         "type": "object",
         "properties": {
-          "label": { "type": "string", "minLength": 1, "maxLength": 200 },
-          "valueType": { "type": "string", "enum": ["string", "number", "boolean", "date"] },
-          "value": { "type": "string", "minLength": 1, "maxLength": 500, "description": "The value as the author entered it, carried as text; valueType says how to read it. A slot nothing in the infrastructure interprets does not need a machine type." }
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "valueType": {
+            "type": "string",
+            "enum": [
+              "string",
+              "number",
+              "boolean",
+              "date"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "The value as the author entered it, carried as text; valueType says how to read it. A slot nothing in the infrastructure interprets does not need a machine type."
+          }
         },
-        "required": ["label", "valueType", "value"],
+        "required": [
+          "label",
+          "valueType",
+          "value"
+        ],
         "additionalProperties": false
       }
     },
     "pendingFields": {
       "type": "array",
-      "description": "Named at ratification by the ratifier: fields the approver judged acceptable to leave unresolved (p3_15). RATIFIED-with-pending is a real recorded state, not a blocked one — but only the ratifier may declare it, it is append-only in the event record, and an ACTIVE version carries it forever so a verifier can see what was open when it was signed.",
-      "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+      "description": "Named at ratification by the ratifier: fields the approver judged acceptable to leave unresolved (p3_15). RATIFIED-with-pending is a real recorded state, not a blocked one \u2014 but only the ratifier may declare it, it is append-only in the event record, and an ACTIVE version carries it forever so a verifier can see what was open when it was signed.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      }
     },
     "faces": {
       "type": "object",
-      "description": "Three projections of one record, never three documents (§7).",
+      "description": "Three projections of one record, never three documents (\u00a77).",
       "properties": {
         "worker": {
           "type": "object",
@@ -202,7 +273,7 @@
     "tierMap": {
       "type": "array",
       "minItems": 1,
-      "description": "L2 data read by the L1 strength function (§6). Rules are evaluated in order; the first whose conditions all hold gives the tier. The function is identical everywhere; this table is not.",
+      "description": "L2 data read by the L1 strength function (\u00a76). Rules are evaluated in order; the first whose conditions all hold gives the tier. The function is identical everywhere; this table is not.",
       "items": {
         "type": "object",
         "properties": {
@@ -256,7 +327,7 @@
     },
     "ratifiedByPartyId": {
       "$ref": "urn:crest:schema:primitives:common:1#/$defs/did",
-      "description": "Must differ from authoredByPartyId. Separation of duties is an L1 rule enforced in the definitions service, not left to product UI (§7)."
+      "description": "Must differ from authoredByPartyId. Separation of duties is an L1 rule enforced in the definitions service, not left to product UI (\u00a77)."
     },
     "activatedAt": {
       "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp"
@@ -266,6 +337,16 @@
     },
     "createdAt": {
       "$ref": "urn:crest:schema:primitives:common:1#/$defs/timestamp"
+    },
+    "contextId": {
+      "$ref": "urn:crest:schema:primitives:common:1#/$defs/id"
+    },
+    "tierSemantics": {
+      "type": "string",
+      "enum": [
+        "reference-v1",
+        "legacy-v0"
+      ]
     }
   },
   "required": [

@@ -173,8 +173,8 @@ func TestOldCredentialsResolveAgainstTheirPinnedVersion(t *testing.T) {
 		IdentityAssurance: schema.IdentityAssuranceIA3,
 	}
 
-	if got := strength.Evaluate(facts, v1, nil); got.Tier != 3 {
-		t.Errorf("under v1: tier = %d, want 3", got.Tier)
+	if got := strength.Evaluate(facts, v1, nil); got.Tier != 1 {
+		t.Errorf("under v1: tier = %d, want 1", got.Tier)
 	}
 	if got := strength.Evaluate(facts, v2, nil); got.Tier != 2 {
 		t.Errorf("under v2: tier = %d, want 2 — the same facts, a stricter definition", got.Tier)
@@ -220,7 +220,7 @@ func TestAssuranceImprovingLaterRaisesTheTierWithNoReissuance(t *testing.T) {
 	if !before.Acceptable || !after.Acceptable {
 		t.Fatalf("both evaluations must be acceptable: before=%v after=%v", before, after)
 	}
-	if after.Tier <= before.Tier {
+	if after.Tier >= before.Tier {
 		t.Fatalf("assurance rose IA-1 -> IA-3 and the tier did not: before %s, after %s.\n"+
 			"Evidence already captured must benefit from a later identity binding, or a "+
 			"worker is judged forever at the assurance they had on the day they worked.",

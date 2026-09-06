@@ -1,0 +1,29 @@
+# Optional overlay for the Mimoto client registered with the acceptance
+# eSignet relying party (`crest-clean-development`).
+#
+# The external volume is prepared from the existing Mimoto keystore with the
+# database's ROOT and MIMOTO aliases restored, plus the newly registered
+# crest-rp-mimoto client PKCS12. The old crest_mimotocerts volume remains
+# intact. `infra/acceptance/.env.mimoto` supplies the same client id/password
+# and base64 bootstrap value when Compose interpolation is used.
+services:
+  mimoto:
+    environment:
+      MOSIP_SECURITY_ORIGINS: http://localhost:58093
+    volumes:
+      - mimotocerts-rotated-20260906:/home/mosip/certs
+
+  mimoto-localhost-esignet:
+    network_mode: container:crest-mimoto-1
+
+  mimoto-localhost-certify:
+    image: ${SOCAT_IMAGE:-alpine/socat:1.8.0.0}
+    network_mode: container:crest-mimoto-1
+    command: TCP-LISTEN:58090,fork,bind=127.0.0.1,reuseaddr TCP:inji-certify:8090
+    restart: unless-stopped
+    profiles: ["full"]
+
+volumes:
+  mimotocerts-rotated-20260906:
+    name: crest_mimotocerts-rotated-20260906
+    external: true

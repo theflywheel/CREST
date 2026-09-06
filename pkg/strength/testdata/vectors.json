@@ -1,18 +1,10 @@
 {
   "about": [
-    "Test vectors for the strength function f (Blueprint §6, issue #15).",
-    "",
-    "These are the executable half of the specification. They are data rather than",
-    "Go so that a second implementation — a verifier written by someone else, in",
-    "another language — can be held to the same answers. If f and these disagree,",
-    "one of them is a bug and the disagreement is the finding.",
-    "",
-    "Unless a case says otherwise, the definition is the bednet definition from",
-    "tests/fixtures/world.yaml: ceiling 3, three rules descending to a floor."
+    "Historical definitions retain legacy numbering; evaluated results use reference-v1: Tier 1 strongest, Tier 3 worker asserted."
   ],
   "cases": [
     {
-      "name": "national system of record, anchored worker, all fields — the strongest thing this definition awards",
+      "name": "national system of record, anchored worker, all fields \u2014 the strongest thing this definition awards",
       "facts": {
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
@@ -25,13 +17,12 @@
       },
       "want": {
         "acceptable": true,
-        "tier": 3,
+        "tier": 1,
         "matchedRule": 0
       }
     },
     {
-      "name": "same evidence, contact-verified worker — identity assurance alone drops it a tier",
-      "why": "Tier 1's stated primary risk is identity mapping error (§4.1). The evidence did not get weaker; the claim that this worker is the one it describes did.",
+      "name": "same evidence, contact-verified worker \u2014 identity assurance alone drops it a tier",
       "facts": {
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
@@ -67,7 +58,6 @@
     },
     {
       "name": "the floor: self-reported, unsupervised, no optional fields, no identity binding",
-      "why": "§8 says a record providing only the mandatory core is valid Tier-1-capable evidence. This is that sentence as a test.",
       "facts": {
         "sourceClass": "self-reported",
         "captureMethod": "unsupervised-manual",
@@ -77,7 +67,7 @@
       },
       "want": {
         "acceptable": true,
-        "tier": 1,
+        "tier": 3,
         "matchedRule": 2
       }
     },
@@ -92,13 +82,12 @@
       },
       "want": {
         "acceptable": true,
-        "tier": 1,
+        "tier": 3,
         "matchedRule": 2
       }
     },
     {
       "name": "a compromised source is downgraded on assessment alone, with no reissuance",
-      "why": "The credential is unchanged and still says exactly what it said. What changed is how the deployment regards the source today (§6).",
       "facts": {
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
@@ -110,19 +99,18 @@
         "identityAssurance": "IA-3"
       },
       "assessment": {
-        "maxTier": 1,
+        "maxTier": 3,
         "reason": "under investigation after a bulk edit"
       },
       "want": {
         "acceptable": true,
-        "tier": 1,
+        "tier": 3,
         "matchedRule": 0,
         "becauseContains": "under investigation"
       }
     },
     {
       "name": "an assessment can take a source below what the definition recognises at all",
-      "why": "Not tier 0. Calling it tier 0 invites someone to store it as a number, and a stored zero is a stored judgement.",
       "facts": {
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
@@ -163,7 +151,6 @@
     },
     {
       "name": "a definition with no floor can reject a record outright",
-      "why": "Definitions are allowed to be strict. What they are not allowed to do is be strict by accident, which is why the fixture definition's floor is asserted separately.",
       "tierMap": [
         {
           "tier": 3,
@@ -188,7 +175,7 @@
       }
     },
     {
-      "name": "an external institution's own system record is capped at tier 2 — and it is still the letterhead that earns less (G1 #8, §16)",
+      "name": "An independent institutional system record is evaluated by provenance, without a nationality penalty",
       "facts": {
         "sourceClass": "institutional-system",
         "captureMethod": "system-of-record",
@@ -201,14 +188,12 @@
       },
       "want": {
         "acceptable": true,
-        "tier": 2,
-        "matchedRule": 0,
-        "becauseContains": "outside this deployment"
-      },
-      "why": "Tier 3 says the record came from a system whose capture this deployment can account for, and an external institution's account of its own capture is one nobody here can check — there is no source-class accreditation to check it against. This narrows G1 #8 rather than reversing it: the distinction that case existed to make, between a system record and a letter on letterhead, survives at 2 against 1 instead of 3 against 1. Revisit when accreditation exists."
+        "tier": 1,
+        "matchedRule": 0
+      }
     },
     {
-      "name": "the same institution, hand-keyed — who the source is does not make a typed row a system record",
+      "name": "the same institution, hand-keyed \u2014 who the source is does not make a typed row a system record",
       "facts": {
         "sourceClass": "institutional-system",
         "captureMethod": "unsupervised-manual",
@@ -221,14 +206,13 @@
       },
       "want": {
         "acceptable": true,
-        "tier": 1,
+        "tier": 3,
         "matchedRule": 2,
         "becauseContains": "unsupervised-manual"
       }
     },
     {
-      "name": "the cap is on the source class, not on everybody — a programme system still reaches what its rule awards",
-      "why": "The external-institution ceiling narrows one class. A change that quietly lowered every tier would pass a test that only checked the capped case, and the symptom would be every worker's record reading weaker than it is.",
+      "name": "National system record is strongest when all rule requirements are satisfied",
       "facts": {
         "sourceClass": "national-system",
         "captureMethod": "system-of-record",
@@ -241,14 +225,14 @@
       },
       "want": {
         "acceptable": true,
-        "tier": 3,
+        "tier": 1,
         "matchedRule": 0
       }
     }
   ],
   "transportInvariance": {
     "about": [
-      "The four transports never influence strength (§8). Run one set of facts",
+      "The four transports never influence strength (\u00a78). Run one set of facts",
       "through all four and the answer must not move. This is separate from the",
       "cases above because it is a property, not an example: if it ever fails, the",
       "fix is in f, not in a vector."
@@ -270,7 +254,7 @@
     ],
     "want": {
       "acceptable": true,
-      "tier": 2
+      "tier": 1
     }
   }
 }

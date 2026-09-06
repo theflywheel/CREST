@@ -34,7 +34,7 @@ func (w *world) issueThenDispute(t *testing.T, household string) (string, string
 	if len(res.ClaimIDs) != 1 {
 		t.Fatalf("expected one claim, got %d: %+v", len(res.ClaimIDs), res.Unclear)
 	}
-	claimID := res.ClaimIDs[0]
+	claimID := onlyClaim(t, res)
 	eventually(t, "the confirmation window opens", 15*time.Second, func() error {
 		_, err := w.window(claimID)
 		return err

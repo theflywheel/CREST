@@ -13,9 +13,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -30,7 +32,9 @@ type Stack struct {
 
 	Rail *Service
 
-	http *http.Client
+	http       *http.Client
+	runtimeMu  sync.RWMutex
+	runtimeIDs map[string]string
 }
 
 // Service is one addressable service.
@@ -45,6 +49,8 @@ type Service struct {
 	// the kind of coupling that reads as a product defect for an afternoon
 	// before anybody suspects the harness.
 	headers http.Header
+	resolve func(string) string
+	reverse func(string) string
 }
 
 // As returns a view of this service that authenticates as a caller (#89).
@@ -64,20 +70,55 @@ func New() *Stack {
 	svc := func(name, def string) *Service {
 		return &Service{Name: name, Base: env(name, def), http: c}
 	}
-	return &Stack{
+	s := &Stack{
 		// The four member names answer from the one core service (#150); the
 		// clients keep their names because the questions they ask kept theirs.
 		Parties:     svc("PARTIES_URL", "http://localhost:59000"),
 		Definitions: svc("DEFINITIONS_URL", "http://localhost:59000"),
 		Evidence:    svc("EVIDENCE_URL", "http://localhost:59000"),
-		// The confirmation window answers on the payments application (#129);
-		// the client keeps its name because the questions it asks kept theirs.
-		Confirmation: svc("CONFIRMATION_URL", "http://localhost:59006"),
+		// Confirmation windows answer on the core application; the client keeps
+		// the name because the questions it asks kept theirs.
+		Confirmation: svc("CONFIRMATION_URL", "http://localhost:59000"),
 		Verification: svc("VERIFICATION_URL", "http://localhost:59000"),
 		Payments:     svc("PAYMENTS_URL", "http://localhost:59006"),
 		Rail:         svc("RAIL_URL", "http://localhost:59102"),
 		http:         c,
+		runtimeIDs:   make(map[string]string),
 	}
+	for _, service := range []*Service{s.Parties, s.Definitions, s.Evidence, s.Confirmation, s.Verification, s.Payments, s.Rail} {
+		service.resolve = s.resolveRuntimeText
+		service.reverse = s.reverseRuntimeText
+	}
+	return s
+}
+
+// SetRuntimeID records a server-assigned identifier for a stable fixture name.
+func (s *Stack) SetRuntimeID(fixtureID, runtimeID string) {
+	if fixtureID == "" || runtimeID == "" || fixtureID == runtimeID {
+		return
+	}
+	s.runtimeMu.Lock()
+	s.runtimeIDs[fixtureID] = runtimeID
+	s.runtimeMu.Unlock()
+}
+
+func (s *Stack) resolveRuntimeText(text string) string {
+	s.runtimeMu.RLock()
+	defer s.runtimeMu.RUnlock()
+	for fixtureID, runtimeID := range s.runtimeIDs {
+		text = strings.ReplaceAll(text, url.QueryEscape(fixtureID), url.QueryEscape(runtimeID))
+		text = strings.ReplaceAll(text, fixtureID, runtimeID)
+	}
+	return text
+}
+
+func (s *Stack) reverseRuntimeText(text string) string {
+	s.runtimeMu.RLock()
+	defer s.runtimeMu.RUnlock()
+	for fixtureID, runtimeID := range s.runtimeIDs {
+		text = strings.ReplaceAll(text, runtimeID, fixtureID)
+	}
+	return text
 }
 
 // Services is every CREST service, for the operations that apply to all of them.
@@ -206,6 +247,7 @@ func (svc *Service) Post(ctx context.Context, path string, in, out any) error {
 			return err
 		}
 	}
+	path, body = svc.resolveRequest(path, body)
 	return svc.do(ctx, http.MethodPost, path, "application/json", body, out)
 }
 
@@ -217,6 +259,9 @@ func (svc *Service) PostRaw(ctx context.Context, path, contentType string, body 
 // StatusRaw is Status for a non-JSON body — a CSV batch whose refusal is the
 // designed answer.
 func (svc *Service) StatusRaw(ctx context.Context, method, path, contentType string, body []byte) (int, []byte, error) {
+	if svc.resolve != nil {
+		path = svc.resolve(path)
+	}
 	req, err := http.NewRequestWithContext(ctx, method, svc.Base+path, bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, err
@@ -244,6 +289,7 @@ func (svc *Service) Status(ctx context.Context, method, path string, in any) (in
 			return 0, nil, err
 		}
 	}
+	path, body = svc.resolveRequest(path, body)
 	req, err := http.NewRequestWithContext(ctx, method, svc.Base+path, bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, err
@@ -262,6 +308,9 @@ func (svc *Service) Status(ctx context.Context, method, path string, in any) (in
 }
 
 func (svc *Service) do(ctx context.Context, method, path, contentType string, body []byte, out any) error {
+	if svc.resolve != nil {
+		path = svc.resolve(path)
+	}
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
@@ -291,14 +340,78 @@ func (svc *Service) do(ctx context.Context, method, path, contentType string, bo
 	if out == nil || len(raw) == 0 {
 		return nil
 	}
+	if svc.reverse != nil {
+		raw = rewriteJSONIDs(raw, svc.reverse)
+	}
 	return json.Unmarshal(raw, out)
+}
+
+func (svc *Service) resolveRequest(path string, body []byte) (string, []byte) {
+	if svc.resolve == nil {
+		return path, body
+	}
+	path = svc.resolve(path)
+	if len(body) == 0 {
+		return path, body
+	}
+	return path, rewriteJSONIDs(body, svc.resolve)
+}
+
+func rewriteJSONIDs(raw []byte, resolve func(string) string) []byte {
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return raw
+	}
+	rewriteJSONValue(&value, resolve)
+	out, err := json.Marshal(value)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
+func rewriteJSONValue(value *any, resolve func(string) string) {
+	switch v := (*value).(type) {
+	case string:
+		*value = resolve(v)
+	case []any:
+		for i := range v {
+			rewriteJSONValue(&v[i], resolve)
+		}
+	case map[string]any:
+		if _, signed := v["proof"]; signed {
+			return
+		}
+		if _, signed := v["signature"]; signed {
+			return
+		}
+		for key, child := range v {
+			// Never rewrite ids inside signed material: doing so would make a
+			// valid credential or presentation fail verification.
+			if key == "credential" || key == "presentation" || key == "proof" || key == "signature" {
+				continue
+			}
+			rewriteJSONValue(&child, resolve)
+			v[key] = child
+		}
+	}
 }
 
 // apply copies this view's caller headers onto a request.
 func (svc *Service) apply(req *http.Request) {
 	for k, vs := range svc.headers {
 		for _, v := range vs {
+			if strings.EqualFold(k, "X-CREST-On-Behalf-Of") && svc.resolve != nil {
+				v = svc.resolve(v)
+			}
 			req.Header.Add(k, v)
+		}
+	}
+	if strings.HasPrefix(req.URL.Path, "/internal/") {
+		if token := os.Getenv("CREST_SERVICE_TOKEN"); token != "" {
+			req.Header.Set("X-CREST-Service-Token", token)
 		}
 	}
 }
@@ -328,7 +441,7 @@ func Kill(ctx context.Context, service string) error {
 
 // Start brings a killed service back up.
 func Start(ctx context.Context, service string) error {
-	return compose(ctx, "up", "-d", "--no-deps", service)
+	return compose(ctx, "start", service)
 }
 
 func compose(ctx context.Context, args ...string) error {

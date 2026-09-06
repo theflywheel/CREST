@@ -6,6 +6,19 @@ import { useSession } from "../session";
 import { useLoad } from "../App";
 import { loadFace, loadWindows, money, short, when } from "../data";
 
+function disputeIdempotencyKey(actor: string, claimId: string): string {
+  const storageKey = `crest.worker.dispute-key.${actor}.${claimId}`;
+  try {
+    const existing = sessionStorage.getItem(storageKey);
+    if (existing) return existing;
+    const key = `worker-dispute:${crypto.randomUUID()}`;
+    sessionStorage.setItem(storageKey, key);
+    return key;
+  } catch {
+    throw new Error("this browser cannot persist the dispute retry key; enable session storage and try again");
+  }
+}
+
 /* w1_9 + w1_10 — the work page: definition on the left, the say on the right */
 export function Work() {
   const s = useSession();
@@ -205,7 +218,7 @@ export function Dispute() {
             await api.post("confirmation", `/v1/claims/${encodeURIComponent(claimId)}/dispute`, {
               raisedByPartyId: s.me,
               reason: r,
-            });
+            }, disputeIdempotencyKey(s.me || "", claimId));
             s.setFlash({
               route: "work",
               node: (

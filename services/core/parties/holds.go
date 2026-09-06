@@ -3,6 +3,7 @@ package parties
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/identity"
@@ -40,14 +41,81 @@ type holdDecision struct {
 	// PartyID is who the identifier belongs to: the survivor for a merge, and
 	// the rightful holder for a distinct.
 	PartyID    string `json:"partyId"`
-	ResolvedBy string `json:"resolvedByPartyId"`
-	// Confirmation is the worker's, for a merge. Required there and refused for
-	// a distinct.
-	ConfirmedBy        string `json:"confirmedByPartyId"`
+	ResolvedBy string `json:"resolvedByPartyId"` // legacy input, cross-checked against caller
+}
+
+type holdConfirmationRequest struct {
+	SurvivorPartyID    string `json:"survivorPartyId"`
 	ConfirmationMethod string `json:"confirmationMethod"`
+	EvidenceRef        string `json:"evidenceRef,omitempty"`
+}
+
+// confirmHold is a separate append-only worker action. The authenticated
+// caller, never a body field, is the confirmer.
+func (h *handlers) confirmHold(w http.ResponseWriter, r *http.Request) {
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
+	var body holdConfirmationRequest
+	if !httpx.ReadJSON(w, r, &body) {
+		return
+	}
+	body.SurvivorPartyID = strings.TrimSpace(body.SurvivorPartyID)
+	body.ConfirmationMethod = strings.TrimSpace(body.ConfirmationMethod)
+	if body.SurvivorPartyID == "" || body.ConfirmationMethod == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "missing_field", "survivorPartyId and confirmationMethod are required")
+		return
+	}
+	caller, ok := actualCaller(r)
+	if !ok {
+		httpx.WriteError(w, http.StatusForbidden, "worker_identity_required", "a merge confirmation must come from an enrolled worker identity")
+		return
+	}
+	now := h.d.Clock.Now()
+	var out map[string]any
+	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+		hold, err := openHold(r.Context(), tx, r.PathValue("id"))
+		if err != nil {
+			return err
+		}
+		if !contains(hold.Candidates, body.SurvivorPartyID) {
+			return errNotACandidate
+		}
+		if !contains(hold.Candidates, caller) {
+			return errConfirmationNotCandidate
+		}
+		if err := insertHoldConfirmation(r.Context(), tx, hold.ID, body.SurvivorPartyID, caller, body.ConfirmationMethod, body.EvidenceRef, now); err != nil {
+			if store.IsUniqueViolation(err) {
+				got, method, evidence, readErr := holdConfirmation(r.Context(), tx, hold.ID, body.SurvivorPartyID)
+				if readErr == nil && got == caller && method == body.ConfirmationMethod && evidence == body.EvidenceRef {
+					out = map[string]any{"holdId": hold.ID, "survivorPartyId": body.SurvivorPartyID, "confirmedByPartyId": caller, "confirmationMethod": method, "evidenceRef": evidence}
+					return nil
+				}
+				return errConfirmationConflict
+			}
+			return err
+		}
+		out = map[string]any{"holdId": hold.ID, "survivorPartyId": body.SurvivorPartyID, "confirmedByPartyId": caller, "confirmationMethod": body.ConfirmationMethod, "evidenceRef": body.EvidenceRef, "confirmedAt": now}
+		return nil
+	})
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "no open hold with that id")
+	case errors.Is(err, errNotACandidate), errors.Is(err, errConfirmationNotCandidate):
+		httpx.WriteError(w, http.StatusForbidden, "worker_not_on_hold", "the authenticated worker is not a candidate on this hold")
+	case errors.Is(err, errConfirmationConflict):
+		httpx.WriteError(w, http.StatusConflict, "confirmation_conflict", "this hold already has a different worker confirmation")
+	case err != nil:
+		httpx.Fail(w, h.d.Log, "confirm hold", err)
+	default:
+		httpx.WriteJSON(w, http.StatusOK, out)
+	}
 }
 
 func (h *handlers) resolveHold(w http.ResponseWriter, r *http.Request) {
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
 	var body holdDecision
 	if !httpx.ReadJSON(w, r, &body) {
 		return
@@ -58,42 +126,34 @@ func (h *handlers) resolveHold(w http.ResponseWriter, r *http.Request) {
 				"(two people sharing an identifier); %q is neither", body.Decision)
 		return
 	}
-	if body.PartyID == "" || body.ResolvedBy == "" {
+	if body.PartyID == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "missing_field",
-			"partyId and resolvedByPartyId are both required: a hold closed by nobody is "+
-				"indistinguishable from one the system closed itself")
+			"partyId is required")
 		return
 	}
-	switch {
-	case body.Decision == "merge" && (body.ConfirmedBy == "" || body.ConfirmationMethod == ""):
-		// The refusal §4 exists for. Merging on a custodian's judgement alone
-		// is exactly what W7 forbids, and the API must not have a shape that
-		// allows it — an unconfirmed merge should be impossible to express,
-		// not merely discouraged in a comment.
-		httpx.WriteError(w, http.StatusBadRequest, "merge_needs_confirmation",
-			"a merge needs confirmedByPartyId and confirmationMethod: only the worker's "+
-				"confirmation makes two records one person (§4). A custodian's judgement "+
-				"alone is what merges_without_confirmation counts")
-		return
-	case body.Decision == "distinct" && body.ConfirmedBy != "":
-		httpx.WriteError(w, http.StatusBadRequest, "distinct_needs_no_confirmation",
-			"a distinct decision takes nothing away from anybody, so it needs no "+
-				"confirmation; asking one worker to ratify a fact about another is "+
-				"disclosure, not consent")
+	// Read the scope before checking the assignment. A hold is always resolved
+	// under the project that created it; an unscoped legacy row is refused.
+	holdScope, err := openHold(r.Context(), h.d.DB.Q(), r.PathValue("id"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "no open hold with that id")
 		return
 	}
-
-	// The named custodian must be the caller, or somebody permitted to act
-	// for them (#102): a merge alters who the system thinks somebody is, and
-	// until now nothing established that resolvedByPartyId was anyone at all.
-	if _, ok := identity.Authorize(w, r, h.d.Log, body.ResolvedBy, "",
-		h.d.Authenticating, h.d.Permits); !ok {
+	if holdScope.ContextID == "" {
+		httpx.WriteError(w, http.StatusConflict, "hold_scope_missing", "this hold has no custodian project scope")
+		return
+	}
+	resolvedBy, ok := requireRegistryCustodian(w, r, h.d, holdScope.ContextID)
+	if !ok {
+		return
+	}
+	if body.ResolvedBy != "" && body.ResolvedBy != resolvedBy {
+		httpx.WriteError(w, http.StatusForbidden, "actor_mismatch", "resolvedByPartyId must equal the authenticated custodian")
 		return
 	}
 
 	now := h.d.Clock.Now()
 	var out map[string]any
-	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		hold, err := openHold(r.Context(), tx, r.PathValue("id"))
 		if err != nil {
 			return err
@@ -111,6 +171,16 @@ func (h *handlers) resolveHold(w http.ResponseWriter, r *http.Request) {
 		}
 		if into != nil {
 			return errSurvivorIsMerged
+		}
+		confirmedBy, confirmationMethod, evidenceRef, confirmationErr := "", "", "", error(nil)
+		if body.Decision == "merge" {
+			confirmedBy, confirmationMethod, evidenceRef, confirmationErr = holdConfirmation(r.Context(), tx, hold.ID, body.PartyID)
+			if errors.Is(confirmationErr, store.ErrNotFound) {
+				return errMergeNeedsWorker
+			}
+			if confirmationErr != nil {
+				return confirmationErr
+			}
 		}
 
 		merged := []string{}
@@ -134,20 +204,23 @@ func (h *handlers) resolveHold(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err := markHoldResolved(r.Context(), tx, hold.ID, body.Decision, body.PartyID,
-			body.ResolvedBy, body.ConfirmedBy, body.ConfirmationMethod, now); err != nil {
+			resolvedBy, confirmedBy, confirmationMethod, now); err != nil {
 			return err
 		}
 		out = map[string]any{
 			"holdId":     hold.ID,
 			"decision":   body.Decision,
 			"partyId":    body.PartyID,
-			"resolvedBy": body.ResolvedBy,
+			"resolvedBy": resolvedBy,
 			"resolvedAt": now,
 			"merged":     merged,
 		}
 		if body.Decision == "merge" {
-			out["confirmedBy"] = body.ConfirmedBy
-			out["confirmationMethod"] = body.ConfirmationMethod
+			out["confirmedBy"] = confirmedBy
+			out["confirmationMethod"] = confirmationMethod
+			if evidenceRef != "" {
+				out["evidenceRef"] = evidenceRef
+			}
 		}
 		return nil
 	})
@@ -166,6 +239,10 @@ func (h *handlers) resolveHold(w http.ResponseWriter, r *http.Request) {
 			"%s has itself been merged into another party; resolve onto the one that is "+
 				"still there", body.PartyID)
 		return
+	case errors.Is(err, errMergeNeedsWorker):
+		httpx.WriteError(w, http.StatusConflict, "merge_needs_worker_confirmation",
+			"the worker must confirm this exact survivor before the custodian can merge the records")
+		return
 	case err != nil:
 		httpx.Fail(w, h.d.Log, "resolve hold", err)
 		return
@@ -174,8 +251,11 @@ func (h *handlers) resolveHold(w http.ResponseWriter, r *http.Request) {
 }
 
 var (
-	errNotACandidate    = errors.New("party is not a candidate on this hold")
-	errSurvivorIsMerged = errors.New("survivor has itself been merged")
+	errNotACandidate            = errors.New("party is not a candidate on this hold")
+	errSurvivorIsMerged         = errors.New("survivor has itself been merged")
+	errConfirmationNotCandidate = errors.New("confirmation caller is not a candidate")
+	errConfirmationConflict     = errors.New("hold already has a different confirmation")
+	errMergeNeedsWorker         = errors.New("merge needs worker confirmation")
 )
 
 func contains(list []string, want string) bool {
@@ -190,6 +270,9 @@ func contains(list []string, want string) bool {
 // mergeMetrics answers the monitored invariant §4 names, as a number a test can
 // assert on rather than a claim a person can make.
 func (h *handlers) mergeMetrics(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireRegistryCustodian(w, r, h.d, ""); !ok {
+		return
+	}
 	n, err := mergesWithoutConfirmation(r.Context(), h.d.DB.Q())
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "count unconfirmed merges", err)

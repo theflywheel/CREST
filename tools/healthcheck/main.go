@@ -15,7 +15,7 @@ import (
 func main() {
 	addr := os.Getenv("HEALTHCHECK_URL")
 	if addr == "" {
-		addr = "http://127.0.0.1:8080/healthz"
+		addr = "http://127.0.0.1:8080/readyz"
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

@@ -3,6 +3,7 @@ package verification
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
+	"github.com/theflywheel/crest/pkg/strength"
 )
 
 // Issuance lives here, in the credential substrate, since #137.
@@ -47,14 +49,17 @@ type issuedCredential struct {
 	SubjectRef  string          `json:"subjectRef"`
 	StatusIndex int             `json:"statusIndex"`
 	Digest      string          `json:"digest"`
-	Doc         json.RawMessage `json:"credential"`
+	Doc         json.RawMessage `json:"credential,omitempty"`
 	IssuedAt    time.Time       `json:"issuedAt"`
 	RevokedAt   *time.Time      `json:"revokedAt,omitempty"`
 
 	// Carried between building and signing, never stored: the credential is
 	// assembled before its status slot is known, and signed after.
-	unit  schema.Unit `json:"-"`
-	route string      `json:"-"`
+	unit           schema.Unit `json:"-"`
+	evidenceFields []string    `json:"-"`
+	unitID         string      `json:"-"`
+	contextID      string      `json:"-"`
+	route          string      `json:"-"`
 
 	// Resolved once, at build time, from the definitions service. Nil where
 	// there is nothing a verifier could check.
@@ -62,6 +67,8 @@ type issuedCredential struct {
 	skillCode *string                                                              `json:"-"`
 	authority *schema.WorkEventCredentialCredentialSubjectIssuerAuthority          `json:"-"`
 }
+
+var errCredentialBindingMismatch = errors.New("credential issuance binding mismatch")
 
 // issue signs one credential for one confirmed claim, exactly once.
 //
@@ -75,16 +82,29 @@ func (h *handlers) issue(w http.ResponseWriter, r *http.Request) {
 	if !httpx.ReadJSON(w, r, &req) {
 		return
 	}
-	if req.ClaimID == "" || req.UnitID == "" || req.PartyID == "" {
+	if req.ClaimID == "" || req.UnitID == "" || req.PartyID == "" || req.ContextID == "" || req.Route == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body",
-			"claimId, unitId and partyId are all required; a credential must say which fact it asserts and about whom")
+			"claimId, unitId, partyId, contextId and route are all required; a credential must say which fact it asserts, where and about whom")
 		return
 	}
-	if existing, err := credentialByClaim(r.Context(), h.d.DB.Q(), req.ClaimID); err == nil {
+	// The claim uniqueness check must precede all evidence/definition reads. A
+	// retry after a successful issuance returns the durable record directly,
+	// including after custody transfer removed its document bytes.
+	if existing, err := h.existingCredentialForRetry(r.Context(), req); err == nil {
 		httpx.WriteJSON(w, http.StatusOK, existing)
 		return
+	} else if errors.Is(err, store.ErrNotFound) {
+		// No prior credential: the authoritative claim/unit checks happen in
+		// buildCredential below before any document is signed.
+	} else if errors.Is(err, errCredentialBindingMismatch) {
+		httpx.WriteError(w, http.StatusConflict, "credential_binding_mismatch",
+			"claim %s is already bound to a different issuance identity", req.ClaimID)
+		return
+	} else {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "existing_credential_binding_unavailable",
+			"the existing credential could not be authoritatively bound for retry; retry when evidence is available")
+		return
 	}
-
 	c, err := h.buildCredential(r.Context(), req)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "build credential", err)
@@ -98,7 +118,7 @@ func (h *handlers) issue(w http.ResponseWriter, r *http.Request) {
 		// The index is allocated inside the transaction and then written into
 		// the credential, so no two credentials can share a slot — revoking
 		// one would otherwise revoke the other.
-		if err := c.setStatusIndex(idx, h.statusListURL, h.issuer, req.At); err != nil {
+		if err := c.setStatusIndex(idx, h.statusListURL, h.issuer, c.IssuedAt); err != nil {
 			return err
 		}
 		return insertCredential(r.Context(), tx, *c)
@@ -106,8 +126,16 @@ func (h *handlers) issue(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// The one race the claim_id UNIQUE constraint exists for: two exits of
 		// the same claim arriving together. The loser reads the winner's.
-		if existing, readErr := credentialByClaim(r.Context(), h.d.DB.Q(), req.ClaimID); readErr == nil {
+		if existing, readErr := h.existingCredentialForRetry(r.Context(), req); readErr == nil {
 			httpx.WriteJSON(w, http.StatusOK, existing)
+			return
+		} else if errors.Is(readErr, errCredentialBindingMismatch) {
+			httpx.WriteError(w, http.StatusConflict, "credential_binding_mismatch",
+				"claim %s is already bound to a different issuance identity", req.ClaimID)
+			return
+		} else if !errors.Is(readErr, store.ErrNotFound) {
+			httpx.WriteError(w, http.StatusServiceUnavailable, "existing_credential_binding_unavailable",
+				"the existing credential could not be authoritatively bound for retry; retry when evidence is available")
 			return
 		}
 		httpx.Fail(w, h.d.Log, "store credential", err)
@@ -116,29 +144,163 @@ func (h *handlers) issue(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, c)
 }
 
+// credentialMatchesIssue validates the durable identity binding before a retry
+// is returned. New records keep unit, context and confirmation route beside
+// the signed document, so this remains available after custody transfer. A
+// legacy record without the complete binding fails closed rather than relying
+// on caller-supplied context.
+func credentialMatchesIssue(c issuedCredential, req issueRequest) bool {
+	if c.ClaimID != req.ClaimID || c.SubjectRef != req.PartyID {
+		return false
+	}
+	// New rows persist all request bindings beside the signed document, so
+	// custody transfer cannot turn a retry into an unscoped claim lookup.
+	// Legacy rows without a context binding fail closed rather than guessing.
+	if c.unitID != "" || c.contextID != "" || c.route != "" {
+		return c.unitID == req.UnitID && c.contextID == req.ContextID && c.route == req.Route
+	}
+	// Signed legacy documents do not carry the context binding. They cannot be
+	// safely matched to a retry whose context is caller supplied.
+	return false
+}
+
+func (c issuedCredential) hasCompleteBinding() bool {
+	return c.unitID != "" && c.contextID != "" && c.route != ""
+}
+
+// existingCredentialForRetry returns the durable credential before any new
+// issuance work. A pre-custody row from before binding metadata was introduced
+// is hydrated exactly once from the authoritative claim and unit; the claim
+// need not still be ACCEPTED because issuance already happened. Hydration is
+// committed before the row is returned, so future retries do not depend on
+// evidence availability.
+func (h *handlers) existingCredentialForRetry(ctx context.Context, req issueRequest) (issuedCredential, error) {
+	c, err := credentialByClaim(ctx, h.d.DB.Q(), req.ClaimID)
+	if err != nil {
+		return issuedCredential{}, err
+	}
+	if c.hasCompleteBinding() {
+		if !credentialMatchesIssue(c, req) {
+			return issuedCredential{}, errCredentialBindingMismatch
+		}
+		return c, nil
+	}
+	if c.SubjectRef != req.PartyID {
+		return issuedCredential{}, errCredentialBindingMismatch
+	}
+
+	var claim schema.Claim
+	if err := h.evidence.Get(ctx, "/internal/claims/"+url.PathEscape(req.ClaimID), &claim); err != nil {
+		return issuedCredential{}, fmt.Errorf("resolve legacy credential claim: %w", err)
+	}
+	if claim.ID != "" && claim.ID != req.ClaimID {
+		return issuedCredential{}, errCredentialBindingMismatch
+	}
+	if claim.UnitID != req.UnitID || claim.PartyID != req.PartyID ||
+		claim.Confirmation == nil || claim.Confirmation.Route == nil ||
+		string(*claim.Confirmation.Route) != req.Route {
+		return issuedCredential{}, errCredentialBindingMismatch
+	}
+	if (c.unitID != "" && c.unitID != claim.UnitID) ||
+		(c.route != "" && c.route != string(*claim.Confirmation.Route)) {
+		return issuedCredential{}, errCredentialBindingMismatch
+	}
+	var unit struct {
+		schema.Unit
+		EvidenceFields []string `json:"evidenceFields,omitempty"`
+	}
+	if err := h.evidence.Get(ctx, "/internal/units/"+url.PathEscape(claim.UnitID), &unit); err != nil {
+		return issuedCredential{}, fmt.Errorf("resolve legacy credential unit: %w", err)
+	}
+	if unit.ContextID != req.ContextID {
+		return issuedCredential{}, errCredentialBindingMismatch
+	}
+	if c.contextID != "" && c.contextID != unit.ContextID {
+		return issuedCredential{}, errCredentialBindingMismatch
+	}
+
+	// Preserve any signed document and only fill the metadata columns that were
+	// missing. This update is the durable handoff that lets a later custody
+	// retry work with the evidence service offline.
+	err = h.d.DB.InTx(ctx, func(tx store.Querier) error {
+		_, err := tx.Exec(ctx, `
+			UPDATE credentials
+			   SET unit_id = COALESCE(NULLIF(unit_id, ''), $2),
+			       context_id = COALESCE(NULLIF(context_id, ''), $3),
+			       confirmation_route = COALESCE(NULLIF(confirmation_route, ''), $4)
+			 WHERE id = $1`, c.ID, req.UnitID, req.ContextID, req.Route)
+		return err
+	})
+	if err != nil {
+		return issuedCredential{}, fmt.Errorf("persist legacy credential binding: %w", err)
+	}
+	hydrated, err := credentialByClaim(ctx, h.d.DB.Q(), req.ClaimID)
+	if err != nil {
+		return issuedCredential{}, fmt.Errorf("reread legacy credential binding: %w", err)
+	}
+	if !hydrated.hasCompleteBinding() || !credentialMatchesIssue(hydrated, req) {
+		return issuedCredential{}, errCredentialBindingMismatch
+	}
+	return hydrated, nil
+}
+
 // buildCredential assembles the credential. It reads the unit from evidence
 // rather than accepting it from the caller, so what is signed is what the
 // record currently says rather than what the application relayed.
 func (h *handlers) buildCredential(ctx context.Context, req issueRequest) (*issuedCredential, error) {
-	var unit schema.Unit
-	if err := h.evidence.Get(ctx, "/internal/units/"+req.UnitID, &unit); err != nil {
+	var claim schema.Claim
+	if err := h.evidence.Get(ctx, "/internal/claims/"+url.PathEscape(req.ClaimID), &claim); err != nil {
+		return nil, fmt.Errorf("could not read claim %s: %w", req.ClaimID, err)
+	}
+	var stored struct {
+		schema.Unit
+		EvidenceFields []string `json:"evidenceFields,omitempty"`
+	}
+	if err := h.evidence.Get(ctx, "/internal/units/"+req.UnitID, &stored); err != nil {
 		return nil, fmt.Errorf("could not read unit %s: %w", req.UnitID, err)
 	}
+	unit := stored.Unit
+	if err := validateIssuance(req, claim, unit); err != nil {
+		return nil, err
+	}
+	req.At = *claim.Confirmation.At
 
 	// The subject is the Party's own pairwise, deployment-local DID (§4). Not a
 	// name, not a national identifier, not the provider's subject — nothing
 	// that correlates outside this deployment (W8, W9).
 	return &issuedCredential{
-		ID:         id.New(h.d.Clock, "credential"),
-		ClaimID:    req.ClaimID,
-		SubjectRef: req.PartyID,
-		IssuedAt:   req.At,
-		unit:       unit,
-		route:      req.Route,
-		defProof:   h.definitionProof(ctx, unit.Definition),
-		skillCode:  h.skillCodeOf(ctx, unit.Definition),
-		authority:  h.issuerAuthority(ctx, req.ContextID),
+		ID:             id.New(h.d.Clock, "credential"),
+		ClaimID:        req.ClaimID,
+		SubjectRef:     req.PartyID,
+		IssuedAt:       req.At,
+		unit:           unit,
+		evidenceFields: stored.EvidenceFields,
+		unitID:         req.UnitID,
+		contextID:      req.ContextID,
+		route:          req.Route,
+		defProof:       h.definitionProof(ctx, unit.Definition),
+		skillCode:      h.skillCodeOf(ctx, unit.Definition),
+		authority:      h.issuerAuthority(ctx, req.ContextID),
 	}, nil
+}
+
+func validateIssuance(req issueRequest, claim schema.Claim, unit schema.Unit) error {
+	if claim.State != schema.ClaimStateACCEPTED {
+		return fmt.Errorf("claim %s is %s; only an accepted claim can issue a credential", req.ClaimID, claim.State)
+	}
+	if claim.UnitID != req.UnitID || claim.PartyID != req.PartyID {
+		return fmt.Errorf("claim %s does not match the requested unit or party", req.ClaimID)
+	}
+	if claim.Confirmation == nil || claim.Confirmation.At == nil || claim.Confirmation.Route == nil {
+		return fmt.Errorf("claim %s has no authoritative confirmation time or route", req.ClaimID)
+	}
+	if string(*claim.Confirmation.Route) != req.Route {
+		return fmt.Errorf("claim %s was confirmed by route %q, not %q", req.ClaimID, *claim.Confirmation.Route, req.Route)
+	}
+	if unit.ContextID != req.ContextID {
+		return fmt.Errorf("unit %s belongs to context %s, not %s", req.UnitID, unit.ContextID, req.ContextID)
+	}
+	return nil
 }
 
 // skillCodeOf reads the skill the definition evidences, so the credential can
@@ -288,15 +450,22 @@ func (h *handlers) definitionProof(ctx context.Context,
 //
 // Sorted, so two credentials over the same record produce the same bytes.
 func evidenceFieldsOf(unit schema.Unit) []string {
-	fields := make([]string, 0, len(unit.Enrichment)+1)
-	for name := range unit.Enrichment {
-		fields = append(fields, name)
+	return strength.EvidenceFieldsForUnit(unit)
+}
+
+func evidenceFieldsOrFallback(unit schema.Unit, persisted []string) []string {
+	if len(persisted) == 0 {
+		return evidenceFieldsOf(unit)
 	}
-	if unit.Geography != nil {
-		fields = append(fields, "geography")
-	}
+	fields := append([]string(nil), persisted...)
 	sort.Strings(fields)
-	return fields
+	out := fields[:0]
+	for _, field := range fields {
+		if field != "" && (len(out) == 0 || out[len(out)-1] != field) {
+			out = append(out, field)
+		}
+	}
+	return out
 }
 
 // setStatusIndex finishes the credential once its status slot is known, then
@@ -313,7 +482,7 @@ func (c *issuedCredential) setStatusIndex(idx int, listURL string, iss *credenti
 		IssuerAuthority: c.authority,
 		Confirmation:    schema.ClaimConfirmationRoute(c.route),
 		ConfirmedAt:     now,
-		EvidenceFields:  evidenceFieldsOf(c.unit),
+		EvidenceFields:  evidenceFieldsOrFallback(c.unit, c.evidenceFields),
 		DefinitionProof: c.defProof,
 		StatusListURL:   listURL,
 		StatusListIndex: idx,
@@ -344,17 +513,21 @@ func (c *issuedCredential) setStatusIndex(idx int, listURL string, iss *credenti
 
 func insertCredential(ctx context.Context, tx store.Querier, c issuedCredential) error {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO credentials (id, claim_id, subject_ref, status_index, digest, doc, issued_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		c.ID, c.ClaimID, c.SubjectRef, c.StatusIndex, c.Digest, c.Doc, c.IssuedAt)
+		INSERT INTO credentials (id, claim_id, subject_ref, unit_id, context_id, confirmation_route,
+		                         status_index, digest, doc, issued_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		c.ID, c.ClaimID, c.SubjectRef, c.unitID, c.contextID, c.route,
+		c.StatusIndex, c.Digest, c.Doc, c.IssuedAt)
 	return err
 }
 
-const credentialColumns = `id, claim_id, subject_ref, status_index, digest, doc, issued_at, revoked_at`
+const credentialColumns = `id, claim_id, subject_ref, unit_id, context_id, confirmation_route,
+	status_index, digest, doc, issued_at, revoked_at`
 
 func scanCredential(r store.Row) (issuedCredential, error) {
 	var c issuedCredential
-	err := r.Scan(&c.ID, &c.ClaimID, &c.SubjectRef, &c.StatusIndex, &c.Digest, &c.Doc, &c.IssuedAt, &c.RevokedAt)
+	err := r.Scan(&c.ID, &c.ClaimID, &c.SubjectRef, &c.unitID, &c.contextID, &c.route,
+		&c.StatusIndex, &c.Digest, &c.Doc, &c.IssuedAt, &c.RevokedAt)
 	return c, err
 }
 
@@ -407,7 +580,7 @@ func revokeCredential(ctx context.Context, tx store.Querier, credID string, at t
 // filtering it here would make this listing quietly disagree with the list.
 func credentialsFor(ctx context.Context, q store.Querier, partyIDs []string) ([]json.RawMessage, error) {
 	rows, err := q.Query(ctx, `
-		SELECT doc FROM credentials
+		SELECT id, claim_id, digest, doc, issued_at, revoked_at FROM credentials
 		 WHERE subject_ref = ANY($1)
 		 ORDER BY issued_at, id`, partyIDs)
 	if err != nil {
@@ -415,8 +588,22 @@ func credentialsFor(ctx context.Context, q store.Querier, partyIDs []string) ([]
 	}
 	defer rows.Close()
 	return store.Collect(rows, func(r store.Row) (json.RawMessage, error) {
+		var id, claimID, digest string
 		var doc []byte
-		return doc, r.Scan(&doc)
+		var issuedAt time.Time
+		var revokedAt *time.Time
+		if err := r.Scan(&id, &claimID, &digest, &doc, &issuedAt, &revokedAt); err != nil {
+			return nil, err
+		}
+		if doc != nil {
+			return doc, nil
+		}
+		// The worker still sees that history exists, but receives no fabricated
+		// empty credential. An encrypted backup import is the recovery path.
+		return json.Marshal(map[string]any{
+			"id": id, "claimId": claimID, "digest": digest, "issuedAt": issuedAt,
+			"revokedAt": revokedAt, "custody": "transferred", "credentialAvailable": false,
+		})
 	})
 }
 
@@ -474,18 +661,106 @@ func (h *handlers) getCredentialByID(w http.ResponseWriter, r *http.Request) {
 		httpx.NotFoundOr(w, h.d.Log, "credential", err, store.ErrNotFound)
 		return
 	}
+	if !authorizeParty(w, r, h.d, c.SubjectRef) {
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, c)
+}
+
+// getCredentialInternal is the service-boundary twin used by substrate
+// services. The /internal route is authenticated by the shared service
+// transport, so it does not accept a user-supplied party assertion.
+func (h *handlers) getCredentialInternal(w http.ResponseWriter, r *http.Request) {
+	c, err := getCredential(r.Context(), h.d.DB.Q(), r.PathValue("id"))
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "credential", err, store.ErrNotFound)
+		return
+	}
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
 // revoke flips one bit. Withdrawal is the single central fact about credentials
 // (§9), and this is the whole of it.
 func (h *handlers) revoke(w http.ResponseWriter, r *http.Request) {
-	// Withdrawal is the issuer's act (§9). Until issuer roles are modelled,
-	// the gate is a signed-in caller — recorded, not anonymous (#102).
-	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+	// Withdrawal is the issuer's act (§9). A caller must prove the party that
+	// owns this credential; a bearer token alone must not revoke somebody else.
+	partyID := r.URL.Query().Get("partyId")
+	if partyID == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "missing_parameter", "partyId is required")
+		return
+	}
+	if !authorizeParty(w, r, h.d, partyID) {
+		return
+	}
+	c, err := getCredential(r.Context(), h.d.DB.Q(), r.PathValue("id"))
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "credential", err, store.ErrNotFound)
+		return
+	}
+	if c.SubjectRef != partyID {
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "credential not found")
 		return
 	}
 	h.revokeAndAnswer(w, r)
+}
+
+// transferCustody is the only path that removes a signed document from the
+// central store. It is deliberately a worker acknowledgement, after the
+// browser's durable encrypted transaction has completed; callers cannot ask
+// for deletion by merely naming a credential or a storage mode.
+func (h *handlers) transferCustody(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Storage string `json:"storage"`
+		Durable bool   `json:"durable"`
+		Digest  string `json:"digest,omitempty"`
+	}
+	if !httpx.ReadJSON(w, r, &req) {
+		return
+	}
+	if req.Storage != "encrypted-wallet" || !req.Durable {
+		httpx.WriteError(w, http.StatusBadRequest, "custody_confirmation_required",
+			"custody transfer requires durable encrypted-wallet storage confirmation")
+		return
+	}
+	c, err := getCredential(r.Context(), h.d.DB.Q(), r.PathValue("id"))
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "credential", err, store.ErrNotFound)
+		return
+	}
+	if !authorizeParty(w, r, h.d, c.SubjectRef) {
+		return
+	}
+	if req.Digest == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "credential_digest_required",
+			"the custody acknowledgement must include the current issuer-record digest")
+		return
+	}
+	if req.Digest != c.Digest {
+		httpx.WriteError(w, http.StatusConflict, "credential_digest_mismatch",
+			"the acknowledged credential digest does not match the issuer record")
+		return
+	}
+	if c.Doc == nil {
+		httpx.WriteJSON(w, http.StatusOK, c)
+		return
+	}
+	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+		if _, err := tx.Exec(r.Context(), `
+			INSERT INTO custody_journal (credential_id, subject_ref, expected_digest, storage_kind, transferred_at)
+			VALUES ($1,$2,$3,$4,$5)
+			ON CONFLICT (credential_id) DO NOTHING`,
+			c.ID, c.SubjectRef, c.Digest, req.Storage, h.d.Clock.Now()); err != nil {
+			return err
+		}
+		_, err := tx.Exec(r.Context(), `UPDATE credentials SET doc = NULL WHERE id = $1`, c.ID)
+		return err
+	})
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "transfer credential custody", err)
+		return
+	}
+	c.Doc = nil
+	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
 // revokeInternal is the service twin (#102): the payments application revokes
@@ -543,16 +818,32 @@ func (h *handlers) statusList(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, h.d.Log, "sign status list", err)
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-CREST-Status-Generated-At", h.d.Clock.Now().UTC().Format(time.RFC3339))
 	httpx.WriteJSON(w, http.StatusOK, doc)
 }
 
 // issuerInfo publishes the verification key. A verifier needs it once and then
 // never again — which is what makes offline verification possible.
 func (h *handlers) issuerInfo(w http.ResponseWriter, r *http.Request) {
+	keys := make([]map[string]string, 0, len(h.issuerKeys))
+	for method, key := range h.issuerKeys {
+		keys = append(keys, map[string]string{
+			"verificationMethod": method,
+			"publicKeyMultibase": key,
+		})
+	}
+	if len(keys) == 0 {
+		keys = append(keys, map[string]string{
+			"verificationMethod": h.issuer.VerificationMethod(),
+			"publicKeyMultibase": h.issuer.PublicKeyMultibase(),
+		})
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"issuer":             h.issuer.ID(),
-		"verificationMethod": h.issuer.VerificationMethod(),
-		"publicKeyMultibase": h.issuer.PublicKeyMultibase(),
-		"cryptosuite":        credential.CryptosuiteName,
+		"issuer":              h.issuer.ID(),
+		"verificationMethod":  h.issuer.VerificationMethod(),
+		"publicKeyMultibase":  h.issuer.PublicKeyMultibase(),
+		"verificationMethods": keys,
+		"cryptosuite":         credential.CryptosuiteName,
 	})
 }

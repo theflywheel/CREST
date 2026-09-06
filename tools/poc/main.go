@@ -120,7 +120,7 @@ func main() {
 
 	// 3 ── ingest.
 	q := url.Values{
-		"contextId": {contextID}, "definitionId": {definitionID}, "submittedBy": {supervisor},
+		"contextId": {contextID}, "definitionId": {definitionID}, "definitionVersion": {env("POC_DEFINITION_VERSION", "1")}, "submittedBy": {supervisor},
 		"sourceClass": {"programme-system"}, "captureMethod": {"digital-capture"},
 		"sourceExposure": {"signed-batch"}, "systemRef": {"riverside-dhis2"},
 	}

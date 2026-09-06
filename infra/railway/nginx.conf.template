@@ -3,11 +3,17 @@
 # addresses change on redeploys.
 resolver [fd12::10] valid=10s;
 
+limit_req_zone $binary_remote_addr zone=crest_api:10m rate=20r/s;
+
 server {
     listen ${PORT};
     listen [::]:${PORT};
     root /usr/share/nginx/html;
     index index.html;
+    client_max_body_size 65m;
+    limit_req_status 429;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy same-origin always;
 
     # The fence (#102, §16 service-identity ruling): the service-only routes
     # do not exist as far as the internet is concerned.
@@ -15,8 +21,7 @@ server {
 
     # The fence's second half: the first refuses /internal/*, this one refuses
     # hosts that are not CREST's — the Railway project is shared, and an open
-    # (?<svc>[a-z-]+) would proxy to any service in it. crest-mock-oidc stays
-    # listed deliberately: it is the demo's login.
+    # (?<svc>[a-z-]+) would proxy to any service in it.
     # Alias names for links already in the wild: the four member names
     # answer from crest-core since #150, and crest-confirmation answers from
     # the payments application since #129. The old names proxy rather than
@@ -24,19 +29,22 @@ server {
     location ~ ^/api/crest-(registry|definitions|evidence|verification)/(?<crest>.*)$ {
         set $upstream http://crest-core.railway.internal:8080/$crest$is_args$args;
         proxy_pass $upstream;
+        limit_req zone=crest_api burst=40 nodelay;
         proxy_set_header Host crest-core.railway.internal;
         proxy_read_timeout 30s;
     }
     location ~ ^/api/crest-confirmation/(?<crest>.*)$ {
-        set $upstream http://crest-payments.railway.internal:8080/$crest$is_args$args;
+        set $upstream http://crest-core.railway.internal:8080/$crest$is_args$args;
         proxy_pass $upstream;
-        proxy_set_header Host crest-payments.railway.internal;
+        limit_req zone=crest_api burst=40 nodelay;
+        proxy_set_header Host crest-core.railway.internal;
         proxy_read_timeout 30s;
     }
 
-    location ~ ^/api/(?<svc>crest-(core|payments|mock-oidc))/(?<rest>.*)$ {
+    location ~ ^/api/(?<svc>crest-(core|payments))/(?<rest>.*)$ {
         set $upstream http://$svc.railway.internal:8080/$rest$is_args$args;
         proxy_pass $upstream;
+        limit_req zone=crest_api burst=40 nodelay;
         proxy_set_header Host $svc.railway.internal;
         proxy_read_timeout 30s;
     }

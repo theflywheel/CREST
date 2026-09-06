@@ -100,14 +100,9 @@ function HoldForm(props: { h: Hold; onDone: () => void }) {
   const s = useConsole();
   const [decision, setDecision] = useState("distinct");
   const [party, setParty] = useState(props.h.candidates?.[0] || "");
-  const [method, setMethod] = useState("");
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     const body: Record<string, string> = { decision, partyId: party, resolvedByPartyId: s.me!.partyId };
-    if (decision === "merge") {
-      body.confirmedByPartyId = party;
-      body.confirmationMethod = method || "in-person";
-    }
     try {
       await api.post("parties", `/v1/holds/${encodeURIComponent(props.h.id)}/resolve`, body);
       props.onDone();
@@ -134,11 +129,22 @@ function HoldForm(props: { h: Hold; onDone: () => void }) {
           ))}
         </select>
       </label>
-      <label className="body-2">
-        Worker confirmation (merge only) — method
-        <br />
-        <input name="method" placeholder="in-person" value={method} onChange={(e) => setMethod(e.target.value)} style={{ width: "100%" }} />
-      </label>
+      {decision === "merge" ? (
+        <OpenNote>
+          A merge is completed only after the worker confirms this survivor through their authenticated worker flow.
+          This screen records the custodian decision and cannot stand in for that confirmation.
+          {party ? (
+            <> <a
+              href={`${window.location.origin}/worker/#/merge-confirm/${encodeURIComponent(props.h.id)}?survivor=${encodeURIComponent(party)}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open the worker confirmation link
+            </a> and give it to the selected worker, then close this hold here.
+            </>
+          ) : null}
+        </OpenNote>
+      ) : null}
       <button className="btn" style={{ width: "auto", alignSelf: "flex-start", padding: "10px 20px" }}>
         Close the hold
       </button>
@@ -151,14 +157,15 @@ function HoldForm(props: { h: Hold; onDone: () => void }) {
 // hold carries no confidence score, so the column says "needs a person"
 // rather than inventing one.
 export function Dupes() {
+  const s = useConsole();
   const nav = useNavigate();
   const [gen, setGen] = useState(0);
   const [note, setNote] = useState<string | null>(null);
   const r = useLoad(async () => {
     const [out, metrics, cov] = await Promise.all([
-      api.get("parties", "/v1/holds"),
-      api.get("parties", "/v1/holds/metrics").catch(() => null),
-      api.get("parties", "/v1/coverage?attribute=county").catch(() => null),
+      api.get("parties", "/v1/holds?contextId=" + encodeURIComponent(s.projectId)),
+      api.get("parties", "/v1/holds/metrics?contextId=" + encodeURIComponent(s.projectId)).catch(() => null),
+      api.get("parties", "/v1/coverage?attribute=county&contextId=" + encodeURIComponent(s.projectId)).catch(() => null),
     ]);
     const all = (out.holds || []) as Hold[];
     return {
@@ -167,7 +174,7 @@ export function Dupes() {
       metrics,
       registered: cov && typeof cov.totalRegistered === "number" ? (cov.totalRegistered as number) : null,
     };
-  }, [gen]);
+  }, [gen, s.projectId]);
   return (
     <LoadFrame r={r}>
       {({ list, resolved, metrics, registered }) => {
@@ -257,8 +264,8 @@ export function Unclear() {
   const nav = useNavigate();
   const r = useLoad(async () => {
     const [out, claims] = await Promise.all([
-      api.get("evidence", "/v1/unclear"),
-      api.get("evidence", "/v1/claims").catch(() => ({ claims: [] })),
+      api.get("evidence", "/v1/unclear?contextId=" + encodeURIComponent(s.projectId)),
+      api.get("evidence", "/v1/claims?contextId=" + encodeURIComponent(s.projectId)).catch(() => ({ claims: [] })),
     ]);
     const rows = ((out.unclear || []) as Array<{ id: string; rowRef?: string; kind?: string; reason?: string; sitsWith?: string; createdAt?: string; resolvedAt?: string }>).filter((u) => !u.resolvedAt);
     // Everything received = the rows that became claims plus the rows that
@@ -474,20 +481,23 @@ export function Cases() {
   const s = useConsole();
   const nav = useNavigate();
   const r = useLoad(async () => {
-    const [instr, unclear, rec] = await Promise.all([
-      api.get("payments", "/v1/instructions").catch(() => ({ instructions: [] })),
-      api.get("evidence", "/v1/unclear").catch(() => ({ unclear: [] })),
+    const [payment, unclear, rec] = await Promise.all([
+      api
+        .get("payments", "/v1/instructions?contextId=" + encodeURIComponent(s.projectId))
+        .then((out) => ({ instructions: out.instructions || [], error: null as unknown }))
+        .catch((error) => ({ instructions: [] as unknown[], error })),
+      api.get("evidence", "/v1/unclear?contextId=" + encodeURIComponent(s.projectId)).catch(() => ({ unclear: [] })),
       api.get("parties", "/v1/recoveries").catch(() => ({ recoveries: [] })),
     ]);
-    return { instr: instr.instructions || [], unclear: unclear.unclear || [], rec: rec.recoveries || [] };
-  });
+    return { instr: payment.instructions, paymentError: payment.error, unclear: unclear.unclear || [], rec: rec.recoveries || [] };
+  }, [s.projectId]);
   const trace = (claimId?: string) => {
     s.setTraceClaim(claimId || "");
     nav("/supporttrace");
   };
   return (
     <LoadFrame r={r}>
-      {({ instr, unclear, rec }) => {
+      {({ instr, paymentError, unclear, rec }) => {
         const rows: React.ReactNode[][] = [];
         for (const i of instr.filter((x: { state?: string }) => x.state === "HELD")) {
           rows.push([
@@ -512,7 +522,17 @@ export function Cases() {
               stalled in the real queues is a case, and each already names an office. A worker must never see a missing
               payment with no explanation attached.
             </Lede>
-            <Tbl heads={["What", "About", "Why it is stalled", "Owning office", ""]} rows={rows} empty="Nothing is stalled. Every payment instruction is moving, every row is attributed, no recovery is open." />
+            {paymentError ? (
+              <OpenNote>
+                Payment cases are unavailable right now: {errText(paymentError)}. No payment rows are shown until that
+                service answers again.
+              </OpenNote>
+            ) : null}
+            <Tbl
+              heads={["What", "About", "Why it is stalled", "Owning office", ""]}
+              rows={rows}
+              empty={paymentError ? "Payment cases are unavailable; no payment rows are shown." : "Nothing is stalled. Every payment instruction is moving, every row is attributed, no recovery is open."}
+            />
           </>
         );
       }}
@@ -697,9 +717,10 @@ export function QualityWorklist() {
 // (§2, §3). The one metric with its derivation stated on-screen — an empty
 // registry renders the null state honestly (reuseRate: null), not 0.
 export function RegistryReuse() {
+  const s = useConsole();
   const nav = useNavigate();
   const [note, setNote] = useState<string | null>(null);
-  const r = useLoad(async () => api.get("evidence", "/v1/registry-reuse"));
+  const r = useLoad(async () => api.get("evidence", "/v1/registry-reuse?contextId=" + encodeURIComponent(s.projectId)), [s.projectId]);
   return (
     <LoadFrame r={r}>
       {(d: { totalClaimedParties: number; reusedParties: number; distinctContexts: number; reuseRate: number | null; derivation: string }) => (

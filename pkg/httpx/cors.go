@@ -34,7 +34,7 @@ func CORSFromOrigins(origins string) Middleware {
 				// site a worker's token scope.
 				h.Set("Access-Control-Allow-Origin", origin)
 				h.Set("Vary", "Origin")
-				h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-CREST-On-Behalf-Of")
+				h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-CREST-On-Behalf-Of, Idempotency-Key")
 				// PUT is here because the J3 configuration endpoints are PUTs
 				// by design (one record per key, idempotent): composition
 				// choices, activation gates, the finance link, the support

@@ -213,7 +213,7 @@ bednet-distribution,12,bednets-distributed,phone,+15550100011,2026-03-02,HH-101,
 }
 
 async function supervisorUnreached(){
-  const out = await api.get("confirmation", "/v1/unreached");
+  const out = await api.get("confirmation", "/v1/unreached?contextId=" + encodeURIComponent(FIX.project));
   const list = out.windows||out.unreached||[];
   return `<h2>Who holds it next</h2>
     <p class="lede">Workers whose window is open and who could not be told. For a worker with no phone, you are the route — an assisted confirmation is one of the four exits, recorded as itself with your name on it.</p>
@@ -225,7 +225,7 @@ async function supervisorUnreached(){
 }
 
 async function sharedUnclear(face){
-  const out = await api.get("evidence", "/v1/unclear");
+  const out = await api.get("evidence", "/v1/unclear?contextId=" + encodeURIComponent(FIX.project));
   const list = (out.unclear||[]).filter(u=>!u.resolvedAt);
   return `<h2>${face==="custodian"?"Whose work was this row":"Evidence that did not match"}</h2>
     <p class="lede">A mismatch is somebody named, not a status. ${face==="custodian"?"Attributing a row is a decision with your name on it, checked against your authorization.":"The custodian decides whose work an unattributed row was — the submitter deliberately cannot."}</p>
@@ -301,9 +301,9 @@ async function custodianReview(){
 /* ————— project face ————— */
 async function projectFunnel(){
   const [unclear, unreleased, unreached, metrics] = await Promise.all([
-    api.get("evidence","/v1/unclear").catch(()=>({unclear:[]})),
-    api.get("confirmation","/v1/unreleased").catch(()=>({windows:[],unreleased:[]})),
-    api.get("confirmation","/v1/unreached").catch(()=>({windows:[],unreached:[]})),
+    api.get("evidence","/v1/unclear?contextId=" + encodeURIComponent(FIX.project)).catch(()=>({unclear:[]})),
+    api.get("confirmation","/v1/unreleased?contextId=" + encodeURIComponent(FIX.project)).catch(()=>({windows:[],unreleased:[]})),
+    api.get("confirmation","/v1/unreached?contextId=" + encodeURIComponent(FIX.project)).catch(()=>({windows:[],unreached:[]})),
     api.get("parties","/v1/holds/metrics").catch(()=>null),
   ]);
   const n = x => (x.windows||x.unreleased||x.unreached||x.unclear||[]).filter(u=>!u.resolvedAt).length;
@@ -318,7 +318,7 @@ async function projectFunnel(){
 }
 
 async function projectPayments(){
-  const out = await api.get("payments","/v1/instructions");
+  const out = await api.get("payments","/v1/instructions?contextId=" + encodeURIComponent(FIX.project));
   const rec = await api.get("payments","/v1/reconciliation").catch(()=>null);
   const list = out.instructions||[];
   const held = list.filter(i=>i.state==="HELD");
@@ -392,8 +392,8 @@ async function projectDefinition(){
 }
 
 async function projectSources(){
-  const out = await api.get("evidence","/v1/sources").catch(()=>({sources:[]}));
-  const assess = await api.get("verification","/v1/source-assessments").catch(()=>({assessments:[]}));
+  const out = await api.get("evidence","/v1/sources?contextId=" + encodeURIComponent(FIX.project)).catch(()=>({sources:[]}));
+  const assess = await api.get("verification","/v1/source-assessments?contextId=" + encodeURIComponent(FIX.project)).catch(()=>({assessments:[]}));
   return `<h2>Where evidence comes from</h2>
     <p class="lede">Sources are registered with what the deployment knows about them — class, capture, field mapping — and can be re-assessed at any time: a downgrade moves every affected credential's tier instantly, with nothing reissued.</p>
     ${(out.sources||[]).length?`<div class="tablewrap"><table><tr><th>System</th><th>Class</th><th>Cadence</th></tr>

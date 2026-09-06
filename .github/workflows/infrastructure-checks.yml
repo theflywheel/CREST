@@ -1,0 +1,83 @@
+name: Infrastructure checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infrastructure-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Go, migrations, frontend and Certify plugin
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: crest_test
+          POSTGRES_PASSWORD: crest_test
+          POSTGRES_DB: crest_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U crest_test -d crest_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      CREST_TEST_DATABASE_URL: postgres://crest_test:crest_test@127.0.0.1:5432/crest_test?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Go vet
+        run: go vet ./pkg/... ./services/... ./adapters/... ./tools/... ./tests/...
+
+      - name: Go tests
+        run: go test -count=1 ./pkg/... ./services/... ./adapters/... ./tools/... ./tests/...
+
+      - name: Empty-schema and migration replay contract
+        run: go test -count=1 ./tests/contract -run '^TestEveryServiceMigratesAnEmptyStore$'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.11.0"
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Frontend typecheck
+        run: pnpm --dir frontend typecheck
+
+      - name: Offline cryptographic verification
+        run: pnpm --dir frontend/apps/verify test:offline
+
+      - name: Frontend build
+        run: pnpm --dir frontend build
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build Certify data provider plugin
+        run: mvn --batch-mode --no-transfer-progress -f infra/certify/plugin/pom.xml test package

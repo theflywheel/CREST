@@ -5,6 +5,7 @@ package scenarios
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -44,12 +45,15 @@ type sweepResult struct {
 func (w *world) registerSource(t *testing.T, every string) sourceView {
 	t.Helper()
 	var out sourceView
-	if err := w.Evidence.Post(w.ctx, "/v1/sources", map[string]any{
-		"adapterRef":    "dhis2-riverside-" + runID,
-		"contextId":     fixtures.ProjectID,
-		"systemRef":     "dhis2-riverside",
-		"expectedEvery": every,
-		"ownerPartyId":  fixtures.SupervisorID,
+	if err := w.Evidence.As(w.login(t, fixtures.SupervisorID)).Post(w.ctx, "/v1/sources", map[string]any{
+		"adapterRef":     "csv-batch@1",
+		"contextId":      fixtures.ProjectID,
+		"systemRef":      "dhis2-riverside-" + runID,
+		"sourceClass":    "programme-system",
+		"captureMethod":  "digital-capture",
+		"sourceExposure": "signed-batch",
+		"expectedEvery":  every,
+		"ownerPartyId":   fixtures.SupervisorID,
 	}, &out); err != nil {
 		t.Fatalf("register source: %v", err)
 	}
@@ -67,7 +71,7 @@ func TestASourceCannotBeMonitoredWithoutACadenceAndAnOwner(t *testing.T) {
 		"zero cadence": {"adapterRef": "a", "contextId": fixtures.ProjectID,
 			"expectedEvery": "0s", "ownerPartyId": fixtures.SupervisorID},
 	} {
-		code, resp, err := w.Evidence.Status(w.ctx, http.MethodPost, "/v1/sources", body)
+		code, resp, err := w.Evidence.As(w.login(t, fixtures.SupervisorID)).Status(w.ctx, http.MethodPost, "/v1/sources", body)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -89,7 +93,7 @@ func TestASourceThatGoesQuietIsNoticedAndItsOwnerIsTold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := fmt.Sprintf("/v1/batches?contextId=%s&definitionId=%s&submittedBy=%s"+
+	path := fmt.Sprintf("/v1/batches?contextId=%s&definitionId=%s&definitionVersion=1&submittedBy=%s"+
 		"&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch"+
 		"&systemRef=%s",
 		fixtures.ProjectID, fixtures.DefinitionID, fixtures.SupervisorID, "dhis2-riverside-"+runID)
@@ -100,7 +104,8 @@ func TestASourceThatGoesQuietIsNoticedAndItsOwnerIsTold(t *testing.T) {
 	}
 
 	var list sourceList
-	if err := w.Evidence.Get(w.ctx, "/v1/sources", &list); err != nil {
+	if err := w.Evidence.As(w.login(t, fixtures.SupervisorID)).Get(w.ctx,
+		"/v1/sources?contextId="+url.QueryEscape(fixtures.ProjectID), &list); err != nil {
 		t.Fatal(err)
 	}
 	if got := find(list, src.ID); got.State != "HEALTHY" {
@@ -112,7 +117,8 @@ func TestASourceThatGoesQuietIsNoticedAndItsOwnerIsTold(t *testing.T) {
 	if err := w.Advance(w.ctx, 25*time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.Evidence.Get(w.ctx, "/v1/sources", &list); err != nil {
+	if err := w.Evidence.As(w.login(t, fixtures.SupervisorID)).Get(w.ctx,
+		"/v1/sources?contextId="+url.QueryEscape(fixtures.ProjectID), &list); err != nil {
 		t.Fatal(err)
 	}
 	got := find(list, src.ID)
@@ -124,7 +130,7 @@ func TestASourceThatGoesQuietIsNoticedAndItsOwnerIsTold(t *testing.T) {
 	}
 
 	var swept sweepResult
-	if err := w.Evidence.Post(w.ctx, "/v1/sources/sweep", nil, &swept); err != nil {
+	if err := w.Evidence.As(w.login(t, fixtures.SupervisorID)).Post(w.ctx, "/v1/sources/sweep?contextId="+url.QueryEscape(fixtures.ProjectID), nil, &swept); err != nil {
 		t.Fatal(err)
 	}
 	if !contains(swept.WentQuiet, src.ID) {
@@ -142,7 +148,7 @@ func TestASourceThatGoesQuietIsNoticedAndItsOwnerIsTold(t *testing.T) {
 	// discovery. An alert per sweep is how an alert channel becomes something
 	// people mute, and the muted channel is the one the real outage arrives on.
 	var again sweepResult
-	if err := w.Evidence.Post(w.ctx, "/v1/sources/sweep", nil, &again); err != nil {
+	if err := w.Evidence.As(w.login(t, fixtures.SupervisorID)).Post(w.ctx, "/v1/sources/sweep?contextId="+url.QueryEscape(fixtures.ProjectID), nil, &again); err != nil {
 		t.Fatal(err)
 	}
 	if contains(again.WentQuiet, src.ID) {
@@ -163,7 +169,7 @@ func TestAFeedThatResumesIsHealthyAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	var swept sweepResult
-	if err := w.Evidence.Post(w.ctx, "/v1/sources/sweep", nil, &swept); err != nil {
+	if err := w.Evidence.As(w.login(t, fixtures.SupervisorID)).Post(w.ctx, "/v1/sources/sweep?contextId="+url.QueryEscape(fixtures.ProjectID), nil, &swept); err != nil {
 		t.Fatal(err)
 	}
 
@@ -171,7 +177,7 @@ func TestAFeedThatResumesIsHealthyAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := fmt.Sprintf("/v1/batches?contextId=%s&definitionId=%s&submittedBy=%s"+
+	path := fmt.Sprintf("/v1/batches?contextId=%s&definitionId=%s&definitionVersion=1&submittedBy=%s"+
 		"&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch"+
 		"&systemRef=%s",
 		fixtures.ProjectID, fixtures.DefinitionID, fixtures.SupervisorID, "dhis2-riverside-"+runID)
@@ -182,7 +188,8 @@ func TestAFeedThatResumesIsHealthyAgain(t *testing.T) {
 	}
 
 	var list sourceList
-	if err := w.Evidence.Get(w.ctx, "/v1/sources", &list); err != nil {
+	if err := w.Evidence.As(w.login(t, fixtures.SupervisorID)).Get(w.ctx,
+		"/v1/sources?contextId="+url.QueryEscape(fixtures.ProjectID), &list); err != nil {
 		t.Fatal(err)
 	}
 	if got := find(list, src.ID); got.State != "HEALTHY" {
@@ -195,7 +202,7 @@ func TestAFeedThatResumesIsHealthyAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	var second sweepResult
-	if err := w.Evidence.Post(w.ctx, "/v1/sources/sweep", nil, &second); err != nil {
+	if err := w.Evidence.As(w.login(t, fixtures.SupervisorID)).Post(w.ctx, "/v1/sources/sweep?contextId="+url.QueryEscape(fixtures.ProjectID), nil, &second); err != nil {
 		t.Fatal(err)
 	}
 	if !contains(second.WentQuiet, src.ID) {

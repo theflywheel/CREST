@@ -9,7 +9,7 @@
 // approves is refused by the service (409 not_approved) and that refusal is
 // shown, not smoothed over — nothing is shared before approval, structurally.
 import { useEffect, useState } from "react";
-import { api, FIX } from "@crest/api";
+import { api } from "@crest/api";
 import { Chip, KV, OpenNote, Sidecar } from "@crest/ui";
 import { short, day, useVerify } from "../state";
 
@@ -29,7 +29,7 @@ type ShareView = {
 
 export function Requests() {
   const s = useVerify();
-  const [subject, setSubject] = useState<string>(FIX.workerA);
+  const [subject, setSubject] = useState<string>("");
   const [purpose, setPurpose] = useState("");
   const [list, setList] = useState<ShareView[] | null>(null);
   const [collected, setCollected] = useState<Record<string, any>>({});
@@ -38,7 +38,7 @@ export function Requests() {
     try {
       const out = await api.get(
         "verification",
-        `/v1/presentation-requests?requestedByPartyId=${encodeURIComponent(FIX.org)}`,
+        `/v1/presentation-requests?requestedByPartyId=${encodeURIComponent(s.orgParty?.id || "")}`,
       );
       setList((out.requests || []).slice().reverse());
     } catch (e) {
@@ -57,7 +57,7 @@ export function Requests() {
     try {
       await api.post("verification", "/v1/presentation-requests", {
         subjectPartyId: subject.trim(),
-        requestedByPartyId: FIX.org,
+        requestedByPartyId: s.orgParty?.id,
         purpose: purpose.trim(),
       });
       setPurpose("");

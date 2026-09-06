@@ -1188,7 +1188,7 @@ export function MechQualify() {
   const me = s.me!.partyId;
   const [gen, setGen] = useState(0);
   const instr = useLoad<{ instructions: Instruction[] }>(
-    () => api.get("payments", "/v1/instructions"),
+    () => api.get("payments", `/v1/instructions?contextId=${encodeURIComponent(s.projectId)}`),
     [s.projectId, gen],
   );
   return (
@@ -1319,7 +1319,10 @@ export function MechLive() {
       return [];
     }
   })();
-  const instr = useLoad<{ instructions: Instruction[] }>(() => api.get("payments", "/v1/instructions"), [s.projectId]);
+  const instr = useLoad<{ instructions: Instruction[] }>(
+    () => api.get("payments", `/v1/instructions?contextId=${encodeURIComponent(s.projectId)}`),
+    [s.projectId],
+  );
   return (
     <MechFrame title="Verified — real payments can now run" counter="Payment set up · 4 of 4">
       {(m) => {

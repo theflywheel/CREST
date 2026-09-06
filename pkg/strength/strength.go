@@ -55,14 +55,6 @@ type SourceAssessment struct {
 	Reason  string
 }
 
-// ExternalInstitutionCeiling is the highest tier evidence from an institution
-// outside this deployment can reach.
-//
-// Exported so a second implementation of f — a verifier written by somebody
-// else, in another language — can be held to the same number rather than
-// having to infer it from the vectors.
-const ExternalInstitutionCeiling = 2
-
 // Result is a judgement with its reasoning attached. The reasoning is not a
 // nicety: §6 says the tier is always displayed to worker and verifier alike,
 // and a number with no account of itself is not something either can argue with.
@@ -103,74 +95,39 @@ func Evaluate(f Facts, def schema.Definition, assessment *SourceAssessment) Resu
 		if missing := unmet(f, rule, present); missing != "" {
 			continue
 		}
+		tier := referenceTier(rule.Tier, def)
+		ceiling := referenceTier(def.Faces.Worker.TierCeiling, def)
+		if tier < 1 || tier > 3 || ceiling < 1 || ceiling > 3 {
+			return Result{Acceptable: false, MatchedRule: i, Because: []string{"invalid tier contract"}}
+		}
 		res := Result{
-			Tier:        rule.Tier,
-			Acceptable:  true,
-			MatchedRule: i,
-			Because: []string{fmt.Sprintf("rule %d of the definition awards tier %d for %s evidence captured as %s",
-				i, rule.Tier, f.Provenance.SourceClass, f.Provenance.CaptureMethod)},
+			Tier: tier, Acceptable: true, MatchedRule: i,
+			Because: []string{fmt.Sprintf("rule %d awards tier %d for %s evidence captured as %s", i, tier, f.Provenance.SourceClass, f.Provenance.CaptureMethod)},
 		}
-
-		// Evidence from an institution outside this deployment cannot reach
-		// the top tier, whatever a definition's map says (§16, ruling below).
-		//
-		// The reasoning is what the tier means. Tier 3 says the record came
-		// from a system whose capture this deployment can account for. An
-		// external institution's system record is a good record — far better
-		// than a letter on letterhead, and the two must not land in the same
-		// place — but the account of how it was captured is the institution's,
-		// not ours, and there is no accreditation anywhere in CREST that would
-		// let anybody check it. Awarding tier 3 on that basis is trusting a
-		// claim nobody verified, which is the one thing §6 says f must never
-		// do.
-		//
-		// This *narrows* an earlier position rather than reversing it. G1 #8
-		// established that an institution's own system record earns more than
-		// its letterhead does; that distinction survives intact, at 2 against
-		// 1 instead of 3 against 1. What moved is the ceiling, not the
-		// ordering.
-		//
-		// L1 rather than a mapping entry, and that is the deliberate part.
-		// §16 noted it could be either. As a mapping entry, one deployment
-		// awards tier 3 to an institution and another does not, and a verifier
-		// reading a tier 3 credential learns nothing from it — the number stops
-		// meaning the same thing in two places, which is the whole value f is
-		// supposed to have. When source-class accreditation exists this becomes
-		// a real question again, and the cap should be revisited then rather
-		// than inherited.
-		if f.Provenance.SourceClass == schema.SourceClassInstitutionalSystem &&
-			res.Tier > ExternalInstitutionCeiling {
-			res.Because = append(res.Because,
-				fmt.Sprintf("capped to tier %d: evidence from an institution outside this deployment, "+
-					"whose capture nobody here can account for (§16)", ExternalInstitutionCeiling))
-			res.Tier = ExternalInstitutionCeiling
+		captureFloor := 1
+		if f.Provenance.SourceClass == schema.SourceClassSelfReported || f.Provenance.CaptureMethod == schema.CaptureMethodUnsupervisedManual {
+			captureFloor = 3
+		} else if f.Provenance.CaptureMethod == schema.CaptureMethodSupervisedManual {
+			captureFloor = 2
 		}
-
-		// A definition may promise less than its own map could award. The
-		// ceiling is on the worker face because it is a promise made to the
-		// worker, and a worker should never be told a record is stronger than
-		// the definition is willing to stand behind.
-		if ceiling := def.Faces.Worker.TierCeiling; res.Tier > ceiling {
-			res.Because = append(res.Because,
-				fmt.Sprintf("capped to tier %d by the definition's ceiling", ceiling))
+		if res.Tier < captureFloor {
+			res.Tier = captureFloor
+			res.Because = append(res.Because, fmt.Sprintf("capture cannot establish evidence stronger than tier %d", captureFloor))
+		}
+		if res.Tier < ceiling {
 			res.Tier = ceiling
+			res.Because = append(res.Because, fmt.Sprintf("capped to tier %d by the definition's ceiling", ceiling))
+		}
+		if assessment != nil {
+			if assessment.MaxTier < 1 || assessment.MaxTier > 3 {
+				return Result{Acceptable: false, MatchedRule: i, Because: append(res.Because, "the current source assessment does not recognise this evidence")}
+			}
+			if res.Tier < assessment.MaxTier {
+				res.Tier = assessment.MaxTier
+				res.Because = append(res.Because, fmt.Sprintf("capped to tier %d by the current assessment of %s: %s", assessment.MaxTier, f.Provenance.AdapterRef, assessment.Reason))
+			}
 		}
 
-		if assessment != nil && res.Tier > assessment.MaxTier {
-			res.Because = append(res.Because,
-				fmt.Sprintf("capped to tier %d by the current assessment of %s: %s",
-					assessment.MaxTier, f.Provenance.AdapterRef, assessment.Reason))
-			res.Tier = assessment.MaxTier
-		}
-
-		// A cap can take a tier below the floor. That is a real outcome — a
-		// source assessed as untrustworthy produces evidence this definition
-		// cannot recognise — and saying "tier 0" would invite someone to store
-		// it as a number.
-		if res.Tier < 1 {
-			return Result{Acceptable: false, MatchedRule: i, Because: append(res.Because,
-				"the caps leave nothing this definition recognises")}
-		}
 		return res
 	}
 
@@ -179,6 +136,18 @@ func Evaluate(f Facts, def schema.Definition, assessment *SourceAssessment) Resu
 			def.ID, def.Version, f.Provenance.SourceClass, f.Provenance.CaptureMethod,
 			sorted(f.PresentFields), assurance(f.IdentityAssurance)),
 	}}
+}
+
+// Historical definitions are interpreted without rewriting signed registry facts.
+// All public results use the reference's numbering, including historical inputs.
+func referenceTier(tier int, def schema.Definition) int {
+	if tier < 1 || tier > 3 {
+		return 0
+	}
+	if def.TierSemantics == nil || *def.TierSemantics == schema.DefinitionTierSemanticsLegacyV0 {
+		return 4 - tier
+	}
+	return tier
 }
 
 // unmet returns the first condition of the rule the facts do not satisfy, or

@@ -1,0 +1,2 @@
+/infra/mimoto/patches/mimoto-0.19.2-pdf-structured-values.patch whitespace=-blank-at-eol
+/services/core/definitions/migrations/0004_authoring_context.sql whitespace=-blank-at-eof

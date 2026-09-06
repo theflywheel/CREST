@@ -14,6 +14,7 @@
 // manifest records as missing (p1_2 role assignment).
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { ApiError, api, loginAs, setSession, whoAmI, FIX } from "@crest/api";
+import { clearApplicantSessionStorage } from "./views/Onboard";
 
 export const personas = [
   {
@@ -236,12 +237,17 @@ export function ConsoleProvider(props: { children: ReactNode }) {
         // Neither owner nor configurator: the projects this person holds a
         // grant on (an author's world is where somebody granted them a role).
         const mine = await api.get("parties", "/v1/authorizations/mine").catch(() => null);
-        const ctxIds = Array.from(
-          new Set(
-            ((mine && mine.authorizations) || [])
-              .map((a: { scope?: { contextId?: string }; contextId?: string }) => a.contextId || a.scope?.contextId)
-              .filter(Boolean) as string[],
-          ),
+        type Grant = { scope?: { contextId?: string }; contextId?: string; functions?: string[] };
+        const grants = ((mine && mine.authorizations) || []) as Grant[];
+        const ctxOf = (a: Grant) => a.contextId || a.scope?.contextId;
+        // Every console read is an evidence read, so the working project is
+        // one this person may read — a write-only grant elsewhere (a second
+        // authority's submit role, say) must not become their landing place.
+        const readable = new Set(
+          grants.filter((a) => (a.functions || []).includes("read-work-evidence")).map(ctxOf).filter(Boolean),
+        );
+        const ctxIds = Array.from(new Set(grants.map(ctxOf).filter(Boolean) as string[])).sort(
+          (a, b) => Number(readable.has(b)) - Number(readable.has(a)),
         );
         const fetched = await Promise.all(
           ctxIds.map((id) =>
@@ -303,7 +309,8 @@ export function ConsoleProvider(props: { children: ReactNode }) {
   const login = async (idx: number) => {
     const p = personas[idx];
     const token = await loginAs(p.id);
-    const who = { partyId: p.id, who: p.who, role: p.role };
+    const identity = await whoAmI();
+    const who = { partyId: identity.partyId, who: p.who, role: p.role };
     setPersonToken(token);
     setMe(who);
     setPersona(p.key);
@@ -316,7 +323,15 @@ export function ConsoleProvider(props: { children: ReactNode }) {
     setSession(token);
     const w = await whoAmI();
     if (!w.partyId) {
+      // A callback may be switching away from a previous role-derived
+      // session. Clear that state before returning "stranger"; AuthReturn
+      // can then deliberately preserve the verified token for applicant
+      // onboarding without reviving the old persona.
       setSession(null);
+      setPersonToken(null);
+      setMe(null);
+      setPersona(null);
+      store(null);
       return "stranger" as const;
     }
     // The role is derived from the registry, not chosen in a browser. Three
@@ -413,6 +428,7 @@ export function ConsoleProvider(props: { children: ReactNode }) {
     setPersonToken(null);
     setSession(null);
     store(null);
+    clearApplicantSessionStorage();
     setMe(null);
     setPersona(null);
     setErr(null);

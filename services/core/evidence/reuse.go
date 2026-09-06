@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/theflywheel/crest/pkg/httpx"
-	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/store"
 )
 
@@ -74,11 +73,12 @@ func reuseMetric(spread []partyContextSpread, distinctContexts int) map[string]a
 // contextSpreadPerParty reads, for every party with at least one claim, how
 // many distinct contexts (via the claim's unit) have claimed against them —
 // and the total number of distinct contexts across all claims.
-func contextSpreadPerParty(ctx context.Context, q store.Querier) ([]partyContextSpread, int, error) {
+func contextSpreadPerParty(ctx context.Context, q store.Querier, contextID string) ([]partyContextSpread, int, error) {
 	rows, err := q.Query(ctx, `
 		SELECT c.party_id, count(DISTINCT u.context_id)
 		FROM claims c JOIN units u ON u.id = c.unit_id
-		GROUP BY c.party_id`)
+		WHERE u.context_id = $1
+		GROUP BY c.party_id`, contextID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -93,7 +93,8 @@ func contextSpreadPerParty(ctx context.Context, q store.Querier) ([]partyContext
 	var distinctContexts int
 	if err := q.QueryRow(ctx, `
 		SELECT count(DISTINCT u.context_id)
-		FROM claims c JOIN units u ON u.id = c.unit_id`).Scan(&distinctContexts); err != nil {
+		FROM claims c JOIN units u ON u.id = c.unit_id
+		WHERE u.context_id = $1`, contextID).Scan(&distinctContexts); err != nil {
 		return nil, 0, err
 	}
 	return spread, distinctContexts, nil
@@ -101,10 +102,13 @@ func contextSpreadPerParty(ctx context.Context, q store.Querier) ([]partyContext
 
 // registryReuse is g4_7's endpoint: GET /v1/registry-reuse.
 func (h *handlers) registryReuse(w http.ResponseWriter, r *http.Request) {
-	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+	if !requirePrivateCaller(w, r, h.d) {
 		return
 	}
-	spread, distinctContexts, err := contextSpreadPerParty(r.Context(), h.d.DB.Q())
+	if !h.authorizeContext(w, r, r.URL.Query().Get("contextId")) {
+		return
+	}
+	spread, distinctContexts, err := contextSpreadPerParty(r.Context(), h.d.DB.Q(), r.URL.Query().Get("contextId"))
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "read claim/unit context spread", err)
 		return
