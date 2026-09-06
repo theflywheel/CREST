@@ -256,7 +256,10 @@ export function Sources() {
             ) : null}
             <CardTitled t="Current assessments">
               {assessments.length ? (
-                <KVR rows={assessments.map((a: { adapterRef: string; maxTier: number; reason?: string }) => [a.adapterRef, "capped at tier " + a.maxTier + " — " + (a.reason || "")])} />
+                <KVR rows={assessments.map((a: { contextId?: string; systemRef?: string; adapterRef: string; maxTier: number; reason?: string }) => [
+                  (a.systemRef || a.adapterRef) + (a.contextId ? "" : a.systemRef ? " · every project (assessed before scoping)" : " · legacy, by adapter"),
+                  "capped at tier " + a.maxTier + " — " + (a.reason || ""),
+                ])} />
               ) : (
                 <div className="muted">
                   No source is downgraded. A downgrade moves every affected credential's tier instantly, with nothing

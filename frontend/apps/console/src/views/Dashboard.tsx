@@ -235,10 +235,11 @@ export function Quality() {
     ]);
     return {
       sources: (sources.sources || []) as Array<{ systemRef?: string; adapterRef?: string; state?: string }>,
-      assessments: (assess.assessments || []) as Array<{ adapterRef: string; maxTier: number; reason?: string }>,
+      assessments: (assess.assessments || []) as Array<{ contextId?: string; systemRef?: string; adapterRef: string; maxTier: number; reason?: string }>,
       tierMap: (def?.tierMap || []) as Array<{ tier: number; sourceClassIn?: string[]; captureMethodIn?: string[] }>,
     };
-  }, [s.definitionId]);
+  }, [s.definitionId, s.projectId]);
+  const projectId = s.projectId;
   return (
     <LoadFrame r={r}>
       {({ sources, assessments, tierMap }) => (
@@ -255,7 +256,13 @@ export function Quality() {
           <CardTitled t="Source, and the ceiling it puts on a tier">
             <GridTable cols="1.4fr 1fr 1.6fr" head={["Source", "Ceiling", "Why"]}>
               {sources.map((s) => {
-                const cap = assessments.find((a) => a.adapterRef === (s.adapterRef || s.systemRef));
+                // The same precedence verification applies: this project's own
+                // assessment of the source, then an unscoped one for it, then a
+                // legacy row keyed by adapter alone (no systemRef).
+                const cap =
+                  assessments.find((a) => a.systemRef === s.systemRef && a.contextId === projectId) ||
+                  assessments.find((a) => a.systemRef === s.systemRef && !a.contextId) ||
+                  assessments.find((a) => !a.systemRef && a.adapterRef === s.adapterRef);
                 return (
                   <div className="g-row" key={s.systemRef || s.adapterRef}>
                     <span className="mono">{s.systemRef || s.adapterRef}</span>
