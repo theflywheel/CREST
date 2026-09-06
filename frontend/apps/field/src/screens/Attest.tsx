@@ -22,6 +22,9 @@ function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []): T | undefined {
   const [data, setData] = useState<T>();
   useEffect(() => {
     let live = true;
+    // A switch of project must never keep showing the previous project's
+    // queue while the new read is in flight (or after it fails).
+    setData(undefined);
     fn().then((d) => live && setData(d));
     return () => {
       live = false;

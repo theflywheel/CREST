@@ -1106,13 +1106,40 @@ func (h *handlers) authorizeSourceAssessment(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *handlers) assessments(w http.ResponseWriter, r *http.Request) {
-	// The current view of every source — a signed-in operations surface (#102).
+	// The current view of a project's sources: a project read, answered to a
+	// caller who may read that project's evidence (#102). Rows assessed
+	// before scoping (no context) apply to every project and ride along.
 	if !identity.Authenticated(w, r, h.d.Log, true) {
+		return
+	}
+	contextID := strings.TrimSpace(r.URL.Query().Get("contextId"))
+	if contextID == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "missing_parameter",
+			"contextId is required: assessments are a project's view of its sources")
+		return
+	}
+	caller := identity.From(r.Context())
+	if caller.PartyID == "" {
+		httpx.WriteError(w, http.StatusForbidden, "subject_not_enrolled", "the caller is not enrolled in this deployment")
+		return
+	}
+	if h.d.Permits == nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "authorization_unavailable", "the registry authorisation check is unavailable")
+		return
+	}
+	permitted, err := h.d.Permits(r.Context(), caller.PartyID, "read-work-evidence", contextID)
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "check evidence read authorization", err)
+		return
+	}
+	if !permitted {
+		httpx.WriteError(w, http.StatusForbidden, "not_permitted", "the caller may not read evidence in %s", contextID)
 		return
 	}
 	rows, err := h.d.DB.Q().Query(r.Context(),
 		`SELECT coalesce(context_id,''), coalesce(system_ref,''), adapter_ref, max_tier, reason, assessed_by, assessed_at
-		 FROM source_assessments ORDER BY coalesce(system_ref, adapter_ref), context_id`)
+		 FROM source_assessments WHERE context_id = $1 OR context_id IS NULL
+		 ORDER BY coalesce(system_ref, adapter_ref), context_id`, contextID)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list assessments", err)
 		return

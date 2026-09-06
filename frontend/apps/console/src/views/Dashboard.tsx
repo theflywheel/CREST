@@ -230,7 +230,7 @@ export function Quality() {
   const r = useLoad(async () => {
     const [sources, assess, def] = await Promise.all([
       api.get("evidence", "/v1/sources?contextId=" + encodeURIComponent(s.projectId)).catch(() => ({ sources: [] })),
-      api.get("verification", "/v1/source-assessments").catch(() => ({ assessments: [] })),
+      api.get("verification", "/v1/source-assessments?contextId=" + encodeURIComponent(s.projectId)).catch(() => ({ assessments: [] })),
       s.definitionId ? api.get("definitions", `/v1/definitions/${encodeURIComponent(s.definitionId)}`).catch(() => null) : Promise.resolve(null),
     ]);
     return {
