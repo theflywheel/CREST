@@ -4,43 +4,37 @@
 # networking — the same §16 service-identity fence as crest-web: /internal/*
 # is refused HERE and the Go services carry no public domains.
 #
-# Since #148 this image also carries the design docs at /docs/: docs/*.md
-# rendered by Quartz (jackyzha0/quartz, pinned v4.5.2) with the self-contained
-# HTML design docs — the blueprint among them — copied in beside the rendered
-# pages so the index's relative links keep resolving. Quartz is a build tool
-# here, not a dependency of the repo: it is cloned at image build and nothing
-# of it ships except the static output.
+# Since #148 this image also carries the documentation at /docs/: the four
+# technical sections under docs/ (ARCHITECTURE, FLOWS, PLUGINS,
+# BUILDING_ON_CREST) and their index, rendered by Quartz (jackyzha0/quartz,
+# pinned v4.5.2). The design documents and working notes stay in the
+# repository. Quartz is a build tool here, not a dependency of the repo: it is
+# cloned at image build and nothing of it ships except the static output.
 FROM node:22-alpine AS docs
 RUN apk add --no-cache git
 RUN git clone --depth 1 --branch v4.5.2 https://github.com/jackyzha0/quartz.git /quartz
 WORKDIR /quartz
 RUN npm ci --no-audit --no-fund
-COPY docs/*.md /docs/
-COPY docs/*.html /docs/
-# The four technical sections, each a folder of pages with its own README as
-# the folder's index page.
+# The hosted site is the four technical sections and their index, nothing
+# else: the design documents and working notes stay in the repository, and
+# the pages name them where they apply rather than linking out.
+COPY docs/INDEX.md /docs/INDEX.md
 COPY docs/ARCHITECTURE /docs/ARCHITECTURE
 COPY docs/FLOWS /docs/FLOWS
 COPY docs/PLUGINS /docs/PLUGINS
 COPY docs/BUILDING_ON_CREST /docs/BUILDING_ON_CREST
 COPY infra/railway/quartz-theme.mjs /quartz/quartz-theme.mjs
-# docs/README.md is the index of the design docs, so it becomes the site root.
 RUN rm -rf content && mkdir content \
-    && cp /docs/*.md content/ && mv content/README.md content/index.md \
+    && cp /docs/INDEX.md content/index.md \
     && for d in ARCHITECTURE FLOWS PLUGINS BUILDING_ON_CREST; do \
          cp -r /docs/$d content/$d && mv content/$d/README.md content/$d/index.md; \
        done \
-    # Quartz titles a page by filename unless frontmatter says otherwise, and
-    # the site root should not be called "index".
-    && printf -- '---\ntitle: CREST design documents\n---\n' > /tmp/fm \
-    && cat /tmp/fm content/index.md > /tmp/ix && mv /tmp/ix content/index.md \
     # The subpath in baseUrl is what makes Quartz emit /docs/-rooted links.
-    && sed -i 's/pageTitle: "Quartz 4"/pageTitle: "CREST Design Docs"/; s#baseUrl: "quartz.jzhao.xyz"#baseUrl: "crest-apps-production.up.railway.app/docs"#' quartz.config.ts \
+    && sed -i 's/pageTitle: "Quartz 4"/pageTitle: "CREST Documentation"/; s#baseUrl: "quartz.jzhao.xyz"#baseUrl: "crest-apps-production.up.railway.app/docs"#' quartz.config.ts \
     # Retheme to the CREST design system (frontend/packages/ui/src/styles.css); the script
     # fails the build if the pinned Quartz defaults are not found verbatim.
     && node quartz-theme.mjs \
     && node ./quartz/bootstrap-cli.mjs build \
-    && cp /docs/*.html public/ \
     # A section's README.md became its index page; links written for GitHub
     # still say README, so answer that name too.
     && for d in ARCHITECTURE FLOWS PLUGINS BUILDING_ON_CREST; do cp public/$d/index.html public/$d/README.html; done

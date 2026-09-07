@@ -32,4 +32,4 @@ make apps-up       # the same, plus the four doors, seeded with the fixture worl
 make substrate-up  # the full substrate profile: DeDi, eSignet, Inji
 ```
 
-The compose file is `infra/compose/docker-compose.yml`; the production shape, and what differs about it, is [../DEPLOYMENT.md](../DEPLOYMENT.md). The run-versus-build reasoning for each component is [../COMPONENTS.md](../COMPONENTS.md).
+The compose file is `infra/compose/docker-compose.yml`; the production shape, and what differs about it, is ../DEPLOYMENT.md (`docs/DEPLOYMENT.md` in the repository). The run-versus-build reasoning for each component is ../COMPONENTS.md (`docs/COMPONENTS.md` in the repository).

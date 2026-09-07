@@ -31,4 +31,4 @@ The parties service refuses to publish a fact that holds personal data, whicheve
 | `DEDI_NAMESPACE`, `DEDI_KEY_ID` | The deployment's namespace and signing key id |
 | `DEDI_PUBLISHER_KEY`, `DEDI_PUBLISHER_KEYS` | The key that writes to the log, generated per deployment with `make dedi-keys` |
 
-The key's custody, and how a deployment proves its log independently (`make verify-deployed`), are in [../DEPLOYMENT.md](../DEPLOYMENT.md).
+The key's custody, and how a deployment proves its log independently (`make verify-deployed`), are in ../DEPLOYMENT.md (`docs/DEPLOYMENT.md` in the repository).
