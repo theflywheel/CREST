@@ -2103,10 +2103,16 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   expect(claimId).toBeTruthy();
 
   // The window opens through the outbox — poll, then the worker confirms.
+  //
+  // On the payments base, not evidence: since #127 the confirmation window is
+  // the payments application's and core answers no window route at all. The
+  // poll is still the right shape — evidence commits `claim.created` with the
+  // claim and its relay delivers it across the boundary, so the window appears
+  // shortly after the batch rather than with it.
   await expect.poll(async () =>
-    (await asPartyOn(request, PAYSVC.evidence, FIX.workerA, "GET", `/v1/windows/${claimId}`)).status(),
+    (await asPartyOn(request, PAYSVC.payments, FIX.workerA, "GET", `/v1/windows/${claimId}`)).status(),
   { timeout: 60000 }).toBe(200);
-  r = await asPartyOn(request, PAYSVC.evidence, FIX.workerA, "POST", `/v1/claims/${claimId}/confirm`, {});
+  r = await asPartyOn(request, PAYSVC.payments, FIX.workerA, "POST", `/v1/claims/${claimId}/confirm`, {});
   expect(r.status(), "the worker's confirmation exit").toBe(200);
 
   // The exit released the obligation; the not-live mechanism turned it into a
