@@ -267,7 +267,7 @@ func (h *handlers) buildCredential(ctx context.Context, req issueRequest) (*issu
 
 	// The subject is the Party's own pairwise, deployment-local DID (§4). Not a
 	// name, not a national identifier, not the provider's subject — nothing
-	// that correlates outside this deployment (W8, W9).
+	// that correlates outside this deployment (W8).
 	return &issuedCredential{
 		ID:             id.New(h.d.Clock, "credential"),
 		ClaimID:        req.ClaimID,
@@ -446,7 +446,7 @@ func (h *handlers) definitionProof(ctx context.Context,
 // A verifier offline in a field office cannot ask CREST which fields the record
 // had, and a definition's tier map can require one. Without this the offline
 // answer is systematically weaker than the online answer — which is the wrong
-// way round, because offline is the case W6 exists for.
+// way round, because offline is the case W7 exists for.
 //
 // Sorted, so two credentials over the same record produce the same bytes.
 func evidenceFieldsOf(unit schema.Unit) []string {

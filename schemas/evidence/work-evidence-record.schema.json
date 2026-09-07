@@ -19,7 +19,7 @@
         "value": {
           "type": "string",
           "minLength": 1,
-          "description": "For kind=national-id this is the raw number in transit only. It is resolved at ingestion and discarded — never persisted, not even in fixtures (W9)."
+          "description": "For kind=national-id this is the raw number in transit only. It is resolved at ingestion and discarded — never persisted, not even in fixtures (W8)."
         }
       },
       "required": ["kind", "value"],

@@ -128,7 +128,7 @@ type railReply = providers.Response
 // release turns a T=7 exit into an instruction.
 //
 // Note what it does not do: look at which exit it was. All four release
-// (W4) — including dispute, because a dispute contests the record and not the
+// (W5–W6) — including dispute, because a dispute contests the record and not the
 // money. `releasedBy` is recorded for reconciliation, never branched on.
 func (h *handlers) release(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -186,7 +186,7 @@ func (h *handlers) release(w http.ResponseWriter, r *http.Request) {
 	if held == nil {
 		// f2_9, exactly: the mechanism's gate sits in front of DISBURSEMENT,
 		// not in front of this instruction existing. The window exit already
-		// released the obligation (W4) — the only question the gate answers
+		// released the obligation (W5–W6) — the only question the gate answers
 		// is whether the money moves now or is held with the mechanism's
 		// owner named against it (W10). The amount is kept on the hold: what
 		// is owed is known, only its sending waits.

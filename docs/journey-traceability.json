@@ -1185,7 +1185,7 @@
    "status": "implemented",
    "app": "console",
    "route": "#/mech/batching",
-   "note": "The batching choice: who chose, when, and the trade-off in a sentence — refused loudly when unstated. The reference field 'Hold payment if a dispute is open' is answered honestly as Never, contradicting the reference's own Yes — a dispute contests the record, never the money (W4) — design finding filed",
+   "note": "The batching choice: who chose, when, and the trade-off in a sentence — refused loudly when unstated. The reference field 'Hold payment if a dispute is open' is answered honestly as Never, contradicting the reference's own Yes — a dispute contests the record, never the money (W5–W6) — design finding filed",
    "gate": "**asserted**"
   },
   {
@@ -1640,7 +1640,7 @@
    "status": "semantically-different",
    "app": "field",
    "route": "#/confirmsee/:claimId",
-   "note": "Assisted window exit (route:'assisted') — a valid W1/W4 exit that releases payment, but not confirmation inside the source system",
+   "note": "Assisted window exit (route:'assisted') — a valid W5–W6 exit that releases payment, but not confirmation inside the source system",
    "gate": "—"
   },
   {

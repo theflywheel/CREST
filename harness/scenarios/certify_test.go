@@ -94,7 +94,7 @@ func TestCertifyReadsTheConfirmedFactsNotAFixture(t *testing.T) {
 			t.Errorf("%s is empty; the template renders it into the credential", name)
 		}
 	}
-	// W9 and §6 on the wire: nothing identifying, and no stored judgement.
+	// W8 and §6 on the wire: nothing identifying, and no stored judgement.
 	lower := strings.ToLower(string(raw))
 	for _, banned := range []string{"individualid", "nationalid", "\"tier\"", "phone", "\"name\""} {
 		if strings.Contains(lower, banned) {

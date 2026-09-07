@@ -51,7 +51,7 @@ func Service() service.Options {
 
 		// Two side effects, both delivered from the outbox rather than inline.
 		// A claim that exists with no window is a worker who is never asked and
-		// never paid (W2, W4); a source outage nobody was told about is work
+		// never paid (W5–W6); a source outage nobody was told about is work
 		// that stops being recorded with nobody noticing (#22).
 		Deliver: func(d service.Deps) store.Deliverer {
 			return func(ctx context.Context, topic string, payload json.RawMessage) error {

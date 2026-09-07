@@ -40,7 +40,7 @@ paths:
         withdrawn, and only then how strong is it. The order matters - putting a
         tier next to a forged credential would give a number to something that
         should only ever read "not valid". The tier is computed on this request and
-        stored nowhere (W1): against the definition version the credential pinned,
+        stored nowhere (W7): against the definition version the credential pinned,
         this deployment's current assessment of the source, and the subject's
         identity assurance asked for now, so a worker who anchored their identity
         last week sees it reflected in a credential issued last year. Ask again
@@ -162,7 +162,7 @@ paths:
         Caps the tier any credential from that adapter can reach. One call
         downgrades every credential that source ever produced, immediately and with
         no reissuance - which is only possible because the tier is derived and not
-        stored (W1). The reason and the assessor are required: a downgrade nobody
+        stored (W7). The reason and the assessor are required: a downgrade nobody
         signed is a downgrade nobody can appeal.
       requestBody:
         required: true
@@ -249,7 +249,7 @@ paths:
         worker can be shown their own disclosure history - consent is only
         meaningful if the person can see what was disclosed (§9).
       parameters:
-        - { name: subjectRef, in: query, schema: { type: string }, description: The pairwise subject reference. Never a raw national identifier (W5). }
+        - { name: subjectRef, in: query, schema: { type: string }, description: The pairwise subject reference. Never a raw national identifier (W8). }
       responses:
         "200":
           description: The presentations, oldest first.
@@ -477,7 +477,7 @@ paths:
     get:
       operationId: getCredential
       summary: Read an issued credential
-      description: The signed WorkEventCredential as issued. It carries provenance facts, never a stored tier (W1) - the tier is computed at verification time.
+      description: The signed WorkEventCredential as issued. It carries provenance facts, never a stored tier (W7) - the tier is computed at verification time.
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
         "200":
@@ -575,7 +575,7 @@ paths:
       summary: The issuer's verification key
       description: >
         A verifier needs this once and then never again, which is what makes
-        offline verification possible (W6).
+        offline verification possible (W7).
       responses:
         "200":
           description: Issuer identity, verification method and public key.
@@ -758,7 +758,7 @@ components:
         reasons: { type: array, items: { type: string } }
         tier:
           type: integer
-          description: Present only when the credential is valid. Computed on this request, stored nowhere (W1).
+          description: Present only when the credential is valid. Computed on this request, stored nowhere (W7).
         tierReason: { type: array, items: { type: string } }
         trustChain:
           type: array

@@ -54,7 +54,7 @@ adopts these rules from it:
   a "What just happened" block states the consequence — including, on a
   dispute, that the payment is released anyway. The state machine guarantees
   it; the screen says it, because a worker under the impression that disputing
-  withholds money is a worker under duress (W4).
+  withholds money is a worker under duress (W5–W6).
 - **Unavailable is greyed, not hidden.** Options the deployment has not
   enabled appear disabled with a sentence, so the shape of the full journey
   stays visible.

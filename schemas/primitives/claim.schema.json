@@ -53,7 +53,7 @@
         "ACCEPTED",
         "DISPUTED"
       ],
-      "description": "ACCEPTED is reachable by confirm, auto-confirm or supervisor-assisted, and all three release payment (W4). DISPUTED may follow ACCEPTED \u2014 silence is not consent against the worker (W3)."
+      "description": "ACCEPTED is reachable by confirm, auto-confirm or supervisor-assisted, and all three release payment (W5–W6). DISPUTED may follow ACCEPTED \u2014 silence is not consent against the worker (W5–W6)."
     },
     "confirmation": {
       "type": "object",

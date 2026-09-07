@@ -1,6 +1,6 @@
 // Package credential issues and verifies WorkEventCredentials.
 //
-// The rule it exists to serve is W6: a worker's record is portable and
+// The rule it exists to serve is W7 and W9: a worker's record is portable and
 // verifiable without CREST. Everything here is chosen so that a verifier with
 // no network and no access to this deployment can still check a credential —
 // which rules out anything that has to be fetched at verification time.
@@ -244,7 +244,7 @@ type Subject struct {
 	IssuerID     string
 
 	// SubjectRef is the pairwise reference and nothing else. No name ever
-	// reaches a credential (W8, W9).
+	// reaches a credential (W8).
 	SubjectRef string
 
 	// ClaimID is the accepted Claim this credential projects. A Unit says the
@@ -285,7 +285,7 @@ type Subject struct {
 //
 // Everything it carries is a fact; nothing it carries is a judgement. The tier
 // is absent on purpose (§6), and so is any name — the subject is the pairwise
-// reference and nothing else (W8, W9).
+// reference and nothing else (W8).
 func Document(s Subject) (map[string]any, error) {
 	credentialID, issuerID, subjectRef := s.CredentialID, s.IssuerID, s.SubjectRef
 	unit, activity := s.Unit, s.Activity

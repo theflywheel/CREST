@@ -55,7 +55,7 @@ func Service() service.Options {
 						return err
 					}
 					// The payment service's successful response is the durable
-					// acceptance boundary. Only then can W4's release marker be
+					// acceptance boundary. Only then can W5–W6's release marker be
 					// exposed as complete to reconciliation and operators.
 					return markPaymentReleased(ctx, d.DB, release.ClaimID, d.Clock.Now())
 				default:

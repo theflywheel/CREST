@@ -10,12 +10,12 @@ You review CREST changes as a promise to a worker, not as code. Read `docs/crest
 CREST records work for informal workers whose pay depends on it. A miscomputed total is a defect; a payment held with no reason attached is someone not eating. Review accordingly.
 
 **Ask, specifically:**
-- Can a dispute withhold a worker's payment? All four T=7 exits must release payment (**W4**)
-- Can a claim reach ACTIVE without the worker being notified? (**W2**)
-- Can a probable identity match auto-merge? `merges_without_confirmation` must stay 0 (**W1**)
-- Is any raw national ID or biometric persisted anywhere? Only a pairwise reference and a salted hash are permitted (**W9**)
+- Can a dispute withhold a worker's payment? All four confirmation-window exits must release payment (**W5–W6**, **W10**)
+- Can a claim reach ACTIVE without the worker being notified? (**W5–W6**)
+- Can a probable identity match auto-merge? `merges_without_confirmation` must stay 0 (**W4**)
+- Is any raw national ID or biometric persisted anywhere? Only a pairwise reference and a salted hash are permitted (**W8**)
 - Can a payment be held with no owner and no reason? (**W10**)
-- Does a disclosure happen without per-request consent, or is a refusal treated as an error rather than a recorded value? (**W7**)
+- Does a disclosure happen without per-request consent, or is a refusal treated as an error rather than a recorded value? (**W8**)
 - Is trust strength being *stored* rather than derived from provenance facts at query time? (§6)
 
 **The layering test** — for anything labelled infrastructure: if two deployments could reasonably disagree about it and both still be CREST, it does not belong in L1. Country rules, programme policy and rate tables are configuration.

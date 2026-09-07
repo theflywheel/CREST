@@ -675,7 +675,7 @@ func (h *handlers) contests(ctx context.Context, credentialID, claimID string) [
 // issuerKey resolves the verification key.
 //
 // The issuer is local since #137. A field verifier does it differently — they
-// hold the key already, which is what makes W6's offline verification
+// hold the key already, which is what makes W7's offline verification
 // possible; pkg/credential.Verify takes the key as an argument precisely so
 // that path exists.
 func (h *handlers) issuerKey(_ context.Context, doc map[string]any) (string, string, error) {
@@ -894,7 +894,7 @@ func issuerAuthorised(def schema.Definition, issuerID string) bool {
 
 // presentFields is which of the tier map's required fields the credential
 // actually carries. The credential carries them because a verifier cannot ask
-// CREST — offline is the case that matters (W6).
+// CREST — offline is the case that matters (W7).
 // presentFields is which fields the source record carried, as the credential
 // records them. Read from the credential rather than from CREST, because that
 // is what an offline verifier has — and if this service used a richer source

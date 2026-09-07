@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:crest:schema:primitives:contest:1",
   "title": "Contest",
-  "description": "A challenge to a Claim, Credential or LinkedRecord exists, and where it stands. It never touches the Unit: the record that work happened survives every dispute about who did it (W5).",
+  "description": "A challenge to a Claim, Credential or LinkedRecord exists, and where it stands. It never touches the Unit: the record that work happened survives every dispute about who did it (W5–W6).",
   "type": "object",
   "properties": {
     "id": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },
@@ -12,7 +12,7 @@
         "kind": {
           "type": "string",
           "enum": ["claim", "credential", "linked-record"],
-          "description": "Deliberately not 'unit'. A Contest against a Unit is not expressible, which is how W5 is enforced by shape rather than by review."
+          "description": "Deliberately not 'unit'. A Contest against a Unit is not expressible, which is how W5–W6 is enforced by shape rather than by review."
         },
         "id": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" }
       },

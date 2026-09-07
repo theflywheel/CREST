@@ -78,7 +78,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/consents/{id}/withdraw", h.withdrawConsent)
 	mux.HandleFunc("GET /v1/resolve", h.resolve)
 	mux.HandleFunc("GET /v1/holds", h.listHolds)
-	// Closing a hold, not only listing it (§4, W7). See holds.go.
+	// Closing a hold, not only listing it (§4, W4). See holds.go.
 	mux.HandleFunc("POST /v1/holds/{id}/resolve", h.resolveHold)
 	mux.HandleFunc("POST /v1/holds/{id}/confirm", h.confirmHold)
 	mux.HandleFunc("GET /v1/holds/metrics", h.mergeMetrics)

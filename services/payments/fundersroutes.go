@@ -7,7 +7,7 @@
 //     whether one exists;
 //   - the mechanism endpoints touch f2_9: activation gates DISBURSEMENT only.
 //     Nothing here can stop a confirmation-window exit creating its payment
-//     obligation (W4); a not-live mechanism turns the obligation into a HELD
+//     obligation (W5–W6); a not-live mechanism turns the obligation into a HELD
 //     instruction with a reason and a named owner (W10).
 package main
 

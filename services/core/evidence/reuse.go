@@ -19,7 +19,7 @@ import (
 // stated here rather than assumed: a party claimed by two contexts is read as
 // reuse regardless of what state either claim is in, because a disputed claim
 // still names who submitted work about this worker (a dispute contests the
-// record, W5 — it does not erase that the submission happened).
+// record, W5–W6 — it does not erase that the submission happened).
 //
 // This is deliberately not "distinct organisations": a context is a project
 // or campaign (schema.Context.Kind, deployment vocabulary), and the same

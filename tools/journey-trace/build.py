@@ -160,7 +160,7 @@ MAPPING = {
     "f2_4": m("implemented", "console", "#/mech/test", "Mechanism configuration (owner named) + one real test disbursement through the mock rail, recorded either way; a failure renders reason + owner"),
     "f2_5": m("implemented", "console", "#/mech/recon", "The live crest-recon-csv-v1 export, every line tied back by instruction id; agreement recorded"),
     "f2_6": m("implemented", "console", "#/mech/statement", "The advisory statement with its limits rendered on itself"),
-    "f2_7": m("implemented", "console", "#/mech/batching", "The batching choice: who chose, when, and the trade-off in a sentence — refused loudly when unstated. The reference field 'Hold payment if a dispute is open' is answered honestly as Never, contradicting the reference's own Yes — a dispute contests the record, never the money (W4) — design finding filed"),
+    "f2_7": m("implemented", "console", "#/mech/batching", "The batching choice: who chose, when, and the trade-off in a sentence — refused loudly when unstated. The reference field 'Hold payment if a dispute is open' is answered honestly as Never, contradicting the reference's own Yes — a dispute contests the record, never the money (W5–W6) — design finding filed"),
     "f2_8": m("implemented", "console", "#/mech/activate", "The four activation conditions, each satisfied only by a recorded act; refusal renders the readable list, never a bare 409"),
     "f2_9": m("implemented", "console", "#/mech/qualify", "The invariant screen: held instructions carrying mechanism_not_live with the owner named, and the boundary stated — all four exits released; only disbursement waits"),
     "f2_10": m("implemented", "console", "#/mech/live", "Verification recorded, activation flipping ACTIVE, and what the last gate opened — the held instructions re-priced and released"),
@@ -199,7 +199,7 @@ MAPPING = {
     "w5_3": m("implemented", "console", "#/supporttrace", "Payment trace over the real chain"),
     # ---- W-4 Supervisor / Attestor ----
     "w3_1": m("semantically-different", "field", "#/toconfirm", "The reference worklist belongs to the delivery platform (source attestation). The field door's surface is assisted confirmation of CREST windows (GET /v1/unreached) — now labelled as exactly that, not as J8 source attestation"),
-    "w3_2": m("semantically-different", "field", "#/confirmsee/:claimId", "Assisted window exit (route:'assisted') — a valid W1/W4 exit that releases payment, but not confirmation inside the source system"),
+    "w3_2": m("semantically-different", "field", "#/confirmsee/:claimId", "Assisted window exit (route:'assisted') — a valid W5–W6 exit that releases payment, but not confirmation inside the source system"),
     "w3_3": m("semantically-different", "field", "#/differ/:claimId", "Assisted dispute on the worker's behalf — not a correction of the source record"),
     "w3_4": m("semantically-different", "field", "#/roster", "The roster is closed in CREST's evidence intake (POST /v1/evidence/batches), not in the delivery platform; the boundary is stated on the screen"),
     "w3_5": m("compressed", "field", "#/handoff", "The ingestion handoff: accepted rows became claims, unclear rows went to the custodian — real queues, though the provenance-preserving source handoff is CREST-side only"),

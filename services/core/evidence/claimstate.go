@@ -29,13 +29,13 @@ var ErrIllegalTransition = errors.New("illegal claim transition")
 // Two entries deserve their reasons stated:
 //
 //   - ACCEPTED → DISPUTED exists because silence is not consent against the
-//     worker (W3). A claim that auto-confirmed at T=7 must still be disputable
+//     worker (W5–W6). A claim that auto-confirmed at T=7 must still be disputable
 //     afterwards, or the seven days become a deadline for noticing rather than
 //     a window for objecting.
 //   - DISPUTED → ACCEPTED exists because a dispute can be resolved in favour of
 //     the record. What does *not* exist is any transition that removes the
 //     unit, and no transition here withholds payment: a dispute contests the
-//     record, it does not contest the money (W4).
+//     record, it does not contest the money (W5–W6).
 var legal = map[schema.ClaimState][]schema.ClaimState{
 	schema.ClaimStateDRAFT:    {schema.ClaimStateNOTIFIED, schema.ClaimStateACCEPTED, schema.ClaimStateDISPUTED},
 	schema.ClaimStateNOTIFIED: {schema.ClaimStateACCEPTED, schema.ClaimStateDISPUTED},

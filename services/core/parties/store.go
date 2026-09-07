@@ -159,7 +159,7 @@ func getPartyLocked(ctx context.Context, q store.Querier, id string, forUpdate b
 //
 // Precedence is declared here and nowhere else: strongest key first, and the
 // first key that produces exactly one candidate wins. Multiple candidates on
-// any key is a hold — never a guess, and never a merge (W7).
+// any key is a hold — never a guess, and never a merge (W4).
 func resolve(ctx context.Context, q store.Querier, kind, value, contextID string) (Match, []string, error) {
 	order := []struct {
 		kind       string
@@ -707,7 +707,7 @@ func markHoldResolved(ctx context.Context, tx store.Querier, holdID, decision,
 //
 // It exists as code rather than as a note in a runbook because the number is
 // meant to be checked by a test, and a metric nobody can compute is an
-// aspiration (§4, W7).
+// aspiration (§4, W4).
 func mergesWithoutConfirmation(ctx context.Context, q store.Querier) (int, error) {
 	var n int
 	err := q.QueryRow(ctx, `

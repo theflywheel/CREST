@@ -38,7 +38,7 @@ paths:
       summary: Release a payment for a claim that exited its window
       description: >
         Note what this does not do: look at which exit it was. All four release
-        (W4), dispute included, because a dispute contests the record and not the
+        (W5–W6), dispute included, because a dispute contests the record and not the
         money. `releasedBy` is recorded for reconciliation and never branched on.
         The call is idempotent by claim - the relay is at-least-once, and answering
         the same instruction twice is friendlier than answering an error.
@@ -175,7 +175,7 @@ paths:
   # ── The funders wave (F-1, F-2) ──────────────────────────────────────────
   # Rate ownership, rates as versioned terms, and the payment mechanism whose
   # activation gate sits in front of DISBURSEMENT only (f2_9): none of these
-  # endpoints can stop a window exit creating its instruction (W4).
+  # endpoints can stop a window exit creating its instruction (W5–W6).
 
   /v1/definitions/{id}/rate-owner:
     post:
@@ -287,7 +287,7 @@ paths:
         the mechanism goes ACTIVE and every instruction held under
         mechanism_not_live for its context is re-priced at its own release
         moment and sent - activation is what lets disbursement flow; the
-        obligations were already created by their window exits (f2_9, W4).
+        obligations were already created by their window exits (f2_9, W5–W6).
       responses:
         "200": { description: "ACTIVE, plus `releasedInstructionIds`." }
         "409": { description: Gates unmet; the conditions are in the body. }

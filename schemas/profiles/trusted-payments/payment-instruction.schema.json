@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:crest:schema:profiles:trusted-payments:payment-instruction:1",
   "title": "payment-instruction LinkedRecord payload",
-  "description": "What should be paid, keyed to a Unit by event_id only — never inside the credential (§8). Released on every T=7 exit, including dispute: a dispute contests the record, it does not withhold the money (W4).",
+  "description": "What should be paid, keyed to a Unit by event_id only — never inside the credential (§8). Released on every T=7 exit, including dispute: a dispute contests the record, it does not withhold the money (W5–W6).",
   "type": "object",
   "properties": {
     "eventId": { "$ref": "urn:crest:schema:primitives:common:1#/$defs/id" },

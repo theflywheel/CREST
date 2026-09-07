@@ -44,7 +44,7 @@ paths:
         batch with unknown provenance is refused rather than ingested at a guess.
         Each row is resolved against the registry; rows that resolve to nobody or
         to more than one party go to the unclear queue rather than being attached
-        to a best guess (W7).
+        to a best guess (W4).
       parameters:
         - { name: contextId, in: query, required: true, schema: { type: string } }
         - { name: definitionId, in: query, required: true, schema: { type: string } }
@@ -107,7 +107,7 @@ paths:
       operationId: getUnit
       summary: Read a unit of work
       description: >
-        The work itself, independent of who performed it (W3). Payments reads this
+        The work itself, independent of who performed it (W5–W6). Payments reads this
         to work out the amount owed. A disputed claim never destroys this record,
         which is exactly why the two are separate resources.
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
@@ -126,7 +126,7 @@ paths:
       operationId: listClaims
       summary: Which claims exist?
       description: >
-        A claim links a party to a unit (W3). Filterable by party and state, which
+        A claim links a party to a unit (W5–W6). Filterable by party and state, which
         is how a worker-facing view answers "what have I been credited with".
 
 
@@ -197,7 +197,7 @@ paths:
                   description: >
                     Which of the four exits took the claim there - self, auto,
                     assisted or dispute. Recorded on the confirmation, never
-                    branched on for payment (W4).
+                    branched on for payment (W5–W6).
       responses:
         "200":
           description: The claim in its new state.
@@ -220,7 +220,7 @@ paths:
       summary: Which rows could not be attributed to a person?
       description: >
         Rows whose identifier resolved to nobody, or to more than one candidate.
-        They are held here rather than attached to a best guess (W7), and the count
+        They are held here rather than attached to a best guess (W4), and the count
         is a number someone is meant to watch fall.
       responses:
         "200":
