@@ -1295,6 +1295,9 @@ test("console: G-1 walks the instance, and a person decides the admission", asyn
   // The link is real, shown once, and the screen says nothing delivers it.
   await expect(page.locator("[data-invite-link]")).toContainText(/#\/claim\/[a-z2-7]{24}$/);
   await expect(page.locator("body")).toContainText(/Nothing sends it/i);
+  // The reference's own label, and the copy control that makes it true: the
+  // operator shares the link themselves, because no channel does.
+  await expect(page.locator("[data-act='copy-invite']")).toBeVisible();
   await expect(page.locator("body")).toContainText("APPLIED");
   // The record it claims exists and is the organisation just created.
   const invitedParty = await page.locator("[data-invite-party]").getAttribute("data-invite-party");

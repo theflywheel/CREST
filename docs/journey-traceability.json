@@ -67,7 +67,7 @@
    "status": "implemented",
    "app": "console",
    "route": "#/instance/invite",
-   "note": "The reference's five fields, writing for real: #185 is settled (option (b), ruled 2026-09-07) — the instance-level invitation is a party record plus a claim code. POST /v1/organisations from the operator's session creates the organisation UNBOUND with its APPLIED registration and mints a one-time code; the named signatory claims it with their own login (POST /v1/party-invitations/claim), binding only their own subject, so #102 is not widened. The invitation addresses a record, not a person, which is how it needs no prior Party. Delivery is the link shown once and handed over out of band — nothing sends it (#150), and the 'Send invitation' label is a counted waiver rather than a faked channel. No self-approval: the registry custodian still decides",
+   "note": "The reference's five fields, writing for real: #185 is settled (option (b), ruled 2026-09-07) — the instance-level invitation is a party record plus a claim code. POST /v1/organisations from the operator's session creates the organisation UNBOUND with its APPLIED registration and mints a one-time code; the named signatory claims it with their own login (POST /v1/party-invitations/claim), binding only their own subject, so #102 is not widened. The invitation addresses a record, not a person, which is how it needs no prior Party. The button is the reference's 'Send invitation': sending writes the record and mints the code, and the link is shown once with a copy control for the operator to share themselves — no channel carries it (#150), and the screen says so. No self-approval: the registry custodian still decides",
    "gate": "**asserted**"
   },
   {
