@@ -1,7 +1,7 @@
 // Package pii holds the one operation CREST performs on a raw national
 // identifier, and the reason it performs only that one.
 //
-// W9: never persist a raw national ID or biometric — a pairwise subject
+// W8: never persist a raw national ID or biometric — a pairwise subject
 // reference and a salted hash, nothing else, and that applies to fixtures too.
 // A raw identifier exists in this system for exactly as long as it takes to
 // hash it, and there is deliberately no function here that reverses, stores or

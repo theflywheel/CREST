@@ -10,7 +10,7 @@ import (
 	"github.com/theflywheel/crest/pkg/store"
 )
 
-// Closing a duplicate hold (§4, W7).
+// Closing a duplicate hold (§4, W4).
 //
 // A hold is what the registry writes instead of guessing: two parties carry the
 // same identifier, so no evidence joining on it can be attributed, and a person

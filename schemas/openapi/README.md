@@ -44,13 +44,13 @@ answer it is:
 
 - `GET /v1/resolve` — 200 one match, 404 no match (the row goes to the unclear
   queue), **409 more than one candidate**: a hold is recorded and nothing is
-  merged. The 409 is a designed outcome, not an error (W7).
+  merged. The 409 is a designed outcome, not an error (W4).
 - `POST /v1/definitions/{id}/versions/{v}/ratify` — 409 when the ratifier is the
   author. Separation of duties is an L1 rule (§7).
 - `POST /v1/instructions` — **201 for a held payment too**, carrying the reason
   and its owner. A hold is not an error; returning one would leave the hold
   unrecorded and the caller retrying forever (W10).
-- `POST /v1/claims/{id}/dispute` — releases payment like every other exit (W4).
+- `POST /v1/claims/{id}/dispute` — releases payment like every other exit (W5–W6).
 - `POST /v1/verify` — an invalid credential is a 200 with `valid: false`. The
   question was answered; the answer was no.
 

@@ -83,7 +83,7 @@ paths:
         Called by evidence's outbox when a claim is created. Opening the window and
         queueing the worker's notification happen in one transaction: a window
         nobody was told about is a worker who can neither confirm nor dispute,
-        which is W2 broken quietly. Redelivery is safe - the second call returns
+        which is W5–W6 broken quietly. Redelivery is safe - the second call returns
         the existing window rather than opening a second one.
       requestBody:
         required: true
@@ -171,7 +171,7 @@ paths:
       summary: Dispute a claim - and still release the payment
       description: >
         Records an open Contest against the claim and then exits the window by
-        exactly the same path every other exit takes. Payment is released (W4): a
+        exactly the same path every other exit takes. Payment is released (W5–W6): a
         dispute contests the record, not the money. Withholding the money while the
         record is argued about is the failure this endpoint is shaped to prevent. A
         reason is required, because a dispute nobody can act on is not a dispute.
@@ -247,7 +247,7 @@ paths:
       operationId: unreleased
       summary: Windows that closed without releasing payment
       description: >
-        Should always answer zero. It exists so W4 can be checked rather than
+        Should always answer zero. It exists so W5–W6 can be checked rather than
         believed - any row here is a claim that exited its window and left someone
         unpaid.
       responses:
@@ -446,7 +446,7 @@ components:
       description: >
         What a window exit produced. Every one of the four routes produces a
         release; the route is recorded for reconciliation and never branched on
-        (W4).
+        (W5–W6).
       properties:
         claimId: { type: string }
         route: { type: string, enum: [self, auto, assisted, dispute] }

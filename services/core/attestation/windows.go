@@ -104,7 +104,7 @@ type windowHandlers struct {
 //
 // Opening the window and queueing the notification happen together: a window
 // nobody was told about is a worker who cannot confirm and cannot dispute,
-// which is W2 broken quietly.
+// which is W5–W6 broken quietly.
 func (h *windowHandlers) openWindow(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ClaimID      string    `json:"claimId"`
@@ -286,7 +286,7 @@ func (h *windowHandlers) windowFor(w http.ResponseWriter, r *http.Request) (Wind
 }
 
 // dispute contests the record. It does not contest the money: the release below
-// is the same release every other exit makes (W4).
+// is the same release every other exit makes (W5–W6).
 func (h *windowHandlers) dispute(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Reason          string `json:"reason"`
@@ -415,7 +415,7 @@ func (h *windowHandlers) contests(w http.ResponseWriter, r *http.Request) {
 	case "claim", "credential", "linked-record":
 	default:
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_query",
-			"targetKind is claim, credential or linked-record — never unit, because a contest against a Unit is not expressible (W5)")
+			"targetKind is claim, credential or linked-record — never unit, because a contest against a Unit is not expressible (W5–W6)")
 		return
 	}
 	standing, err := contestsAgainst(r.Context(), h.d.DB.Q(), kind, target)
@@ -882,7 +882,7 @@ func (h *windowHandlers) finish(w http.ResponseWriter, r *http.Request, route st
 	}
 }
 
-// unreleased should always answer zero. It exists so W4 can be checked rather
+// unreleased should always answer zero. It exists so W5–W6 can be checked rather
 // than believed.
 func (h *windowHandlers) unreleased(w http.ResponseWriter, r *http.Request) {
 	// An operations list over other people's payments and windows: signed-in

@@ -4,7 +4,7 @@
 // It also owns the one operation the rest of the system cannot get wrong
 // quietly: resolving a source system's joining identifier to a Party. A wrong
 // match attributes one person's work to another, and no downstream check
-// catches it — so an ambiguous match holds rather than guesses (W7).
+// catches it — so an ambiguous match holds rather than guesses (W4).
 package parties
 
 import (

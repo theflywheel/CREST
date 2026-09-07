@@ -15,7 +15,7 @@ import (
 	"github.com/theflywheel/crest/pkg/schema"
 )
 
-// Closing a duplicate hold (§4, W7).
+// Closing a duplicate hold (§4, W4).
 //
 // The registry has always refused to merge on its own: two parties carrying one
 // identifier produce a hold and a 409, never a guess. What did not exist was any
@@ -122,7 +122,7 @@ func (w *world) resolveHold(t *testing.T, holdID string, body map[string]any) (i
 }
 
 // The refusal §4 exists for. A merge on a custodian's judgement alone is what
-// W7 forbids, and the API must have no shape that expresses one.
+// W4 forbids, and the API must have no shape that expresses one.
 func TestAMergeWithoutTheWorkersConfirmationCannotBeExpressed(t *testing.T) {
 	w := setup(t)
 	a, _, hold := w.twoPartiesOneNumber(t, sharedNumber(1))

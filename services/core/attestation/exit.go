@@ -23,7 +23,7 @@ func autoExitEligible(w Window, now time.Time) bool {
 
 // The four exits from a T=7 window, in one function, on purpose.
 //
-// W4 says every exit releases payment: confirm, dispute, auto-confirm,
+// W5–W6 says every exit releases payment: confirm, dispute, auto-confirm,
 // supervisor-assisted. The cheapest way for that to break is for the four to be
 // four code paths, three of which release and one of which — the one nobody
 // demos — does not. So there is one path, the route is a parameter, and the
@@ -83,7 +83,7 @@ type releaseRequest struct {
 	PartyID string `json:"partyId"`
 	// The window's context rides along so the instruction knows which
 	// project's mechanism governs its DISBURSEMENT (f2_9). It has no say in
-	// whether the release happens — all four exits release, always (W4).
+	// whether the release happens — all four exits release, always (W5–W6).
 	ContextID  string    `json:"contextId"`
 	ReleasedBy string    `json:"releasedBy"`
 	ReleasedAt time.Time `json:"releasedAt"`
@@ -187,7 +187,7 @@ func (e *exiter) exit(ctx context.Context, claimID, route string) (exitResult, e
 			return err
 		}
 		// The release is enqueued in the same transaction as the exit. A crash
-		// between them is the failure W4 cannot survive, and this is what makes
+		// between them is the failure W5–W6 cannot survive, and this is what makes
 		// it impossible rather than unlikely.
 		return store.Enqueue(ctx, tx, topicPaymentRelease, releaseRequest{
 			ClaimID: w.ClaimID, UnitID: w.UnitID, PartyID: w.PartyID,
@@ -203,7 +203,7 @@ func (e *exiter) exit(ctx context.Context, claimID, route string) (exitResult, e
 		// worker's confirmation can race, and the worker should win without
 		// anyone seeing a failure.
 		//
-		// A dispute is the exception, and W3 is why. Silence is not consent
+		// A dispute is the exception, and W5–W6 is why. Silence is not consent
 		// against the worker: the seven days are a window for objecting, not a
 		// deadline for noticing, so a claim that auto-confirmed must still be
 		// disputable afterwards. The payment is already out and stays out —

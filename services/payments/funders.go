@@ -5,7 +5,7 @@
 // The rule this file exists to keep exact (f2_9): the qualification and
 // activation gate sits in front of DISBURSEMENT only. A confirmation-window
 // exit NEVER fails to create the payment obligation — all four exits release
-// (W4) — and what a not-live mechanism produces is a HELD instruction carrying
+// (W5–W6) — and what a not-live mechanism produces is a HELD instruction carrying
 // a reason and a named owner (W10), never a missing one.
 package main
 

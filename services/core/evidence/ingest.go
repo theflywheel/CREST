@@ -148,7 +148,7 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 
 	// One transaction for the whole batch, including the outbox messages. A
 	// claim that exists without the message that opens its confirmation window
-	// is a worker who is never asked and never paid (W2, W4) — so the two
+	// is a worker who is never asked and never paid (W5–W6) — so the two
 	// cannot be separated by a crash.
 	err = db.InTx(ctx, func(tx store.Querier) error {
 		if err := insertBatch(ctx, tx, batch); err != nil {
@@ -402,7 +402,7 @@ func (in *ingestor) consider(ctx context.Context, row adapters.Row, def schema.D
 
 // resolveWorker asks the registry. The raw identifier goes over the wire and is
 // never written down here: the registry matches on a salted hash, and this
-// service has no column to put a national identifier in (W9).
+// service has no column to put a national identifier in (W8).
 func (in *ingestor) resolveWorker(ctx context.Context,
 	joining schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifier, contextID string) (match, error) {
 	kind := ""
@@ -427,7 +427,7 @@ func (in *ingestor) resolveWorker(ctx context.Context,
 		return match{}, fmt.Errorf("no party matches the %s this row joins on", joining.Kind)
 	case http.StatusConflict:
 		// The registry recorded a hold. This row waits for a person to say
-		// which candidate it is — it never picks one (W7).
+		// which candidate it is — it never picks one (W4).
 		return match{}, fmt.Errorf("more than one party carries this identifier; " +
 			"the registry is holding the match rather than merging")
 	default:

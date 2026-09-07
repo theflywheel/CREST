@@ -508,7 +508,7 @@ func TestARecordBecomesACredentialAndAPayment(t *testing.T) {
 		t.Error("the credential carries a tier; it must carry facts and nothing else (§6)")
 	}
 	if _, found := subject["individual_id"]; found {
-		t.Error("the credential carries a national identifier (W9)")
+		t.Error("the credential carries a national identifier (W8)")
 	}
 
 	// And the money.
@@ -530,7 +530,7 @@ func TestARecordBecomesACredentialAndAPayment(t *testing.T) {
 	}
 }
 
-// W3: silence is not consent against the worker. The window closes on its own,
+// W5–W6: silence is not consent against the worker. The window closes on its own,
 // the record stands, and the money moves — and it stays disputable afterwards.
 func TestSilenceStillPaysAndStaysDisputable(t *testing.T) {
 	w := setup(t)
@@ -589,7 +589,7 @@ func TestSilenceStillPaysAndStaysDisputable(t *testing.T) {
 		t.Errorf("instruction is %s released by %q, want RELEASED/auto", in.State, in.ReleasedBy)
 	}
 
-	// W3's second half: the seven days are a window for objecting, not a
+	// W5–W6's second half: the seven days are a window for objecting, not a
 	// deadline for noticing. The worker can still dispute afterwards.
 	if err := w.disputeClaim(t, claimID, map[string]any{
 		"reason":          "I did not do this round",
@@ -606,7 +606,7 @@ func TestSilenceStillPaysAndStaysDisputable(t *testing.T) {
 	}
 }
 
-// W4, the one that matters most: a dispute contests the record, not the money.
+// W5–W6, the one that matters most: a dispute contests the record, not the money.
 func TestADisputeStillReleasesPayment(t *testing.T) {
 	w := setup(t)
 
@@ -633,13 +633,13 @@ func TestADisputeStillReleasesPayment(t *testing.T) {
 	})
 	if in.State != "RELEASED" {
 		t.Fatalf("a disputed claim's payment is %s — a dispute must never cost the worker "+
-			"their money (W4): %+v", in.State, in.Held)
+			"their money (W5–W6): %+v", in.State, in.Held)
 	}
 	if in.ReleasedBy != "dispute" {
 		t.Errorf("released by %q, want dispute", in.ReleasedBy)
 	}
 
-	// W5: the unit survives. The record that work happened outlives every
+	// W5–W6: the unit survives. The record that work happened outlives every
 	// argument about who did it.
 	var claim schema.Claim
 	if err := w.Evidence.As(w.supervisor).Get(w.ctx, "/v1/claims/"+claimID, &claim); err != nil {
@@ -647,7 +647,7 @@ func TestADisputeStillReleasesPayment(t *testing.T) {
 	}
 	var unit schema.Unit
 	if err := w.Evidence.As(w.supervisor).Get(w.ctx, "/v1/units/"+claim.UnitID, &unit); err != nil {
-		t.Fatalf("the unit is gone after its claim was disputed (W5): %v", err)
+		t.Fatalf("the unit is gone after its claim was disputed (W5–W6): %v", err)
 	}
 	if unit.Outcome.Value != 9 {
 		t.Errorf("the unit changed when its claim was disputed: outcome %v", unit.Outcome.Value)
@@ -661,7 +661,7 @@ func TestADisputeStillReleasesPayment(t *testing.T) {
 	}
 }
 
-// W1: work recorded is work that happened. A row nobody can attribute does not
+// W3 and W4: work recorded is work that happened. A row nobody can attribute does not
 // become a claim, and it does not vanish either — it goes somewhere a person
 // can work it.
 func TestAnUnattributableRowGoesToTheUnclearQueue(t *testing.T) {
@@ -806,7 +806,7 @@ func TestARevokedCredentialStopsVerifying(t *testing.T) {
 	}
 }
 
-// W4 as a standing check rather than a scenario: no window may have exited
+// W5–W6 as a standing check rather than a scenario: no window may have exited
 // without releasing a payment. It should be empty after everything above.
 func TestNoWindowExitedWithoutReleasingPayment(t *testing.T) {
 	w := setup(t)
@@ -841,7 +841,7 @@ func TestNoWindowExitedWithoutReleasingPayment(t *testing.T) {
 			return err
 		}
 		if out.Count != 0 {
-			return fmt.Errorf("%d windows exited without releasing payment (W4): %+v", out.Count, out.Windows)
+			return fmt.Errorf("%d windows exited without releasing payment (W5–W6): %+v", out.Count, out.Windows)
 		}
 		return nil
 	})

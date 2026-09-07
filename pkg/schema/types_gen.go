@@ -99,7 +99,7 @@ type CanonicalWorkEvidenceRecordWorkerJoiningIdentifier struct {
 
 	// For kind=national-id this is the raw number in transit only. It is
 	// resolved at ingestion and discarded — never persisted, not even in
-	// fixtures (W9).
+	// fixtures (W8).
 	Value string `json:"value"`
 }
 
@@ -143,9 +143,9 @@ type Claim struct {
 	Share *float64 `json:"share,omitempty"`
 
 	// ACCEPTED is reachable by confirm, auto-confirm or
-	// supervisor-assisted, and all three release payment (W4). DISPUTED
-	// may follow ACCEPTED — silence is not consent against the worker
-	// (W3).
+	// supervisor-assisted, and all three release payment (W5–W6).
+	// DISPUTED may follow ACCEPTED — silence is not consent against the
+	// worker (W5–W6).
 	State  ClaimState `json:"state"`
 	UnitID string     `json:"unitId"`
 }
@@ -188,8 +188,8 @@ const (
 )
 
 // ACCEPTED is reachable by confirm, auto-confirm or supervisor-assisted,
-// and all three release payment (W4). DISPUTED may follow ACCEPTED —
-// silence is not consent against the worker (W3).
+// and all three release payment (W5–W6). DISPUTED may follow ACCEPTED
+// — silence is not consent against the worker (W5–W6).
 type ClaimState string
 
 const (
@@ -287,7 +287,7 @@ type ConsentScope struct {
 
 // A challenge to a Claim, Credential or LinkedRecord exists, and where it
 // stands. It never touches the Unit: the record that work happened
-// survives every dispute about who did it (W5).
+// survives every dispute about who did it (W5–W6).
 type Contest struct {
 	ID              string        `json:"id"`
 	RaisedAt        time.Time     `json:"raisedAt"`
@@ -312,13 +312,13 @@ type ContestTarget struct {
 	ID string `json:"id"`
 
 	// Deliberately not 'unit'. A Contest against a Unit is not
-	// expressible, which is how W5 is enforced by shape rather than by
-	// review.
+	// expressible, which is how W5–W6 is enforced by shape rather than
+	// by review.
 	Kind ContestTargetKind `json:"kind"`
 }
 
 // Deliberately not 'unit'. A Contest against a Unit is not expressible,
-// which is how W5 is enforced by shape rather than by review.
+// which is how W5–W6 is enforced by shape rather than by review.
 type ContestTargetKind string
 
 const (
@@ -433,7 +433,7 @@ type Credential struct {
 	StatusListEntry CredentialStatusListEntry `json:"statusListEntry"`
 
 	// The pairwise subject the credential is about. Never a national
-	// identifier (W9).
+	// identifier (W8).
 	SubjectRef string `json:"subjectRef"`
 }
 
@@ -695,7 +695,7 @@ type Party struct {
 	// values are legal is deployment configuration (the layering test —
 	// two deployments can reasonably disagree about a sector taxonomy and
 	// both be CREST). Small bounded strings only: never identity data,
-	// never a national ID or biometric (W9), never provenance —
+	// never a national ID or biometric (W8), never provenance —
 	// bindings, consents and enrolments have their own typed records
 	// precisely so they cannot be smuggled in here as text.
 	Attributes map[string]any `json:"attributes,omitempty"`
@@ -745,7 +745,7 @@ type PartyIdentityBindingsItem struct {
 	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
 
 	// For matching only. A salted hash and the salt's identifier — never
-	// the identifier itself, and never for fixtures either (W9).
+	// the identifier itself, and never for fixtures either (W8).
 	NationalIDHash *PartyIdentityBindingsItemNationalIDHash `json:"nationalIdHash,omitempty"`
 	Provider       string                                   `json:"provider"`
 	ProviderClass  PartyIdentityBindingsItemProviderClass   `json:"providerClass"`
@@ -756,7 +756,7 @@ type PartyIdentityBindingsItem struct {
 }
 
 // For matching only. A salted hash and the salt's identifier — never the
-// identifier itself, and never for fixtures either (W9).
+// identifier itself, and never for fixtures either (W8).
 type PartyIdentityBindingsItemNationalIDHash struct {
 	Alg     PartyIdentityBindingsItemNationalIDHashAlg `json:"alg"`
 	SaltRef string                                     `json:"saltRef"`
@@ -815,7 +815,7 @@ type PaymentHandoffLinkedRecordPayload struct {
 
 // What should be paid, keyed to a Unit by event_id only — never inside
 // the credential (§8). Released on every T=7 exit, including dispute: a
-// dispute contests the record, it does not withhold the money (W4).
+// dispute contests the record, it does not withhold the money (W5–W6).
 type PaymentInstructionLinkedRecordPayload struct {
 	AmountMinor int    `json:"amountMinor"`
 	ClaimID     string `json:"claimId"`
@@ -1036,7 +1036,7 @@ type TrustedPaymentsProfileRoles struct {
 }
 
 // An instance of a defined activity happened — independent of who did
-// it. A disputed Claim never destroys the Unit (W5).
+// it. A disputed Claim never destroys the Unit (W5–W6).
 type Unit struct {
 	ContextID  string       `json:"contextId"`
 	CreatedAt  time.Time    `json:"createdAt"`
@@ -1095,7 +1095,7 @@ type WorkEventCredentialCredentialSubject struct {
 	Confirmation WorkEventCredentialCredentialSubjectConfirmation `json:"confirmation"`
 
 	// The pairwise subject reference. Never a national identifier, and
-	// never a name (W8, W9).
+	// never a name (W8).
 	ID string `json:"id"`
 
 	// Who stands behind this credential, and where a verifier can check it
@@ -1195,7 +1195,7 @@ type WorkEventCredentialCredentialSubjectWorkEvent struct {
 	// The names of the fields the source record carried — names only,
 	// never values. A definition's tier map can require a field, and a
 	// verifier who cannot tell whether the record had it resolves a lower
-	// tier than the issuer did. Offline is the case that matters (W6), so
+	// tier than the issuer did. Offline is the case that matters (W7), so
 	// the credential has to carry enough to answer the question, and a
 	// list of field names discloses nothing about the household they
 	// describe.
@@ -1252,7 +1252,7 @@ type WorkEventCredentialProof struct {
 
 	// Ed25519 over JCS-canonicalised JSON. Chosen over the JSON-LD suite
 	// because verifying that one requires resolving a context document,
-	// and a verifier that must fetch a URL is not offline (W6).
+	// and a verifier that must fetch a URL is not offline (W7).
 	Cryptosuite        string `json:"cryptosuite"`
 	ProofPurpose       string `json:"proofPurpose"`
 	ProofValue         string `json:"proofValue"`

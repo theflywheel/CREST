@@ -81,7 +81,7 @@ paths:
       summary: How strongly is this party's identity established?
       description: >
         Derives the identity assurance level now, and says why. It is derived and
-        not stored for the same reason a trust tier is (W1): a stored level freezes
+        not stored for the same reason a trust tier is (W7): a stored level freezes
         a judgement and cannot be raised when the worker binds an anchor later, so
         verification asks this endpoint on every verify rather than reading a value
         off the credential.
@@ -290,7 +290,7 @@ paths:
       operationId: resolveHold
       summary: Close a duplicate hold — one person, or two
       description: >
-        Records which of the two situations a hold is, and acts on it (§4, W7).
+        Records which of the two situations a hold is, and acts on it (§4, W4).
 
 
         `distinct` means two different people who share an identifier, which is
@@ -594,7 +594,7 @@ paths:
         third answer is the design. 200 means exactly one candidate. 404 means
         nothing matched and the row belongs in the unclear queue. 409 means more
         than one party carries this identifier: a hold is recorded and no merge
-        happens (W7). The 409 is a designed outcome, not a failure — picking the
+        happens (W4). The 409 is a designed outcome, not a failure — picking the
         best candidate would be a merge, and `merges_without_confirmation = 0` is a
         monitored metric.
       parameters:
@@ -616,7 +616,7 @@ paths:
         "409":
           description: >
             More than one candidate. A hold has been written and is returned; it
-            names the candidates so a human can decide. Nothing was merged (W7).
+            names the candidates so a human can decide. Nothing was merged (W4).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Hold" }
@@ -627,7 +627,7 @@ paths:
       operationId: listHolds
       summary: What match decisions are waiting on a person?
       description: >
-        The open holds recorded by resolve. This is the queue that makes W7
+        The open holds recorded by resolve. This is the queue that makes W4
         checkable rather than believed — if it is never drained, that is visible
         here instead of quietly resolved by a merge.
       responses:
@@ -3015,7 +3015,7 @@ components:
       type: object
       description: >
         A recorded decision not to merge. Written whenever resolve finds more than
-        one candidate; the row is what someone later acts on (W7).
+        one candidate; the row is what someone later acts on (W4).
 
 
         The colliding value itself is deliberately absent — §16 asks that

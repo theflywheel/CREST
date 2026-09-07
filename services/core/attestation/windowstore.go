@@ -118,7 +118,7 @@ func dueWindows(ctx context.Context, q store.Querier, now time.Time, contextID s
 // unreleased finds windows that exited but whose payment never went out.
 //
 // This should always be empty. It exists because "should always be empty" is
-// worth being able to check: W4 is a promise, and a promise with no query
+// worth being able to check: W5–W6 is a promise, and a promise with no query
 // behind it is a hope.
 func unreleased(ctx context.Context, q store.Querier, contextID string) ([]Window, error) {
 	rows, err := q.Query(ctx, `

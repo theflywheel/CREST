@@ -1,6 +1,6 @@
 // Package clock is the only place in CREST permitted to read wall-clock time.
 //
-// The confirmation window is seven days (Blueprint §11, W3). A test suite that
+// The confirmation window is seven days (Blueprint §11, W5–W6). A test suite that
 // waits seven days is not a test suite, so every component takes a Clock and the
 // harness advances it. The forbidigo rule in .golangci.yml enforces that nothing
 // else calls time.Now.

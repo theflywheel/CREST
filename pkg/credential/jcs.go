@@ -14,7 +14,7 @@ import (
 // Why not JSON-LD's RDF canonicalisation, which §5's "JSON-LD/Ed25519" implies?
 // URDNA2015 needs a full JSON-LD processor and a resolvable context, and an
 // offline verifier that must fetch a context document to check a signature is
-// not offline (W6). JCS signs the bytes as written, which a verifier with no
+// not offline (W7). JCS signs the bytes as written, which a verifier with no
 // network can reproduce. This is a real divergence from the blueprint's default
 // and is recorded as such rather than glossed.
 //

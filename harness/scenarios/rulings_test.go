@@ -441,7 +441,7 @@ func TestIssuanceLivesInTheSubstrateNotThePaymentsApplication(t *testing.T) {
 // signed. This simulates the crash's leftover by issuing directly, then
 // disputes, and expects a dispute exit with no credential and the orphan
 // revoked. Distinct from a dispute after auto-confirm, where the credential
-// was legitimately issued and deliberately stands (W3).
+// was legitimately issued and deliberately stands (W5–W6).
 func TestADisputeRevokesACrashOrphanedCredential(t *testing.T) {
 	w := setup(t)
 	phone := sharedNumber(209)

@@ -37,7 +37,35 @@ Verifiable work history for informal workers. The first use case is trusted paym
 
 When you touch evidence, confirmation, payments or verification, name which one your change could break.
 
-**These six are not Blueprint §11's W1–W10, and this file used to say they were.** §11 enumerates ten *worker guarantees* — "exist without document, phone or literacy", "provable to a stranger in a minute, offline" — which are promises to a person. The six above are engineering rules that serve those promises. Six cannot be ten, and code comments across the services currently cite W-numbers that resolve to different statements in §11. Reconciling the two is [#57](https://github.com/theflywheel/CREST/issues/57); until it lands, cite the rule by its sentence rather than by a number.
+### The six rules are not W1–W10; they serve them
+
+**Blueprint §11's W1–W10 are the worker guarantees** — promises to a person, and the acceptance tests of the whole layer. The six rules above are *engineering* rules that serve those promises. Six cannot be ten, and this file used to claim they were the same list ([#57](https://github.com/theflywheel/CREST/issues/57), settled — the ten stay the worker guarantees, the six get their own name and each says which guarantee it serves).
+
+§11, quoted, is the authority:
+
+| | Blueprint §11 guarantee |
+|---|---|
+| **W1–W2** | exist without document/phone/literacy; assisted counts the same |
+| **W3** | work recorded without a device |
+| **W4** | found next campaign |
+| **W5–W6** | can see what was done, owed, and why things bounced |
+| **W7** | provable to a stranger in a minute, offline |
+| **W8** | proving work ≠ surrendering identity |
+| **W9** | keeps everything when the employer ends |
+| **W10** | a reachable person looks at problems |
+
+And the six rules map onto them:
+
+| Engineering rule | Serves |
+|---|---|
+| Trust strength is derived, never stored | **W7** (a stranger verifies offline, and judges for themselves), **W9** (the judgement can improve later without reissuance) |
+| A unit and a claim are separable | **W5–W6** (the record of what was done survives every dispute about who did it) |
+| Every confirmation-window exit releases payment | **W5–W6** (what is owed, and why), **W10** (a dispute reaches a person; it does not reach the money) |
+| Never persist a raw national ID or biometric | **W8** (proving work is not surrendering identity) |
+| Probable matches hold; they never auto-merge | **W4** (found next campaign — dedup held, never merged without confirmation) |
+| Every held payment has a reason with an owner | **W10** (a reachable person looks at problems), **W5–W6** (why things bounced) |
+
+So a PR can now cite both: the rule by its sentence, and the guarantee by its number. When a comment or a test names a promise that maps to no §11 guarantee, cite the rule's sentence and no number.
 
 ## The layering test
 

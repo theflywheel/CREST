@@ -41,7 +41,7 @@
           },
           "nationalIdHash": {
             "type": "object",
-            "description": "For matching only. A salted hash and the salt's identifier — never the identifier itself, and never for fixtures either (W9).",
+            "description": "For matching only. A salted hash and the salt's identifier — never the identifier itself, and never for fixtures either (W8).",
             "properties": {
               "alg": { "type": "string", "enum": ["sha256"] },
               "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
@@ -67,7 +67,7 @@
     },
     "attributes": {
       "type": "object",
-      "description": "Self-declared descriptive facts about the party — an organisation's kind, sector, country, contact person (#168). L1 holds the map, never the vocabulary: which keys exist and what values are legal is deployment configuration (the layering test — two deployments can reasonably disagree about a sector taxonomy and both be CREST). Small bounded strings only: never identity data, never a national ID or biometric (W9), never provenance — bindings, consents and enrolments have their own typed records precisely so they cannot be smuggled in here as text.",
+      "description": "Self-declared descriptive facts about the party — an organisation's kind, sector, country, contact person (#168). L1 holds the map, never the vocabulary: which keys exist and what values are legal is deployment configuration (the layering test — two deployments can reasonably disagree about a sector taxonomy and both be CREST). Small bounded strings only: never identity data, never a national ID or biometric (W8), never provenance — bindings, consents and enrolments have their own typed records precisely so they cannot be smuggled in here as text.",
       "maxProperties": 16,
       "propertyNames": { "minLength": 1, "maxLength": 64 },
       "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 200 }

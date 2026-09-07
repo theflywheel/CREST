@@ -43,7 +43,7 @@ func (w *world) issueThenDispute(t *testing.T, household string) (string, string
 	// Confirmed first, so the credential exists before the dispute does. This
 	// is the case the issue is about: a claim can go ACCEPTED → DISPUTED after
 	// a credential was signed, because the seven days are a window for
-	// objecting rather than a deadline for noticing (W3).
+	// objecting rather than a deadline for noticing (W5–W6).
 	var exit struct {
 		Credential struct {
 			ID string `json:"id"`

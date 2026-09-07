@@ -14,7 +14,7 @@ import (
 // The thing it exists to prevent: a claim is accepted, the row is committed,
 // and the call that releases the payment fails. The worker's record says the
 // work counted and no money moved, and nothing anywhere records that a call was
-// owed. W4 says every T=7 exit releases payment; an in-process HTTP call after
+// owed. W5–W6 says every T=7 exit releases payment; an in-process HTTP call after
 // a commit cannot promise that, and a message written in the same transaction
 // as the state change can.
 //
