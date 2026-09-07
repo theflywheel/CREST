@@ -31,12 +31,15 @@ type ServiceStatus struct {
 
 	// HasClock is whether this service answers GET /internal/clock at all.
 	//
-	// Since #127 most of the fleet does not, and that is the design rather
-	// than a fault: the driveable clock is the payments application's harness
-	// surface, and a service that declares no seam has no route — not one that
-	// refuses. Asking core whether its clock is ticking is asking about a
-	// route that does not exist, so the clock check below applies only where
-	// this is true.
+	// The seam is opt-in since #213, so a service that declares none has no
+	// route — not one that refuses — and asking it whether its clock is
+	// ticking is asking about a route that does not exist. Both processes in
+	// the fleet do declare it today (#215: payments for the window, core for
+	// evidence's source monitor and parties' override review), so this reads
+	// true for both; it is here because "which processes are running" and
+	// "which processes let the harness move time" stopped being the same
+	// question, and a stack that answered it wrongly would fail every
+	// window-dependent scenario for a reason no scenario names.
 	HasClock bool
 }
 

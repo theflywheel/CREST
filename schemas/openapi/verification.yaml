@@ -594,10 +594,9 @@ paths:
   /readyz: { $ref: "#/components/pathItems/readyz" }
 
 
-  # No /internal/clock here. The driveable clock left pkg/service in #213 and
-  # became a seam a service declares for itself; since #127 moved the
-  # confirmation window out of the infrastructure, this service declares none
-  # and the route does not exist at all - not a route that refuses. The only
-  # process that answers it is the payments application, whose week-long window
-  # is the reason a CREST deployment ever wants driveable time. See
-  # schemas/openapi/confirmation.yaml.
+  # No /internal/clock here. The driveable clock is a non-production harness
+  # surface a service declares for itself (#213), and #215 ruled which ones do:
+  # those with scheduled behaviour a test must move time to reach — payments for
+  # the confirmation window, evidence for the source-quiet monitor, parties for
+  # the override review date. This service has none, so it declares no seam and
+  # the route does not exist at all - not a route that refuses.

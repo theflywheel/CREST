@@ -1617,13 +1617,58 @@ paths:
   /readyz: { $ref: "#/components/pathItems/readyz" }
 
 
-  # No /internal/clock here. The driveable clock left pkg/service in #213 and
-  # became a seam a service declares for itself; since #127 moved the
-  # confirmation window out of the infrastructure, this service declares none
-  # and the route does not exist at all - not a route that refuses. The only
-  # process that answers it is the payments application, whose week-long window
-  # is the reason a CREST deployment ever wants driveable time. See
-  # schemas/openapi/confirmation.yaml.
+  /internal/clock:
+    get:
+      operationId: readClock
+      summary: What time does this service think it is?
+      description: >
+        Why this service has one (#215, ruled 2026-09-07): the identity-override review date: an override past its review date
+        has to appear on the review list, and "flagged for review" only means
+        something if somebody can find the flag.
+
+        Present only when CLOCK_DRIVEABLE is set, which pkg/service refuses in
+        production. The confirmation window is seven days; a harness that waits
+        seven days is not a harness, and one that shortens the window to a second
+        is testing a different system. So outside production a service is handed
+        its time. In production this path does not exist, because a clock an HTTP
+        call can move is a clock that can close a worker's window early on them.
+      responses:
+        "200":
+          description: The service's current time.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  now: { type: string, format: date-time }
+    post:
+      operationId: setClock
+      summary: Move this service's clock
+      description: >
+        Set an instant, or advance by a duration. The harness moves every service
+        together: a stack where evidence is on Tuesday and confirmation is on
+        Friday produces results that are nobody's design.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                now: { type: string, format: date-time }
+                advance: { type: string, description: "A Go duration, e.g. 168h." }
+      responses:
+        "200":
+          description: The clock after the move.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  now: { type: string, format: date-time }
+        "400":
+          description: Neither an instant nor a duration, or a duration that does not parse.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
 
   /v1/organisations/{id}/registration:
     get:

@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 
 	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/clock"
@@ -185,6 +186,17 @@ type Options struct {
 // the mount that exposes it. A nil second result means there is nothing to
 // mount. See pkg/clockctl.
 type ClockSeamFunc func(cfg config.Base, log *slog.Logger) (clock.Clock, func(*http.ServeMux))
+
+// sameSeam reports whether two members named the same seam function.
+//
+// Compared by code pointer, which is exactly the question being asked: several
+// members of one process may declare the driveable clock (#215), and that is
+// fine as long as they all mean pkg/clockctl.Seam. Two DIFFERENT seams would
+// make the process's clock depend on member order, which is a wiring mistake
+// worth refusing to start over.
+func sameSeam(a, b ClockSeamFunc) bool {
+	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
+}
 
 // Main is the entire main() of a CREST service.
 func Main(name string, opts Options) {

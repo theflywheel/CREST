@@ -53,10 +53,12 @@ func TestComparePreflightCatchesAFrozenNonDriveableClock(t *testing.T) {
 	}
 }
 
-// Since #127 core answers no /internal/clock at all, and that is the design.
-// The preflight must not read "core has no driveable clock" as a stale
-// environment, or every e2e run fails on the thing the change set out to do.
-func TestComparePreflightAcceptsAnInfrastructureServiceWithNoClockAtAll(t *testing.T) {
+// A service that declares no clock seam has no /internal/clock at all (#213),
+// and that is design rather than fault. The preflight must not read "this
+// service has no driveable clock" as a stale environment — core answered none
+// for as long as #127's move left it without one, and a deployment that runs
+// only the substrate answers none today.
+func TestComparePreflightAcceptsAServiceWithNoClockAtAll(t *testing.T) {
 	expected := ExpectedConfig{Transparency: "postgres"}
 	actual := map[string]ServiceStatus{
 		// core: no seam, so no route, so HasClock false and ClockTicking

@@ -132,13 +132,21 @@ func (s *Stack) Services() []*Service {
 
 // clockServices are the processes that answer /internal/clock.
 //
-// Exactly one, and that is the point of #127: the driveable clock is the
-// payments application's harness surface, and core has no such route at all —
-// posting to it would 404, not move time. This is deliberately a separate list
-// from Services(): "which processes are running" and "which processes let the
-// harness move time" stopped being the same question when the window moved.
+// Both of them, and together on purpose: they compare timestamps with each
+// other, and a stack where evidence is on Tuesday and the window is on Friday
+// produces results that are nobody's design — the seven-days-from-resolution
+// guarantee is exactly that comparison, evidence's `resolvedAt` against the
+// window's `closesAt`.
+//
+// A separate list from Services() even so, because the two questions are no
+// longer the same one. Since #127 the payments process declares the seam for
+// the window, and since #215 core declares it for `evidence`'s source-quiet
+// monitor and `parties`' override review — scheduled infrastructure behaviour
+// that has nothing to do with a window. A process that declared neither would
+// have no clock route at all, and posting to it would 404 rather than move
+// time, so this list must name declarers rather than everything that is up.
 func (s *Stack) clockServices() []*Service {
-	return []*Service{s.Payments}
+	return []*Service{s.Parties, s.Payments}
 }
 
 // WaitReady polls /readyz until every service answers, or gives up.
@@ -173,18 +181,15 @@ func (s *Stack) WaitReady(ctx context.Context, within time.Duration) error {
 
 // SetClock moves every service's clock to the same instant.
 //
-// "Every service" is now one process, and that is #127 finished rather than a
-// regression. The driveable clock is the payments application's harness
-// surface; core used to answer /internal/clock too, only because the
-// confirmation window lived in its attestation member. The member has moved,
-// so core has no clock route at all and this loop no longer names it.
+// Every service, together: they compare timestamps with each other, and a
+// stack where evidence is on Tuesday and confirmation is on Friday produces
+// results that are nobody's design.
 //
-// Nothing in the infrastructure needs its time moved. The two processes could
-// disagree about the date and no assertion in the suite would notice, because
-// what the harness moves time for is to cross a window — and the only process
-// that has one is the one still in this list. Core stamps evidence with wall
-// time either way; the window's arithmetic is done against the window owner's
-// clock.
+// "Every service" is two processes, and both are here because both declare the
+// seam. #127 moved the window — and the clock that crosses it — to the
+// payments application; #215 then established that core wants driveable time
+// for reasons of its own, the source-quiet monitor and the override review
+// date, neither of which is a window. See clockServices.
 func (s *Stack) SetClock(ctx context.Context, at time.Time) error {
 	for _, svc := range s.clockServices() {
 		if err := svc.Post(ctx, "/internal/clock", map[string]any{"now": at}, nil); err != nil {
@@ -210,7 +215,7 @@ func (s *Stack) LiveClock(ctx context.Context) error {
 	return nil
 }
 
-// Advance moves the window owner's clock forward by d.
+// Advance moves every clock-owning process forward by d.
 func (s *Stack) Advance(ctx context.Context, d time.Duration) error {
 	for _, svc := range s.clockServices() {
 		if err := svc.Post(ctx, "/internal/clock", map[string]any{"advance": d.String()}, nil); err != nil {

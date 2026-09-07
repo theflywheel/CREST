@@ -29,9 +29,15 @@ info:
 
     Since #127 the payments service is also the process that *runs* them: the
     window's `attestation` member moved out of the `core` infrastructure
-    deployable, so these paths and `/internal/clock` are now the only place in
-    the fleet either exists. The four substrate specs say so where their clock
-    path used to be.
+    deployable, so these window paths are now the only place in the fleet they
+    exist.
+
+    `/internal/clock` is not exclusive to this service, and #215 (ruled
+    2026-09-07) says why: the seam is a non-production harness surface rather
+    than a layering statement, and `evidence` and `parties` declare it for
+    scheduled behaviour of their own — a source that goes quiet, an override
+    past its review date. `definitions` and `verification` declare nothing and
+    say so where their clock path used to be.
 
     Credentials and contests are referenced by the `$id` of their JSON Schema
     under `schemas/` rather than restated here. `schemas/` is the source of truth;
