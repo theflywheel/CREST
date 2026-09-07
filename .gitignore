@@ -41,3 +41,11 @@ docs/.fidelity-sheet/
 
 # recorded journey demos — regenerated, never committed
 demos/
+
+# Recordings and sheets under docs/assets are working material; only the two
+# sets the documentation links to, and the gap-assessment screenshots, are
+# tracked. Everything else stays local (a 300 MB commit taught this).
+docs/assets/*
+!docs/assets/clean-slate-watch/
+!docs/assets/crest-development-validation/
+!docs/assets/journey-gap-assessment/
