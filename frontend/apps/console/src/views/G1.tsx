@@ -341,9 +341,10 @@ export function G1Consent() {
 // claim it later with their own sign-in, and bind nobody's identity but
 // their own.
 //
-// Delivery is honest: the link is shown once, here, and handed over out of
-// band. Notifications are dropped (#150), so nothing sends it, and this screen
-// says so rather than drawing a Send that does nothing.
+// Delivery is honest: "Send invitation" writes the record and mints the code,
+// and the link is shown once, here, with a copy control for the operator to
+// share it themselves. Notifications are dropped (#150), so no channel carries
+// it, and this screen says so rather than implying an email went out.
 export function G1Invite() {
   const [org, setOrg] = useState("");
   const [category, setCategory] = useState("");
@@ -391,9 +392,10 @@ export function G1Invite() {
       {out ? (
         <CardTitled t="The invitation, shown once">
           <p className="body-2">
-            Hand this link to {signatory || "the signatory"} by a route you trust. <strong>Nothing sends it.</strong>{" "}
-            This deployment has no notification channel (#150), so the link travels out of band or not at all — and
-            this screen is the only place it is ever shown, because CREST keeps only its hash.
+            Copy this link and share it with {signatory || "the signatory"} by a route you trust.{" "}
+            <strong>Nothing sends it for you.</strong> This deployment has no notification channel (#150), so the
+            link travels by your hand or not at all — and this screen is the only place it is ever shown, because
+            CREST keeps only its hash.
           </p>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", margin: "10px 0" }}>
             <span className="mono" data-invite-link style={{ wordBreak: "break-all" }}>
@@ -407,7 +409,7 @@ export function G1Invite() {
                 navigator.clipboard?.writeText(link).then(() => setCopied(true), () => setCopied(false));
               }}
             >
-              {copied ? "Copied" : "Copy the link"}
+              {copied ? "Copied" : "Copy invitation link"}
             </button>
           </div>
           <KVR
@@ -461,14 +463,14 @@ export function G1Invite() {
             <div>
               <button id="g1-invite" className="btn dominant" type="submit" disabled={busy}
                 style={{ width: "auto", padding: "9px 16px" }}>
-                {busy ? "Creating…" : "Create the record and mint the link"}
+                {busy ? "Sending…" : "Send invitation"}
               </button>
             </div>
           </form>
           <OpenNote>
-            The button does not send anything, and does not pretend to: it writes the record and mints the code, and
-            the next screen shows the link once for you to hand over. The work email is recorded as the contact the
-            invitation was addressed to — with no channel delivering it, that row is the only account of who was
+            Sending means: the record is written, the one-time code is minted, and the next screen gives you the link
+            to copy and share with the signatory yourself. No email leaves this deployment (#150); the work email is
+            recorded as the contact the invitation was addressed to, and that row is the only account of who was
             given the code.
           </OpenNote>
         </CardTitled>
