@@ -7,9 +7,10 @@
 infra/acceptance/private
 infra/compose/dedi-keys
 infra/certify/plugin/target
-docs/assets
-# The two recording sets the docs link to ride into the docs image; the rest
-# of docs/assets (working cuts, sheets) stays out.
+# Exclude the contents of docs/assets, not the directory, so the two recording
+# sets the docs link to can be re-included below (a child under an excluded
+# parent cannot be); the rest (working cuts, sheets) stays out.
+docs/assets/*
 !docs/assets/clean-slate-watch
 !docs/assets/crest-development-validation
 docs/.fidelity-sheet
