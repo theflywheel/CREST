@@ -47,4 +47,3 @@ sequenceDiagram
 - [The owner connects, tests and activates](../assets/clean-slate-watch/J5-f2-mechanism-owner-connects-tests-and-activates.mp4) (77 s)
 
 Screens: f1_1–f1_5, f2_1–f2_10. Next: [ENROLMENT.md](ENROLMENT.md).
-

@@ -21,4 +21,3 @@ The design of record, the [Infrastructure Blueprint](../crest-infrastructure-blu
 ## When you build a product
 
 Read the concept note for the layer's intent, the readout for how a product's rules were written down, and the journeys for what a finished product's screens are held to. Then write your product's equivalent of the readout: its rules, in sentences, with the invariant each one serves.
-

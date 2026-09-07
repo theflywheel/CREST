@@ -19,4 +19,3 @@ The credential substrate (Inji) is integrated the same way but is not swappable 
 ## The rule they share
 
 **A plugin translates; it never decides trust.** An adapter stamps provenance from the deployment's configuration and ignores whatever the payload says about itself. A payment provider's HTTP failure can never establish that money moved. An identity provider yields a subject; whether that subject is a party is the registry's to say. A registry publisher that has no transparency log behind it says so at boot rather than pretending.
-

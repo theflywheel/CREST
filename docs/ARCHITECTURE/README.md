@@ -20,4 +20,3 @@ The one test every boundary answers to: **if two deployments could reasonably di
 | [DATA_BOUNDARIES.md](DATA_BOUNDARIES.md) | What goes to the public log, what stays in the private store, what lives on the device |
 
 The roster with ports and deployed names is the older [../SERVICES.md](../SERVICES.md); the run-versus-build reasoning is [../COMPONENTS.md](../COMPONENTS.md). Both stay authoritative for what they cover.
-

@@ -72,4 +72,3 @@ flowchart LR
 Every door is a static site behind an nginx that proxies `/api/crest-<name>/…` to the services over private networking and refuses `/internal/*` at the door (the Blueprint §16 fence). The Go services carry no public domain. The older member names (`crest-registry`, `crest-definitions`, `crest-evidence`, `crest-verification`, `crest-confirmation`) alias onto the two deployables so links already in the wild keep resolving.
 
 The blueprint's own rendering of this diagram, with the primitive graph and the information-flow figure beside it, is in [§1 of the blueprint](../crest-infrastructure-blueprint.html#s1).
-

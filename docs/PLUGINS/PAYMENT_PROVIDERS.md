@@ -38,4 +38,3 @@ A non-nil error is transport or HTTP failure. **It can never mean confirmed.** T
 ## What the provider does not own
 
 Pricing (the rate in force when the work happened), holds and their owners, reconciliation and statements are the application's. A provider that reprices, holds silently or reports settlement it cannot prove is a provider that must not be registered.
-

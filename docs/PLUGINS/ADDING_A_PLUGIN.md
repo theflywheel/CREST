@@ -17,4 +17,3 @@ title: Adding a plugin
 - Assert trust. Provenance is stamped by the deployment; a payload's claims about itself are ignored.
 - Establish an outcome it cannot prove. A failed call is a failed call.
 - Hold personal data the layer would not. An adapter sees a raw identifier in transit and hands it to the pipeline, which hashes it before anything is stored.
-

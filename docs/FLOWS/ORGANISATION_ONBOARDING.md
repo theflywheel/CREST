@@ -38,4 +38,3 @@ sequenceDiagram
 - [The operator admits the organisation](../assets/clean-slate-watch/J1-g4-operator-admits-the-organisation.mp4) (16 s)
 
 Screens: g2_1–g2_12, g4_1–g4_3. Next: [PROJECT_SETUP.md](PROJECT_SETUP.md).
-

@@ -44,4 +44,3 @@ sequenceDiagram
 - [The approver ratifies with the gaps named](../assets/clean-slate-watch/J4-p3-approver-ratifies-with-the-gaps-named.mp4) (22 s)
 
 Screens: p3_1–p3_28. Next: [PAYMENT_SETUP.md](PAYMENT_SETUP.md).
-

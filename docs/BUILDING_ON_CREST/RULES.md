@@ -26,4 +26,3 @@ They bind any product that moves money on these records:
 ## Writing your own
 
 Write your product's rules as sentences before its code, each naming the worker guarantee it serves (Blueprint §11). Put them in the product's own document the way the readout summary did for payments, and name in every pull request which one a change could break and how that was proven. A rule nobody can point to in a test is an aspiration.
-

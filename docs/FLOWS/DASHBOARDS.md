@@ -37,4 +37,3 @@ sequenceDiagram
 Not recorded: the funding viewer, because no record derives that persona on a clean deployment.
 
 Screens: p2_11–p2_16, g4_4–g4_7, v4_1–v4_2. Back to the [index](README.md).
-

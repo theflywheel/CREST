@@ -34,4 +34,3 @@ A skilling programme runs cohorts. A trainee who attends a session has done a un
 ## What is not new
 
 Parties, consent, identity binding, holds, the credential, verification, the registries, the harness, the design system, the fidelity gate. The trainee's credential verifies at an employer's with no account, offline, exactly as the health worker's does, because the layer did not anticipate either.
-

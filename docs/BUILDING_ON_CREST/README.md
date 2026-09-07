@@ -16,4 +16,3 @@ How to put a new product on the infrastructure layer. The payments application f
 | [RULES.md](RULES.md) | The rules a product inherits, and the two the payments application adds |
 | [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) | Running the stack, the seeded world, and the gates a change passes |
 | [WORKED_EXAMPLE.md](WORKED_EXAMPLE.md) | A second product sketched on the same substrate: training attendance with a stipend |
-

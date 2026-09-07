@@ -39,4 +39,3 @@ Every person in it signs in through the mock issuer locally and through eSignet 
 4. Bookkeeping in the same change: the issue's "done when", the manifest row, the PR body naming the rule a change could break and how it was proven.
 
 [../TESTING.md](../TESTING.md) explains the layers; [../TRACKING.md](../TRACKING.md) the board; [../DEPLOYMENT.md](../DEPLOYMENT.md) how a merge reaches the fleet.
-

@@ -45,4 +45,3 @@ Each is written in the same transaction as the record that caused it and relayed
 ## Service-to-service
 
 `/internal/*` routes answer services with signed service identity (`pkg/serviceauth`) and are refused at every door. A product that needs one is a product that should ask for a public route instead; the internal surface exists for the members of core and the payments application, and every addition is a design decision.
-

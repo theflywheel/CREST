@@ -21,4 +21,3 @@ title: Shared libraries
 | `esignet` | The eSignet client for the doors' login | One integration per provider class |
 
 `adapters/` sits beside `pkg/`: the `Adapter` interface, the registry, the built-in list and the conformance suite. It is documented in the [PLUGINS section](../PLUGINS/EVIDENCE_ADAPTERS.md).
-

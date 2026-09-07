@@ -42,4 +42,3 @@ sequenceDiagram
 - [The worker registers herself](../assets/clean-slate-watch/J7-j7-worker-registers-herself.mp4) (34 s)
 
 Screens: w1_1–w1_20, w2_1–w2_5. Next: [EVIDENCE_INGESTION.md](EVIDENCE_INGESTION.md).
-

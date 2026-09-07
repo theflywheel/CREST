@@ -38,4 +38,3 @@ sequenceDiagram
 - [The operator publishes terms](../assets/clean-slate-watch/J1-g1-operator-publishes-terms.mp4) (22 s)
 
 Screens: g1_1–g1_6 in the [journey traceability](../journey-traceability.md). Next: [ORGANISATION_ONBOARDING.md](ORGANISATION_ONBOARDING.md).
-

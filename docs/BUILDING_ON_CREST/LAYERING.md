@@ -38,4 +38,3 @@ Quietly patching around a design error in the product is the one failure this pr
 | An adapter | `adapters/<name>`, registered in `adapters/builtin` | `adapters/csv` |
 
 A product never writes to a member's tables. It calls the five boundaries and subscribes to the outbox topics they emit ([API_SURFACE.md](API_SURFACE.md)).
-

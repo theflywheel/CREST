@@ -29,4 +29,3 @@ sequenceDiagram
 - The presentation history is private to the worker; an anonymous read of it is refused.
 
 Screens: w1_19, w1_20, v2_2. Next: [DUPLICATES_AND_RECOVERY.md](DUPLICATES_AND_RECOVERY.md).
-

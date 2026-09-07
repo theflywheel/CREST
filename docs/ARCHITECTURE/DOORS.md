@@ -24,4 +24,3 @@ Four product faces, each a React application served as a static site with the de
 ## The demonstration face
 
 `apps/web` is the earlier face over the same API: six personas, a scripted story week, and a landing page that names what is deliberately undrawn. It is kept as a reference; [../DEMO.md](../DEMO.md) records what it shows and refuses to fake.
-

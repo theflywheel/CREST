@@ -22,4 +22,3 @@ Which moments produce a message and which facts each carries are infrastructure;
 ## The recorded gap
 
 Delivery to a phone (SMS, USSD, voice) is not built; it is named in the blueprint's §16. A worker learns about a window or a held payment by opening the door, and the assisted route exists precisely for the worker who could not be told.
-

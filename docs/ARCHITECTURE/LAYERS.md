@@ -27,4 +27,3 @@ Country rules, programme policy, rate tables and onboarding thresholds are confi
 | Which tier a credential reaches? | Derived at query time from provenance and the tier map | A stored tier freezes a judgement verifiers should make afresh |
 
 When reality contradicts this sorting — a primitive that needs a use-case field, an adapter class that needs an L1 change — that is a design finding: open an issue with the finding template and correct the blueprint. Quietly patching around it is the one failure this project cannot afford.
-

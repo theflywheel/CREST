@@ -54,4 +54,3 @@ Not recorded: J10, the funding oversight viewer, because no record derives that 
 ## How these are proven
 
 Every flow is driven end to end in CI: the spine scenarios in `harness/scenarios` (`make test-e2e`), the journey walk in `tests/e2e-apps` (`make e2e-apps`), and the fidelity gate against the design reference (`make fidelity`). [../TESTING.md](../TESTING.md) explains the layers; [../test-manifest.md](../test-manifest.md) names the check behind each feature.
-

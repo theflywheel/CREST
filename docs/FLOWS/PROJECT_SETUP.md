@@ -37,4 +37,3 @@ sequenceDiagram
 - Claims: [Alice](../assets/clean-slate-watch/J3-claim-alice.mp4), [Amina](../assets/clean-slate-watch/J3-claim-amina.mp4), [Ndegwa](../assets/clean-slate-watch/J3-claim-ndegwa.mp4), [Joseph](../assets/clean-slate-watch/J3-claim-joseph.mp4), [Naomi](../assets/clean-slate-watch/J3-claim-naomi.mp4), [Nadia](../assets/clean-slate-watch/J3-claim-nadia.mp4), [Daniel](../assets/clean-slate-watch/J3-claim-daniel.mp4)
 
 Screens: p1_1–p1_3, p2_1–p2_7. Next: [DEFINITION_LIFECYCLE.md](DEFINITION_LIFECYCLE.md).
-

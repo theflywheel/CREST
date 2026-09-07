@@ -31,4 +31,3 @@ A profile is the domain's vocabulary over the primitives: which functions the te
 Worker, ProjectGrant, CompensationRecord, Qualification. Each was in an early draft and each was the payments use case leaking into the layer; the blueprint's §2 records the collapse. If your product seems to need one, it is a profile or a product object, not a primitive.
 
 The canonical table, with the genericity note for each row, is [§2 of the blueprint](../crest-infrastructure-blueprint.html#s2); the JSON Schemas in `schemas/` are the source of truth for every field.
-

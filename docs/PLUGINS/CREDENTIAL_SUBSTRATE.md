@@ -24,4 +24,3 @@ The tier is never in either credential. A verifier computes it from the provenan
 A dispute. A contest is resolved at verification time from the deployment that holds it, so a bare QR scan shows a valid credential with no sign it is contested. This is stated on the verify door rather than hidden.
 
 The lifecycle mapping is [CREST on Inji](../crest-inji-architecture.html); the Certify plugin, the Mimoto patch and the guest download path are in `infra/certify/` and [../DEPLOYMENT.md](../DEPLOYMENT.md).
-

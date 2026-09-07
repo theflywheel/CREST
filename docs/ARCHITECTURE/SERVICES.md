@@ -57,4 +57,3 @@ title: Services and their responsibilities
 ## Names that still resolve
 
 `crest-registry`, `crest-definitions`, `crest-evidence` and `crest-verification` alias onto core, and `crest-confirmation` onto payments. `crest-seed` is a one-shot job. `/internal/*` routes are service-to-service, authenticated by service identity, and refused at every door.
-

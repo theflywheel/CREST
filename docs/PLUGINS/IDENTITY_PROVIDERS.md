@@ -50,4 +50,3 @@ Four are designed for (Blueprint §4.1), integrated once per class and configure
 | `CREST_SUBJECT_SALT` | The salt behind the pairwise derivation and the identifier hash; per deployment, never shared |
 
 Switching providers is adding the new one beside the old, letting workers re-bind at their next login, and retiring the old issuer once nobody presents its tokens.
-

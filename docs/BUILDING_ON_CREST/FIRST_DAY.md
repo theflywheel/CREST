@@ -25,4 +25,3 @@ This is the order the clean-slate recordings in the [FLOWS section](../FLOWS/REA
 | Doors, on the shared design system, deriving what a person sees from their grants | A role chooser |
 | An adapter, if your sources need one | Parsing inside the application |
 | Scenarios in the harness, a journey walk, manifest rows | A screen that fakes what has no backend |
-

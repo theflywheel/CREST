@@ -22,4 +22,3 @@ When a change touches evidence, confirmation, payments or verification, its pull
 ## The ten worker guarantees
 
 The blueprint's §11 enumerates ten promises to a person — exist without a document, phone or literacy; be provable to a stranger in a minute, offline; and so on. The six rules above are the engineering that keeps those promises. Reconciling the two numberings is tracked in [#57](https://github.com/theflywheel/CREST/issues/57); until it lands, cite a rule by its sentence rather than a number.
-

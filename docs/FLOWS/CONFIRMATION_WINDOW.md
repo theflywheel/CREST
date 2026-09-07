@@ -47,4 +47,3 @@ sequenceDiagram
 - [Assisted confirmation and the handoff](../assets/clean-slate-watch/J8-j8-assisted-confirmation-and-handoff.mp4) (17 s)
 
 Screens: w1_7–w1_12, w4_2–w4_4. Next: [CREDENTIALS_AND_VERIFICATION.md](CREDENTIALS_AND_VERIFICATION.md).
-

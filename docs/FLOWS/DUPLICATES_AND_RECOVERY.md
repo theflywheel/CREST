@@ -55,4 +55,3 @@ sequenceDiagram
 - [The registry dashboards: coverage, quality, duplicates, reuse, unclear rows](../assets/clean-slate-watch/J11-j11-registry-dashboards.mp4) (31 s)
 
 Screens: g4_4–g4_7, w1_7, w4_1–w4_3. Next: [DASHBOARDS.md](DASHBOARDS.md).
-

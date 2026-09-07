@@ -32,4 +32,3 @@ Postgres, one schema per member, holds everything about a person and every polic
 ## Between services
 
 Core and payments speak over `/internal/*` with signed service identity; the doors' nginx refuses those paths. Consequences cross the boundary through the outbox — a window opened, an exit recorded, a release owed — written in the same transaction as the record that caused them, and relayed until acknowledged.
-
