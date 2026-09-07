@@ -2,6 +2,17 @@
 
 Everything the implementation builds against. Each is a self-contained HTML page — clone and open in a browser, or read the hosted rendering at **https://crest-apps-production.up.railway.app/docs/** (the markdown docs rendered by Quartz, the HTML design docs served beside them, inside the journey-apps door since #148; see DEPLOYMENT.md for how it publishes).
 
+## The technical sections
+
+| Section | What it holds |
+|---|---|
+| [ARCHITECTURE/](ARCHITECTURE/README.md) | The high-level design, the layers, every component and its responsibilities, the substrate, the invariants and where each is enforced, the data boundaries |
+| [FLOWS/](FLOWS/README.md) | Every flow the system carries, each with its sequence diagram and the recording of it running on the production fleet |
+| [PLUGINS/](PLUGINS/README.md) | The five things a deployment swaps — evidence adapters, payment providers, identity providers, the registry substrate, notification senders — and how to add one |
+| [BUILDING_ON_CREST/](BUILDING_ON_CREST/README.md) | How to put a new product on the infrastructure layer: the reference material, the primitives, the layering test, the API surface, a product's first day, the rules it inherits, a worked example |
+
+## The design documents and working notes
+
 | Document | Role | Sections |
 |---|---|---|
 | [crest-infrastructure-blueprint.html](crest-infrastructure-blueprint.html) | **The design of record.** Where any question about *what CREST is* gets answered. | 16 (`#s1`…`#s16`) |
