@@ -1,0 +1,22 @@
+# Inji Verify's service, with CREST's own signing key rather than the one
+# published inside the upstream image (#65, p0 finding V1).
+#
+# Baked for the same reason as Certify's and Mimoto's: Railway has no bind
+# mounts, and an image configured differently there is not the image this
+# repository describes. The one thing NOT baked is the keystore — that is a
+# private key, and a key in an image layer is a key anyone who can pull the
+# image has, which is precisely the finding this change closes.
+ARG INJI_VERIFY_SERVICE_IMAGE=mosipid/inji-verify-service:0.16.0
+FROM ${INJI_VERIFY_SERVICE_IMAGE}
+
+USER root
+COPY --chmod=0755 infra/verify/verify-start.sh /home/mosip/verify-start.sh
+RUN mkdir -p /home/mosip/keystore && chown -R 1002:1001 /home/mosip/keystore
+
+EXPOSE 8080
+
+ENTRYPOINT ["/bin/sh", "/home/mosip/verify-start.sh"]
+
+# Restated from the upstream image: setting ENTRYPOINT clears the inherited
+# CMD, and the container would exit 0 looking like a clean shutdown.
+CMD ["/bin/sh", "-c", "java -jar -Dspring.cloud.config.label=\"${spring_config_label_env}\" -Dspring.profiles.active=\"${active_profile_env}\" -Dspring.cloud.config.uri=\"${spring_config_url_env}\" verify-service.jar"]

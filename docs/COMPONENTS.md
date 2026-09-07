@@ -14,7 +14,7 @@ Everything below follows from those two questions.
 | Component | What it gives us | Why not ours |
 |---|---|---|
 | **Inji Certify** | OpenID4VCI issuance, credential signing, Bitstring Status List | Credential signing is exactly the property we must not hand-roll. A bug here is forged work history. |
-| **Inji Verify** | OpenID4VP verification, offline QR | Same reason, other direction. Also the offline path is subtle and already solved. |
+| **Inji Verify** | OpenID4VP verification, offline QR | Same reason, other direction. Also the offline path is subtle and already solved. **Its answer is not evidence:** 0.16.0 returns `verificationStatus` as unsigned JSON, so nothing ties the result to this deployment. Its OpenID4VP *requests* are signed, and since [#65](../../issues/65) with a key CREST generated rather than the one published in the image (finding V1). A payer relies on CREST's own `verification` service, which signs. |
 | **Inji Web wallet** | Browser wallet for testing | Inji Mobile is an installed app, not a compose service; the web wallet is what CI can drive. |
 | **eSignet** (+ mock identity system) | OIDC broker to national ID; pairwise subject identifiers | Identity assertion is a national-authority function. We consume it; we never become it. |
 | **DeDi-node** | Merkle transparency log, inclusion proofs, signed checkpoints, witness ring | Already ours as a project ([theflywheel/DeDi-node](https://github.com/theflywheel/DeDi-node), Go) with its own compose. Consume it as a service — do not vendor its source into this repo. |

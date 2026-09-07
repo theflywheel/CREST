@@ -100,8 +100,68 @@ The deploy matrix covers the whole demo fleet (2026-08-28, #138): the seven serv
 | Postgres password for `crest` | Railway service variables only |
 | DeDi publisher private key | Railway service variables only; the local copy is gitignored |
 | DeDi node signing key | Minted by the node on first boot, kept in its own database, never exported |
+| Inji Verify signing keystore | `make verify-keystore` mints it into `infra/verify/secrets/` (gitignored); on Railway it is `INJI_VERIFY_KEYSTORE_P12_B64` + `INJI_VERIFY_KEYSTORE_PASSWORD` as service variables |
 
 **None of these are in the repository**, and `.railwayignore` keeps key material out of the build upload as well — an upload is a copy, and a copy of a signing key is a signing key.
+
+### The verifier signs with a key this deployment generated (#65, finding V1 — closed)
+
+`mosipid/inji-verify-service:0.16.0` ships a PKCS#12 inside the image —
+`BOOT-INF/classes/sample-keystore/test.p12`, alias `test`, password `mosip`,
+all three public. That is the key it signs OpenID4VP authorization requests
+with, so until this change a signed verifier request identified nobody: anyone
+who could `docker pull` could produce one.
+
+**Why the earlier attempt to replace it broke start-up.** Not the alias, not the
+path, not the password. `io.inji.verify.key.impl.P12KeyExtractor` enumerates the
+keystore's aliases and takes the first key entry whose certificate's public key
+algorithm is `Ed25519` or `EdDSA`; anything else throws, and the exception is
+thrown from a `@PostConstruct` on `p12FileKeyManagementServiceImpl`, so the
+whole Spring context fails and the container dies:
+
+    Caused by: java.lang.Exception: No EdDSA key entry found in the P12 file.
+
+A keystore made with `keytool -genkeypair` defaults is RSA, and that is the
+error it produces. The alias may be anything.
+
+**How CREST holds it now.**
+
+    export INJI_VERIFY_KEYSTORE_PASSWORD="$(openssl rand -base64 24)"
+    make verify-keystore          # infra/verify/secrets/verify-signing.p12, Ed25519
+
+`infra/verify/verify-keystore.sh` refuses to run with the password unset, and
+refuses the literal `mosip`. `infra/compose/Dockerfile.verify` replaces the
+image's entrypoint with `infra/verify/verify-start.sh`, which refuses to start
+at all if there is neither a mounted keystore nor `INJI_VERIFY_KEYSTORE_P12_B64`
+— falling back to the published key is not a degraded mode, it is the finding.
+Compose sets `INJI_KEYSTORE_FILE_PATH` and `INJI_KEYSTORE_FILE_PASS` (both
+`@Value`-injected upstream, so relaxed environment binding reaches them), and
+`INJI_KEYSTORE_FILE_PASS` has **no default** — `docker compose up` fails loudly
+if `INJI_VERIFY_KEYSTORE_PASSWORD` is not in `infra/compose/.env`.
+
+On Railway, `crest-verify` builds from the same `infra/compose/Dockerfile.verify`
+and needs no volume — unlike eSignet, Certify and Mimoto, this keystore records
+no alias in a database, so re-materialising the same secret is a complete
+restore. Set two service variables:
+
+    INJI_VERIFY_KEYSTORE_P12_B64=$(base64 < infra/verify/secrets/verify-signing.p12 | tr -d '\n')
+    INJI_KEYSTORE_FILE_PASS=<the password used to generate it>
+
+**Proof that the running service uses it.** The service publishes the public
+half at `/v1/verify/did.json`. The multibase there decodes to the same 32 bytes
+`make verify-keystore` printed:
+
+    $ curl -s http://localhost:58091/v1/verify/did.json | jq -r .verificationMethod[0].publicKeyMultibase
+    z6MkiHfAvat8Z76mZL8eMJBuGeF5QQihhXfo75cXjVCYLxrb
+    # base58btc-decoded: ed01 || 38f916b9…c06d05c0, and the generator printed
+    #   public key (hex): 38f916b9185a0c4e37363b9a336e72ba6f367ea2d20b3507b62b220ec06d05c0
+
+**What is still not closed.** This makes the verifier's *request* signature
+attributable. It does not make Inji Verify's **verification result** a signed
+object — 0.16.0 returns `verificationStatus` as plain JSON over the wire, with
+no signature of any kind. A payer relying on that result is relying on the
+transport and on trusting the operator, not on a signature. Naming that is the
+honest state; see the note the verifier demo carries.
 
 The node's **verifier** key is public and meant to be: `./tools/spikes/dedi-verifier-key.py <url>` derives it and cross-checks that the key the node advertises is the key that actually signed the current checkpoint.
 
