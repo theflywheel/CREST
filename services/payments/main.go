@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/theflywheel/crest/pkg/clockctl"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -34,6 +35,14 @@ func main() {
 	service.Main("payments", service.Options{
 		Migrations: migrations,
 		Dir:        "migrations",
+		// The driveable clock is this application's harness surface, not the
+		// substrate's (#127). A window a week long cannot be demonstrated or
+		// tested in real time, so the application that owns the window owns
+		// the seam that moves time through it — and the infrastructure
+		// services, which have no window, no longer carry the capability at
+		// all. Refused outside local/test by pkg/clockctl and again by the
+		// deployment refusal in pkg/service.
+		ClockSeam: clockctl.Seam,
 		Routes: func(mux *http.ServeMux, d service.Deps) {
 			routes(mux, d)
 		},

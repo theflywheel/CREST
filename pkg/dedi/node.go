@@ -24,7 +24,7 @@ import (
 //
 // This is not hypothetical tidiness. The harness runs services with a driveable
 // clock set to the fixture epoch so a seven-day confirmation window is
-// arithmetic rather than a wait (pkg/service.chooseClock). Signing with that
+// arithmetic rather than a wait (pkg/clockctl.Seam). Signing with that
 // clock produced every write failing on the deployed node with "request
 // timestamp outside the accepted window" — five months of skew, from a clock
 // that is doing exactly what it was built to do.

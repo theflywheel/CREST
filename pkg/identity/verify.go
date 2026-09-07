@@ -52,7 +52,7 @@ type Verifier struct {
 //
 // CREST services outside production can be handed their time, because the
 // confirmation window is seven days and a harness that waits one is not a
-// harness (pkg/service.chooseClock). A token's lifetime is not that kind of
+// harness (pkg/clockctl.Seam). A token's lifetime is not that kind of
 // time. It is the identity provider's judgement, made in real time, about how
 // long somebody's session should last — and checking it against a clock that
 // something else can move means a clock set to last March makes every expired

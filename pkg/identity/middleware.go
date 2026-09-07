@@ -117,7 +117,7 @@ func Middleware(v TokenVerifier, binder Binder, clk clock.Clock, log *slog.Logge
 
 // internal is the paths the middleware does not touch: health, readiness, and
 // the harness clock. The clock is already refused in production outright
-// (pkg/service.chooseClock), which is a stronger statement than requiring a
+// (pkg/clockctl.Seam), which is a stronger statement than requiring a
 // token for it.
 func internal(path string) bool {
 	return path == "/healthz" || path == "/readyz" || strings.HasPrefix(path, "/internal/")

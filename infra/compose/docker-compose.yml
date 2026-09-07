@@ -135,8 +135,18 @@ x-service: &crest-service
     # a deployment names its origins - never a wildcard (#102).
     CREST_CORS_ORIGINS: "${CREST_CORS_ORIGINS:-http://localhost:59100,http://localhost:59110}"
 
-    # The seven-day window, and a clock the harness can move through it. Both
-    # are refused in production — see pkg/service.chooseClock for why a
+    # The window, and a clock the harness can move through it. Both are the
+    # payments application's, not the substrate's (#127): the window's length
+    # is programme policy (seven days in the CHW programme), and the only
+    # reason a CREST process ever wants driveable time is to cross one.
+    #
+    # This anchor is consumed by exactly two services, core and payments, and
+    # since #127 the variable only does anything where the service declares
+    # the seam (service.Options.ClockSeam, pkg/clockctl) — payments, and the
+    # core member that still holds the window. parties, definitions, evidence
+    # and verification read wall time and have no /internal/clock at all.
+    #
+    # Both are refused in production — see pkg/clockctl.Seam for why a
     # driveable clock in a live deployment is a way to close a worker's window
     # early on them.
     CONFIRMATION_WINDOW: "${CONFIRMATION_WINDOW:-168h}"
