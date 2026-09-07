@@ -327,8 +327,16 @@ func (s *stack) registerWorker(phone, contextID, supervisor string) bool {
 	return true
 }
 
+// driveClock moves the clock of the two processes that have one to move.
+//
+// It used to name four, because every service carried the driveable clock.
+// Since #127 the seam is the payments application's: only payments and the
+// core member that still holds the window mount /internal/clock, and the
+// registry, evidence and verification URLs are aliases of that same core
+// process anyway. Naming the two says which processes actually own a clock a
+// harness may move, rather than implying the substrate does.
 func (s *stack) driveClock(at string) error {
-	for _, base := range []string{s.registry, s.evidence, s.confirmation, s.payments} {
+	for _, base := range []string{s.confirmation, s.payments} {
 		if err := s.post(base+"/internal/clock", "application/json",
 			[]byte(fmt.Sprintf(`{"now":%q}`, at)), nil); err != nil {
 			return err

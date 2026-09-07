@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/dedi"
 	"github.com/theflywheel/crest/pkg/httpx"
@@ -55,7 +56,30 @@ func Compose(name string, members []Member) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	clk, driveable := chooseClock(cfg, log)
+	// The process clock. Wall time unless a member asks for the driveable
+	// seam — which only the payments application, and for now the core member
+	// that still holds its window, does (#127). One process has one clock, so
+	// one member asking is the whole process asking; two members asking with
+	// different seams is a wiring mistake, not a merge.
+	clk := clock.Clock(clock.System{})
+	var mountClock func(*http.ServeMux)
+	for _, m := range members {
+		if m.Opts.ClockSeam == nil {
+			continue
+		}
+		if mountClock != nil {
+			log.Error("two members ask for a clock seam; a process has one clock", "member", m.Name)
+			os.Exit(1)
+		}
+		var c clock.Clock
+		c, mountClock = m.Opts.ClockSeam(cfg, log)
+		clk = c
+		if mountClock == nil {
+			// The seam was declared but the deployment did not turn it on.
+			// Keep the loop going only to catch a second declaration.
+			mountClock = func(*http.ServeMux) {}
+		}
+	}
 
 	deps := make([]Deps, len(members))
 	var pings []httpx.ReadyFunc
@@ -266,8 +290,8 @@ func Compose(name string, members []Member) {
 		metricMembers = append(metricMembers, metricsMember{name: m.Name, db: deps[i].DB})
 	}
 	mux.Handle("GET /internal/metrics", outboxMetricsHandler(metricMembers))
-	if driveable != nil {
-		registerClockControl(mux, driveable, log)
+	if mountClock != nil {
+		mountClock(mux)
 	}
 
 	// Ready means every member's schema answers: one member's dead store

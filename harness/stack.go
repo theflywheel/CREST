@@ -163,6 +163,12 @@ func (s *Stack) WaitReady(ctx context.Context, within time.Duration) error {
 // Every service, together: they compare timestamps with each other, and a stack
 // where evidence is on Tuesday and confirmation is on Friday produces results
 // that are nobody's design.
+//
+// "Every service" is now two processes and both are here on purpose. The
+// driveable clock is the payments application's harness surface since #127 —
+// it is mounted by payments, and by the core process only because the
+// confirmation window still lives in its attestation member. When that member
+// moves, core stops answering /internal/clock and this loop stops naming it.
 func (s *Stack) SetClock(ctx context.Context, at time.Time) error {
 	for _, svc := range s.Services() {
 		if err := svc.Post(ctx, "/internal/clock", map[string]any{"now": at}, nil); err != nil {

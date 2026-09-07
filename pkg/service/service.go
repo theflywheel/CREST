@@ -15,13 +15,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"time"
 
 	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/dedi"
-	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -166,99 +164,33 @@ type Options struct {
 	// Only the registry sets it; it owns the parties table.
 	SameParty func(d Deps) SamePartyFunc
 
+	// ClockSeam lets a service ask for a clock the harness can drive, and
+	// mount the route that drives it. Leave it nil — almost everything should
+	// — and the service reads wall-clock time and has no /internal/clock at
+	// all, not even one that refuses.
+	//
+	// It is a hook rather than a setting because the only reason a CREST
+	// process ever wants driveable time is the confirmation window, and the
+	// confirmation window is programme policy of the payments application,
+	// not an infrastructure primitive (ruled 2026-08-28, #127). pkg/service
+	// used to give every service the capability outright; now each mount is a
+	// decision written in that service's own wiring. pkg/clockctl.Seam is the
+	// implementation, and it is the payments application's.
+	ClockSeam ClockSeamFunc
+
 	Routes Routes
 }
+
+// ClockSeamFunc chooses the process clock and, when it is driveable, returns
+// the mount that exposes it. A nil second result means there is nothing to
+// mount. See pkg/clockctl.
+type ClockSeamFunc func(cfg config.Base, log *slog.Logger) (clock.Clock, func(*http.ServeMux))
 
 // Main is the entire main() of a CREST service.
 func Main(name string, opts Options) {
 	// One member, same machinery: Compose is Main for a list, and keeping a
 	// single path is what stops the two from drifting apart.
 	Compose(name, []Member{{Name: name, Opts: opts}})
-}
-
-// chooseClock decides whether this process reads wall-clock time or is driven.
-//
-// The confirmation window is seven days. A harness that waits seven days is not
-// a harness, and one that shortens the window to a second is testing a
-// different system — the whole point of W3 is what happens at the boundary of a
-// real week. So outside production a service can be handed its time, and the
-// harness advances it.
-//
-// Refused in production, loudly. A running deployment whose clock an HTTP call
-// can move is a deployment where a confirmation window can be closed early on
-// someone, and that is a way to take a worker's chance to object away from them.
-func chooseClock(cfg config.Base, log *slog.Logger) (clock.Clock, clock.Driveable) {
-	if !config.MustBool("CLOCK_DRIVEABLE", false) {
-		return clock.System{}, nil
-	}
-	if cfg.Env == "production" {
-		log.Error("CLOCK_DRIVEABLE is set in production; refusing to start",
-			"why", "a clock an HTTP call can move can close a worker's confirmation window early")
-		os.Exit(1)
-	}
-	start := clock.System{}.Now()
-	if s := config.Str("CLOCK_START", ""); s != "" {
-		t, err := time.Parse(time.RFC3339, s)
-		if err != nil {
-			log.Error("CLOCK_START is not RFC3339", "value", s, "error", err)
-			os.Exit(1)
-		}
-		start = t
-	}
-	// Offset rather than Fake: driveable, but it still ticks. A frozen clock
-	// makes a seeded demo stack look alive while nothing in it can ever become
-	// due again — no window reaches T=7, no payment is released by time
-	// passing. See clock.Offset for the whole argument.
-	c := clock.NewOffsetAt(clock.System{}, start)
-	log.Warn("clock is driveable", "now", start, "skew", c.Skew(), "env", cfg.Env)
-	return c, c
-}
-
-// registerClockControl exposes the clock under /internal/, which is the prefix
-// for everything that exists for the harness rather than for a caller.
-func registerClockControl(mux *http.ServeMux, fake clock.Driveable, log *slog.Logger) {
-	mux.HandleFunc("GET /internal/clock", func(w http.ResponseWriter, _ *http.Request) {
-		out := map[string]any{"now": fake.Now()}
-		// A shifted clock says so, rather than leaving a caller to work out why
-		// the stack disagrees with their watch.
-		if o, ok := fake.(*clock.Offset); ok {
-			out["skew"] = o.Skew().String()
-			out["ticking"] = true
-		}
-		httpx.WriteJSON(w, http.StatusOK, out)
-	})
-	mux.HandleFunc("POST /internal/clock", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Now     *time.Time `json:"now,omitempty"`
-			Advance string     `json:"advance,omitempty"`
-			// Live puts the clock back on real time. The seeder uses it to
-			// hand a stack back after walking a week forward through it.
-			Live bool `json:"live,omitempty"`
-		}
-		if !httpx.ReadJSON(w, r, &body) {
-			return
-		}
-		switch {
-		case body.Live:
-			fake.Set(clock.System{}.Now())
-		case body.Now != nil:
-			fake.Set(*body.Now)
-		case body.Advance != "":
-			d, err := time.ParseDuration(body.Advance)
-			if err != nil {
-				httpx.WriteError(w, http.StatusBadRequest, "invalid_duration",
-					"advance is not a duration: %v", err)
-				return
-			}
-			fake.Advance(d)
-		default:
-			httpx.WriteError(w, http.StatusBadRequest, "invalid_body",
-				"set now, advance by a duration, or go live")
-			return
-		}
-		log.Info("clock moved", "now", fake.Now())
-		httpx.WriteJSON(w, http.StatusOK, map[string]any{"now": fake.Now()})
-	})
 }
 
 func newLogger(level, service string) *slog.Logger {

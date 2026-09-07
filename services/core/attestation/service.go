@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/theflywheel/crest/pkg/client"
+	"github.com/theflywheel/crest/pkg/clockctl"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
@@ -27,6 +28,15 @@ func Service() service.Options {
 	parties := client.New(config.Str("PARTIES_URL", ""))
 	payments := client.New(config.Str("PAYMENTS_URL", ""))
 	return service.Options{
+		// The one infrastructure-side mount of the driveable clock, and it is
+		// here under protest: this member holds the confirmation window and
+		// its sweep, which #127 ruled are the payments application's, not the
+		// substrate's. Moving the member is a separate change; until it
+		// happens the harness cannot advance a window without advancing core,
+		// so the seam stays named here rather than hidden in pkg/service where
+		// it silently applied to parties, definitions, evidence and
+		// verification too. Delete this line with the member.
+		ClockSeam: clockctl.Seam,
 		OnStart: func(ctx context.Context, d service.Deps) error {
 			return adoptLegacyOpenWindows(ctx, d)
 		},
