@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	"github.com/theflywheel/crest/adapters"
-	csvadapter "github.com/theflywheel/crest/adapters/csv"
+	"github.com/theflywheel/crest/adapters/builtin"
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
@@ -71,7 +71,7 @@ func (h *draftHandlers) dryRun(w http.ResponseWriter, r *http.Request) {
 			"sourceClass and captureMethod come from the deployment's knowledge of the source, and a dry run cannot guess them")
 		return
 	}
-	registry, err := adapters.NewRegistry(csvadapter.Plugin())
+	registry, err := adapters.NewRegistry(builtin.Plugins()...)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "build adapter catalogue", err)
 		return
