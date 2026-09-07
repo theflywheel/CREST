@@ -104,10 +104,10 @@ Rendered exports (1160×900, 2×): `n1-sign-in.png`,
   Malaria Bednet Campaign — 2026), Amina Yusuf (Work Definition Author ·
   Ministry of Health). The demo block is instance-configured, never present
   where a real identity provider is.
-- Callout (teal) `WHY THIS SCREEN EXISTS`, callout (green) `WHAT THIS SCREEN
-  NEVER DOES`: "It never asks which role you want, and never offers a role you
-  do not hold. A role is granted in the registry and read back here — picking
-  your own would make authority a matter of self-declaration."
+- No callouts. The two the first cut carried (`WHY THIS SCREEN EXISTS`, `WHAT
+  THIS SCREEN NEVER DOES`) were dropped (#205): the lede already says what the
+  door is for, and the no-role-selector rule below is asserted by the journey
+  walk rather than explained on the screen.
 
 Assertions: no role selector anywhere on the screen; the persona block is
 absent when the instance has no mock identity provider; signing in lands on

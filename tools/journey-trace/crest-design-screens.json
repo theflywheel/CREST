@@ -25,10 +25,7 @@
       "fields": [
         { "label": "Sign in with", "hint": "Your national identity provider. CREST never sees a credential of yours.", "kind": "static", "value": "" }
       ],
-      "callouts": [
-        { "title": "Why this screen exists", "text": "One door, every console role. What you see after signing in is decided by the roles you hold — never by which link you opened." },
-        { "title": "What this screen never does", "text": "It never asks which role you want, and never offers a role you do not hold. A role is granted in the registry and read back here — picking your own would make authority a matter of self-declaration." }
-      ],
+      "callouts": [],
       "buttons": [
         { "label": "Continue with eSignet", "role": "primary", "nav": "n2" }
       ],

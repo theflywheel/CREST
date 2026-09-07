@@ -117,7 +117,6 @@
    "buttons:Export the bundle": "There is no bundle export: no endpoint produces a portable proof bundle. A missing capability, named — not a copy difference."
   },
   "n1": {
-   "callouts": "REMOVED ON PURPOSE, not a copy difference: the reference's two explanatory callouts ('Why this screen exists', 'What this screen never does') were dropped from the sign-in door in PR #205 \u2014 the door shows the eSignet button and its caption only; the no-role-selector rule they described is asserted by the journey walk instead.",
    "layout": "The gate's desktop idiom requires an appbar AND a navigation rail. n1 is the door: nothing is scoped until somebody has signed in, so it deliberately renders the appbar alone — the design spec says so in as many words (docs/design/j3-connective-tissue/README.md: 'appbar only (no rail — nothing is scoped yet)'). The debt is in the gate's idiom vocabulary, which cannot express 'appbar only', not in the screen; a rail added here to pass this facet would be a rail over nothing."
   },
   "g2_5": {
