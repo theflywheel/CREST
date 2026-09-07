@@ -136,8 +136,21 @@ at all if there is neither a mounted keystore nor `INJI_VERIFY_KEYSTORE_P12_B64`
 — falling back to the published key is not a degraded mode, it is the finding.
 Compose sets `INJI_KEYSTORE_FILE_PATH` and `INJI_KEYSTORE_FILE_PASS` (both
 `@Value`-injected upstream, so relaxed environment binding reaches them), and
-`INJI_KEYSTORE_FILE_PASS` has **no default** — `docker compose up` fails loudly
-if `INJI_VERIFY_KEYSTORE_PASSWORD` is not in `infra/compose/.env`.
+`INJI_KEYSTORE_FILE_PASS` carries the empty string, never `mosip`.
+
+**What actually happens with no password set, precisely.** Compose itself does
+*not* fail: `INJI_VERIFY_KEYSTORE_PASSWORD` is interpolated as `${…:-}`, so
+`docker compose config` and `docker compose up` both succeed, and the
+**container** exits 1 with
+
+    verify: INJI_KEYSTORE_FILE_PASS is unset or is the published default.
+
+A `${…:?}` would be louder, and was tried and rejected: compose interpolates
+the whole file on every invocation, so an unset variable there breaks
+`make harness-up`, `make apps-up` and CI's `docker compose config -q` for
+services that have nothing to do with the verifier. The refusal belongs where
+it can see only this container. `make substrate-up` depends on
+`make verify-keystore`, so the ordinary path never reaches that error.
 
 On Railway, `crest-verify` builds from the same `infra/compose/Dockerfile.verify`
 and needs no volume — unlike eSignet, Certify and Mimoto, this keystore records
