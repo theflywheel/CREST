@@ -46,7 +46,7 @@ func fullDraft() DraftDoc {
 					RequiresFields:  []string{"household_id"},
 				},
 				{
-					Tier:            1,
+					Tier:            3,
 					SourceClassIn:   []schema.SourceClass{schema.SourceClassSupervisedCapture},
 					CaptureMethodIn: []schema.CaptureMethod{schema.CaptureMethodSupervisedManual},
 				},
@@ -110,6 +110,18 @@ func TestCompileCompleteDraftValidates(t *testing.T) {
 	}
 }
 
+func TestCompileRefusesUnregisteredEvidenceSchema(t *testing.T) {
+	doc := fullDraft()
+	doc.Sources.SchemaRef = "csv-batch@1"
+	_, problems := compile(doc, "crest:definition:01ARZ3NDEKTSV4RRFFQ69G5FAV", 1, "a", testTime)
+	for _, p := range problems {
+		if p.Section == "sources" && p.Field == "schemaRef" && strings.Contains(p.Reason, "not registered") {
+			return
+		}
+	}
+	t.Fatalf("unregistered evidence schema compiled without a named problem: %+v", problems)
+}
+
 // Every missing section is a named open question, not a refusal to answer —
 // p3_18 renders this list.
 func TestCompileNamesEveryOpenSection(t *testing.T) {
@@ -130,7 +142,7 @@ func TestCompileNamesEveryOpenSection(t *testing.T) {
 func TestCompileRefusesTierAboveCeiling(t *testing.T) {
 	doc := fullDraft()
 	doc.Evidence.TierMap = append(doc.Evidence.TierMap, schema.DefinitionTierMapItem{
-		Tier:            3,
+		Tier:            1,
 		SourceClassIn:   []schema.SourceClass{schema.SourceClassNationalSystem},
 		CaptureMethodIn: []schema.CaptureMethod{schema.CaptureMethodSystemOfRecord},
 	})

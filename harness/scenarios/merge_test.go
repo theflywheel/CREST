@@ -58,6 +58,7 @@ type instructionList struct {
 // is exactly what the registry refuses to do.
 func (w *world) rosterWork(t *testing.T, party, rosterID, household string) string {
 	t.Helper()
+	w.consentOf(t, party)
 	// As the supervisor, whose act-for-party grant covers the project (#102):
 	// a roster id decides whose work a future row becomes.
 	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).
@@ -66,15 +67,15 @@ func (w *world) rosterWork(t *testing.T, party, rosterID, household string) stri
 		t.Fatalf("register roster id %s: %v", rosterID, err)
 	}
 	csv := []byte("activity,outcome_value,outcome_unit,worker_id_kind,worker_id," +
-		"period_start,household_id,source_record_ref\n" +
-		fmt.Sprintf("bednet-distribution,3,bednets-distributed,roster-id,%s,2026-03-02,%s,%s-%s\n",
+		"period_start,household_id,beneficiary_count,source_record_ref\n" +
+		fmt.Sprintf("bednet-distribution,3,bednets-distributed,roster-id,%s,2026-03-02,%s,3,%s-%s\n",
 			rosterID, household, runID, rosterID))
 
 	res := w.submit(t, csv)
 	if len(res.ClaimIDs) != 1 {
 		t.Fatalf("the roster id did not match %s: %+v", party, res.Unclear)
 	}
-	return res.ClaimIDs[0]
+	return onlyClaim(t, res)
 }
 
 func (w *world) claimsOf(t *testing.T, party string) claimList {
@@ -151,15 +152,17 @@ func TestAWorkersHistoryIsContinuousAcrossAMerge(t *testing.T) {
 	}
 
 	// The custodian decides and the worker confirms. Neither alone is a merge.
+	if code, _, err := w.Parties.As(w.login(t, survivor)).Status(w.ctx, http.MethodPost,
+		"/v1/holds/"+hold.ID+"/confirm", map[string]any{
+			"survivorPartyId": survivor, "confirmationMethod": "in-person",
+		}); err != nil || code != http.StatusOK {
+		t.Fatalf("worker hold confirmation: %d %v", code, err)
+	}
 	code, res := w.resolveHold(t, hold.ID, map[string]any{
-		"decision":           "merge",
-		"partyId":            survivor,
-		"resolvedByPartyId":  fixtures.CustodianID,
-		"confirmedByPartyId": survivor,
-		"confirmationMethod": "in-person",
+		"decision": "merge", "partyId": survivor, "resolvedByPartyId": fixtures.CustodianID,
 	})
 	if code != 200 {
-		t.Fatalf("the merge was refused with %d", code)
+		t.Fatalf("the merge was refused with %d: %s", code, res.ResponseBody)
 	}
 	if !has(res.Merged, absorbed) {
 		t.Fatalf("the resolution does not say %s was absorbed: %+v", absorbed, res)
@@ -211,14 +214,16 @@ func TestAskingAboutTheAbsorbedRecordGivesTheWholeHistory(t *testing.T) {
 	w.rosterWork(t, survivor, "OLD-A-"+runID[:6], "HH-old-a")
 	w.rosterWork(t, absorbed, "OLD-B-"+runID[:6], "HH-old-b")
 
-	if code, _ := w.resolveHold(t, hold.ID, map[string]any{
-		"decision":           "merge",
-		"partyId":            survivor,
-		"resolvedByPartyId":  fixtures.CustodianID,
-		"confirmedByPartyId": survivor,
-		"confirmationMethod": "in-person",
+	if code, _, err := w.Parties.As(w.login(t, survivor)).Status(w.ctx, http.MethodPost,
+		"/v1/holds/"+hold.ID+"/confirm", map[string]any{
+			"survivorPartyId": survivor, "confirmationMethod": "in-person",
+		}); err != nil || code != http.StatusOK {
+		t.Fatalf("worker hold confirmation: %d %v", code, err)
+	}
+	if code, res := w.resolveHold(t, hold.ID, map[string]any{
+		"decision": "merge", "partyId": survivor, "resolvedByPartyId": fixtures.CustodianID,
 	}); code != 200 {
-		t.Fatalf("the merge was refused with %d", code)
+		t.Fatalf("the merge was refused with %d: %s", code, res.ResponseBody)
 	}
 
 	if claims := w.claimsOf(t, absorbed); len(claims.Claims) != 2 {
@@ -253,6 +258,7 @@ func TestAPartyThatWasNeverMergedReadsTheSameAsBefore(t *testing.T) {
 	// worker with no merge must get exactly what they got before.
 	phone := sharedNumber(303)
 	worker := newWorkerWithPhone(t, w, "Never Merged", phone)
+	w.consentOf(t, worker)
 	res := w.submit(t, batch(row(phone, 4, "HH-unmerged-"+runID)))
 	if len(res.ClaimIDs) != 1 {
 		t.Fatalf("expected one claim, got %+v", res)
@@ -290,6 +296,7 @@ func TestAnIncompleteHistoryIsRefusedRatherThanServed(t *testing.T) {
 	// (identity_unavailable). Both refuse loudly; neither under-reports.
 	phone := sharedNumber(304)
 	worker := newWorkerWithPhone(t, w, "Registry Outage", phone)
+	w.consentOf(t, worker)
 	res := w.submit(t, batch(row(phone, 2, "HH-outage-"+runID)))
 	if len(res.ClaimIDs) != 1 {
 		t.Fatalf("expected one claim, got %+v", res)

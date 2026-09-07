@@ -12,14 +12,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/theflywheel/crest/pkg/httpx"
@@ -28,6 +32,7 @@ import (
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
+	"github.com/theflywheel/crest/services/payments/providers"
 )
 
 func fundersRoutes(mux *http.ServeMux, d service.Deps, h *handlers) {
@@ -235,12 +240,66 @@ func (f *fundersHandlers) publishRate(w http.ResponseWriter, r *http.Request) {
 	// schema and stores it. One store: the rate lives on the definition, and
 	// this application holds no second copy that could disagree with it.
 	var stored schema.LinkedRecord
-	if err := f.h.definitions.Post(r.Context(),
-		"/v1/definitions/"+url.PathEscape(definitionID)+"/linked-records", lr, &stored); err != nil {
+	// This is a caller-facing mutation in the definitions registry. Forward
+	// the already verified bearer rather than replacing it with a service-only
+	// request: definitions must check that the named rate owner is the actual
+	// caller. The GET client remains service-to-service because reads are public.
+	if err := f.h.postLinkedRecord(r.Context(),
+		"/v1/definitions/"+url.PathEscape(definitionID)+"/linked-records", lr,
+		r.Header.Get("Authorization"), &stored); err != nil {
 		httpx.Fail(w, f.d.Log, "publish rate", err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, stored)
+}
+
+// postLinkedRecord preserves the human authorization on a payment setup
+// publication. pkg/client deliberately signs internal service calls, but this
+// endpoint is public and its authorization decision belongs to the caller who
+// authored the rate. Requiring a bearer here also prevents a future caller
+// from silently turning a missing token into an internal identity.
+func (h *handlers) postLinkedRecord(ctx context.Context, path string, in any,
+	authorization string, out any) error {
+	if strings.TrimSpace(authorization) == "" {
+		return errors.New("publishing a rate requires the authenticated caller token")
+	}
+	raw, err := json.Marshal(in)
+	if err != nil {
+		return fmt.Errorf("marshal linked record: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		strings.TrimRight(h.definitionsURL, "/")+path, bytes.NewReader(raw))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authorization)
+	resp, err := (&http.Client{
+		Timeout: 15 * time.Second,
+		// The bearer belongs to the caller and must never be sent to a URL
+		// selected by an upstream redirect. Treat every redirect as an
+		// upstream response for the caller to resolve explicitly.
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("definitions linked record: %s: %s", resp.Status, string(body))
+	}
+	if out != nil && len(body) > 0 {
+		if err := json.Unmarshal(body, out); err != nil {
+			return fmt.Errorf("decode linked record: %w", err)
+		}
+	}
+	return nil
 }
 
 func (f *fundersHandlers) listRates(w http.ResponseWriter, r *http.Request) {
@@ -293,7 +352,7 @@ func (f *fundersHandlers) rateVersions(ctx context.Context, definitionID string)
 		if err := json.Unmarshal(raw, &p); err != nil {
 			continue
 		}
-		versions = append(versions, rateVersion{Version: lr.Version, Payload: p})
+		versions = append(versions, rateVersion{ID: lr.ID, Version: lr.Version, Payload: p})
 	}
 	return versions, nil
 }
@@ -441,19 +500,16 @@ func (f *fundersHandlers) testDisburse(w http.ResponseWriter, r *http.Request) {
 		Currency: body.Currency, Destination: body.Destination,
 		At: f.d.Clock.Now(),
 	}
-	var reply struct {
-		Reference string `json:"reference"`
-	}
-	railErr := f.h.rail.Post(r.Context(), "/instructions", map[string]any{
-		"idempotency_key": t.ID, "reference": "test:" + t.ID,
-		"amount_minor": t.AmountMinor, "currency": t.Currency,
-		"destination": t.Destination,
-	}, &reply)
-	if railErr != nil {
+	reply, providerErr := f.h.rail.Submit(r.Context(), providers.Request{
+		IdempotencyKey: t.ID, InstructionID: t.ID, ContextID: m.ContextID, Reference: "test:" + t.ID,
+		AmountMinor: t.AmountMinor, Currency: t.Currency, Destination: t.Destination,
+	})
+	settledAmount, settledCurrency, settled := providers.SettledAmount(reply)
+	if providerErr != nil || normalizeRailStatus(reply.Status) != providers.Confirmed || reply.Reference == "" || !settled || settledAmount != t.AmountMinor || settledCurrency != t.Currency {
 		t.State = "FAILED"
 		t.Failure = &HeldReason{
-			Code:         "rail_error",
-			Explanation:  "the test payment did not clear: " + railErr.Error(),
+			Code:         "provider_not_settled",
+			Explanation:  "the configured provider did not prove terminal settlement for the test disbursement",
 			OwnerPartyID: m.OwnerPartyID,
 		}
 	} else {
@@ -540,6 +596,64 @@ func (f *fundersHandlers) addRecord(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, rec)
 }
 
+// activateMechanismAndRelease is the activation transaction used by the HTTP
+// handler. Keeping the read, gate decision, state transition and held sweep in
+// one transaction is important: a concurrent activation cannot observe the
+// same mechanism hold and enqueue it twice, and the sweep never asks the rate
+// or evidence dependencies to re-price an existing obligation.
+func activateMechanismAndRelease(ctx context.Context, tx store.Querier, mechanismID, activator string, now time.Time) (Mechanism, []activationCondition, []string, error) {
+	var out Mechanism
+	var conds []activationCondition
+	released := []string{}
+	err := func() error {
+		m, err := getMechanism(ctx, tx, mechanismID, true)
+		if err != nil {
+			return err
+		}
+		records, err := mechanismRecords(ctx, tx, m.ID)
+		if err != nil {
+			return err
+		}
+		tests, err := testDisbursements(ctx, tx, m.ID)
+		if err != nil {
+			return err
+		}
+		wasActive := m.State == mechanismActive
+		out, conds, err = activateMechanism(m, factsFor(records, tests), activator, now)
+		if err != nil {
+			return err
+		}
+		if wasActive {
+			return nil // idempotent; the held sweep already ran when it went live
+		}
+		if err := markMechanismActive(ctx, tx, out); err != nil {
+			return err
+		}
+		// The payments this gate was holding. They were priced when the
+		// obligation was created; activation only clears the sending gate and
+		// preserves the immutable amount and rate audit fields. Never back to
+		// silence.
+		held, err := heldForMechanism(ctx, tx, out.ContextID)
+		if err != nil {
+			return err
+		}
+		for _, in := range held {
+			// Activation only clears the mechanism gate. The instruction was
+			// already priced when the obligation was created, so preserve its
+			// amount, rate link, version and pricing instant exactly. Calling
+			// amountFor here would silently reprice an old obligation after a
+			// later rate publication.
+			in = releaseMechanismHeld(in)
+			if err := releaseHeldInstructionAndEnqueue(ctx, tx, in); err != nil {
+				return err
+			}
+			released = append(released, in.ID)
+		}
+		return nil
+	}()
+	return out, conds, released, err
+}
+
 // activate is f2_8 and f2_10: the last gate, and what it opened. On success
 // the mechanism goes ACTIVE and every instruction this mechanism was holding
 // under mechanism_not_live is released and sent — activation is what lets
@@ -561,59 +675,9 @@ func (f *fundersHandlers) activate(w http.ResponseWriter, r *http.Request) {
 	var conds []activationCondition
 	released := []string{}
 	err := f.d.DB.InTx(r.Context(), func(tx store.Querier) error {
-		m, err := getMechanism(r.Context(), tx, r.PathValue("id"), true)
-		if err != nil {
-			return err
-		}
-		records, err := mechanismRecords(r.Context(), tx, m.ID)
-		if err != nil {
-			return err
-		}
-		tests, err := testDisbursements(r.Context(), tx, m.ID)
-		if err != nil {
-			return err
-		}
-		wasActive := m.State == mechanismActive
-		out, conds, err = activateMechanism(m, factsFor(records, tests), activator, f.d.Clock.Now())
-		if err != nil {
-			return err
-		}
-		if wasActive {
-			return nil // idempotent; the held sweep already ran when it went live
-		}
-		if err := markMechanismActive(r.Context(), tx, out); err != nil {
-			return err
-		}
-		// The payments this gate was holding. Each is re-priced at its own
-		// releasedAt — the version in force at the relevant time — and either
-		// released to the rail or moved onto its next honest hold reason.
-		// Never back to silence.
-		held, err := heldForMechanism(r.Context(), tx, out.ContextID)
-		if err != nil {
-			return err
-		}
-		for _, in := range held {
-			amount, currency, hold := f.h.amountFor(r.Context(), in.UnitID, in.ReleasedAt)
-			if hold != nil {
-				in.Held = hold
-				in.State = "HELD"
-				in.AmountMinor, in.Currency = 0, ""
-			} else {
-				in.Held = nil
-				in.State = "RELEASED"
-				in.AmountMinor, in.Currency = amount, currency
-			}
-			if err := releaseHeldInstruction(r.Context(), tx, in); err != nil {
-				return err
-			}
-			if in.State == "RELEASED" {
-				if err := store.Enqueue(r.Context(), tx, topicRailSend, in); err != nil {
-					return err
-				}
-				released = append(released, in.ID)
-			}
-		}
-		return nil
+		var err error
+		out, conds, released, err = activateMechanismAndRelease(r.Context(), tx, r.PathValue("id"), activator, f.d.Clock.Now())
+		return err
 	})
 	switch {
 	case errors.Is(err, errMechanismGatesUnmet):

@@ -98,8 +98,9 @@ func TestAnUnattributedRowBecomesTheClaimOfTheWorkerWhoDidTheWork(t *testing.T) 
 	// Gone from the queue, and it names who resolved it. A resolution with no
 	// named resolver is the same shape of unaccountable as a held payment with
 	// no owner.
-	if res.ResolvedBy != fixtures.CustodianID {
-		t.Errorf("resolved by %q, want the custodian", res.ResolvedBy)
+	wantResolver := w.w.ResolveID(fixtures.CustodianID)
+	if res.ResolvedBy != wantResolver {
+		t.Errorf("resolved by %q, want the custodian runtime id %q", res.ResolvedBy, wantResolver)
 	}
 	for _, open := range w.openQueue(t) {
 		if open == rowID {
@@ -226,7 +227,8 @@ func (w *world) openQueue(t *testing.T) []string {
 			ID string `json:"id"`
 		} `json:"unclear"`
 	}
-	if err := w.Evidence.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/unclear", &queue); err != nil {
+	if err := w.Evidence.As(w.login(t, fixtures.CustodianID)).Get(w.ctx,
+		"/v1/unclear?contextId="+url.QueryEscape(fixtures.ProjectID), &queue); err != nil {
 		t.Fatalf("list the unclear queue: %v", err)
 	}
 	ids := make([]string, 0, len(queue.Unclear))
@@ -249,7 +251,9 @@ func (w *world) withdrawEnrolmentConsent(t *testing.T, partyID string) {
 	var consent struct {
 		ID string `json:"id"`
 	}
-	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, partyID)).Post(w.ctx, path, nil, &consent); err != nil {
+	c := w.assist(t, fixtures.SupervisorID, partyID)
+	c.IdempotencyKey = harness.IdempotencyKey("unclear-consent", t.Name(), runID, partyID, fixtures.ProjectID)
+	if err := w.Parties.As(c).Post(w.ctx, path, nil, &consent); err != nil {
 		t.Fatalf("record consent: %v", err)
 	}
 	if err := w.withdraw(t, consent.ID, partyID,

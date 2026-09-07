@@ -70,6 +70,10 @@ type world struct {
 	w    *fixtures.World
 	ctx  context.Context
 	oidc *harness.OIDC
+	// supervisor is retained after seeding so private claim reads can be
+	// scoped to the worker named by the claim without sending an anonymous
+	// request. The token is minted by the test issuer like every other caller.
+	supervisor harness.Caller
 }
 
 func setup(t *testing.T) *world {
@@ -95,13 +99,75 @@ func setup(t *testing.T) *world {
 	if err != nil {
 		t.Fatalf("seed the fixture world: %v", err)
 	}
-	return &world{Stack: s, w: w, ctx: ctx, oidc: oidc}
+	out := &world{Stack: s, w: w, ctx: ctx, oidc: oidc}
+	out.supervisor = out.login(t, fixtures.SupervisorID)
+	// Batch ingestion validates that the declared source is registered before
+	// accepting a row. Keep this fixture setup on the same public source-owner
+	// path as production and tolerate a coherent replay when a stack is reused.
+	code, body, err := s.Evidence.As(out.supervisor).Status(ctx, http.MethodPost, "/v1/sources", map[string]any{
+		"adapterRef":     "csv-batch@1",
+		"contextId":      fixtures.ProjectID,
+		"systemRef":      "dhis2-riverside",
+		"sourceClass":    "programme-system",
+		"captureMethod":  "digital-capture",
+		"sourceExposure": "signed-batch",
+		"expectedEvery":  "24h",
+		"ownerPartyId":   fixtures.SupervisorID,
+	})
+	if err != nil {
+		t.Fatalf("register the batch source: %v", err)
+	}
+	if code != http.StatusCreated && code != http.StatusConflict {
+		t.Fatalf("register the batch source: HTTP %d: %s", code, body)
+	}
+	if code == http.StatusConflict {
+		var sources struct {
+			Sources []struct {
+				AdapterRef string `json:"adapterRef"`
+				SystemRef  string `json:"systemRef"`
+			} `json:"sources"`
+		}
+		if err := s.Evidence.As(out.supervisor).Get(ctx,
+			"/v1/sources?contextId="+url.QueryEscape(fixtures.ProjectID), &sources); err != nil {
+			t.Fatalf("read the existing batch source after conflict: %v", err)
+		}
+		found := false
+		for _, source := range sources.Sources {
+			if source.SystemRef == "dhis2-riverside" && source.AdapterRef == "csv-batch@1" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("batch source conflict did not identify a coherent dhis2-riverside registration")
+		}
+	}
+
+	// The canonical fixture roster is intentionally created without consent.
+	// Scenario setup captures fresh, project-scoped consent through the public
+	// voice route so positive ingestion tests exercise the same gate as a real
+	// programme. Tests about missing or withdrawn consent create separate
+	// parties and therefore cannot be masked by this setup.
+	for _, party := range []string{fixtures.WorkerAID, fixtures.WorkerBID, fixtures.WorkerCID} {
+		if out.consentState(t, party) == "GRANTED" {
+			continue
+		}
+		c := out.assist(t, fixtures.SupervisorID, party)
+		c.IdempotencyKey = harness.IdempotencyKey("scenario-consent", t.Name(), runID, party, fixtures.ProjectID)
+		path := fmt.Sprintf("/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
+			party, url.QueryEscape("hold and fetch evidence of my work"),
+			url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(fixtures.ProjectID))
+		if err := s.Parties.As(c).PostRaw(ctx, path, "audio/ogg", fixtures.ConsentOgg, nil); err != nil {
+			t.Fatalf("record fixture consent for %s: %v", party, err)
+		}
+	}
+	return out
 }
 
 // submit sends a batch as the supervisor, from the programme's own system.
 func (w *world) submit(t *testing.T, csv []byte) ingestResult {
 	t.Helper()
-	path := fmt.Sprintf("/v1/batches?contextId=%s&definitionId=%s&submittedBy=%s"+
+	path := fmt.Sprintf("/v1/batches?contextId=%s&definitionId=%s&definitionVersion=1&submittedBy=%s"+
 		"&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch"+
 		"&systemRef=dhis2-riverside",
 		fixtures.ProjectID, fixtures.DefinitionID, fixtures.SupervisorID)
@@ -131,6 +197,19 @@ type ingestResult struct {
 	} `json:"unclear"`
 }
 
+// onlyClaim turns a single-row scenario's shape assumption into a useful test
+// failure. Intake can legitimately return an unclear row when a fixture lacks
+// consent or another prerequisite; indexing first would hide that contract
+// failure behind a panic.
+func onlyClaim(t *testing.T, result ingestResult) string {
+	t.Helper()
+	if len(result.ClaimIDs) != 1 {
+		t.Fatalf("expected exactly one claim, got %d accepted rows and %d claims; unclear=%+v",
+			result.Batch.RowsAccepted, len(result.ClaimIDs), result.Unclear)
+	}
+	return result.ClaimIDs[0]
+}
+
 // eventually polls for something the outbox relay has to carry across a service
 // boundary. Polling rather than sleeping, and with the last error reported —
 // "eventually failed" with no cause costs twenty minutes.
@@ -152,7 +231,11 @@ func eventually(t *testing.T, what string, within time.Duration, fn func() error
 
 func (w *world) window(claimID string) (winView, error) {
 	var v winView
-	err := w.Confirmation.Get(w.ctx, "/v1/windows/"+claimID, &v)
+	caller, err := w.callerForClaim(claimID)
+	if err != nil {
+		return v, err
+	}
+	err = w.Confirmation.As(caller).Get(w.ctx, "/v1/windows/"+claimID, &v)
 	return v, err
 }
 
@@ -166,6 +249,7 @@ type winView struct {
 	ExitRoute         *string    `json:"exitRoute"`
 	Reach             *string    `json:"reach"`
 	PaymentReleasedAt *time.Time `json:"paymentReleasedAt"`
+	ReviewStartedAt   *time.Time `json:"reviewStartedAt"`
 	CredentialID      *string    `json:"credentialId"`
 }
 
@@ -184,8 +268,43 @@ type instructionView struct {
 
 func (w *world) instruction(claimID string) (instructionView, error) {
 	var v instructionView
-	err := w.Payments.Get(w.ctx, "/v1/instructions/by-claim/"+claimID, &v)
+	caller, err := w.callerForClaim(claimID)
+	if err != nil {
+		return v, err
+	}
+	err = w.Payments.As(caller).Get(w.ctx, "/v1/instructions/by-claim/"+claimID, &v)
 	return v, err
+}
+
+// acknowledgeClaim proves the worker reached the review link before a test
+// asks the seven-day sweeper to act. Provider acceptance is not reach; the
+// harness uses the worker's own authenticated caller at the public endpoint.
+func (w *world) acknowledgeClaim(t *testing.T, claimID string) {
+	t.Helper()
+	win, err := w.window(claimID)
+	if err != nil {
+		t.Fatalf("read window before acknowledgement: %v", err)
+	}
+	if err := w.Stack.AcknowledgeNotification(w.ctx, claimID, w.login(t, win.PartyID)); err != nil {
+		t.Fatalf("worker acknowledgement for %s: %v", claimID, err)
+	}
+}
+
+// callerForClaim derives the worker scope from the stored claim. The
+// supervisor is authorized to read project evidence and may act for the
+// worker in the same project; the request therefore carries both a real
+// bearer and an explicit scope.
+func (w *world) callerForClaim(claimID string) (harness.Caller, error) {
+	var claim schema.Claim
+	if err := w.Evidence.As(w.supervisor).Get(w.ctx, "/v1/claims/"+url.PathEscape(claimID), &claim); err != nil {
+		return harness.Caller{}, err
+	}
+	if claim.PartyID == "" {
+		return harness.Caller{}, fmt.Errorf("claim %s has no worker party", claimID)
+	}
+	caller := w.supervisor
+	caller.OnBehalfOf = claim.PartyID
+	return caller, nil
 }
 
 type verdict struct {
@@ -202,13 +321,25 @@ type verdict struct {
 
 func (w *world) credential(t *testing.T, credID string) map[string]any {
 	t.Helper()
-	var out struct {
-		Credential map[string]any `json:"credential"`
+	// Credential-by-id is subject-scoped. Locate the document through the
+	// worker wallets using authenticated callers; this keeps the helper from
+	// turning a private credential endpoint into an operator-wide read.
+	for _, party := range []string{fixtures.WorkerAID, fixtures.WorkerBID, fixtures.WorkerCID} {
+		var out struct {
+			Credentials []map[string]any `json:"credentials"`
+		}
+		if err := w.Verification.As(w.login(t, party)).Get(w.ctx,
+			"/v1/credentials?partyId="+url.QueryEscape(party), &out); err != nil {
+			continue
+		}
+		for _, credential := range out.Credentials {
+			if id, _ := credential["id"].(string); id == credID {
+				return credential
+			}
+		}
 	}
-	if err := w.Verification.Get(w.ctx, "/v1/credentials/"+credID, &out); err != nil {
-		t.Fatalf("read credential %s: %v", credID, err)
-	}
-	return out.Credential
+	t.Fatalf("credential %s was not present in an authenticated worker wallet", credID)
+	return nil
 }
 
 // contestStanding mirrors the verification service's. Declared here rather than
@@ -225,7 +356,7 @@ type contestStanding struct {
 // answer those: a field with no Go name is still in the JSON.
 func (w *world) verifyRaw(t *testing.T, cred map[string]any) string {
 	t.Helper()
-	_, body, err := w.Verification.Status(w.ctx, "POST", "/v1/verify", map[string]any{
+	_, body, err := w.Verification.As(w.login(t, fixtures.OrgID)).Status(w.ctx, "POST", "/v1/verify", map[string]any{
 		"credential":         cred,
 		"requestedByPartyId": fixtures.OrgID,
 		"purpose":            "checking a work record",
@@ -239,7 +370,7 @@ func (w *world) verifyRaw(t *testing.T, cred map[string]any) string {
 func (w *world) verify(t *testing.T, cred map[string]any) verdict {
 	t.Helper()
 	var v verdict
-	if err := w.Verification.Post(w.ctx, "/v1/verify", map[string]any{
+	if err := w.Verification.As(w.login(t, fixtures.OrgID)).Post(w.ctx, "/v1/verify", map[string]any{
 		"credential":         cred,
 		"requestedByPartyId": fixtures.OrgID,
 		"purpose":            "checking a work record",
@@ -266,31 +397,43 @@ func TestARecordBecomesACredentialAndAPayment(t *testing.T) {
 		t.Fatalf("expected one claim from one row, got %d accepted and %d claims: %+v",
 			result.Batch.RowsAccepted, len(result.ClaimIDs), result.Unclear)
 	}
-	claimID := result.ClaimIDs[0]
+	claimID := onlyClaim(t, result)
 
-	// W2 used to be proven here: the worker was told before it counted, the
-	// window and the notification committing together. Notifications are
-	// dropped (#150) — nothing is sent, notified_at stays unset, the reach
-	// column stays NULL — so this test now records the gap instead of proving
-	// the promise: the window must still open and run its full seven days,
-	// and W2 is an open wound until a channel exists again.
+	// Provider acceptance is recorded separately from worker reach. The
+	// notification transport must accept the message before this window can be
+	// acknowledged; acceptance alone must not be treated as a worker response.
 	var win winView
-	eventually(t, "the confirmation window opens", 15*time.Second, func() error {
+	eventually(t, "the confirmation window and notification open", 15*time.Second, func() error {
 		var err error
 		win, err = w.window(claimID)
-		return err
+		if err != nil {
+			return err
+		}
+		if win.NotifiedAt == nil {
+			return fmt.Errorf("notification is not accepted yet")
+		}
+		return nil
 	})
-	if win.NotifiedAt != nil {
-		t.Error("a window claims the worker was notified, but no notification channel exists (#150); this is a lie in the record")
-	}
-	// Measured from when the window actually opened, not from the fixture
-	// epoch. The clock a stack runs on is driveable but it ticks, so the epoch
-	// is where the seeder put it a moment ago rather than the instant this
-	// window was created — and the invariant was never "seven days from the
-	// epoch" anyway. It is seven days from the record reaching the worker.
 	if got := win.ClosesAt.Sub(win.OpenedAt); got != window {
-		t.Errorf("the window is %s long, want %s (T=7, §14)", got, window)
+		t.Errorf("the initial window is %s long, want %s (T=7, §14)", got, window)
 	}
+	worker := w.login(t, fixtures.WorkerAID)
+	if err := w.AcknowledgeNotification(w.ctx, claimID, worker); err != nil {
+		t.Fatalf("worker notification acknowledgement: %v", err)
+	}
+	eventually(t, "the worker reach acknowledgement", 15*time.Second, func() error {
+		win, err = w.window(claimID)
+		if err != nil {
+			return err
+		}
+		if win.Reach == nil || *win.Reach != "reached" || win.ReviewStartedAt == nil {
+			return fmt.Errorf("reach is %v, review started at %v", win.Reach, win.ReviewStartedAt)
+		}
+		if got := win.ClosesAt.Sub(*win.ReviewStartedAt); got != window {
+			return fmt.Errorf("the acknowledged review window is %s long, want %s", got, window)
+		}
+		return nil
+	})
 
 	// The worker confirms.
 	var exit struct {
@@ -308,7 +451,7 @@ func TestARecordBecomesACredentialAndAPayment(t *testing.T) {
 	}
 
 	var claim schema.Claim
-	if err := w.Evidence.Get(w.ctx, "/v1/claims/"+claimID, &claim); err != nil {
+	if err := w.Evidence.As(w.supervisor).Get(w.ctx, "/v1/claims/"+claimID, &claim); err != nil {
 		t.Fatal(err)
 	}
 	if claim.State != schema.ClaimStateACCEPTED {
@@ -394,11 +537,12 @@ func TestSilenceStillPaysAndStaysDisputable(t *testing.T) {
 
 	phone, _ := harness.PhoneOf(w.w, fixtures.WorkerBID)
 	result := w.submit(t, batch(row(phone, 5, "HH-002")))
-	claimID := result.ClaimIDs[0]
+	claimID := onlyClaim(t, result)
 	eventually(t, "the window opens", 15*time.Second, func() error {
 		_, err := w.window(claimID)
 		return err
 	})
+	w.acknowledgeClaim(t, claimID)
 
 	// Seven days, in milliseconds. This is what the injectable clock is for.
 	if err := w.Advance(w.ctx, window+time.Minute); err != nil {
@@ -408,7 +552,8 @@ func TestSilenceStillPaysAndStaysDisputable(t *testing.T) {
 		Due           int      `json:"due"`
 		AutoConfirmed []string `json:"autoConfirmed"`
 	}
-	if err := w.Confirmation.Post(w.ctx, "/v1/sweep", nil, &swept); err != nil {
+	if err := w.Confirmation.As(w.login(t, fixtures.CustodianID)).Post(w.ctx,
+		"/v1/sweep?contextId="+url.QueryEscape(fixtures.ProjectID), nil, &swept); err != nil {
 		t.Fatalf("sweep: %v", err)
 	}
 	if len(swept.AutoConfirmed) == 0 {
@@ -422,9 +567,17 @@ func TestSilenceStillPaysAndStaysDisputable(t *testing.T) {
 	if win.ExitRoute == nil || *win.ExitRoute != "auto" {
 		t.Fatalf("exit route is %v, want auto", win.ExitRoute)
 	}
-	if win.PaymentReleasedAt == nil {
-		t.Error("an auto-confirmed window released no payment (W4)")
-	}
+	eventually(t, "the auto-confirmed window records payment release", 15*time.Second, func() error {
+		var err error
+		win, err = w.window(claimID)
+		if err != nil {
+			return err
+		}
+		if win.PaymentReleasedAt == nil {
+			return fmt.Errorf("the auto-confirmed window has not recorded payment release")
+		}
+		return nil
+	})
 
 	var in instructionView
 	eventually(t, "the auto-confirmed payment is released", 15*time.Second, func() error {
@@ -445,7 +598,7 @@ func TestSilenceStillPaysAndStaysDisputable(t *testing.T) {
 		t.Fatalf("disputing after auto-confirmation was refused: %v", err)
 	}
 	var claim schema.Claim
-	if err := w.Evidence.Get(w.ctx, "/v1/claims/"+claimID, &claim); err != nil {
+	if err := w.Evidence.As(w.supervisor).Get(w.ctx, "/v1/claims/"+claimID, &claim); err != nil {
 		t.Fatal(err)
 	}
 	if claim.State != schema.ClaimStateDISPUTED {
@@ -459,7 +612,7 @@ func TestADisputeStillReleasesPayment(t *testing.T) {
 
 	phone, _ := harness.PhoneOf(w.w, fixtures.WorkerAID)
 	result := w.submit(t, batch(row(phone, 9, "HH-003")))
-	claimID := result.ClaimIDs[0]
+	claimID := onlyClaim(t, result)
 	eventually(t, "the window opens", 15*time.Second, func() error {
 		_, err := w.window(claimID)
 		return err
@@ -489,11 +642,11 @@ func TestADisputeStillReleasesPayment(t *testing.T) {
 	// W5: the unit survives. The record that work happened outlives every
 	// argument about who did it.
 	var claim schema.Claim
-	if err := w.Evidence.Get(w.ctx, "/v1/claims/"+claimID, &claim); err != nil {
+	if err := w.Evidence.As(w.supervisor).Get(w.ctx, "/v1/claims/"+claimID, &claim); err != nil {
 		t.Fatal(err)
 	}
 	var unit schema.Unit
-	if err := w.Evidence.Get(w.ctx, "/v1/units/"+claim.UnitID, &unit); err != nil {
+	if err := w.Evidence.As(w.supervisor).Get(w.ctx, "/v1/units/"+claim.UnitID, &unit); err != nil {
 		t.Fatalf("the unit is gone after its claim was disputed (W5): %v", err)
 	}
 	if unit.Outcome.Value != 9 {
@@ -520,8 +673,11 @@ func TestAnUnattributableRowGoesToTheUnclearQueue(t *testing.T) {
 		row("+15550199999", 7, "HH-011"), // nobody
 	))
 
-	if result.Batch.RowsAccepted != 1 {
-		t.Errorf("accepted %d rows, want 1", result.Batch.RowsAccepted)
+	// Accepted counts valid evidence units, including a unit whose worker is
+	// still unresolved. Claims are reported separately; a sound row must not
+	// disappear merely because identity matching needs human work.
+	if result.Batch.RowsAccepted != 2 {
+		t.Errorf("accepted %d rows, want 2 valid units", result.Batch.RowsAccepted)
 	}
 	if result.Batch.RowsUnclear != 1 {
 		t.Fatalf("unclear %d rows, want 1", result.Batch.RowsUnclear)
@@ -537,7 +693,8 @@ func TestAnUnattributableRowGoesToTheUnclearQueue(t *testing.T) {
 	var queue struct {
 		Count int `json:"count"`
 	}
-	if err := w.Evidence.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/unclear", &queue); err != nil {
+	if err := w.Evidence.As(w.login(t, fixtures.CustodianID)).Get(w.ctx,
+		"/v1/unclear?contextId="+url.QueryEscape(fixtures.ProjectID), &queue); err != nil {
 		t.Fatal(err)
 	}
 	if queue.Count == 0 {
@@ -553,7 +710,7 @@ func TestReassessingASourceDowngradesAnUnchangedCredential(t *testing.T) {
 
 	phone, _ := harness.PhoneOf(w.w, fixtures.WorkerAID)
 	result := w.submit(t, batch(row(phone, 3, "HH-020")))
-	claimID := result.ClaimIDs[0]
+	claimID := onlyClaim(t, result)
 	eventually(t, "the window opens", 15*time.Second, func() error {
 		_, err := w.window(claimID)
 		return err
@@ -578,15 +735,19 @@ func TestReassessingASourceDowngradesAnUnchangedCredential(t *testing.T) {
 	// An assessment left behind would make the next run start already
 	// downgraded, and the run after that would "pass" while proving nothing.
 	t.Cleanup(func() {
-		code, _, err := w.Verification.As(w.login(t, fixtures.OrgID)).Status(w.ctx, "DELETE",
-			"/v1/source-assessments/"+url.PathEscape("csv-batch@1"), nil)
+		code, _, err := w.Verification.As(w.login(t, fixtures.SupervisorID)).Status(w.ctx, "DELETE",
+			"/v1/source-assessments/"+url.PathEscape("csv-batch@1")+
+				"?contextId="+url.QueryEscape(fixtures.ProjectID)+
+				"&systemRef="+url.QueryEscape("dhis2-riverside"), nil)
 		if err != nil || code >= 300 {
 			t.Errorf("could not lift the source assessment: %d %v", code, err)
 		}
 	})
-	if err := w.Verification.As(w.login(t, fixtures.OrgID)).Post(w.ctx, "/v1/source-assessments", map[string]any{
+	if err := w.Verification.As(w.login(t, fixtures.SupervisorID)).Post(w.ctx, "/v1/source-assessments", map[string]any{
 		"adapterRef":        "csv-batch@1",
-		"maxTier":           1,
+		"contextId":         fixtures.ProjectID,
+		"systemRef":         "dhis2-riverside",
+		"maxTier":           3,
 		"reason":            "under investigation after a bulk edit",
 		"assessedByPartyId": fixtures.OrgID,
 	}, nil); err != nil {
@@ -595,10 +756,10 @@ func TestReassessingASourceDowngradesAnUnchangedCredential(t *testing.T) {
 
 	after := w.verify(t, cred) // the same bytes, unchanged
 	if after.Tier == nil {
-		t.Fatal("the credential stopped verifying entirely after a downgrade to tier 1")
+		t.Fatal("the credential stopped verifying entirely after the source reassessment")
 	}
-	if *after.Tier >= *before.Tier {
-		t.Errorf("tier went from %d to %d; re-assessing the source should have lowered it",
+	if *after.Tier != 3 || *after.Tier <= *before.Tier {
+		t.Errorf("tier went from %d to %d; reference numbering should weaken the verdict to tier 3",
 			*before.Tier, *after.Tier)
 	}
 	if !strings.Contains(strings.Join(after.TierReason, " "), "under investigation") {
@@ -613,7 +774,7 @@ func TestARevokedCredentialStopsVerifying(t *testing.T) {
 
 	phone, _ := harness.PhoneOf(w.w, fixtures.WorkerAID)
 	result := w.submit(t, batch(row(phone, 6, "HH-030")))
-	claimID := result.ClaimIDs[0]
+	claimID := onlyClaim(t, result)
 	eventually(t, "the window opens", 15*time.Second, func() error {
 		_, err := w.window(claimID)
 		return err
@@ -631,8 +792,9 @@ func TestARevokedCredentialStopsVerifying(t *testing.T) {
 	if v := w.verify(t, cred); !v.Valid {
 		t.Fatalf("not valid before revocation: %v", v.Reasons)
 	}
-	if err := w.Verification.As(w.login(t, fixtures.OrgID)).Post(w.ctx,
-		"/v1/credentials/"+exit.Credential.ID+"/revoke", nil, nil); err != nil {
+	if err := w.Verification.As(w.login(t, fixtures.WorkerAID)).Post(w.ctx,
+		"/v1/credentials/"+exit.Credential.ID+"/revoke?partyId="+
+			url.QueryEscape(fixtures.WorkerAID), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	after := w.verify(t, cred)
@@ -660,10 +822,10 @@ func TestNoWindowExitedWithoutReleasingPayment(t *testing.T) {
 		}
 	} else {
 		eventually(t, "the window opens", 15*time.Second, func() error {
-			_, err := w.window(result.ClaimIDs[0])
+			_, err := w.window(onlyClaim(t, result))
 			return err
 		})
-		if err := w.confirmClaim(t, result.ClaimIDs[0], nil, nil); err != nil {
+		if err := w.confirmClaim(t, onlyClaim(t, result), nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -672,12 +834,17 @@ func TestNoWindowExitedWithoutReleasingPayment(t *testing.T) {
 		Count   int       `json:"count"`
 		Windows []winView `json:"windows"`
 	}
-	if err := w.Confirmation.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/unreleased", &out); err != nil {
-		t.Fatal(err)
-	}
-	if out.Count != 0 {
-		t.Errorf("%d windows exited without releasing payment (W4): %+v", out.Count, out.Windows)
-	}
+	custodian := w.login(t, fixtures.CustodianID)
+	eventually(t, "all exited windows have released payment", 15*time.Second, func() error {
+		if err := w.Confirmation.As(custodian).Get(w.ctx,
+			"/v1/unreleased?contextId="+url.QueryEscape(fixtures.ProjectID), &out); err != nil {
+			return err
+		}
+		if out.Count != 0 {
+			return fmt.Errorf("%d windows exited without releasing payment (W4): %+v", out.Count, out.Windows)
+		}
+		return nil
+	})
 }
 
 // A source system retrying after a client-side timeout is the ordinary case,
@@ -725,7 +892,7 @@ func TestResubmittingTheSameBatchDoesNotPayTwice(t *testing.T) {
 	// rather than by scanning every instruction for a matching amount — a
 	// stack that has run the suite before is full of legitimate instructions
 	// for the same eight bednets, and counting those proves nothing.
-	claimID := first.ClaimIDs[0]
+	claimID := onlyClaim(t, first)
 	eventually(t, "the window opens", 15*time.Second, func() error {
 		_, err := w.window(claimID)
 		return err
@@ -756,7 +923,7 @@ func TestAZeroOutcomeIsHeldWithAReasonRatherThanPaidAsZero(t *testing.T) {
 		t.Fatalf("a zero-outcome row should still be a claim, got %d: %+v",
 			len(result.ClaimIDs), result.Unclear)
 	}
-	claimID := result.ClaimIDs[0]
+	claimID := onlyClaim(t, result)
 	eventually(t, "the window opens", 15*time.Second, func() error {
 		_, err := w.window(claimID)
 		return err
@@ -802,7 +969,8 @@ func TestAnUnmatchedNationalIdentifierIsNeverStoredRaw(t *testing.T) {
 			Record map[string]any `json:"record"`
 		} `json:"unclear"`
 	}
-	if err := w.Evidence.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/unclear", &queue); err != nil {
+	if err := w.Evidence.As(w.login(t, fixtures.CustodianID)).Get(w.ctx,
+		"/v1/unclear?contextId="+url.QueryEscape(fixtures.ProjectID), &queue); err != nil {
 		t.Fatal(err)
 	}
 	for _, u := range queue.Unclear {
@@ -820,14 +988,10 @@ func TestAnUnmatchedNationalIdentifierIsNeverStoredRaw(t *testing.T) {
 // fails she is not reached at all — and a record must never be auto-confirmed
 // against a worker during a silence the system produced.
 //
-// Notifications are dropped (#150), which changes what this test can hold.
-// The reach machinery — record whether the worker was told, refuse to
-// auto-confirm past a recorded failure — is dormant: nothing records reach,
-// so it stays NULL and the sweep treats the window like any other. What
-// survives is the fourth T=7 exit, supervisor-assisted: a person taking
-// responsibility rather than a timer, and it must release payment like every
-// other exit. Until this test that route was unexercised, which is exactly
-// how a route that does not release payment survives to a pilot.
+// Provider acceptance is not worker reach. This test leaves Chandra's review
+// link unacknowledged, so the window remains unreached and cannot be silently
+// auto-confirmed at T=7. The supervisor-assisted route remains the explicit
+// human decision for this case.
 func TestAnUnreachedWorkerIsNotAutoConfirmedAgainst(t *testing.T) {
 	w := setup(t)
 
@@ -837,32 +1001,40 @@ func TestAnUnreachedWorkerIsNotAutoConfirmedAgainst(t *testing.T) {
 		map[string]any{"rosterId": "RIV-0003", "contextId": fixtures.ProjectID}, nil); err != nil {
 		t.Fatal(err)
 	}
-	csv := []byte("activity,outcome_value,outcome_unit,worker_id_kind,worker_id,period_start,household_id,source_record_ref\n" +
-		"bednet-distribution,4,bednets-distributed,roster-id,RIV-0003,2026-03-02,HH-070," + runID + "-roster\n")
+	csv := []byte("activity,outcome_value,outcome_unit,worker_id_kind,worker_id,period_start,household_id,beneficiary_count,source_record_ref\n" +
+		"bednet-distribution,4,bednets-distributed,roster-id,RIV-0003,2026-03-02,HH-070,4," + runID + "-roster\n")
 
 	result := w.submit(t, csv)
 	if len(result.ClaimIDs) != 1 {
 		t.Fatalf("the roster id should have matched Worker C, got %+v", result.Unclear)
 	}
-	claimID := result.ClaimIDs[0]
+	claimID := onlyClaim(t, result)
 
 	var win winView
-	eventually(t, "the confirmation window opens", 15*time.Second, func() error {
+	eventually(t, "the confirmation window and notification open", 15*time.Second, func() error {
 		var err error
 		win, err = w.window(claimID)
-		return err
+		if err != nil {
+			return err
+		}
+		if win.NotifiedAt == nil {
+			return fmt.Errorf("notification is not accepted yet")
+		}
+		return nil
 	})
-	// With no notification channel, no reach verdict may exist. A recorded
-	// verdict here would mean something claimed to have told Worker C, and
-	// nothing can have (#150).
+	if win.NotifiedAt == nil {
+		t.Fatal("the notification provider did not accept Chandra's review message")
+	}
+	// The provider accepted the message, but no worker acknowledgement was
+	// submitted. A reached verdict here would confuse delivery with reach.
 	if win.Reach != nil {
-		t.Fatalf("reach is %q with no notification channel; nothing can have told the worker", *win.Reach)
+		t.Fatalf("reach is %q without a worker acknowledgement", *win.Reach)
 	}
 
 	// The supervisor-assisted route: a person taking responsibility rather
 	// than a timer. It must release payment like every other exit.
-	if err := w.Confirmation.Post(w.ctx, "/v1/claims/"+claimID+"/assist",
-		map[string]any{"assistedByPartyId": fixtures.SupervisorID}, nil); err != nil {
+	if err := w.Confirmation.As(w.assist(t, fixtures.SupervisorID, fixtures.WorkerCID)).Post(w.ctx,
+		"/v1/claims/"+claimID+"/assist", map[string]any{"assistedByPartyId": fixtures.SupervisorID}, nil); err != nil {
 		t.Fatalf("assisted confirmation: %v", err)
 	}
 
@@ -909,11 +1081,13 @@ func TestWithdrawingConsentStopsNewEvidenceAndKeepsTheOld(t *testing.T) {
 	var consent struct {
 		ID string `json:"id"`
 	}
-	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).PostRaw(w.ctx, fmt.Sprintf(
+	c := w.assist(t, fixtures.SupervisorID, party)
+	c.IdempotencyKey = harness.IdempotencyKey("spine-consent-withdraw", t.Name(), runID, party, fixtures.ProjectID)
+	if err := w.Parties.As(c).PostRaw(w.ctx, fmt.Sprintf(
 		"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 		party, url.QueryEscape("hold and fetch evidence of my work"),
 		url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(fixtures.ProjectID)),
-		"audio/ogg", []byte("a recording of the worker agreeing"), &consent); err != nil {
+		"audio/ogg", fixtures.ConsentOgg, &consent); err != nil {
 		t.Fatalf("record consent: %v", err)
 	}
 
@@ -921,7 +1095,7 @@ func TestWithdrawingConsentStopsNewEvidenceAndKeepsTheOld(t *testing.T) {
 	if before.Batch.RowsAccepted != 1 {
 		t.Fatalf("work done while consented was not accepted: %+v", before)
 	}
-	keptClaim := before.ClaimIDs[0]
+	keptClaim := onlyClaim(t, before)
 
 	// The worker asks to be left alone.
 	if err := w.withdraw(t, consent.ID, party,
@@ -935,13 +1109,13 @@ func TestWithdrawingConsentStopsNewEvidenceAndKeepsTheOld(t *testing.T) {
 	if after.Batch.RowsAccepted != 0 {
 		t.Fatalf("evidence was still recorded after consent was withdrawn: %+v", after)
 	}
-	if len(after.Unclear) != 1 || !strings.Contains(after.Unclear[0].Reason, "withdrawn") {
-		t.Fatalf("the refusal does not name consent as the reason: %+v", after.Unclear)
+	if len(after.Unclear) != 1 || after.Unclear[0].Kind != "consent-withdrawn" {
+		t.Fatalf("the refusal does not carry the consent-withdrawn kind: %+v", after.Unclear)
 	}
 
 	// And the work they already did is exactly where it was.
 	var claim schema.Claim
-	if err := w.Evidence.Get(w.ctx, "/v1/claims/"+keptClaim, &claim); err != nil {
+	if err := w.Evidence.As(w.supervisor).Get(w.ctx, "/v1/claims/"+keptClaim, &claim); err != nil {
 		t.Fatalf("the earlier claim is gone after withdrawal: %v", err)
 	}
 	if claim.ID != keptClaim {
@@ -971,11 +1145,13 @@ func TestWithdrawingConsentDoesNotCancelAWindowAlreadyOpen(t *testing.T) {
 	var consent struct {
 		ID string `json:"id"`
 	}
-	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).PostRaw(w.ctx, fmt.Sprintf(
+	c := w.assist(t, fixtures.SupervisorID, party)
+	c.IdempotencyKey = harness.IdempotencyKey("spine-consent-inflight", t.Name(), runID, party, fixtures.ProjectID)
+	if err := w.Parties.As(c).PostRaw(w.ctx, fmt.Sprintf(
 		"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 		party, url.QueryEscape("hold and fetch evidence of my work"),
 		url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(fixtures.ProjectID)),
-		"audio/ogg", []byte("a recording of the worker agreeing"), &consent); err != nil {
+		"audio/ogg", fixtures.ConsentOgg, &consent); err != nil {
 		t.Fatalf("record consent: %v", err)
 	}
 
@@ -983,7 +1159,7 @@ func TestWithdrawingConsentDoesNotCancelAWindowAlreadyOpen(t *testing.T) {
 	if len(result.ClaimIDs) != 1 {
 		t.Fatalf("want one claim, got %d", len(result.ClaimIDs))
 	}
-	claimID := result.ClaimIDs[0]
+	claimID := onlyClaim(t, result)
 	eventually(t, "the confirmation window opens", 15*time.Second, func() error {
 		_, err := w.window(claimID)
 		return err
@@ -1038,14 +1214,14 @@ func TestAWorkerWithoutAPhoneGetsACardThatCarriesTheWholeRecord(t *testing.T) {
 		map[string]any{"rosterId": "RIV-CARD", "contextId": fixtures.ProjectID}, nil); err != nil {
 		t.Fatal(err)
 	}
-	csv := []byte("activity,outcome_value,outcome_unit,worker_id_kind,worker_id,period_start,household_id,source_record_ref\n" +
-		"bednet-distribution,6,bednets-distributed,roster-id,RIV-CARD,2026-03-02,HH-card," + runID + "-card\n")
+	csv := []byte("activity,outcome_value,outcome_unit,worker_id_kind,worker_id,period_start,household_id,beneficiary_count,source_record_ref\n" +
+		"bednet-distribution,6,bednets-distributed,roster-id,RIV-CARD,2026-03-02,HH-card,6," + runID + "-card\n")
 
 	result := w.submit(t, csv)
 	if len(result.ClaimIDs) != 1 {
 		t.Fatalf("the roster id should have matched Worker C, got %+v", result.Unclear)
 	}
-	claimID := result.ClaimIDs[0]
+	claimID := onlyClaim(t, result)
 	eventually(t, "the confirmation window opens", 15*time.Second, func() error {
 		_, err := w.window(claimID)
 		return err
@@ -1062,8 +1238,9 @@ func TestAWorkerWithoutAPhoneGetsACardThatCarriesTheWholeRecord(t *testing.T) {
 	}
 
 	// The payload, as a print station would fetch it.
-	code, payload, err := w.Verification.Status(w.ctx, http.MethodGet,
-		"/v1/credentials/"+exit.Credential.ID+"/card?format=payload", nil)
+	code, payload, err := w.Verification.As(w.login(t, fixtures.WorkerCID)).Status(w.ctx, http.MethodGet,
+		"/v1/credentials/"+exit.Credential.ID+"/card?format=payload&partyId="+
+			url.QueryEscape(fixtures.WorkerCID), nil)
 	if err != nil || code != http.StatusOK {
 		t.Fatalf("fetch the card payload: %d %v", code, err)
 	}
@@ -1104,8 +1281,9 @@ func TestAWorkerWithoutAPhoneGetsACardThatCarriesTheWholeRecord(t *testing.T) {
 	}
 
 	// And the printable page, which is what actually reaches a printer.
-	code, page, err := w.Verification.Status(w.ctx, http.MethodGet,
-		"/v1/credentials/"+exit.Credential.ID+"/card", nil)
+	code, page, err := w.Verification.As(w.login(t, fixtures.WorkerCID)).Status(w.ctx, http.MethodGet,
+		"/v1/credentials/"+exit.Credential.ID+"/card?partyId="+
+			url.QueryEscape(fixtures.WorkerCID), nil)
 	if err != nil || code != http.StatusOK {
 		t.Fatalf("fetch the printable card: %d %v", code, err)
 	}
@@ -1130,11 +1308,12 @@ func TestAWorkerWithoutAPhoneGetsACardThatCarriesTheWholeRecord(t *testing.T) {
 func newWorkerWithPhone(t *testing.T, w *world, name, phone string) string {
 	t.Helper()
 	var created schema.Party
-	if err := w.Parties.Post(w.ctx, "/v1/parties", schema.Party{
+	if err := w.Parties.As(w.login(t, fixtures.OrgID)).Post(w.ctx, "/v1/parties", schema.Party{
 		Kind:        schema.PartyKindPerson,
 		DisplayName: name + " " + runID,
 		ContactRoutes: []schema.PartyContactRoutesItem{
 			{Kind: schema.PartyContactRoutesItemKindPhone, Value: phone},
+			{Kind: schema.PartyContactRoutesItemKindEmail, Value: "worker-" + runID + "@example.invalid"},
 		},
 	}, &created); err != nil {
 		t.Fatalf("create worker: %v", err)

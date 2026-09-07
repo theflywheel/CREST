@@ -1,11 +1,20 @@
 // J6 (W-2): registering a worker who cannot self-register — w2_1..w2_5,
 // ported 1:1 from apps/enrolment.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { actingFor, api, ApiError } from "@crest/api";
 import { Chip, KV, Sidecar, OpenNote, NextBlock } from "@crest/ui";
-import { useField, NO_PROJECT } from "../state";
-import { queue, setQueue, pushDone, useQueue, useDone, useOnline } from "../queue";
+import { useField, NO_PROJECT, short } from "../state";
+import { migrateLegacyQueue, queue, queueReady, setQueue, useLegacyQueue, usePendingConsent, useQueue, useDone, useOnline, useQueueStorage } from "../queue";
+
+function newOperationId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
+  throw new Error("This browser cannot create a secure offline operation identity");
+}
+
+function isIdempotencyError(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 409 && (e.code || "").startsWith("idempotency_");
+}
 
 export function Registrations() {
   const s = useField();
@@ -13,13 +22,50 @@ export function Registrations() {
   const q = useQueue();
   const done = useDone();
   const online = useOnline();
+  const storage = useQueueStorage();
+  const legacy = useLegacyQueue();
+  const [importing, setImporting] = useState(false);
   const sync = async (i: number) => {
-    const next = await s.syncQueued(i);
-    if (next) nav("/" + next);
+    try {
+      const next = await s.syncQueued(i);
+      if (next) nav("/" + next);
+    } catch (e) {
+      s.fail(e);
+    }
   };
   return (
     <>
       <div className="scr-title m">Today, through you</div>
+      {storage.error ? <Sidecar warm>{storage.error.message}</Sidecar> : !storage.ready ? <Sidecar>Opening secure offline storage…</Sidecar> : null}
+      {legacy.invalid ? (
+        <Sidecar warm>Older offline registrations remain on this device, but this version cannot read them. They were not deleted.</Sidecar>
+      ) : null}
+      {legacy.pending + legacy.completed > 0 ? (
+        <Sidecar warm>
+          <span>
+            This device has {legacy.pending} older registration(s) to sync and {legacy.completed} completed registration(s).
+            Choose the project they came from, then import them into protected storage.
+          </span>
+          <button
+            className="btn secondary"
+            id="import-legacy-queue"
+            disabled={importing || !storage.ready || !s.contextId}
+            onClick={async () => {
+              if (!s.me || !s.contextId) return;
+              setImporting(true);
+              try {
+                await migrateLegacyQueue(s.me.partyId, s.contextId);
+              } catch (e) {
+                s.fail(e);
+              } finally {
+                setImporting(false);
+              }
+            }}
+          >
+            {importing ? "Importing…" : `Import older records into ${short(s.contextId || "")}`}
+          </button>
+        </Sidecar>
+      ) : null}
       {/* w2_1's two counters, real: what this device did and what it holds. */}
       <div style={{ display: "flex", gap: 10 }}>
         <div className="card quiet" style={{ flex: 1 }}>
@@ -43,17 +89,17 @@ export function Registrations() {
             <div className="card quiet" key={r.at}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ font: "500 13.5px/1.3 Roboto" }}>{r.name}</span>
-                <Chip sm kind="warn">held on this device</Chip>
+                <Chip sm kind="warn">{r.state === "submitted" ? "consent to record" : "held on this device"}</Chip>
               </div>
               <span className="muted">
-                {r.phone ? "phone " + r.phone : "roster id " + (r.rosterId || "—")} · will sync when you have signal
+                {r.phone ? "phone " + r.phone : "roster id " + (r.rosterId || "—")} · actor {(r.actorId || "missing").slice(0, 10)}… · project {(r.contextId || "missing").slice(0, 10)}…
               </span>
-              {online ? (
-                <div className="btn-row" style={{ marginTop: 8 }}>
-                  <button className="btn secondary" data-sync={i} onClick={() => sync(i)}>
-                    Sync now
-                  </button>
-                </div>
+                {online ? (
+                  <div className="btn-row" style={{ marginTop: 8 }}>
+                    <button className="btn secondary" data-sync={i} onClick={() => sync(i)}>
+                      {r.state === "submitted" ? "Continue to consent" : "Sync now"}
+                    </button>
+                  </div>
               ) : null}
             </div>
           ))}
@@ -101,29 +147,54 @@ export function Register() {
   const [assertionRef, setAssertionRef] = useState("");
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    const reg: import("../queue").Reg = { name: name.trim(), phone: phone.trim(), rosterId: rosterId.trim(), at: Date.now() };
+    if (!s.me || !s.contextId) {
+      s.fail(new Error(!s.me ? "sign in before registering a worker" : NO_PROJECT));
+      return;
+    }
+    let reg: import("../queue").Reg = {
+      name: name.trim(),
+      phone: phone.trim(),
+      rosterId: rosterId.trim(),
+      at: Date.now(),
+      actorId: s.me.partyId,
+      contextId: s.contextId,
+      operationId: newOperationId(),
+    };
     if (!reg.phone && !reg.rosterId) {
       s.fail(new Error("give the pathway you have — a phone or a roster id; neither is a fallback for the other"));
       return;
     }
     s.setReg(reg);
     if (!online) {
-      setQueue([reg, ...queue()]);
-      nav("/registrations");
+      try {
+        await queueReady();
+        await setQueue([reg, ...queue()]);
+        nav("/registrations");
+      } catch (e) {
+        s.fail(e);
+      }
       return;
     }
     try {
+      // Persist the operation before sending it. If the browser crashes after
+      // the server commits, the same idempotency key can resume the next step.
+      await queueReady();
+      await setQueue([reg, ...queue().filter((item) => item.operationId !== reg.operationId)]);
       reg.partyId = await s.submitRegistration(reg);
-      pushDone(reg);
+      await s.retainSubmitted(reg);
+      if (reg.rosterId) {
+        reg = await s.addRosterId(reg);
+        await s.retainSubmitted(reg);
+      }
       s.setReg({ ...reg });
-      // The duplicate check: resolve by the contact route. 409 = a collision —
-      // a hold exists, and the custodian owns it. The agent never sees the
-      // other record.
+      // The duplicate check: resolve by the contact route. A collision is a
+      // hold owned by the custodian; idempotency conflicts stay errors and do
+      // not discard the held operation.
       if (reg.phone) {
         try {
           await api.get("parties", `/v1/resolve?kind=contact-route&value=${encodeURIComponent(reg.phone)}`);
         } catch (e) {
-          if (e instanceof ApiError && e.status === 409) {
+          if (e instanceof ApiError && e.status === 409 && !isIdempotencyError(e)) {
             nav("/hold");
             return;
           }
@@ -132,7 +203,7 @@ export function Register() {
       }
       nav("/consent");
     } catch (e) {
-      if (e instanceof ApiError && e.status === 409) {
+      if (e instanceof ApiError && e.status === 409 && !isIdempotencyError(e)) {
         nav("/hold");
         return;
       }
@@ -199,13 +270,71 @@ export function Consent() {
   const nav = useNavigate();
   const name = s.reg?.name || "the worker";
   const first = String(name).split(" ")[0];
-  const record = async () => {
-    try {
-      await s.recordConsent();
-      nav("/registered");
-    } catch (e) {
-      s.fail(e);
+  const saved = usePendingConsent(s.reg?.operationId);
+  const [phase, setPhase] = useState<"idle" | "recording" | "uploading">("idle");
+  const recorder = useRef<MediaRecorder | null>(null);
+  const stream = useRef<MediaStream | null>(null);
+  const chunks = useRef<Blob[]>([]);
+
+  const start = async () => {
+    if (phase !== "idle") return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      s.fail(new Error("This browser cannot record microphone audio. Use a secure, permission-enabled device."));
+      return;
     }
+    try {
+      const input = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const candidates = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/wav"];
+      const mime = candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate));
+      const r = new MediaRecorder(input, mime ? { mimeType: mime } : undefined);
+      chunks.current = [];
+      stream.current = input;
+      recorder.current = r;
+      r.ondataavailable = (event) => {
+        if (event.data.size) chunks.current.push(event.data);
+      };
+      r.onerror = () => {
+        input.getTracks().forEach((track) => track.stop());
+        recorder.current = null;
+        stream.current = null;
+        setPhase("idle");
+        s.fail(new Error("The microphone recording failed before it could be saved."));
+      };
+      r.onstop = () => {
+        const audio = new Blob(chunks.current, { type: r.mimeType || mime || "audio/ogg" });
+        input.getTracks().forEach((track) => track.stop());
+        recorder.current = null;
+        stream.current = null;
+        setPhase("uploading");
+        void s.recordConsent(audio).then(() => nav("/registered")).catch((e) => {
+          setPhase("idle");
+          s.fail(e);
+        });
+      };
+      r.start();
+      setPhase("recording");
+    } catch (e) {
+      stream.current?.getTracks().forEach((track) => track.stop());
+      stream.current = null;
+      s.fail(e instanceof DOMException && e.name === "NotAllowedError" ? new Error("Microphone permission was declined; consent was not recorded.") : e);
+    }
+  };
+
+  const stop = () => {
+    if (recorder.current && recorder.current.state !== "inactive") recorder.current.stop();
+  };
+
+  const record = () => {
+    if (phase === "recording") stop();
+    else void start();
+  };
+  const resumeSaved = () => {
+    if (!saved || phase !== "idle") return;
+    setPhase("uploading");
+    void s.recordConsent(saved.audio).then(() => nav("/registered")).catch((e) => {
+      setPhase("idle");
+      s.fail(e);
+    });
   };
   return (
     <>
@@ -225,9 +354,17 @@ export function Consent() {
         seven days to say whether it is right. You can ask us to stop at any time. Do you agree?”
       </div>
       <Sidecar>Recording captures the worker's answer, your agent ID and the time. This is the consent record.</Sidecar>
+      {saved ? (
+        <Sidecar warm>
+          A recording from this consent is safely held on this device after an earlier upload interruption.
+          <button className="btn secondary" style={{ marginTop: 8 }} onClick={resumeSaved} disabled={phase !== "idle"}>
+            Resume saved recording
+          </button>
+        </Sidecar>
+      ) : null}
       <div className="btn-row">
-        <button className="btn" id="recordbtn" onClick={record}>
-          ● Record
+        <button className="btn" id="recordbtn" onClick={record} disabled={phase === "uploading"}>
+          {phase === "recording" ? "■ Stop and save" : phase === "uploading" ? "Saving recording…" : "● Start recording"}
         </button>
         <button className="btn secondary" disabled title="Only Kiswahili and English scripts exist on this deployment yet">
           Change language
@@ -339,21 +476,31 @@ export function Confidence() {
 
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    const reg: import("../queue").Reg = {
+    if (!s.me || !s.contextId) {
+      s.fail(new Error(!s.me ? "sign in before registering a worker" : NO_PROJECT));
+      return;
+    }
+    let reg: import("../queue").Reg = {
       name: name.trim(), phone: phone.trim(), rosterId: rosterId.trim(),
-      at: Date.now(), method: "confidence-check",
+      at: Date.now(), method: "confidence-check", actorId: s.me.partyId, contextId: s.contextId, operationId: newOperationId(),
     };
     if (!reg.phone && !reg.rosterId) {
       s.fail(new Error("give the pathway you have — a phone or a roster id; neither is a fallback for the other"));
       return;
     }
     try {
+      await queueReady();
+      await setQueue([reg, ...queue().filter((item) => item.operationId !== reg.operationId)]);
       reg.partyId = await s.submitRegistration(reg);
-      pushDone(reg);
+      await s.retainSubmitted(reg);
+      if (reg.rosterId) {
+        reg = await s.addRosterId(reg);
+        await s.retainSubmitted(reg);
+      }
       s.setReg(reg);
-      setPartyId(reg.partyId);
+      setPartyId(reg.partyId || null);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 409) {
+      if (e instanceof ApiError && e.status === 409 && !isIdempotencyError(e)) {
         nav("/hold");
         return;
       }

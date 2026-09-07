@@ -339,7 +339,7 @@ export function Portfolio() {
   const [note, setNote] = useState<string | null>(null);
   const r = useLoad(async () => {
     const [claims, instr] = await Promise.all([
-      api.get("evidence", "/v1/claims").catch(() => ({ claims: [] })),
+      api.get("evidence", "/v1/claims?contextId=" + encodeURIComponent(s.projectId)).catch(() => ({ claims: [] })),
       api.get("payments", "/v1/instructions").catch(() => ({ instructions: [] })),
     ]);
     const cl = (claims.claims || []) as PClaim[];
@@ -358,7 +358,7 @@ export function Portfolio() {
       truncated: cl.length > DRILL_UNIT_CAP,
       defs: Object.fromEntries(defs) as Record<string, PDef>,
     };
-  });
+  }, [s.projectId]);
   return (
     <LoadFrame r={r}>
       {({ claims, list, unitById, truncated, defs }) => {

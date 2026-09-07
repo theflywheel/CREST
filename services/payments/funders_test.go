@@ -67,7 +67,7 @@ func TestANewRateIsANewVersionNeverARewrite(t *testing.T) {
 	}
 }
 
-func TestPaymentsReadTheVersionInForceAtTheReleaseMoment(t *testing.T) {
+func TestPaymentsReadTheVersionInForceAtTheWorkPeriodStart(t *testing.T) {
 	versions := []rateVersion{
 		rate(1, 15000, t0),                  // in force from 1 Sep
 		rate(2, 20000, t0.AddDate(0, 1, 0)), // a raise from 1 Oct

@@ -53,14 +53,29 @@ type publication struct {
 	Transparent     bool   `json:"transparent"`
 }
 
-// apply registers an organisation and returns its party id.
+// registrationApplicant is a fresh authenticated actor with no existing party.
+// Organisation registration binds that actor to the newly-created party, so
+// scenarios must retain this caller for the applicant-side steps.
+func (w *world) registrationApplicant(t *testing.T, label string) harness.Caller {
+	t.Helper()
+	token, err := w.oidc.Token(w.ctx, "registration|"+runID+"|"+label)
+	if err != nil {
+		t.Fatalf("mint registration applicant token: %v", err)
+	}
+	return harness.Caller{Token: token}
+}
+
+// apply registers an organisation and returns its party id. Registration is an
+// authenticated operation; callers that need applicant-side actions recreate
+// the same stable caller with registrationApplicant.
 func (w *world) apply(t *testing.T, name string) string {
 	t.Helper()
+	applicant := w.registrationApplicant(t, name)
 	var out struct {
 		Party        schema.Party `json:"party"`
 		Registration registration `json:"registration"`
 	}
-	if err := w.Parties.Post(w.ctx, "/v1/organisations", orgParty(name), &out); err != nil {
+	if err := w.Parties.As(applicant).Post(w.ctx, "/v1/organisations", orgParty(name), &out); err != nil {
 		t.Fatalf("register organisation: %v", err)
 	}
 	if out.Registration.State != "APPLIED" {
@@ -75,19 +90,20 @@ func (w *world) apply(t *testing.T, name string) string {
 // forgets still cannot write the row.
 func TestAnOrganisationCannotApproveItself(t *testing.T) {
 	w := setup(t)
-	orgID := w.apply(t, "Self-Approving Trust "+runID)
+	orgName := "Self-Approving Trust " + runID
+	orgID := w.apply(t, orgName)
 
-	// Authenticated as the organisation, and naming itself. The rule still
-	// holds, and now it holds against somebody who proved who they were rather
-	// than against whatever they typed.
-	code, body, err := w.Parties.As(w.login(t, orgID)).Status(w.ctx, http.MethodPost,
+	// The applicant is authenticated, but registration approval is a distinct
+	// registry-custodian operation. The organisation cannot cross that boundary
+	// merely by naming itself as the approver.
+	code, body, err := w.Parties.As(w.registrationApplicant(t, orgName)).Status(w.ctx, http.MethodPost,
 		"/v1/organisations/"+orgID+"/decision",
 		map[string]any{"approve": true, "decidedBy": orgID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code != http.StatusConflict {
-		t.Fatalf("self-approval answered %d: %s", code, body)
+	if code != http.StatusForbidden {
+		t.Fatalf("an organisation self-approval attempt answered %d: %s", code, body)
 	}
 }
 
@@ -98,9 +114,9 @@ func TestAnOrganisationCannotBeApprovedBeforeAcceptingTerms(t *testing.T) {
 	w := setup(t)
 	orgID := w.apply(t, "Hasty Trust "+runID)
 
-	code, body, err := w.Parties.As(w.login(t, fixtures.SpecifierID)).Status(w.ctx, http.MethodPost,
+	code, body, err := w.Parties.As(w.login(t, fixtures.CustodianID)).Status(w.ctx, http.MethodPost,
 		"/v1/organisations/"+orgID+"/decision",
-		map[string]any{"approve": true, "decidedBy": fixtures.SpecifierID})
+		map[string]any{"approve": true, "decidedBy": fixtures.CustodianID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,11 +129,13 @@ func TestAnOrganisationCannotBeApprovedBeforeAcceptingTerms(t *testing.T) {
 // the registry substrate, where somebody outside CREST can resolve it.
 func TestAnApprovedOrganisationReachesTheRegistry(t *testing.T) {
 	w := setup(t)
-	orgID := w.apply(t, "Bednet Distribution Trust "+runID)
+	orgName := "Bednet Distribution Trust " + runID
+	orgID := w.apply(t, orgName)
+	applicant := w.registrationApplicant(t, orgName)
 	terms := w.w.Terms[0]
 
 	var reg registration
-	if err := w.Parties.Post(w.ctx, "/v1/organisations/"+orgID+"/terms-acceptance",
+	if err := w.Parties.As(applicant).Post(w.ctx, "/v1/organisations/"+orgID+"/terms-acceptance",
 		map[string]any{"termsId": terms.ID, "termsVersion": terms.Version, "acceptedBy": orgID}, &reg); err != nil {
 		t.Fatalf("accept terms: %v", err)
 	}
@@ -134,9 +152,9 @@ func TestAnApprovedOrganisationReachesTheRegistry(t *testing.T) {
 	}
 
 	if reg.State == "TERMS_ACCEPTED" {
-		if err := w.Parties.As(w.login(t, fixtures.SpecifierID)).Post(w.ctx,
+		if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Post(w.ctx,
 			"/v1/organisations/"+orgID+"/decision",
-			map[string]any{"approve": true, "decidedBy": fixtures.SpecifierID}, &reg); err != nil {
+			map[string]any{"approve": true, "decidedBy": fixtures.CustodianID}, &reg); err != nil {
 			t.Fatalf("approve: %v", err)
 		}
 	}
@@ -178,6 +196,7 @@ func TestAWorkerWithNoPhoneCanStillBeEnrolled(t *testing.T) {
 	}
 	body := map[string]any{
 		"enrolledBy": supervisor,
+		"contextId":  fixtures.ProjectID,
 		"method":     "supervisor-attested",
 		"party": schema.Party{
 			Kind:        schema.PartyKindPerson,
@@ -191,7 +210,9 @@ func TestAWorkerWithNoPhoneCanStillBeEnrolled(t *testing.T) {
 			},
 		},
 	}
-	if err := w.Parties.As(w.login(t, fixtures.SupervisorID)).Post(w.ctx, "/v1/enrolments", body, &out); err != nil {
+	c := w.login(t, fixtures.SupervisorID)
+	c.IdempotencyKey = harness.IdempotencyKey("assisted-enrolment", t.Name(), runID)
+	if err := w.Parties.As(c).Post(w.ctx, "/v1/enrolments", body, &out); err != nil {
 		t.Fatalf("assisted enrolment: %v", err)
 	}
 	if out.Party.ID == "" {
@@ -700,8 +721,11 @@ func TestAWorkerWhoBindsAnAnchorLaterIsUpgradedWithoutLosingAnything(t *testing.
 	var enrolled struct {
 		Party schema.Party `json:"party"`
 	}
-	if err := w.Parties.As(w.login(t, fixtures.SupervisorID)).Post(w.ctx, "/v1/enrolments", map[string]any{
+	c := w.login(t, fixtures.SupervisorID)
+	c.IdempotencyKey = harness.IdempotencyKey("assisted-enrolment", t.Name(), runID)
+	if err := w.Parties.As(c).Post(w.ctx, "/v1/enrolments", map[string]any{
 		"enrolledBy": supervisor,
+		"contextId":  fixtures.ProjectID,
 		"method":     "field-visit",
 		"party": schema.Party{
 			Kind:        schema.PartyKindPerson,
@@ -843,7 +867,7 @@ func newWorkerWithBinding(t *testing.T, w *world, name, nationalIDHash string) s
 		},
 	}
 	var created schema.Party
-	if err := w.Parties.Post(w.ctx, "/v1/parties", p, &created); err != nil {
+	if err := w.Parties.As(w.login(t, fixtures.OrgID)).Post(w.ctx, "/v1/parties", p, &created); err != nil {
 		t.Fatalf("create party: %v", err)
 	}
 	if nationalIDHash != "" {
@@ -922,7 +946,7 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 	supervisor := fixtures.SupervisorID
 	party := newWorkerWithBinding(t, w, "Voice Consent "+runID, "")
 
-	recording := bytes.Repeat([]byte{0x4f, 0x67, 0x67, 0x53, 0x00, 0x02}, 300)
+	recording := fixtures.ConsentOgg
 	path := fmt.Sprintf("/v1/parties/%s/consents?moment=enrolment&captureMethod=voice"+
 		"&purpose=%s&capturedBy=%s&contextId=%s",
 		party, url.QueryEscape("hold and fetch evidence of my work"),
@@ -936,7 +960,9 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 		ArtefactDigest string `json:"artefactDigest"`
 		CapturedBy     string `json:"capturedBy"`
 	}
-	if err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).PostRaw(w.ctx, path, "audio/ogg", recording, &consent); err != nil {
+	c := w.assist(t, fixtures.SupervisorID, party)
+	c.IdempotencyKey = harness.IdempotencyKey("voice-consent", t.Name(), runID, party, w.w.Contexts[0].ID)
+	if err := w.Parties.As(c).PostRaw(w.ctx, path, "audio/ogg", recording, &consent); err != nil {
 		t.Fatalf("record a voice consent: %v", err)
 	}
 	if consent.State != "GRANTED" || consent.ArtefactRef == "" || consent.ArtefactDigest == "" {
@@ -1003,7 +1029,8 @@ func TestAWorkerWhoCannotReadCanConsentInTheirOwnVoice(t *testing.T) {
 	if len(listed.Consents) != 1 || listed.Consents[0].ID != consent.ID {
 		t.Fatalf("the consent record did not survive withdrawal: %+v", listed)
 	}
-	if got := listed.EnrolmentConsent[w.w.Contexts[0].ID]; got != "WITHDRAWN" {
+	contextID := w.w.ResolveID(w.w.Contexts[0].ID)
+	if got := listed.EnrolmentConsent[contextID]; got != "WITHDRAWN" {
 		t.Errorf("enrolmentConsent for the programme = %q, want WITHDRAWN", got)
 	}
 }
@@ -1015,7 +1042,9 @@ func TestAVoiceConsentWithNoRecordingIsRefused(t *testing.T) {
 	w := setup(t)
 	party := newWorkerWithBinding(t, w, "No Recording "+runID, "")
 
-	code, body, err := w.Parties.As(w.assist(t, fixtures.SupervisorID, party)).Status(w.ctx, http.MethodPost,
+	c := w.assist(t, fixtures.SupervisorID, party)
+	c.IdempotencyKey = harness.IdempotencyKey("voice-consent", t.Name(), runID, party, w.w.Contexts[0].ID)
+	code, body, err := w.Parties.As(c).Status(w.ctx, http.MethodPost,
 		fmt.Sprintf("/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 			party, url.QueryEscape("hold evidence"), url.QueryEscape(fixtures.SupervisorID),
 			url.QueryEscape(w.w.Contexts[0].ID)), nil)
@@ -1046,7 +1075,7 @@ func TestConsentGivenToOneProgrammeDoesNotCoverAnother(t *testing.T) {
 	// is the key a real batch would join on.
 	phone := "+1555020" + runID[len(runID)-4:]
 	var created schema.Party
-	if err := w.Parties.Post(w.ctx, "/v1/parties", schema.Party{
+	if err := w.Parties.As(w.login(t, fixtures.OrgID)).Post(w.ctx, "/v1/parties", schema.Party{
 		Kind:        schema.PartyKindPerson,
 		DisplayName: "Two Programmes " + runID,
 		ContactRoutes: []schema.PartyContactRoutesItem{
@@ -1063,29 +1092,33 @@ func TestConsentGivenToOneProgrammeDoesNotCoverAnother(t *testing.T) {
 	var second struct {
 		ID string `json:"id"`
 	}
-	if err := w.Parties.Post(w.ctx, "/v1/contexts", map[string]any{
+	if err := w.Parties.As(w.login(t, fixtures.OrgID)).Post(w.ctx, "/v1/projects", map[string]any{
 		"kind":         "project",
 		"name":         "Second programme " + runID,
 		"ownerPartyId": fixtures.OrgID,
-		"period":       map[string]any{"start": "2026-02-01T00:00:00Z"},
-		"state":        "ACTIVE",
 	}, &second); err != nil {
 		t.Fatalf("create a second context: %v", err)
+	}
+	if err := w.Parties.As(w.login(t, fixtures.OrgID)).Post(w.ctx,
+		"/v1/projects/"+url.PathEscape(second.ID)+"/activation", nil, nil); err != nil {
+		t.Fatalf("activate the second context: %v", err)
 	}
 
 	consentTo := func(contextID string) string {
 		t.Helper()
-		var c struct {
+		var consent struct {
 			ID string `json:"id"`
 		}
-		if err := w.Parties.As(w.login(t, party)).PostRaw(w.ctx, fmt.Sprintf(
+		caller := w.login(t, party)
+		caller.IdempotencyKey = harness.IdempotencyKey("voice-consent", t.Name(), runID, party, contextID)
+		if err := w.Parties.As(caller).PostRaw(w.ctx, fmt.Sprintf(
 			"/v1/parties/%s/consents?moment=enrolment&captureMethod=voice&purpose=%s&capturedBy=%s&contextId=%s",
 			party, url.QueryEscape("hold evidence of my work"),
-			url.QueryEscape(fixtures.SupervisorID), url.QueryEscape(contextID)),
-			"audio/ogg", []byte("agreed"), &c); err != nil {
+			url.QueryEscape(party), url.QueryEscape(contextID)),
+			"audio/ogg", fixtures.ConsentOgg, &consent); err != nil {
 			t.Fatalf("consent to %s: %v", contextID, err)
 		}
-		return c.ID
+		return consent.ID
 	}
 	stateIn := func(contextID string) string {
 		t.Helper()

@@ -548,12 +548,45 @@ func (h *recoveryHandlers) complete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *recoveryHandlers) get(w http.ResponseWriter, r *http.Request) {
+	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+		return
+	}
+	callerID, callerOK := actualCaller(r)
+	if !callerOK {
+		httpx.WriteError(w, http.StatusForbidden, "recovery_access_denied", "a recovery is visible only to its worker or assigned custodian")
+		return
+	}
 	rec, err := getRecovery(r.Context(), h.d.DB.Q(), r.PathValue("id"))
 	if err != nil {
 		httpx.NotFoundOr(w, h.d.Log, "recovery", err, store.ErrNotFound)
 		return
 	}
+	if callerID != rec.PartyID {
+		// A nominated contact reads the recovery they are asked to vouch for
+		// — the same fact ?confirmerPartyId= already lists to them; anyone
+		// else needs the custodian's audit standing.
+		nominated, err := isNominatedContact(r.Context(), h.d.DB.Q(), rec.PartyID, callerID)
+		if err != nil {
+			httpx.Fail(w, h.d.Log, "check recovery contact", err)
+			return
+		}
+		if !nominated {
+			if _, ok := requireRegistryCustodian(w, r, h.d, ""); !ok {
+				return
+			}
+		}
+	}
 	httpx.WriteJSON(w, http.StatusOK, rec)
+}
+
+func isNominatedContact(ctx context.Context, q store.Querier, workerID, contactID string) (bool, error) {
+	var ok bool
+	err := q.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM recovery_contacts
+			WHERE party_id = $1 AND contact_party_id = $2 AND revoked_at IS NULL)`,
+		workerID, contactID).Scan(&ok)
+	return ok, err
 }
 
 // list is the audit surface. ?overdue=true narrows it to overridden
@@ -583,11 +616,11 @@ func (h *recoveryHandlers) list(w http.ResponseWriter, r *http.Request) {
 		h.writeRecoveryList(w, r, rows)
 		return
 	}
-	// The audit surface: signed-in callers (#102). Reading ONE recovery stays
+	// The audit surface: the assigned registry custodian. Reading ONE recovery stays
 	// open below — the id is unguessable and the worker it belongs to may
 	// hold it printed on paper, which is exactly who must never be locked out
 	// of reading it.
-	if !identity.Authenticated(w, r, h.d.Log, h.d.Authenticating) {
+	if _, ok := requireRegistryCustodian(w, r, h.d, ""); !ok {
 		return
 	}
 	where, args := ``, []any{}

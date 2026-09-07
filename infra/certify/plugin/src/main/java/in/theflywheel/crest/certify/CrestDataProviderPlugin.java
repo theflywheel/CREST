@@ -19,6 +19,14 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Base64;
+import java.util.HexFormat;
+import java.security.KeyFactory;
+import java.security.Signature;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.time.Instant;
 
 /**
  * CREST's data provider (#155 phase C): the facts behind a WorkEventCredential,
@@ -55,6 +63,11 @@ public class CrestDataProviderPlugin implements DataProviderPlugin {
     @Value("${mosip.certify.integration.crest.issuer}")
     private String issuer;
 
+    @Value("${CREST_SERVICE_ID:certify}")
+    private String serviceId;
+    @Value("${CREST_SERVICE_PRIVATE_KEY}")
+    private String servicePrivateKey;
+
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
@@ -77,15 +90,40 @@ public class CrestDataProviderPlugin implements DataProviderPlugin {
         return events.getJSONObject(0);
     }
 
+    private HttpRequest signedRequest(URI uri) throws DataProviderExchangeException {
+        try {
+            byte[] seed = Base64.getDecoder().decode(servicePrivateKey);
+            if (seed.length != 32) throw new IllegalArgumentException("service seed must be 32 bytes");
+            byte[] prefix = HexFormat.of().parseHex("302e020100300506032b657004220420");
+            byte[] pkcs8 = new byte[prefix.length + seed.length];
+            System.arraycopy(prefix, 0, pkcs8, 0, prefix.length);
+            System.arraycopy(seed, 0, pkcs8, prefix.length, seed.length);
+            String timestamp = Long.toString(Instant.now().getEpochSecond());
+            byte[] random = new byte[16]; new SecureRandom().nextBytes(random);
+            String nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(random);
+            String target = uri.getRawPath() + (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery());
+            String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(new byte[0]));
+            String canonical = String.join("\n", serviceId, timestamp, nonce, "GET", uri.getRawAuthority(), target, digest);
+            Signature signature = Signature.getInstance("Ed25519");
+            signature.initSign(KeyFactory.getInstance("Ed25519").generatePrivate(new PKCS8EncodedKeySpec(pkcs8)));
+            signature.update(canonical.getBytes(StandardCharsets.UTF_8));
+            return HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(10))
+                    .header("Accept", "application/json")
+                    .header("X-CREST-Service-ID", serviceId)
+                    .header("X-CREST-Service-Time", timestamp)
+                    .header("X-CREST-Service-Nonce", nonce)
+                    .header("X-CREST-Service-Signature", Base64.getEncoder().encodeToString(signature.sign()))
+                    .GET().build();
+        } catch (Exception e) {
+            throw new DataProviderExchangeException("CREST service request could not be signed");
+        }
+    }
+
     private JSONArray workEventsFor(String subject) throws DataProviderExchangeException {
         String url = dataUrl.replaceAll("/+$", "")
                 + "/internal/certify/work-events?issuer=" + URLEncoder.encode(issuer, StandardCharsets.UTF_8)
                 + "&subject=" + URLEncoder.encode(subject, StandardCharsets.UTF_8);
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                .timeout(Duration.ofSeconds(10))
-                .header("Accept", "application/json")
-                .GET()
-                .build();
+        HttpRequest req = signedRequest(URI.create(url));
         HttpResponse<String> resp;
         try {
             resp = http.send(req, HttpResponse.BodyHandlers.ofString());

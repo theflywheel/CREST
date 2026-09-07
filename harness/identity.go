@@ -3,10 +3,13 @@ package harness
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/theflywheel/crest/pkg/identity"
@@ -21,8 +24,9 @@ import (
 // tightening authentication, and closing it takes the confirmation route away
 // from the workers who most need it.
 type Caller struct {
-	Token      string
-	OnBehalfOf string
+	Token          string
+	OnBehalfOf     string
+	IdempotencyKey string
 }
 
 func (c Caller) header() http.Header {
@@ -36,7 +40,18 @@ func (c Caller) header() http.Header {
 	if c.OnBehalfOf != "" {
 		h.Set(identity.HeaderOnBehalfOf, c.OnBehalfOf)
 	}
+	if c.IdempotencyKey != "" {
+		h.Set("Idempotency-Key", c.IdempotencyKey)
+	}
 	return h
+}
+
+// IdempotencyKey derives a stable mutation key for a harness operation. The
+// operation tuple should include the real actor, target and project so a retry
+// cannot replay another actor's mutation under the same key.
+func IdempotencyKey(parts ...string) string {
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return hex.EncodeToString(sum[:])
 }
 
 // OIDC is the identity provider the stack authenticates against.

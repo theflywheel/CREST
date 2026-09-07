@@ -114,13 +114,35 @@ MAPPING = {
     "p2_14": m("implemented", "console", "#/payments", "The reference's frame: confirmed-paid, instructed-not-confirmed, failed-at-the-rail and oldest-unpaid tiles from GET /v1/instructions, then the why-it-is-delayed table with a worker count, an amount, a median age and the owning office per reason — and a row that could not name an owner would itself be the defect to raise. On the reference's own rail"),
     "p2_15": m("implemented", "console", "#/trace", "One claim id → the worker it belongs to, then windows, exits, credential and instruction, each hop a real GET, with the consent posture stated on the frame. On the reference's own rail. What the reference also draws and this cannot: a whole per-worker project history and a portable proof bundle — neither has an endpoint, so neither is drawn"),
     "p2_16": m("illustrative", "console", "#/reports", "The reference's funder frame: the stage-by-stage reconciliation with instructed and confirmed-paid live from GET /v1/instructions and the difference explained, the proof-of-work table, and the 'why tier is in a funder report' callout verbatim. Illustrative because the allocation row has no funding ledger, the tier column has no project-wide read (#31), and there is no report endpoint to save or schedule one"),
-    # ---- P-3 Work Definition Author (console: author reads, cannot write) ----
-    "p3_1": m("compressed", "console", "#/definework", "A registry of one: the seeded definition read via GET /v1/definitions/{id}; no list/registry endpoint"),
-    "p3_15": m("missing", note="Ratify with pending fields: no ratification endpoint; the approver persona surfaces this gap honestly at #/ratify"),
-    "p3_16": m("missing", note="Two records, one signature: no signing flow"),
-    "p3_pay": m("missing", note="Payment handoff from author to rate owner: no handoff object"),
-    "p3_19": m("compressed", "console", "#/definework", "The schema-under-the-form section renders the real stored definition JSON"),
-    "p3_18": m("compressed", "console", "#/definework", "'What is still undecided' — the wizard's honest gaps section"),
+    # ---- P-3 Defining the work (author + separate approver) ----
+    "p3_1": m("implemented", "console", "#/definework", "GET /v1/definitions + GET/POST /v1/definition-drafts: real registry, resumable drafts, define-new and clone-version"),
+    "p3_2": m("implemented", "console", "#/define/sector", "PUT draft section scope; sector vocabulary comes from the selected project's L2 composition, with typed fallback when none is declared"),
+    "p3_3": m("implemented", "console", "#/define/counting", "PUT activity.counting.basis; event/time/outcome branches are separate routes and persist before navigation"),
+    "p3_4": m("implemented", "console", "#/define/category", "Sector-scoped L2 category picker plus typed category/code escape; persisted in scope/activity"),
+    "p3_5": m("implemented", "console", "#/define/unit", "Unit, frequency, counting model and aggregation level persist in the draft activity; outcomeUnit is the exact field later rates price"),
+    "p3_21": m("implemented", "console", "#/define/cascade", "Cascade writes draft.cascade and submission emits a version-pinned linked-definition LinkedRecord"),
+    "p3_6": m("implemented", "console", "#/define/period", "Time-period frequency, aggregation and plain-language description persist under activity.counting"),
+    "p3_7": m("implemented", "console", "#/define/outcome", "Outcome indicator, baseline, target, measurer and aggregation persist under activity.counting.outcome"),
+    "p3_8": m("implemented", "console", "#/define/parties", "Performer role/type and authorised attester functions persist; compile maps the latter to the definition's enforceable attester allow-list"),
+    "p3_9": m("implemented", "console", "#/define/evidence", "Worker-facing proof wording, ceiling, check intensity and provenance tier-map persist; compile refuses a rule above the declared ceiling"),
+    "p3_22": m("implemented", "console", "#/define/source", "Source systems/required fields persist and the attainable tier is derived on-screen from sourceClass + captureMethod, never stored"),
+    "p3_23": m("implemented", "console", "#/define/template", "GET /v1/definition-drafts/{id}/template derives the next-version CSV mid-wizard; immutable-version endpoint derives the same file after submit"),
+    "p3_24": m("implemented", "console", "#/define/adaptors", "GET /v1/adaptors renders available and absent classes honestly; csv-batch is selectable and DIGIT HCM is named as unimplemented"),
+    "p3_25": m("implemented", "console", "#/define/mapping", "Canonical/enrichment/constant mappings persist on the draft connection and become a version-pinned source-binding LinkedRecord at submit"),
+    "p3_26": m("implemented", "console", "#/define/connect", "Endpoint, credentialRef and non-secret settings persist; compile refuses secret-shaped keys/credential material and stores no credential value"),
+    "p3_27": m("implemented", "console", "#/define/dryrun", "POST draft/dry-run uses the real CSV adaptor and strength evaluator, returns per-row reasons and committed:false, and writes nothing"),
+    "p3_28": m("compressed", "console", "#/define/live", "The tested connection becomes a version-pinned source-binding LinkedRecord atomically at submit. Compressed because no notification tells a source owner when a later version requires re-test; the screen names that gap"),
+    "p3_10": m("implemented", "console", "#/define/validation", "Validation posture/delay plus enforceable authorised issuers and specifier persist; compile emits verifier-face policy"),
+    "p3_11": m("compressed", "console", "#/define/payment", "Rate/mechanism responsibility is recorded as payment-structure intent and no price can be embedded. Compressed because the named people are not granted authority here"),
+    "p3_20": m("compressed", "console", "#/define/roles", "Four descriptive role holders persist into the payment-structure LinkedRecord. Compressed because project invitations/grants remain separate acts and this screen explicitly does not mint them"),
+    "p3_12": m("implemented", "console", "#/define/tranches", "Tranche labels/shares/release conditions persist and compile into a schema-validated payment-structure LinkedRecord, never monetary amounts"),
+    "p3_13": m("implemented", "console", "#/define/rules", "Preconditions and deductions are separately authored and emitted in the payment-structure LinkedRecord"),
+    "p3_14": m("implemented", "console", "#/define/extend", "Namespaced typed extension fields persist; submit validates number/boolean/date values and keeps extensions outside infrastructure logic"),
+    "p3_15": m("implemented", "console", "#/ratify", "Separate approver queue over submitted drafts; POST ratify records the approver's pending-fields declaration and refuses self-ratification"),
+    "p3_16": m("implemented", "console", "#/ratified", "POST ratify with publish:true atomically ratifies, activates, appends both governance events and enqueues registry publication; screen reads the event trail back"),
+    "p3_pay": m("compressed", "console", "#/handoff", "POST payment-handoff records inviter, invitee and note on the definition and in its event trail. Compressed because it does not itself grant RateOwnerAssignment or notify the invitee"),
+    "p3_19": m("implemented", "console", "#/define/anatomy", "Renders the real stored immutable version and its institution extensions as separate layers; pre-submit it renders the real server-held draft"),
+    "p3_18": m("implemented", "console", "#/define/open", "POST draft/validate runs the same compile as submit and renders every named refusal; submit creates the immutable next version and closes the draft atomically"),
     # ---- P-10 External Evidence Contact (verify panel) ----
     "w6_1": m("illustrative", "verify", "#/w6_1", "Scoped request + template out: panel says no scoped-link endpoint exists"),
     "w6_2": m("illustrative", "verify", "#/w6_2", "File-back answer: display only; no upload endpoint"),
@@ -202,25 +224,6 @@ MAPPING = {
     "ext_3": m("missing", note="External by design: payment rail beyond the instruction boundary"),
     "ext_4": m("missing", note="External by design: next-employer verification — the verify door is the CREST side"),
 }
-
-# P-3 authoring screens not singled out above: the entire write/ratification
-# workflow is absent; the read-only wizard section covering the topic is the
-# nearest surface.
-P3_READER = {
-    "p3_2": "Scope/sector", "p3_3": "Counting-basis fork", "p3_4": "Category picker",
-    "p3_5": "Unit of work", "p3_21": "Training cascade", "p3_6": "Time-based path",
-    "p3_7": "Outcome path", "p3_8": "Parties", "p3_9": "Evidence tiers",
-    "p3_22": "Source class choice", "p3_23": "Template", "p3_24": "Adaptor library",
-    "p3_25": "Adaptor mapping", "p3_26": "Connection", "p3_27": "Dry run",
-    "p3_28": "Version registration", "p3_10": "Validation posture", "p3_11": "Payment split",
-    "p3_20": "Project roles", "p3_12": "Stacked pay/tranches", "p3_13": "Preconditions/deductions",
-    "p3_14": "Extensions",
-}
-for sid, topic in P3_READER.items():
-    MAPPING[sid] = m(
-        "missing", "console", "#/definework",
-        f"{topic}: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)")
-
 
 # The J3 connective-tissue screens n1–n5 are OUR design, not the reference's
 # (docs/design/j3-connective-tissue/README.md). They belong in the ledger —

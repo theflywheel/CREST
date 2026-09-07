@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"time"
 )
 
@@ -87,6 +88,9 @@ func (s *StatusList) Encode() (string, error) {
 
 // DecodeStatusList reverses Encode.
 func DecodeStatusList(encoded string) (*StatusList, error) {
+	if len(encoded) > 24<<20 {
+		return nil, fmt.Errorf("status list exceeds size limit")
+	}
 	if len(encoded) < 2 || encoded[0] != 'u' {
 		return nil, fmt.Errorf("a status list must be multibase base64url ('u')")
 	}
@@ -100,8 +104,11 @@ func DecodeStatusList(encoded string) (*StatusList, error) {
 	}
 	defer func() { _ = zr.Close() }()
 	var out bytes.Buffer
-	if _, err := out.ReadFrom(zr); err != nil {
+	if _, err := out.ReadFrom(io.LimitReader(zr, (16<<20)+1)); err != nil {
 		return nil, err
+	}
+	if out.Len() > 16<<20 {
+		return nil, fmt.Errorf("decoded status list exceeds size limit")
 	}
 	return FromBytes(out.Bytes()), nil
 }
@@ -115,11 +122,12 @@ func (i *Issuer) StatusListCredential(listURL string, list *StatusList, at time.
 		return nil, err
 	}
 	doc := map[string]any{
-		"@context":  []any{ContextVC},
-		"id":        listURL,
-		"type":      []any{"VerifiableCredential", "BitstringStatusListCredential"},
-		"issuer":    i.id,
-		"validFrom": at.UTC().Format(time.RFC3339),
+		"@context":   []any{ContextVC},
+		"id":         listURL,
+		"type":       []any{"VerifiableCredential", "BitstringStatusListCredential"},
+		"issuer":     i.id,
+		"validFrom":  at.UTC().Format(time.RFC3339),
+		"validUntil": at.Add(5 * time.Minute).UTC().Format(time.RFC3339),
 		"credentialSubject": map[string]any{
 			"id":            listURL + "#list",
 			"type":          "BitstringStatusList",

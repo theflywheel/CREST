@@ -13,7 +13,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"time"
+
+	"github.com/theflywheel/crest/pkg/serviceauth"
 )
 
 // Client talks to one service.
@@ -28,7 +33,35 @@ type Client struct {
 // timeout is a goroutine that never returns, and one of those inside a payment
 // path is a payment that is neither made nor reported.
 func New(base string) *Client {
-	return &Client{base: base, http: &http.Client{Timeout: 15 * time.Second}}
+	return &Client{base: base, http: &http.Client{
+		Timeout:       15 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
+	}}
+}
+
+func serviceHeaders(req *http.Request) error {
+	if strings.HasPrefix(req.URL.Path, "/internal/") && trustedServiceOrigin(req.URL) {
+		if os.Getenv("CREST_SERVICE_PRIVATE_KEY") != "" {
+			return serviceauth.SignConfigured(req)
+		}
+		if token := os.Getenv("CREST_SERVICE_TOKEN"); token != "" {
+			req.Header.Set("X-CREST-Service-Token", token)
+		}
+	}
+	return nil
+}
+
+func trustedServiceOrigin(target *url.URL) bool {
+	if target.User != nil {
+		return false
+	}
+	for _, name := range []string{"PARTIES_URL", "DEFINITIONS_URL", "EVIDENCE_URL", "CONFIRMATION_URL", "VERIFICATION_URL", "PAYMENTS_URL", "SELF_URL"} {
+		configured, err := url.Parse(os.Getenv(name))
+		if err == nil && configured.Host != "" && configured.User == nil && configured.Scheme == target.Scheme && configured.Host == target.Host {
+			return true
+		}
+	}
+	return false
 }
 
 // Status is a non-2xx response, kept as a value so callers can branch on the
@@ -70,6 +103,9 @@ func (c *Client) Do(ctx context.Context, method, path string, in, out any) error
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	if err := serviceHeaders(req); err != nil {
+		return err
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
@@ -110,6 +146,9 @@ func (c *Client) PostRaw(ctx context.Context, path, contentType string, body []b
 		return err
 	}
 	req.Header.Set("Content-Type", contentType)
+	if err := serviceHeaders(req); err != nil {
+		return err
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err

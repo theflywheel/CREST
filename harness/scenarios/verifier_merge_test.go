@@ -53,15 +53,17 @@ func TestAVerifierSeesTheWholeChainsCredentialsAndNotTheMerge(t *testing.T) {
 		t.Fatalf("before the merge the survivor resolves to %d credentials, want 1", n)
 	}
 
-	code, _ := w.resolveHold(t, hold.ID, map[string]any{
-		"decision":           "merge",
-		"partyId":            survivor,
-		"resolvedByPartyId":  fixtures.CustodianID,
-		"confirmedByPartyId": survivor,
-		"confirmationMethod": "in-person",
+	if code, _, err := w.Parties.As(w.login(t, survivor)).Status(w.ctx, http.MethodPost,
+		"/v1/holds/"+hold.ID+"/confirm", map[string]any{
+			"survivorPartyId": survivor, "confirmationMethod": "in-person",
+		}); err != nil || code != http.StatusOK {
+		t.Fatalf("worker hold confirmation: %d %v", code, err)
+	}
+	code, res := w.resolveHold(t, hold.ID, map[string]any{
+		"decision": "merge", "partyId": survivor, "resolvedByPartyId": fixtures.CustodianID,
 	})
 	if code != 200 {
-		t.Fatalf("the merge was refused with %d", code)
+		t.Fatalf("the merge was refused with %d: %s", code, res.ResponseBody)
 	}
 
 	// Either id resolves to the whole history. The absorbed id keeps working
@@ -77,7 +79,12 @@ func TestAVerifierSeesTheWholeChainsCredentialsAndNotTheMerge(t *testing.T) {
 	// body carries no merge vocabulary and no identifier mapping. The check is
 	// on the raw bytes, not the decoded struct, so a field added later cannot
 	// hide from it.
-	code, raw, err := w.Verification.Status(w.ctx, http.MethodGet,
+	if anonymous, _, err := w.Verification.Status(w.ctx, http.MethodGet,
+		"/v1/parties/"+url.PathEscape(survivor)+"/credentials", nil); err != nil ||
+		(anonymous != http.StatusUnauthorized && anonymous != http.StatusForbidden) {
+		t.Fatalf("anonymous credential history: %d %v", anonymous, err)
+	}
+	code, raw, err := w.Verification.As(w.login(t, survivor)).Status(w.ctx, http.MethodGet,
 		"/v1/parties/"+url.PathEscape(survivor)+"/credentials", nil)
 	if err != nil || code != http.StatusOK {
 		t.Fatalf("read chain credentials: %d %v", code, err)
@@ -120,7 +127,7 @@ func (w *world) chainCredentials(t *testing.T, party string) []json.RawMessage {
 	var out struct {
 		Credentials []json.RawMessage `json:"credentials"`
 	}
-	if err := w.Verification.Get(w.ctx,
+	if err := w.Verification.As(w.login(t, party)).Get(w.ctx,
 		"/v1/parties/"+url.PathEscape(party)+"/credentials", &out); err != nil {
 		t.Fatalf("resolve %s through verification: %v", party, err)
 	}

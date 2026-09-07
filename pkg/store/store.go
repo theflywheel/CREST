@@ -200,6 +200,30 @@ func (db *DB) Q() Querier { return querier{db.pool} }
 // Schema is the service's schema name.
 func (db *DB) Schema() string { return db.schema }
 
+// ClaimServiceNonce atomically claims a verified service-auth nonce. The
+// nonce table is provisioned by Migrate in every service schema, and the
+// primary key makes concurrent replicas converge on one claimant.
+func (db *DB) ClaimServiceNonce(ctx context.Context, serviceID, nonce string, expiresAt time.Time) (bool, error) {
+	return ClaimServiceNonce(ctx, db.Q(), serviceID, nonce, expiresAt)
+}
+
+// ClaimServiceNonce is the Querier form used by tests and transaction-owned
+// callers. Expired rows are pruned on each claim, keeping retention bounded by
+// the configured replay window without an unbounded background process.
+func ClaimServiceNonce(ctx context.Context, q Querier, serviceID, nonce string, expiresAt time.Time) (bool, error) {
+	if _, err := q.Exec(ctx, `DELETE FROM service_auth_nonces WHERE expires_at <= now()`); err != nil {
+		return false, err
+	}
+	affected, err := q.Exec(ctx, `
+		INSERT INTO service_auth_nonces (service_id, nonce, expires_at)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (service_id, nonce) DO NOTHING`, serviceID, nonce, expiresAt)
+	if err != nil {
+		return false, err
+	}
+	return affected == 1, nil
+}
+
 // InTx runs fn in a transaction, committing if it returns nil.
 //
 // A failed rollback is deliberately not reported over the function's own error:

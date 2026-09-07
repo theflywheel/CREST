@@ -72,6 +72,8 @@ parties:
     contactRoutes:
       - kind: phone
         value: "+15550100011"
+      - kind: email
+        value: "worker-anaya@riverside.invalid"
     identityBindings:
       - provider: fixture-esignet
         providerClass: esignet
@@ -91,6 +93,8 @@ parties:
       - kind: phone
         value: "+15550100012"
         verifiedAt: 2026-01-11T10:00:00Z
+      - kind: email
+        value: "worker-bina@riverside.invalid"
     identityBindings:
       - provider: fixture-otp
         providerClass: mobile-otp
@@ -107,6 +111,8 @@ parties:
     contactRoutes:
       - kind: supervisor
         value: did:crest:party:01JCREST00000000000000SPVR
+      - kind: email
+        value: "worker-chandra@riverside.invalid"
     createdAt: 2026-01-12T09:00:00Z
 
 terms:
@@ -115,8 +121,20 @@ terms:
     name: Community health worker terms
     permissions:
       - submit-work-evidence
+      - read-work-evidence
+      - register-workers
       - specify-definition
       - ratify-definition
+      - work-definition-author
+      - work-definition-approver
+      - work-definition-source-owner
+      - attest-work
+      - act-for-party
+      - resolve-unclear-evidence
+      - rate-owner
+      - payment-owner
+      - override-recovery
+      - claim-review
     publishedAt: 2026-01-05T10:00:00Z
 
 authorizations:
@@ -133,7 +151,9 @@ authorizations:
     partyId: did:crest:party:01JCREST00000000000000SPVR
     terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
     scope: { kind: context, contextId: crest:context:01JCREST00000000000000PRJC }
-    functions: [submit-work-evidence, act-for-party]
+    # claim-review: the supervisor is the assisted route for an open window
+    # whose worker could not be told, and that list is a scoped review read.
+    functions: [submit-work-evidence, read-work-evidence, register-workers, act-for-party, work-definition-source-owner, claim-review]
     period: { start: 2026-01-06T00:00:00Z, end: 2026-12-31T23:59:59Z }
     authorityPartyId: did:crest:party:01JCREST000000000000000RGN
     approvedByPartyId: did:crest:party:01JCREST000000000000000RGN
@@ -144,11 +164,22 @@ authorizations:
   # nobody who submits evidence. Conflating it with submit-work-evidence would
   # let whoever sends the file also decide whose work the unmatched rows were,
   # which is the attribution equivalent of marking your own homework.
+  - id: crest:authorization:01JCREST00000000000000CSTA
+    partyId: did:crest:party:01JCREST00000000000000CSTD
+    terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
+    scope: { kind: instance }
+    functions: [resolve-unclear-evidence]
+    period: { start: 2026-01-06T00:00:00Z, end: 2026-12-31T23:59:59Z }
+    authorityPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedByPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedAt: 2026-01-06T09:30:00Z
+    state: ACTIVE
+
   - id: crest:authorization:01JCREST00000000000000GRNQ
     partyId: did:crest:party:01JCREST00000000000000CSTD
     terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
     scope: { kind: context, contextId: crest:context:01JCREST00000000000000PRJC }
-    functions: [resolve-unclear-evidence]
+    functions: [resolve-unclear-evidence, claim-review, read-work-evidence]
     period: { start: 2026-01-06T00:00:00Z, end: 2026-12-31T23:59:59Z }
     authorityPartyId: did:crest:party:01JCREST000000000000000RGN
     approvedByPartyId: did:crest:party:01JCREST000000000000000RGN
@@ -159,7 +190,29 @@ authorizations:
     partyId: did:crest:party:01JCREST00000000000000SPEC
     terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
     scope: { kind: instance }
-    functions: [specify-definition]
+    functions: [specify-definition, work-definition-author, rate-owner]
+    period: { start: 2026-01-05T00:00:00Z }
+    authorityPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedByPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedAt: 2026-01-05T10:30:00Z
+    state: ACTIVE
+
+  - id: crest:authorization:01JCREST00000000000000GRNA
+    partyId: did:crest:party:01JCREST00000000000000SPEC
+    terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
+    scope: { kind: context, contextId: crest:context:01JCREST00000000000000PRJC }
+    functions: [work-definition-author, rate-owner]
+    period: { start: 2026-01-05T00:00:00Z }
+    authorityPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedByPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedAt: 2026-01-05T10:30:00Z
+    state: ACTIVE
+
+  - id: crest:authorization:01JCREST00000000000000GRNR
+    partyId: did:crest:party:01JCREST00000000000000CSTD
+    terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
+    scope: { kind: context, contextId: crest:context:01JCREST00000000000000PRJC }
+    functions: [work-definition-approver]
     period: { start: 2026-01-05T00:00:00Z }
     authorityPartyId: did:crest:party:01JCREST000000000000000RGN
     approvedByPartyId: did:crest:party:01JCREST000000000000000RGN
@@ -196,7 +249,7 @@ authorizations:
   - id: crest:authorization:01JCREST00000000000000CSCP
     partyId: did:crest:party:01JCREST000000000000000RGN
     scope: { kind: context, contextId: crest:context:01JCREST00000000000000PRJC }
-    functions: [attest-work, submit-work-evidence]
+    functions: [attest-work, submit-work-evidence, read-work-evidence, payment-owner, claim-review]
     authorityPartyId: did:crest:party:01JCREST000000000000000RGN
     approvedByPartyId: did:crest:party:01JCREST00000000000000SPEC
     approvedAt: 2026-01-05T09:00:00Z
@@ -263,7 +316,7 @@ definitions:
         # than the definition itself is willing to stand behind.
         tierCeiling: 3
       platform:
-        sourceSystems: [dhis2-riverside, csv-batch]
+        sourceSystems: [dhis2-riverside, riverside-dhis2, csv-batch]
         requiredFields: [household_id, beneficiary_count]
         schemaRef: urn:crest:schema:evidence:work-evidence-record:1
       verifier:
@@ -300,7 +353,8 @@ definitions:
     authoredByPartyId: did:crest:party:01JCREST00000000000000SPEC
     # Not the author. Separation of duties is enforced in the service, and the
     # fixture world would be a strange place to violate the rule being tested.
-    ratifiedByPartyId: did:crest:party:01JCREST000000000000000RGN
+    contextId: crest:context:01JCREST00000000000000PRJC
+    ratifiedByPartyId: did:crest:party:01JCREST00000000000000CSTD
     activatedAt: 2026-01-20T12:00:00Z
     createdAt: 2026-01-15T11:00:00Z
 

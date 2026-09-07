@@ -1,0 +1,255 @@
+{
+  "date": "2026-09-06",
+  "baseRevision": "1b18e15a4cba9cbc5c2e0b7b55805d2f8d8061ee",
+  "worktreeDirty": true,
+  "overall": "selected-development-journeys-passed-companion-lifecycle-and-recovery-gates-open",
+  "requirementsSources": [
+    "docs/reference/Copy of CREST_-Trusted Payments Use Case_Readout_Summary.docx",
+    "docs/reference/Copy of A DPI for Livelihoods_v1.6.pdf",
+    "docs/reference/CREST \u2014 Actor Journeys_17Aug.html"
+  ],
+  "acceptanceProject": "crest-acceptance",
+  "preservedExistingProject": "crest",
+  "businessDataSeeded": false,
+  "bootstrapOperatorRun": false,
+  "checks": {
+    "goTests": "passed final worktree go test ./...",
+    "goVet": "passed final worktree go vet ./...",
+    "sixServiceEmptyDatabaseMigrationsAndReplay": "passed",
+    "databaseConcurrencyChecksumOutboxNonceAndUploadRecovery": "passed against isolated test schemas",
+    "frontendTypecheck": "passed final worktree",
+    "frontendBuild": "passed and current bundles published to acceptance nginx",
+    "certifyPluginBuild": "passed",
+    "serviceImageBuild": "passed",
+    "quiescedBackupRestore": "passed with actual project, published definition, notification, confirmed simulator payment, issuer key and credential custody metadata; backup predates subsequent role/client rotation and second claim",
+    "restoredVaultIssuerKeyAndScopedToken": "passed",
+    "restoredDatabaseRoles": "passed",
+    "restoredDeDiHealth": "passed",
+    "objectStoreBucketReadiness": "passed; application screen consent did not create an artefact, so no consent-object recovery claim",
+    "fullSystemStartup": "core, payments, HTTP inbox and CREST apps healthy; actual eSignet login, Certify issuance, Inji Web guest PDF download and native Inji cryptographic verification passed",
+    "realActorJourneys": "passed development public API journey with separate eSignet operator/author/reviewer/worker sessions",
+    "realRailSettlement": "deferred; no real money movement",
+    "historicalCredentialRestore": "actual current journey custody metadata/digest restored and compared through APIs; legacy production history not tested",
+    "merge": "not performed",
+    "deployment": "not performed",
+    "serviceStartupFailClosed": "passed: both final containers reject missing CREST_OIDC_ISSUER",
+    "offlineCryptographicContract": "five tests passed with Node 22 against Go-signed fixture; not a live credential journey",
+    "coldOfflineAppShell": "field, verifier and worker passed in fresh Playwright contexts; logged-out worker reaches local passphrase unlock with zero backend calls",
+    "outboxMetrics": "HTTP privacy/failure contracts and real database classification passed",
+    "serviceKeyRotation": "current/grace/expired key and staged identity tests passed",
+    "ciWorkflow": "Current commit checks and automated review are recorded on https://github.com/theflywheel/CREST/pull/207; local validation is reported separately here.",
+    "nginxTemplates": "both Railway templates pass nginx -t; acceptance static routes and internal/mock route denials passed; Docker Inji and private DID TLS nginx -t passed, service DNS refreshed at runtime",
+    "workerWalletOffline": "passed: durable encrypted save before custody transfer, central full document removed with metadata retained, logged-out offline reload unlocked actual owned credential; encrypted backup restored in fresh offline browser",
+    "paymentSimulatorDatabaseContract": "passed real PostgreSQL isolated schemas: durable pending, separate scoped settlement, idempotent replay",
+    "paymentServiceStartup": "healthy development simulator on 59406; unauthenticated settlement denied",
+    "notificationTransport": "authenticated labeled transport probe accepted durably, duplicate idempotent, persisted after restart; unauthenticated request denied; not evidence of worker reach",
+    "notificationDatabaseContract": "seven tests passed, including real isolated PostgreSQL persistence",
+    "firstRunSetup": "201 through actual eSignet session; replay403; additive migrations preserve applied checksums",
+    "csvIngestion": "one contract-invalid row quarantined; corrected independently approved definition version2 produced one claim with no unclear rows",
+    "workerNotification": "actual claim review notification accepted in HTTP inbox; worker acknowledged with actual session; other actor acknowledgement403",
+    "credentialIssuance": "actual credential issued after configured2min walltime review window; online verification valid and signatureValid; current tier2, not revoked",
+    "offlineActualCredential": "passed actual CSV-issued credential in browser offline with zero API calls and withdrawal-not-checked display",
+    "workerWalletExport": "PASSED encrypted export, custody transfer, logged-out offline unlock and fresh offline import of actual core credential",
+    "sourceRegistrationAuthority": "live worker lacking source-owner grant denied403; registry now denies grants in nonexistent contexts; real PostgreSQL tests passed",
+    "definitionSchemaRegistration": "live unregistered schemaRef denied422 before definition publication",
+    "csvDuplicateIngestion": "same CSV replay produced zero new claim IDs",
+    "companionConnectivity": "real browser login, Certify issuance, trusted HTTPS DID resolution, Mimoto signature verification, actual PDF download and embedded QR verification passed",
+    "referenceReviewTimer": "actual automatic exit 123.16 seconds after authenticated worker acknowledgement with configured2min window; no clock jump or manual finish",
+    "workerWalletOfflineImport": "passed: encrypted actual credential history restored in fresh logged-out offline browser with zero backend calls",
+    "livePaymentJourney": "passed: missing-rate hold, authorized rate publication and retry, pending simulator instruction, explicit scoped settlement and replay confirmed, reconciliation zero gaps; 100 KES simulated compensation",
+    "companionCredentialIssuance": "PASSED independent actual eSignet authorization-code exchange and Certify HTTP200; issuer/signing DIDs aligned; second actual CSV claim matches response",
+    "companionVerification": "PASSED cryptographic checks: genuine Certify output and final downloaded PDF QR return native Inji Verify SUCCESS; altered activity and embedded period return INVALID; lifecycle/revocation propagation remains unimplemented",
+    "credentialRotation": "three exposed development database-role passwords rotated in primary and recovery databases; exposed Mimoto client deactivated and new RSA client registered; private files updated and primary services restarted",
+    "currentBackup": "fresh quiesced /tmp/crest-development-current-20260906 after rotations and second claim; complete manifest/archive verification passed; not a second restore rehearsal",
+    "companionWalletDownload": "PASSED final rebuilt Mimoto: actual worker browser eSignet -> Inji Web guest -> PDF HTTP200; extracted PixelPass QR matches actual CSV claim and native Inji Verify SUCCESS; tampered embedded period INVALID",
+    "companionLifecycle": "FAILED code review: no persisted wrapper/core lifecycle link or propagation of core revocation to existing Certify issuances; newest-only selection; centrally removed custody document unavailable to collector",
+    "companionPDFRendering": "PASSED actual downloaded PDF: activity, period start, outcome value/unit, source class, capture method and receivedAt all present; no unrendered template expressions",
+    "mimotoSourceBuild": "PASSED pinned upstream v0.19.2 commit e1fedbb9dce6a8c3dd9b5b8e75423d636a0704cf with source-level renderer patch; 409 local tests, finalized Docker Maven package/tests and image build passed",
+    "companionDockerDNS": "PASSED: replaced Mimoto container, recreated namespace relays, unchanged Inji Web nginx resolved new backend and actual worker download succeeded",
+    "workerReviewNotificationLink": "PASSED rebuilt worker app: fresh real eSignet sessions, new public CSV claim and durable HTTP notification, tokenized browser route renders without errors, token removed from URL, acknowledgement token only in POST body, HTTP200 and reviewStartedAt persisted",
+    "duplicateEnrolmentConsent": "PASSED isolated PostgreSQL with race detector: distinct key409, same key201 with original ID, one original recording preserved, no unreferenced upload intent",
+    "mechanismActivationPricing": "PASSED actual activation transaction against isolated PostgreSQL with race detector: preserved amount and rate snapshot, persisted RELEASED state and transactional rail outbox",
+    "reviewFixServices": "Rebuilt core/payments with latest consent and activation fixes; both readiness endpoints HTTP200; no new complete business journey after this rebuild",
+    "presentationHistory": "PASSED isolated PostgreSQL with another worker row; actual refreshed eSignet worker session: default history matched 13 explicitly scoped records, other-party request403; rebuilt core readiness200",
+    "consentPayloadRetention": "PASSED race-enabled evidence tests: actual ingestion decision refuses NONE/WITHDRAWN and accepts GRANTED; consent refusal serialization omits the evidence payload; real PostgreSQL migration purges blocked payloads and preserves ordinary unclear rows.",
+    "consentPayloadMigrationStartup": "Rebuilt acceptance core applied additive migration0007 and returned readiness200; existing granted work units/claims are outside the migration scope."
+  },
+  "missingProviderConfiguration": [],
+  "openImplementationGates": [
+    "assisted/printed custody ownership and retention decision",
+    "signed offline federation/status trust snapshot and freshness policy",
+    "legacy lifecycle upgrade rehearsal against actual deployed history",
+    "companion database/keystore recovery rehearsal; core backup does not cover MOSIP volumes",
+    "Certify issuance-to-core lifecycle association and durable revocation/status propagation",
+    "authenticated historical work-event selection for Certify; current plugin selects newest only",
+    "post-custody companion retrieval contract without restoring forbidden central documents"
+  ],
+  "localEvidenceDirectory": "/tmp/crest-review",
+  "privateRecoveryBundle": "/tmp/crest-development-current-20260906",
+  "warning": "Recovery bundle contains secret material, remains private, and must not be committed or shared.",
+  "preflight": {
+    "validationScope": "development-integration",
+    "productionProviderAcceptance": false,
+    "identityProvider": "official eSignet with its development identity plugin",
+    "selectedEvidenceAdapter": "csv-batch@1",
+    "selectedPaymentProvider": "simulator",
+    "readyForProviderValidation": true,
+    "missingConfiguration": [],
+    "runtimeMismatches": [],
+    "composeProblems": [],
+    "companionRequirements": [],
+    "vaultProbe": {
+      "state": "issuer_secret_readable",
+      "fields": [
+        "esignet_client_key",
+        "issuer_seed"
+      ]
+    },
+    "optionalMOSIPCompanions": [
+      {
+        "service": "eSignet",
+        "status": "external_configured_not_probed",
+        "neededFor": "real browser OIDC login; acceptance must configure an external ESIGNET_URL/UI, client key, browser door, and matching CREST_OIDC issuer/JWKS"
+      },
+      {
+        "service": "Certify",
+        "status": "outside_acceptance_compose_not_probed",
+        "neededFor": "MOSIP Certify credential issuance integration, when that provider flow is selected"
+      },
+      {
+        "service": "Mimoto",
+        "status": "outside_acceptance_compose_not_probed",
+        "neededFor": "MOSIP wallet enrollment/storage integration"
+      },
+      {
+        "service": "Inji Verify",
+        "status": "outside_acceptance_compose_not_probed",
+        "neededFor": "MOSIP's upstream verifier UI/API; CREST's own verify app remains separate"
+      }
+    ],
+    "businessDataCreatedByPreflight": false
+  },
+  "validationScope": "development-integration",
+  "productionProviderAcceptance": false,
+  "developmentProviders": {
+    "identity": "official eSignet with upstream mock identity system",
+    "payments": "explicit simulator; no real money movement",
+    "notifications": "durable authenticated HTTP development inbox",
+    "evidence": "csv-batch@1"
+  },
+  "deferredByUser": [
+    "production identity integration",
+    "production notification provider and SMS",
+    "real payment provider plugins and settlement acceptance",
+    "non-CSV evidence adapters"
+  ],
+  "companionKeystoreRepair": {
+    "originalVolumePreserved": "crest_mimotocerts",
+    "replacementVolume": "crest_mimotocerts-rotated-20260906",
+    "historicalDecryption": "replacement keys cannot decrypt artifacts from missing original keys; agent inspected DB only key-management tables and empty Mimoto data directory"
+  },
+  "serviceImages": {
+    "core": "sha256:38f5d92f606e990037a347292f0ded1be35fb8ec3b4be0a90f3a63eff0ef6b2e",
+    "payments": "sha256:afaaea7147e0c12ba6f2238aa1d289f3cfdad365da87059091e314d7a2457b74",
+    "devnotifications": "sha256:bddc0730b3b5ed6dc874114826a30fd6ea42e9d5edebc182b91032cb3098aee6"
+  },
+  "paymentRateTiming": "missing-rate instruction remained held; authorized rate published later with explicit effectiveFrom at work-date boundary, immutable record/version and pricingAt pinned on retry",
+  "productionReadinessGates": [
+    "production provider credentials and acceptance",
+    "production operational deployment, alert delivery, TLS and recovery configuration",
+    "separate migration principal or revocation of service database CREATE after migrations",
+    "legacy lifecycle upgrade rehearsal against deployed history"
+  ],
+  "recoveryProject": {
+    "name": "crest-development-recovery",
+    "state": "stopped; volumes preserved",
+    "backupCurrency": "before later credential rotation and second CSV claim",
+    "restoredBundle": "/tmp/crest-development-recovery-20260906"
+  },
+  "companionDID": {
+    "did": "did:web:certify.crest.test:v1:certify:.well-known",
+    "transport": "private Docker-network HTTPS with locally issued certificate and scoped JVM truststores",
+    "hostTrustChanged": false,
+    "certificateLifetimeDays": 90,
+    "productionReady": false
+  },
+  "companionValidationScope": {
+    "tested": "Inji Web guest flow with real eSignet worker login, Certify issuance, downloaded PDF QR and native Inji Verify API",
+    "notEstablished": [
+      "mobile wallet/device acceptance",
+      "Mimoto account-based cloud wallet and background WebSub/authmanager integrations",
+      "core-to-Certify lifecycle propagation",
+      "companion disaster recovery"
+    ]
+  },
+  "companionImages": {
+    "mimoto": "sha256:03022ff0cf0d25fa25bfd7ac8bc9361a971717f052e07c015710d1a440107724",
+    "inji-certify": "sha256:92d2382eecbdd2ff9e74ab3a27a2c6193513b36d07dc5cc3d29456dc703f02fe",
+    "inji-web": "sha256:6adce090862e7522eb3cffd9566f81f786f413651196d4cc848004ea7ccb3bef",
+    "inji-verify-service": "sha256:b2150e771d133d9fa4f2ae1daf9f6675212a1ca34ada69e41235cc0103f5c9a3",
+    "certify-did-tls": "sha256:96868d9fa38f469a86d2f25787e43ee9ad330339d30be260aa9f5a338bb03751"
+  },
+  "companionPDFevidence": {
+    "sha256": "9b5beb35868ce6086a0ad81a61722395aec812b4d138675ec2184474c2785a6d",
+    "pages": 1,
+    "extractedImages": 1,
+    "fieldChecks": {
+      "activity": true,
+      "periodStart": true,
+      "outcomeValue": true,
+      "outcomeUnit": true,
+      "sourceClass": true,
+      "captureMethod": true,
+      "receivedAt": true,
+      "noTemplateExpressions": true
+    },
+    "verification": {
+      "verificationStatus": "SUCCESS",
+      "tamperedPeriod": {
+        "verificationStatus": "INVALID"
+      }
+    }
+  },
+  "finalReadiness": {
+    "core": 200,
+    "payments": 200,
+    "notifications": 200,
+    "CREST apps": 200,
+    "Inji issuer proxy": 200
+  },
+  "reviewFixValidation": {
+    "scope": "rebuilt acceptance core/payments; actual public API journey; CI fixture migration still in progress",
+    "businessDataSeeded": false,
+    "cleanLocalStartup": "passed in separate empty Compose project using generated service token; core/payments readiness200, anonymous internal401, authenticated internal200",
+    "csv": "new row accepted; identical replay produced zero additional claims",
+    "notification": "actual HTTP inbox; wrong actor acknowledgement403; worker acknowledgement200",
+    "confirmation": "explicit worker confirmation200; no clock advancement",
+    "credentialFields": [
+      "activity",
+      "outcome_unit",
+      "outcome_value",
+      "period_start",
+      "source_record_ref",
+      "worker_id",
+      "worker_id_kind"
+    ],
+    "authoritativeTimestamp": "issuedAt, validFrom and signed confirmation.at agree",
+    "onlineVerification": "valid=true; signatureValid=true; tier2",
+    "offlineVerification": "actual new credential signature verified; zero API requests; withdrawal-not-checked shown",
+    "payment": "instruction created through subscriber; settlement not exercised for this additional claim",
+    "coreImage": "sha256:16d76da5abec624b330088abd35d1b655054292dd380496127c700814f164063",
+    "paymentsImage": "sha256:7c62baba4bde29456dcdaedfd6de0356dff371a775db4d9f285417c8dd41b740"
+  },
+  "demoRecording": {
+    "path": "docs/assets/crest-development-validation/crest-development-validation.mp4",
+    "durationSeconds": 136.75,
+    "sha256": "5ee79926c2c083edb61e7b31a3d8a754d04ee66f4bf7d6d7e09e4903e66e9109",
+    "scope": "actual encrypted wallet offline restore, core credential offline verification, eSignet/Inji Web guest download; no new CSV, review-window or payment-settlement recording",
+    "downloadedPDFQRVerification": "native Inji API SUCCESS for the PDF downloaded during recording",
+    "loginFieldsRedacted": true
+  },
+  "latestReviewFixImages": {
+    "core": "sha256:00e22267fe3fd428b72ffa7facdcec93f1adab4a98097ecc8f54137fce2f4959",
+    "payments": "sha256:11e9ba958722aad3a90b296a92873292f808412be4e3bc507552717062a8729f"
+  }
+}

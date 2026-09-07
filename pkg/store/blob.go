@@ -131,3 +131,11 @@ func LoadS3Config() (S3Config, bool) {
 	}
 	return cfg, true
 }
+
+// PreparedBlobs supports an opaque key journaled before external upload.
+type PreparedBlobs interface {
+	PutPrepared(context.Context, string, io.Reader, string) (Blob, error)
+}
+
+// PrepareBlobKey returns a validated opaque key for an externally prepared blob.
+func PrepareBlobKey(kind string) (string, error) { return mintKey(kind) }

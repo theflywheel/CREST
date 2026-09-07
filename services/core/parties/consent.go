@@ -1,6 +1,7 @@
 package parties
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -10,7 +11,9 @@ import (
 
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
+	"github.com/theflywheel/crest/pkg/idempotency"
 	"github.com/theflywheel/crest/pkg/identity"
+	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
 )
 
@@ -74,6 +77,10 @@ var validCaptureMethods = map[string]bool{
 
 // ErrNoArtefact is returned when a consent has no stored artefact to serve.
 var ErrNoArtefact = errors.New("this consent has no artefact")
+
+var errNoConsentObjectStore = errors.New("consent object store is unavailable")
+
+var errLiveEnrolmentConsent = errors.New("an enrolment consent is already live for this programme")
 
 func insertConsent(ctx context.Context, tx store.Querier, c Consent) error {
 	_, err := tx.Exec(ctx, `
@@ -187,10 +194,12 @@ func clearArtefactKey(ctx context.Context, tx store.Querier, consentID string) e
 // document, and the failure mode of multipart on a truncated upload is a parse
 // error that names nothing.
 //
-// The artefact is stored BEFORE the row, deliberately. If the row were written
-// first and the upload then failed, the record would claim a recording that
-// does not exist. In the other order the worst case is an object with no row
-// pointing at it: invisible, sweepable, and nobody's consent is misdescribed.
+// The artefact is uploaded before the row, deliberately, while the SQL
+// transaction is still open. If the row were written first and the upload then
+// failed, the record would claim a recording that does not exist. Every failure
+// visible to this process removes the newly minted object before returning;
+// the store interface intentionally mints opaque keys, so deployments that
+// require crash level orphan reclamation must provide an object-store sweep.
 func (h *handlers) recordConsent(w http.ResponseWriter, r *http.Request) {
 	partyID := r.PathValue("id")
 	q := r.URL.Query()
@@ -199,6 +208,19 @@ func (h *handlers) recordConsent(w http.ResponseWriter, r *http.Request) {
 	// them in the consent's context.
 	if _, ok := identity.Authorize(w, r, h.d.Log, partyID, q.Get("contextId"),
 		h.d.Authenticating, h.d.Permits); !ok {
+		return
+	}
+	caller := identity.From(r.Context())
+	if caller.PartyID == "" {
+		httpx.WriteError(w, http.StatusForbidden, "caller_required", "a consent capture must have an authenticated agent")
+		return
+	}
+	key, ok := requireIdempotencyKey(w, r)
+	if !ok {
+		return
+	}
+	raw, ok := readConsentBody(w, r)
+	if !ok {
 		return
 	}
 
@@ -214,8 +236,12 @@ func (h *handlers) recordConsent(w http.ResponseWriter, r *http.Request) {
 		c.Moment = "enrolment"
 	}
 	if by := q.Get("capturedBy"); by != "" {
-		c.CapturedBy = &by
+		if by != caller.PartyID {
+			httpx.WriteError(w, http.StatusForbidden, "actor_mismatch", "capturedBy must be the authenticated caller")
+			return
+		}
 	}
+	c.CapturedBy = &caller.PartyID
 	if c.Purpose == "" || c.CaptureMethod == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_request",
 			"a consent needs a purpose and a captureMethod; consent to something unstated is not consent")
@@ -247,32 +273,18 @@ func (h *handlers) recordConsent(w http.ResponseWriter, r *http.Request) {
 
 	// A body is required for voice and optional otherwise. The database
 	// constraint says the same thing; this says it in words a caller can read.
-	if r.ContentLength != 0 {
-		if h.d.Blobs == nil {
-			httpx.WriteError(w, http.StatusServiceUnavailable, "no_object_store",
-				"this deployment has no object store, so a consent artefact cannot be kept")
-			return
-		}
-		contentType := r.Header.Get("Content-Type")
-		blob, err := h.d.Blobs.Put(r.Context(), "consent", r.Body, contentType)
-		if errors.Is(err, store.ErrBlobTooLarge) {
-			httpx.WriteError(w, http.StatusRequestEntityTooLarge, "artefact_too_large",
-				"the recording is larger than this deployment accepts; it was not stored, "+
-					"because a truncated consent recording stops before the part that matters")
-			return
-		}
-		if err != nil {
-			httpx.Fail(w, h.d.Log, "store consent artefact", err)
-			return
-		}
-		c.ArtefactKey, c.ArtefactDigest, c.ArtefactType = &blob.Key, &blob.Digest, &blob.ContentType
-	} else if c.CaptureMethod == "voice" {
+	if len(raw) == 0 && c.CaptureMethod == "voice" {
 		httpx.WriteError(w, http.StatusBadRequest, "voice_consent_needs_a_recording",
 			"a voice consent was declared with no recording attached. For a worker who "+
 				"cannot read the form this would be their entire consent record")
 		return
 	}
-
+	contentType := r.Header.Get("Content-Type")
+	if c.CaptureMethod == "voice" && !validVoiceRecording(contentType, raw) {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_voice_recording",
+			"voice consent requires an Ogg, WAV, WebM, or MP4 audio recording whose bytes have the matching audio signature")
+		return
+	}
 	// The programme has to exist. Without this the failure is a foreign-key
 	// violation surfacing as a bare 500 — which is what the first PoC run got,
 	// fifteen times, saying nothing about which of the two ids was wrong.
@@ -296,21 +308,157 @@ func (h *handlers) recordConsent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var prepared store.PreparedBlobs
+	var objectKey string
+	if len(raw) > 0 {
+		var ok bool
+		prepared, ok = h.d.Blobs.(store.PreparedBlobs)
+		if !ok {
+			httpx.WriteError(w, http.StatusServiceUnavailable, "no_durable_uploads", "object storage does not support recoverable uploads")
+			return
+		}
+		var err error
+		objectKey, err = prepareConsentUpload(r.Context(), h.d, idempotency.BodyDigest([]byte(caller.PartyID+"|"+key+"|"+idempotency.CanonicalPath(r)+"|"+idempotency.BodyDigest(raw))))
+		if err != nil {
+			httpx.Fail(w, h.d.Log, "journal consent upload", err)
+			return
+		}
+	}
+
+	var replay bool
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
-		return insertConsent(r.Context(), tx, c)
-	}); err != nil {
-		// The artefact is already stored. Leaving it would be an orphan nobody
-		// can find, so it goes back out before the error is reported.
-		if c.ArtefactKey != nil && h.d.Blobs != nil {
-			if derr := h.d.Blobs.Delete(r.Context(), *c.ArtefactKey); derr != nil {
-				h.d.Log.Error("orphaned a consent artefact", "key", *c.ArtefactKey, "error", derr)
+		reservation, err := beginIdempotency(r.Context(), tx, r, key, caller.PartyID, raw)
+		if err != nil {
+			return err
+		}
+		if reservation.Replay() {
+			if reservation.Result().ResourceType != "consent" || reservation.Result().ResourceID == "" {
+				return errors.New("idempotency replay has no consent resource")
+			}
+			c.ID = reservation.Result().ResourceID
+			replay = true
+			return nil
+		}
+		// Check the one-live-consent invariant before touching object storage.
+		// A distinct retry key must not upload a second recording and then turn
+		// the database's partial-index violation into a 500. The row lock protects
+		// an existing consent; the unique index below handles concurrent inserts
+		// when this precheck finds no row.
+		if c.Moment == "enrolment" && c.ContextID != nil {
+			var existingID string
+			err := tx.QueryRow(r.Context(), `
+				SELECT id FROM consents
+				WHERE party_id = $1 AND context_id = $2 AND moment = 'enrolment' AND revoked_at IS NULL
+				FOR UPDATE`, c.PartyID, *c.ContextID).Scan(&existingID)
+			switch {
+			case err == nil:
+				return errLiveEnrolmentConsent
+			case !errors.Is(err, store.ErrNotFound):
+				return err
 			}
 		}
+		// Keep the request reservation, artefact row and completion marker in
+		// one transaction. Uploading while this transaction is open lets all
+		// known failure paths delete the newly created object before returning.
+		if len(raw) > 0 {
+			if h.d.Blobs == nil {
+				return errNoConsentObjectStore
+			}
+			var locked string
+			if err := tx.QueryRow(r.Context(), "SELECT object_key FROM consent_upload_intents WHERE object_key=$1 FOR UPDATE", objectKey).Scan(&locked); err != nil {
+				return err
+			}
+			blob, err := prepared.PutPrepared(r.Context(), objectKey, bytes.NewReader(raw), contentType)
+			if errors.Is(err, store.ErrBlobTooLarge) {
+				return err
+			}
+			if err != nil {
+				return err
+			}
+			c.ArtefactKey, c.ArtefactDigest, c.ArtefactType = &blob.Key, &blob.Digest, &blob.ContentType
+		}
+		if err := insertConsent(r.Context(), tx, c); err != nil {
+			return err
+		}
+		return reservation.Complete(r.Context(), tx, idempotency.Result{
+			Status: http.StatusCreated, ResourceType: "consent", ResourceID: c.ID,
+		})
+	}); err != nil {
+		if errors.Is(err, errLiveEnrolmentConsent) {
+			discardConsentUpload(r.Context(), h.d, objectKey)
+			httpx.WriteError(w, http.StatusConflict, "enrolment_consent_already_live",
+				"this worker already has live enrolment consent for this programme; the existing consent remains in effect")
+			return
+		}
+		if isLiveEnrolmentUniqueViolation(err) && c.Moment == "enrolment" && c.ContextID != nil {
+			// A concurrent insert can still win between the lookup and the
+			// insert under a different transaction snapshot. Confirm the live
+			// row before translating the unique violation so unrelated duplicate
+			// errors are not mislabeled.
+			state, stateErr := enrolmentConsentOf(r.Context(), h.d.DB.Q(), c.PartyID, *c.ContextID)
+			if stateErr == nil && state == ConsentGranted {
+				discardConsentUpload(r.Context(), h.d, objectKey)
+				httpx.WriteError(w, http.StatusConflict, "enrolment_consent_already_live",
+					"this worker already has live enrolment consent for this programme; the existing consent remains in effect")
+				return
+			}
+		}
+		if errors.Is(err, idempotency.ErrFingerprint) || errors.Is(err, idempotency.ErrInProgress) {
+			writeIdempotencyError(w, h.d.Log, err)
+			return
+		}
+		if errors.Is(err, store.ErrBlobTooLarge) {
+			httpx.WriteError(w, http.StatusRequestEntityTooLarge, "artefact_too_large",
+				"the recording is larger than this deployment accepts; it was not stored")
+			return
+		}
+		if errors.Is(err, errNoConsentObjectStore) {
+			httpx.WriteError(w, http.StatusServiceUnavailable, "no_object_store",
+				"this deployment has no object store, so a consent artefact cannot be kept")
+			return
+		}
+		// The durable intent is reclaimed only after proving no consent refers to it.
+		// A lost COMMIT response must never cause deletion of a committed recording.
+
 		httpx.Fail(w, h.d.Log, "record consent", err)
+		return
+	}
+	if replay {
+		stored, err := getConsent(r.Context(), h.d.DB.Q(), c.ID)
+		if err != nil {
+			httpx.Fail(w, h.d.Log, "reconstruct consent", err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusCreated, stored)
 		return
 	}
 	c.State = ConsentGranted
 	httpx.WriteJSON(w, http.StatusCreated, c)
+}
+
+func isLiveEnrolmentUniqueViolation(err error) bool {
+	// The store package deliberately keeps the PostgreSQL driver behind its
+	// interface. Match the named invariant after the generic SQLSTATE check so
+	// another unique constraint is not reported as a live-consent conflict.
+	return store.IsUniqueViolation(err) && strings.Contains(err.Error(), "consents_one_live_enrolment_per_context")
+}
+
+// discardConsentUpload removes an upload prepared for a transaction that did
+// not commit. The intent is deleted after the object removal; if cleanup itself
+// fails, the durable intent remains for recoverConsentUploads to retry safely.
+func discardConsentUpload(ctx context.Context, d service.Deps, objectKey string) {
+	if objectKey == "" {
+		return
+	}
+	if d.Blobs != nil {
+		if err := d.Blobs.Delete(ctx, objectKey); err != nil {
+			d.Log.Error("discarding uncommitted consent artefact failed", "key", objectKey, "error", err)
+			return
+		}
+	}
+	if _, err := d.DB.Q().Exec(ctx, "DELETE FROM consent_upload_intents WHERE object_key=$1", objectKey); err != nil {
+		d.Log.Error("discarding consent upload intent failed", "key", objectKey, "error", err)
+	}
 }
 
 func (h *handlers) listPartyConsents(w http.ResponseWriter, r *http.Request) {

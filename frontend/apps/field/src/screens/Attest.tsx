@@ -16,21 +16,32 @@ import { useField, short, when } from "../state";
 
 type Win = { partyId?: string; closesAt?: string; exitRoute?: string };
 
-function useLoad<T>(fn: () => Promise<T>): T | undefined {
+// deps: what the load reads from the session. The project is discovered
+// after sign-in, so a scoped read must run again once it is known.
+function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []): T | undefined {
   const [data, setData] = useState<T>();
   useEffect(() => {
     let live = true;
+    // A switch of project must never keep showing the previous project's
+    // queue while the new read is in flight (or after it fails).
+    setData(undefined);
     fn().then((d) => live && setData(d));
     return () => {
       live = false;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
   return data;
 }
 
 export function ToConfirm() {
   const nav = useNavigate();
-  const out = useLoad(() => api.get("confirmation", "/v1/unreached"));
+  const s = useField();
+  // A review list is always scoped to the project (§9): the substrate refuses
+  // an unscoped read rather than exporting everybody's windows.
+  const out = useLoad(
+    () => api.get("confirmation", "/v1/unreached?contextId=" + encodeURIComponent(s.contextId || "")),
+    [s.contextId],
+  );
   const list: Array<{ claimId: string; partyId?: string; closesAt?: string }> = out
     ? out.windows || out.unreached || []
     : [];
@@ -299,6 +310,28 @@ export function Roster() {
             )}
           </label>
           <label className="body-2">
+            Registered source this roster came from
+            {s.sources.length ? (
+              <select
+                id="source-select"
+                value={s.sourceSystemRef || ""}
+                onChange={(e) => s.setSourceSystemRef(e.target.value)}
+                style={{ width: "100%", marginTop: 4, font: "inherit" }}
+              >
+                <option value="">Choose a registered source…</option>
+                {s.sources.map((source) => (
+                  <option key={source.systemRef} value={source.systemRef}>
+                    {source.systemRef} · {source.sourceClass || "approved class"} · {source.captureMethod || "approved capture"} · {source.sourceExposure || "approved exposure"}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="muted" style={{ display: "block", marginTop: 4 }}>
+                No source is registered for this project. Register and approve the source in the console before sending a roster.
+              </span>
+            )}
+          </label>
+          <label className="body-2">
             CSV file
             <input type="file" name="file" accept=".csv,text/csv" onChange={(e) => setFile(e.target.files?.[0] || null)} style={{ font: "inherit", marginTop: 4 }} />
           </label>
@@ -339,11 +372,11 @@ export function Handoff() {
   const s = useField();
   const data = useLoad(async () => {
     const [unclear, unreached] = await Promise.all([
-      api.get("evidence", "/v1/unclear").catch(() => ({ unclear: [] })),
-      api.get("confirmation", "/v1/unreached").catch(() => ({ windows: [], unreached: [] })),
+      api.get("evidence", "/v1/unclear?contextId=" + encodeURIComponent(s.contextId || "")).catch(() => ({ unclear: [] })),
+      api.get("confirmation", "/v1/unreached?contextId=" + encodeURIComponent(s.contextId || "")).catch(() => ({ windows: [], unreached: [] })),
     ]);
     return { unclear, unreached };
-  });
+  }, [s.contextId]);
   const uc: Array<{ id?: string; rowRef?: string; kind?: string; reason?: string; resolvedAt?: string }> = data
     ? (data.unclear.unclear || []).filter((u: { resolvedAt?: string }) => !u.resolvedAt)
     : [];

@@ -28,6 +28,7 @@ var ErrDraftClosed = errors.New("this draft is no longer open; clone it into a n
 // Draft is the stored authoring document with its lifecycle facts.
 type Draft struct {
 	ID               string    `json:"id"`
+	ContextID        string    `json:"contextId"`
 	DefinitionID     string    `json:"definitionId,omitempty"`
 	BaseVersion      int       `json:"baseVersion,omitempty"`
 	State            string    `json:"state"`
@@ -51,9 +52,9 @@ func insertDraft(ctx context.Context, tx store.Querier, d Draft) error {
 		baseVersion = d.BaseVersion
 	}
 	_, err = tx.Exec(ctx, `
-		INSERT INTO definition_drafts (id, definition_id, base_version, state, doc, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		d.ID, defID, baseVersion, d.State, doc, d.CreatedBy, d.CreatedAt, d.UpdatedAt)
+		INSERT INTO definition_drafts (id, context_id, definition_id, base_version, state, doc, created_by, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		d.ID, d.ContextID, defID, baseVersion, d.State, doc, d.CreatedBy, d.CreatedAt, d.UpdatedAt)
 	return err
 }
 
@@ -63,9 +64,9 @@ func getDraft(ctx context.Context, q store.Querier, id string) (Draft, error) {
 	var defID *string
 	var baseVersion, submittedVersion *int
 	err := q.QueryRow(ctx, `
-		SELECT id, definition_id, base_version, state, doc, created_by, created_at, updated_at, submitted_version
+		SELECT id, context_id, definition_id, base_version, state, doc, created_by, created_at, updated_at, submitted_version
 		FROM definition_drafts WHERE id = $1`, id).
-		Scan(&d.ID, &defID, &baseVersion, &d.State, &doc, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt,
+		Scan(&d.ID, &d.ContextID, &defID, &baseVersion, &d.State, &doc, &d.CreatedBy, &d.CreatedAt, &d.UpdatedAt,
 			&submittedVersion)
 	if err != nil {
 		return Draft{}, err

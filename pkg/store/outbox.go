@@ -56,6 +56,7 @@ func (db *DB) Claim(ctx context.Context, n int) ([]OutboxMessage, error) {
 		WHERE id IN (
 			SELECT id FROM outbox
 			WHERE delivered_at IS NULL AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+              AND (claimed_at IS NULL OR claimed_at < now() - interval '2 minutes')
 			ORDER BY id
 			LIMIT $1
 			FOR UPDATE SKIP LOCKED
@@ -77,8 +78,8 @@ func (db *DB) Claim(ctx context.Context, n int) ([]OutboxMessage, error) {
 }
 
 // Delivered marks a message done.
-func (db *DB) Delivered(ctx context.Context, id int64) error {
-	_, err := db.pool.Exec(ctx, `UPDATE outbox SET delivered_at = now() WHERE id = $1`, id)
+func (db *DB) Delivered(ctx context.Context, id int64, attempt int) error {
+	_, err := db.pool.Exec(ctx, `UPDATE outbox SET delivered_at = now(), claimed_at = NULL WHERE id = $1 AND attempts = $2`, id, attempt)
 	return err
 }
 
@@ -88,12 +89,12 @@ func (db *DB) Delivered(ctx context.Context, id int64) error {
 // someone has to look at — and a queue that quietly discards a payment release
 // is the failure this whole mechanism exists to prevent (W10: every held
 // payment has a reason with an owner).
-func (db *DB) Failed(ctx context.Context, id int64, cause string) error {
+func (db *DB) Failed(ctx context.Context, id int64, attempt int, cause string) error {
 	_, err := db.pool.Exec(ctx, `
 		UPDATE outbox
-		SET last_error = $2,
+		SET last_error = $2, claimed_at = NULL,
 		    next_attempt_at = now() + LEAST(interval '5 minutes', attempts * interval '2 seconds')
-		WHERE id = $1`, id, cause)
+		WHERE id = $1 AND attempts = $3`, id, cause, attempt)
 	return err
 }
 

@@ -1,11 +1,15 @@
 package evidence
 
 import (
+	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/theflywheel/crest/pkg/pii"
 	"github.com/theflywheel/crest/pkg/schema"
+	"github.com/theflywheel/crest/pkg/strength"
 )
 
 // The hasher is normally built at route registration, from deployment
@@ -87,6 +91,80 @@ func TestTheSameRecordTwiceCollidesOnTheDedupeKey(t *testing.T) {
 				t.Errorf("%s collided with the original: real work would be discarded as a duplicate", name)
 			}
 		})
+	}
+}
+
+// The same record reference from two source systems is two records: a
+// reference is only unique within the system that issued it.
+func TestTheSameReferenceFromTwoSystemsIsTwoUnits(t *testing.T) {
+	unit := schema.Unit{ContextID: "ctx", Definition: schema.VersionedRef{ID: "def", Version: 1},
+		Outcome: schema.Outcome{Value: 1, Unit: "visit"}, Period: schema.Period{Start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}}
+	rec := schema.CanonicalWorkEvidenceRecord{Activity: "visit", WorkerJoiningIdentifier: schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifier{
+		Kind: schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifierKindPhone, Value: "+1"},
+		Provenance: schema.Provenance{SourceRecordRef: ref("0001"), SystemRef: ref("dhis2-riverside")}}
+	other := rec
+	other.Provenance.SystemRef = ref("csv-batch")
+	if dedupeKey(unit, rec) == dedupeKey(unit, other) {
+		t.Fatal("record 0001 from two systems collided: one system's row would be discarded as the other's duplicate")
+	}
+}
+
+// Two workers' otherwise identical rows are two units. The key is built over
+// the redacted record — the form the store holds — so a national identifier
+// enters only as its salted hash.
+func TestTwoWorkersRowsAreTwoUnits(t *testing.T) {
+	unit := schema.Unit{ContextID: "ctx", Definition: schema.VersionedRef{ID: "def", Version: 1},
+		Outcome: schema.Outcome{Value: 1, Unit: "visit"}, Period: schema.Period{Start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}}
+	a := schema.CanonicalWorkEvidenceRecord{Activity: "visit", WorkerJoiningIdentifier: schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifier{
+		Kind: schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifierKindNationalID, Value: "12345678"}}
+	b := a
+	b.WorkerJoiningIdentifier.Value = "87654321"
+	if dedupeKey(unit, redact(a)) == dedupeKey(unit, redact(b)) {
+		t.Fatal("two workers' rows collided on the dedupe key")
+	}
+	if dedupeKey(unit, a) == dedupeKey(unit, redact(a)) {
+		t.Fatal("the raw and the redacted identifier keyed the same: the raw number reached the key")
+	}
+}
+
+func TestStoredUnitPreservesOnlyCanonicalEvidencePresence(t *testing.T) {
+	unit := schema.Unit{
+		ID:        "unit-1",
+		ContextID: "ctx-1",
+		Outcome:   schema.Outcome{Value: 0, Unit: "visits"},
+		Period:    schema.Period{Start: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)},
+		Enrichment: map[string]any{
+			"beneficiaryCount": 0,
+			"blank":            "",
+		},
+	}
+	rec := schema.CanonicalWorkEvidenceRecord{
+		Activity:   "visit",
+		Outcome:    unit.Outcome,
+		Period:     unit.Period,
+		Enrichment: unit.Enrichment,
+		WorkerJoiningIdentifier: schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifier{
+			Kind:  schema.CanonicalWorkEvidenceRecordWorkerJoiningIdentifierKindRosterID,
+			Value: "roster-secret",
+		},
+	}
+	fields := strength.EvidenceFields(rec)
+	raw, err := json.Marshal(storedUnit{Unit: unit, EvidenceFields: fields})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "roster-secret") {
+		t.Fatal("stored unit unexpectedly contains the joining identifier")
+	}
+	var got storedUnit
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.EvidenceFields, fields) {
+		t.Fatalf("stored evidence presence = %#v, want %#v", got.EvidenceFields, fields)
+	}
+	if got.ID != unit.ID || got.ContextID != unit.ContextID {
+		t.Fatalf("stored unit identity changed: %#v", got.Unit)
 	}
 }
 

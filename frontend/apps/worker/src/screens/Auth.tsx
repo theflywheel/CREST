@@ -8,6 +8,7 @@ import { DisLi, Sidecar } from "@crest/ui";
 import { EntryShell } from "./Login";
 import { startEsignetLogin } from "@crest/api";
 import { useSession, describeError } from "../session";
+import { takePendingReview } from "../reviewState";
 
 export function AuthReturn() {
   const s = useSession();
@@ -31,7 +32,7 @@ export function AuthReturn() {
     }
     s.completeEsignet(token)
       .then((outcome) => {
-        if (outcome === "enrolled") nav("/home", { replace: true });
+        if (outcome === "enrolled") nav(takePendingReview() || "/home", { replace: true });
         else setState("stranger");
       })
       .catch((e) => {
@@ -149,7 +150,7 @@ function SignUp() {
       const joining = prog.trim() || null;
       s.setProgramme(joining);
       await s.signUp(name.trim(), phone.trim(), CONSENT_PURPOSE, joining);
-      nav("/home", { replace: true });
+      nav(takePendingReview() || "/home", { replace: true });
     } catch (e) {
       setErr(describeError(e));
       setBusy(false);

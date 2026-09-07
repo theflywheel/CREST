@@ -75,8 +75,17 @@ func insertBatch(ctx context.Context, tx store.Querier, b Batch) error {
 // Converging rather than inserting is what makes a re-submitted batch harmless.
 // The returned id is then what the claim is written against, so the claim's own
 // (unit_id, party_id) uniqueness catches the duplicate and nobody is paid twice.
-func insertUnit(ctx context.Context, tx store.Querier, batchID string, u schema.Unit, dedupeKey string) (string, error) {
-	doc, err := json.Marshal(u)
+// storedUnit keeps the canonical field-presence vocabulary beside the Unit
+// without retaining a joining identifier or changing the public Unit schema.
+// The sidecar is only returned on the authenticated internal route consumed by
+// credential issuance.
+type storedUnit struct {
+	schema.Unit
+	EvidenceFields []string `json:"evidenceFields,omitempty"`
+}
+
+func insertUnit(ctx context.Context, tx store.Querier, batchID string, u schema.Unit, evidenceFields []string, dedupeKey string) (string, error) {
+	doc, err := json.Marshal(storedUnit{Unit: u, EvidenceFields: evidenceFields})
 	if err != nil {
 		return "", err
 	}
@@ -118,14 +127,19 @@ func insertUnclear(ctx context.Context, tx store.Querier, u UnclearRow) error {
 	return err
 }
 
-func getUnit(ctx context.Context, q store.Querier, unitID string) (schema.Unit, error) {
+func getStoredUnit(ctx context.Context, q store.Querier, unitID string) (storedUnit, error) {
 	var doc []byte
 	err := q.QueryRow(ctx, `SELECT doc FROM units WHERE id = $1`, unitID).Scan(&doc)
 	if err != nil {
-		return schema.Unit{}, err
+		return storedUnit{}, err
 	}
-	var u schema.Unit
+	var u storedUnit
 	return u, json.Unmarshal(doc, &u)
+}
+
+func getUnit(ctx context.Context, q store.Querier, unitID string) (schema.Unit, error) {
+	u, err := getStoredUnit(ctx, q, unitID)
+	return u.Unit, err
 }
 
 func getClaim(ctx context.Context, q store.Querier, claimID string) (schema.Claim, error) {
@@ -147,15 +161,16 @@ func getClaim(ctx context.Context, q store.Querier, claimID string) (schema.Clai
 // hole exactly where the system corrected itself about who they were.
 //
 // An empty slice means no filter, which is the same as before merges existed.
-func listClaims(ctx context.Context, q store.Querier, partyIDs []string, state string) ([]schema.Claim, error) {
+func listClaims(ctx context.Context, q store.Querier, partyIDs []string, state, contextID string) ([]schema.Claim, error) {
 	rows, err := q.Query(ctx, `
-		SELECT doc FROM claims
+		SELECT c.doc FROM claims c JOIN units u ON u.id = c.unit_id
 		-- COALESCE because a nil slice arrives as a NULL array, not an empty
 		-- one, and cardinality(NULL) is NULL rather than 0 — which makes the
 		-- whole predicate NULL and the unfiltered list silently empty.
 		WHERE (COALESCE(cardinality($1::text[]), 0) = 0 OR party_id = ANY($1))
-		  AND ($2 = '' OR state = $2)
-		ORDER BY id`, partyIDs, state)
+		  AND ($3 = '' OR u.context_id = $3)
+		  AND ($2 = '' OR c.state = $2)
+		ORDER BY c.id`, partyIDs, state, contextID)
 	if err != nil {
 		return nil, err
 	}
@@ -170,10 +185,12 @@ func listClaims(ctx context.Context, q store.Querier, partyIDs []string, state s
 	})
 }
 
-func openUnclear(ctx context.Context, q store.Querier) ([]UnclearRow, error) {
+func openUnclear(ctx context.Context, q store.Querier, contextID string) ([]UnclearRow, error) {
 	rows, err := q.Query(ctx, `
-		SELECT id, batch_id, row_ref, kind, reason, record, created_at
-		FROM unclear_rows WHERE resolved_at IS NULL ORDER BY created_at, id`)
+		SELECT u.id, u.batch_id, u.row_ref, u.kind, u.reason, u.record, u.created_at
+		FROM unclear_rows u JOIN batches b ON b.id = u.batch_id
+		WHERE u.resolved_at IS NULL AND ($1 = '' OR b.context_id = $1)
+		ORDER BY u.created_at, u.id`, contextID)
 	if err != nil {
 		return nil, err
 	}

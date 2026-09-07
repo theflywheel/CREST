@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/theflywheel/crest/adapters"
+	"github.com/theflywheel/crest/pkg/schema"
 
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -40,12 +41,18 @@ const (
 
 // Source is a feed this deployment expects evidence from.
 type Source struct {
-	ID            string `json:"id"`
-	AdapterRef    string `json:"adapterRef"`
-	ContextID     string `json:"contextId"`
-	SystemRef     string `json:"systemRef"`
-	ExpectedEvery string `json:"expectedEvery"`
-	OwnerPartyID  string `json:"ownerPartyId"`
+	ID         string `json:"id"`
+	AdapterRef string `json:"adapterRef"`
+	ContextID  string `json:"contextId"`
+	SystemRef  string `json:"systemRef"`
+	// These fields are approved at source registration and are never accepted
+	// from a submitted payload. They are the provenance tuple used for every
+	// record emitted by this source.
+	Class         schema.SourceClass    `json:"sourceClass"`
+	CaptureMethod schema.CaptureMethod  `json:"captureMethod"`
+	Exposure      schema.SourceExposure `json:"sourceExposure"`
+	ExpectedEvery string                `json:"expectedEvery"`
+	OwnerPartyID  string                `json:"ownerPartyId"`
 
 	// Mapping is how this source's own column names reach the canonical record
 	// (#25). Configuration, held beside the rest of what this deployment knows
@@ -105,6 +112,10 @@ func registerSource(ctx context.Context, tx store.Querier, s Source) (Source, er
 	if s.expectedEvery <= 0 {
 		return Source{}, ErrBadCadence
 	}
+	if !(adapters.Source{AdapterRef: s.AdapterRef, Class: s.Class, CaptureMethod: s.CaptureMethod,
+		Exposure: s.Exposure, SystemRef: s.SystemRef}).ValidProvenance() {
+		return Source{}, errors.New("source provenance is incomplete or unsupported")
+	}
 	mappingJSON, err := json.Marshal(s.Mapping)
 	if err != nil {
 		return Source{}, fmt.Errorf("marshal source mapping: %w", err)
@@ -115,20 +126,26 @@ func registerSource(ctx context.Context, tx store.Querier, s Source) (Source, er
 	// reason other than that somebody edited a row.
 	var secs int64
 	err = tx.QueryRow(ctx, `
-		INSERT INTO sources (id, adapter_ref, context_id, system_ref, expected_every,
+		INSERT INTO sources (id, adapter_ref, context_id, system_ref, source_class,
+		                     capture_method, source_exposure, expected_every,
 		                     owner_party_id, registered_at, mapping)
-		VALUES ($1,$2,$3,$4,$5::interval,$6,$7,$8)
-		ON CONFLICT (adapter_ref, context_id) DO UPDATE SET
-			expected_every = EXCLUDED.expected_every,
-			owner_party_id = EXCLUDED.owner_party_id,
-			system_ref     = EXCLUDED.system_ref,
-			mapping        = EXCLUDED.mapping
-		RETURNING id, registered_at, last_seen_at,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8::interval,$9,$10,$11)
+		ON CONFLICT (context_id, system_ref) DO UPDATE SET
+			adapter_ref     = EXCLUDED.adapter_ref,
+			source_class    = EXCLUDED.source_class,
+			capture_method  = EXCLUDED.capture_method,
+			source_exposure = EXCLUDED.source_exposure,
+			expected_every  = EXCLUDED.expected_every,
+			owner_party_id  = EXCLUDED.owner_party_id,
+			mapping         = EXCLUDED.mapping
+		RETURNING id, adapter_ref, registered_at, last_seen_at,
+		          source_class, capture_method, source_exposure,
 		          extract(epoch from expected_every)::bigint`,
-		s.ID, s.AdapterRef, s.ContextID, s.SystemRef,
+		s.ID, s.AdapterRef, s.ContextID, s.SystemRef, s.Class, s.CaptureMethod, s.Exposure,
 		fmt.Sprintf("%d seconds", int64(s.expectedEvery.Seconds())), s.OwnerPartyID, s.RegisteredAt,
 		mappingJSON).
-		Scan(&s.ID, &s.RegisteredAt, &s.LastSeenAt, &secs)
+		Scan(&s.ID, &s.AdapterRef, &s.RegisteredAt, &s.LastSeenAt, &s.Class, &s.CaptureMethod,
+			&s.Exposure, &secs)
 	if err != nil {
 		return Source{}, err
 	}
@@ -148,19 +165,20 @@ func registerSource(ctx context.Context, tx store.Querier, s Source) (Source, er
 // alerts nobody believes — which is worse than no alert, because it teaches
 // people to ignore the real one. The consequence is stated in the manifest: an
 // unregistered source is not watched.
-func markSeen(ctx context.Context, tx store.Querier, adapterRef, contextID string, at time.Time) error {
+func markSeen(ctx context.Context, tx store.Querier, adapterRef, contextID, systemRef string, at time.Time) error {
 	_, err := tx.Exec(ctx, `
 		UPDATE sources SET last_seen_at = $3, silent_since = NULL, notified_at = NULL
-		WHERE adapter_ref = $1 AND context_id = $2`, adapterRef, contextID, at)
+		WHERE adapter_ref = $1 AND context_id = $2 AND system_ref = $4`, adapterRef, contextID, at, systemRef)
 	return err
 }
 
-func listSources(ctx context.Context, q store.Querier, now time.Time) ([]Source, error) {
+func listSources(ctx context.Context, q store.Querier, now time.Time, contextID string) ([]Source, error) {
 	rows, err := q.Query(ctx, `
-		SELECT id, adapter_ref, context_id, system_ref,
+		SELECT id, adapter_ref, context_id, system_ref, source_class,
+		       capture_method, source_exposure,
 		       extract(epoch from expected_every)::bigint,
 		       owner_party_id, registered_at, last_seen_at, silent_since, notified_at, mapping
-		FROM sources ORDER BY adapter_ref, context_id`)
+		FROM sources WHERE context_id = $1 ORDER BY system_ref`, contextID)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +187,8 @@ func listSources(ctx context.Context, q store.Querier, now time.Time) ([]Source,
 		var s Source
 		var secs int64
 		var mapping []byte
-		if err := r.Scan(&s.ID, &s.AdapterRef, &s.ContextID, &s.SystemRef, &secs,
+		if err := r.Scan(&s.ID, &s.AdapterRef, &s.ContextID, &s.SystemRef, &s.Class,
+			&s.CaptureMethod, &s.Exposure, &secs,
 			&s.OwnerPartyID, &s.RegisteredAt, &s.LastSeenAt, &s.SilentSince, &s.NotifiedAt,
 			&mapping); err != nil {
 			return Source{}, err
@@ -187,25 +206,33 @@ func listSources(ctx context.Context, q store.Querier, now time.Time) ([]Source,
 	return out, err
 }
 
-// mappingFor is the configured vocabulary for one feed, or an empty mapping.
-//
-// An empty mapping is not a failure: a file that already speaks CREST's column
-// names needs no translation, which is every fixture in this repo and the case
-// this started as. Registering the source is what a deployment does when its
-// source system speaks its own.
-func mappingFor(ctx context.Context, q store.Querier, adapterRef, contextID string) (adapters.Mapping, error) {
-	var raw []byte
-	err := q.QueryRow(ctx,
-		`SELECT mapping FROM sources WHERE adapter_ref = $1 AND context_id = $2`,
-		adapterRef, contextID).Scan(&raw)
-	if errors.Is(err, store.ErrNotFound) || len(raw) == 0 {
-		return adapters.Mapping{}, nil
-	}
+// registeredSource returns the approved source configuration for one feed.
+// A missing row is an admission failure: provenance supplied with a batch is
+// not an assessment and cannot establish trust by itself.
+func registeredSource(ctx context.Context, q store.Querier, contextID, systemRef string) (Source, error) {
+	var s Source
+	var secs int64
+	var mapping []byte
+	err := q.QueryRow(ctx, `
+		SELECT id, adapter_ref, context_id, system_ref, source_class,
+		       capture_method, source_exposure,
+		       extract(epoch from expected_every)::bigint, owner_party_id,
+		       registered_at, last_seen_at, silent_since, notified_at, mapping
+		FROM sources WHERE context_id = $1 AND system_ref = $2`,
+		contextID, systemRef).Scan(&s.ID, &s.AdapterRef, &s.ContextID, &s.SystemRef,
+		&s.Class, &s.CaptureMethod, &s.Exposure, &secs, &s.OwnerPartyID, &s.RegisteredAt,
+		&s.LastSeenAt, &s.SilentSince, &s.NotifiedAt, &mapping)
 	if err != nil {
-		return adapters.Mapping{}, err
+		return Source{}, err
 	}
-	var m adapters.Mapping
-	return m, json.Unmarshal(raw, &m)
+	if len(mapping) > 0 {
+		if err := json.Unmarshal(mapping, &s.Mapping); err != nil {
+			return Source{}, fmt.Errorf("source %s has an unreadable mapping: %w", s.ID, err)
+		}
+	}
+	s.expectedEvery = time.Duration(secs) * time.Second
+	s.ExpectedEvery = s.expectedEvery.String()
+	return s, nil
 }
 
 // openSilence records that a source has gone quiet, and reports whether this
@@ -219,7 +246,7 @@ func mappingFor(ctx context.Context, q store.Querier, adapterRef, contextID stri
 // after the fact.
 func openSilence(ctx context.Context, tx store.Querier, sourceID string, at time.Time) (bool, error) {
 	n, err := tx.Exec(ctx, `
-		UPDATE sources SET silent_since = $2, notified_at = $2
+		UPDATE sources SET silent_since = $2, notified_at = NULL
 		WHERE id = $1 AND silent_since IS NULL`, sourceID, at)
 	return n > 0, err
 }

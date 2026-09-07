@@ -3,8 +3,7 @@ import { startEsignetLogin } from "@crest/api";
 
 export const Ussd = () => (
   <p className="muted" style={{ textAlign: "center" }}>
-    Dial <b className="mono">*384*77#</b> to hear this on any phone — the channel-parity promise (#29): every screen
-    here has a voice and USSD equivalent.
+    If you need help, ask your programme’s registering agent to explain the steps and record your consent.
   </p>
 );
 
@@ -40,6 +39,7 @@ export function Login() {
         Two ways in, and neither is a fallback. Both pathways issue the same Crest DID and the same enrollment consent
         record. A verifier can never tell which was used.
       </p>
+      <p><a className="btn secondary" href="#/wallet">Open saved device wallet</a></p>
       <div className="form-grid" style={{ alignItems: "stretch" }}>
         <div className="card hi" data-pathway="self">
           <span className="eyebrow">Pathway A — enroll yourself</span>
@@ -52,9 +52,7 @@ export function Login() {
             Continue with eSignet
           </button>
           <p className="muted" style={{ marginTop: 8 }}>
-            In this deployment eSignet authenticates against a test identity registry — a real national registry
-            arrives with a pilot (#53). The flow, and what CREST sees, is identical. CREST never stores the document.
-            Only the result of the check is kept.
+            Sign in with this deployment’s configured identity provider. CREST never stores the document. Only the result of the check is kept.
           </p>
         </div>
         <div className="card" data-pathway="assisted">

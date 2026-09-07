@@ -430,7 +430,8 @@ export function Registry() {
     };
   }, [gen]);
   const start = async (clone?: { id: string; version: number }) => {
-    const body: Record<string, unknown> = { createdByPartyId: me };
+    if (!s.projectId) throw new Error("choose the project this definition belongs to before creating a draft");
+    const body: Record<string, unknown> = { createdByPartyId: me, contextId: s.projectId };
     if (clone) {
       body.cloneFromDefinitionId = clone.id;
       body.cloneFromVersion = clone.version;
@@ -1151,25 +1152,25 @@ const ASSURANCES = ["IA-0", "IA-1", "IA-2", "IA-3"];
 // who deletes it should have to do so deliberately.
 const STARTER_MAP: TierRule[] = [
   {
-    tier: 3, sourceClassIn: ["national-system", "institutional-system"],
+    tier: 1, sourceClassIn: ["national-system", "institutional-system"],
     captureMethodIn: ["system-of-record"], minIdentityAssurance: "IA-3", requiresFields: [],
   },
   {
     tier: 2, sourceClassIn: ["national-system", "institutional-system", "programme-system"],
     captureMethodIn: ["system-of-record", "digital-capture"], minIdentityAssurance: "IA-1", requiresFields: [],
   },
-  { tier: 1, sourceClassIn: SOURCE_CLASSES, captureMethodIn: CAPTURE_METHODS },
+  { tier: 3, sourceClassIn: SOURCE_CLASSES, captureMethodIn: CAPTURE_METHODS },
 ];
 
 function EvidenceBody({ d }: BodyProps) {
   const e = d.doc.evidence || {};
   const [summary, setSummary] = useState(e.summary || "");
   const [plain, setPlain] = useState((e.evidenceInPlainLanguage || []).join("\n"));
-  const [ceiling, setCeiling] = useState(e.tierCeiling ? String(e.tierCeiling) : "3");
+  const [ceiling, setCeiling] = useState(e.tierCeiling ? String(e.tierCeiling) : "1");
   const [intensity, setIntensity] = useState(e.checkIntensity || "");
   const [map, setMap] = useState<TierRule[]>(e.tierMap && e.tierMap.length ? e.tierMap : STARTER_MAP);
   const cap = Number(ceiling);
-  const over = map.filter((r) => r.tier > cap);
+  const over = map.filter((r) => r.tier < cap);
   const setRule = (i: number, patch: Partial<TierRule>) =>
     setMap(map.map((r, j) => (i === j ? { ...r, ...patch } : r)));
   const toggle = (i: number, key: "sourceClassIn" | "captureMethodIn", v: string) => {
@@ -1205,9 +1206,9 @@ function EvidenceBody({ d }: BodyProps) {
             hint="The most this definition is willing to stand behind, whatever the map could award."
           >
             <select name="tierCeiling" value={ceiling} onChange={(ev) => setCeiling(ev.target.value)}>
-              <option value="3">Tier 3 — strongest: a system of record, identity assured</option>
+              <option value="1">Tier 1 — independent system evidence, identity assured</option>
               <option value="2">Tier 2 — a programme system's digital capture</option>
-              <option value="1">Tier 1 — the floor: attested, and payable</option>
+              <option value="3">Tier 3 — worker asserted evidence</option>
             </select>
           </RefField>
           <RefField label="Check intensity" hint="How much of it gets checked. Programme policy (L2).">
@@ -1238,18 +1239,13 @@ function EvidenceBody({ d }: BodyProps) {
           </RefField>
         </div>
       </Card>
-      <OpenNote>
-        <b>The reference's tier numbering runs the other way.</b> Its frame offers "Tier 1 — outcome-linked" as the
-        strongest option; CREST numbers the strongest tier 3 and the floor 1. This screen uses CREST's numbering,
-        spelled out on every option, because a ceiling that means the opposite of what the author read would cap
-        every worker's evidence at the wrong end — and no later screen would catch it.
-      </OpenNote>
+      <p className="muted">Tier 1 is strongest, Tier 2 is supervised evidence, and Tier 3 is worker asserted evidence.</p>
       <CardTitled t="The evidence-to-tier map" chip={<Chip kind="info">{map.length} rules</Chip>}>
         {map.map((r, i) => (
           <div key={i} className="card quiet" style={{ marginBottom: 9 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7, flexWrap: "wrap" }}>
               <Chip kind={"tier" + r.tier}>Tier {r.tier}</Chip>
-              {r.tier > cap ? <Chip kind="err">above the ceiling</Chip> : null}
+              {r.tier < cap ? <Chip kind="err">above the ceiling</Chip> : null}
               {(r.sourceClassIn || []).length === SOURCE_CLASSES.length &&
               (r.captureMethodIn || []).length === CAPTURE_METHODS.length &&
               !(r.requiresFields || []).length ? (
@@ -1341,8 +1337,8 @@ function capFor(map: TierRule[], sourceClass: string, captureMethod: string, cei
   for (const r of map) {
     if (!(r.sourceClassIn || []).includes(sourceClass)) continue;
     if (!(r.captureMethodIn || []).includes(captureMethod)) continue;
-    const t = Math.min(r.tier, ceiling || r.tier);
-    if (best === null || t > best) best = t;
+    const t = Math.max(r.tier, ceiling || r.tier);
+    if (best === null || t < best) best = t;
   }
   return best;
 }
@@ -1351,7 +1347,7 @@ function capFor(map: TierRule[], sourceClass: string, captureMethod: string, cei
 function SourceBody({ d }: BodyProps) {
   const src = d.doc.sources || {};
   const map = d.doc.evidence?.tierMap || [];
-  const ceiling = d.doc.evidence?.tierCeiling || 3;
+  const ceiling = d.doc.evidence?.tierCeiling || 1;
   const [sc, setSc] = useState(src.connections?.[0]?.settings?.sourceClass || "programme-system");
   const [cm, setCm] = useState(src.connections?.[0]?.settings?.captureMethod || "digital-capture");
   const [systems, setSystems] = useState((src.sourceSystems || []).join(", "));
@@ -1496,19 +1492,18 @@ export const Source = gate(SourceBody);
 
 // ── p3_23 · the template the definition writes for you ─────────────────────
 function TemplateBody({ d }: BodyProps) {
-  // The template is derived per version, never stored — so it can only be read
-  // for a version that exists. A draft that has not been submitted has no
-  // version, and this screen says so instead of inventing columns.
+  // The draft endpoint derives this against the version the draft will become
+  // without minting it. After submit, the immutable-version endpoint derives
+  // the same file again; neither path stores a template that could drift.
   const defId = d.definitionId || "";
-  const version = d.submittedVersion || d.baseVersion || 0;
-  const r = useLoad<Template | null>(
-    () =>
-      defId && version
-        ? api.get("definitions", defpath(defId, `/versions/${version}/template`))
-        : Promise.resolve(null),
-    [defId, version],
+  const templatePath = defId && d.submittedVersion
+    ? defpath(defId, `/versions/${d.submittedVersion}/template`)
+    : dpath(d.id, "/template");
+  const r = useLoad<Template>(
+    () => api.get("definitions", templatePath),
+    [templatePath, d.updatedAt],
   );
-  const next = version + 1;
+  const next = d.submittedVersion || (d.baseVersion || 0) + 1;
   return (
     <Frame
       title="Your spreadsheet template"
@@ -1525,22 +1520,10 @@ function TemplateBody({ d }: BodyProps) {
           label: "Download template",
           role: "secondary",
           onClick: () => {
-            if (!defId || !version) return;
             // The real endpoint, in CSV form: ?format=csv returns the header
             // row with a filename naming the version it serves.
-            window.open(
-              `${services.definitions}${defpath(defId, `/versions/${version}/template?format=csv`)}`,
-              "_blank",
-            );
+            window.open(`${services.definitions}${templatePath}?format=csv`, "_blank");
           },
-          note:
-            defId && version ? undefined : (
-              <>
-                <b>Nothing to download yet.</b> A template is derived from a definition version, and this draft has
-                not become one — it has no version to pin a file to. Submit it, and this screen reads the real
-                derived template for the version that resulted.
-              </>
-            ),
         },
         { label: "Continue", to: "/define/validation", role: "primary" },
       ]}
@@ -1548,7 +1531,7 @@ function TemplateBody({ d }: BodyProps) {
       <ClosedNote d={d} />
       <LoadFrame r={r}>
         {(t) =>
-          t ? (
+          (
             <CardTitled t={"Columns for v" + t.version} chip={<Chip kind="ok">{t.columns.length} columns</Chip>}>
               <KVR
                 rows={[
@@ -1572,17 +1555,11 @@ function TemplateBody({ d }: BodyProps) {
                 )}
               </p>
             </CardTitled>
-          ) : (
-            <Empty>
-              This draft has no published version, so there is no template to derive. That is the honest state of a
-              definition still being written, and generating a plausible header for it would produce a file pinned to
-              nothing.
-            </Empty>
           )
         }
       </LoadFrame>
       <Callout kind="teal" title="What to watch">
-        The template is tied to this version of the definition. Publish v{next} and a fresh template is generated;
+        The template is tied to this version (v{next}) of the definition. Publish v{next + 1} and a fresh template is generated;
         files built on the old one stop being accepted.
       </Callout>
     </Frame>
@@ -1981,6 +1958,7 @@ function DryRunBody({ d }: BodyProps) {
       csv,
       sourceClass: sc,
       captureMethod: cm,
+      adapterRef: conn?.adapterRef || "",
       identityAssurance: ia,
       systemRef: conn?.systemRef || undefined,
       mapping: conn?.mapping || {},
@@ -2337,12 +2315,7 @@ function PaymentBody({ d }: BodyProps) {
         A project can require stronger evidence to release money than it requires to issue the credential. A tier may
         be enough for the credential to exist and count toward a history, and still not enough to pay against.
       </Sidecar>
-      <Sidecar warm>
-        Worth clarifying in the spec: §8 says minimum_tier_for_payment must never be lower than the definition's
-        tier_ceiling, but the reference's numbering makes the strongest tier 1. Read numerically that makes the two
-        always equal and the field pointless. The prose intent is the opposite. The direction needs stating
-        explicitly before anyone builds it.
-      </Sidecar>
+
     </Frame>
   );
 }

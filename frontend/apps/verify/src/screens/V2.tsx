@@ -2,10 +2,10 @@
 // apps/verify: same endpoints, same disclosure rendering, same refusals-as-
 // absence caveats.
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { api, ApiError, FIX } from "@crest/api";
+import { Link, useNavigate } from "react-router-dom";
+import { api, ApiError } from "@crest/api";
 import { Chip, KV, Sidecar, OpenNote } from "@crest/ui";
-import { useVerify, loadSampleCredential, errText, short, day, type Verdict, type WorkEvent } from "../state";
+import { useVerify, errText, short, day, type Verdict, type WorkEvent } from "../state";
 import { VerdictChip, ChainList } from "./V1";
 
 export function V21() {
@@ -24,15 +24,15 @@ export function V21() {
       {p ? (
         <KV
           rows={[
-            ["Signed in as", p.displayName || p.name || "Ministry of Health"],
-            ["Party", <span className="mono">{short(p.id || FIX.org)}</span>],
+            ["Signed in as", p.displayName || p.name || "the enrolled institution"],
+            ["Party", <span className="mono">{short(p.id || "")}</span>],
             ["Kind", p.kind || "organisation"],
           ]}
         />
       ) : (
         <OpenNote>
           <b>Authorization facts not readable here.</b> The org's party record could not be read (
-          {s.orgPartyErr || "unknown"}). The session is real — checks below run under the Ministry of Health login — but
+          {s.orgPartyErr || "unknown"}). The session is real — checks below run under the institution's login — but
           what onboarding granted this verifier is shown as a label, not as read facts.
         </OpenNote>
       )}
@@ -48,6 +48,7 @@ export function V21() {
         design's label only.
       </OpenNote>
       <div className="btn-row">
+        {!s.orgSession ? <button className="btn secondary" onClick={s.beginLogin}>Sign in with the identity provider</button> : null}
         <button className="btn" onClick={() => nav("/v2_2")}>
           Check a credential as this institution
         </button>
@@ -93,22 +94,15 @@ const tickSvg = (
 
 export function V22() {
   const s = useVerify();
-  const [party, setParty] = useState("");
   const [cred, setCred] = useState("");
   const [why, setWhy] = useState("");
   const v = s.verdict;
-  const isOrgCheck = v && s.verifiedAs === FIX.org;
-  const loadSample = async () => {
-    try {
-      setCred(JSON.stringify(await loadSampleCredential(party.trim()), null, 2));
-    } catch (e) {
-      s.fail(e);
-    }
-  };
+  const isOrgCheck = Boolean(v && s.orgParty?.id && s.verifiedAs === s.orgParty.id);
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     try {
-      await s.runVerify(JSON.parse(cred), FIX.org, why.trim());
+      if (!s.orgParty?.id) throw new Error("the signed-in institution could not be resolved");
+      await s.runVerify(JSON.parse(cred), s.orgParty.id, why.trim());
     } catch (e) {
       s.fail(e);
     }
@@ -130,23 +124,16 @@ export function V22() {
       </p>
       <div className="card">
         <form id="orgverifyform" onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
-              placeholder="worker party id (blank: the fixture worker)"
-              value={party}
-              onChange={(e) => setParty(e.target.value)}
-              style={{ flex: 1 }}
-            />
-            <button type="button" className="btn secondary" id="orgloadsample" style={{ width: "auto", padding: "10px 14px" }} onClick={loadSample}>
-              Load newest
-            </button>
-          </div>
+          <OpenNote>
+            A worker must present the signed credential from their wallet or printed card. An institution cannot look up
+            a worker's private history by party id. To ask for a consented presentation, use <Link to="/requests">Ask to see more</Link>.
+          </OpenNote>
           <label className="body-2">
-            The credential (JSON)
+            Worker-presented credential (JSON)
             <textarea className="mono" rows={7} required value={cred} onChange={(e) => setCred(e.target.value)} style={{ width: "100%", marginTop: 4 }} />
           </label>
           <input placeholder="purpose (recorded for the worker to read)" value={why} onChange={(e) => setWhy(e.target.value)} />
-          <button className="btn">Check as Ministry of Health</button>
+          <button className="btn">Check as this institution</button>
         </form>
       </div>
       {isOrgCheck && v ? (
@@ -209,22 +196,10 @@ export function V22() {
 
 export function V23() {
   const s = useVerify();
-  const [party, setParty] = useState("");
   const [creds, setCreds] = useState("");
   const [why, setWhy] = useState("");
   const [out, setOut] = useState<{ verdicts?: Verdict[] } | null>(null);
   const [localErr, setLocalErr] = useState<string | null>(null);
-  const loadChain = async () => {
-    try {
-      const pid = party.trim() || FIX.workerA;
-      const res = await api.get("verification", `/v1/parties/${encodeURIComponent(pid)}/credentials`);
-      const cs = res.credentials || [];
-      if (!cs.length) throw new Error("that person's chain holds no credentials yet");
-      setCreds(JSON.stringify(cs, null, 2));
-    } catch (e) {
-      s.fail(e);
-    }
-  };
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     setLocalErr(null);
@@ -243,7 +218,8 @@ export function V23() {
         );
         return;
       }
-      setOut(await api.post("verification", "/v1/verify/batch", { credentials: parsed, requestedByPartyId: FIX.org, purpose }));
+      if (!s.orgParty?.id) throw new Error("the signed-in institution could not be resolved");
+      setOut(await api.post("verification", "/v1/verify/batch", { credentials: parsed, requestedByPartyId: s.orgParty.id, purpose }));
     } catch (e) {
       s.fail(e);
     }
@@ -261,19 +237,12 @@ export function V23() {
       </p>
       <div className="card">
         <form id="batchform" onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
-              placeholder="worker party id (blank: the fixture worker)"
-              value={party}
-              onChange={(e) => setParty(e.target.value)}
-              style={{ flex: 1 }}
-            />
-            <button type="button" className="btn secondary" id="batchloadsample" style={{ width: "auto", padding: "10px 14px" }} onClick={loadChain}>
-              Load their whole chain
-            </button>
-          </div>
+          <OpenNote>
+            Batch checks accept credentials presented by workers or their wallets. Private credential history is never
+            loaded by party id; use <Link to="/requests">Ask to see more</Link> when a worker's consented presentation is needed.
+          </OpenNote>
           <label className="body-2">
-            Credentials (JSON array)
+            Worker-presented credentials (JSON array)
             <textarea className="mono" rows={7} required placeholder="[{…}, {…}]" value={creds} onChange={(e) => setCreds(e.target.value)} style={{ width: "100%", marginTop: 4 }} />
           </label>
           <label className="body-2">
@@ -344,80 +313,55 @@ export function V23() {
 }
 
 export function Person() {
-  const [party, setParty] = useState<string>(FIX.workerA);
+  const s = useVerify();
+  const [credential, setCredential] = useState("");
   const [why, setWhy] = useState("");
-  const [out, setOut] = useState<{ credentials?: Array<{ id?: string; credentialSubject?: { workEvent?: WorkEvent } }>; count?: number } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [result, setResult] = useState<Verdict | null>(null);
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    setOut(null);
+    setResult(null);
     setMsg(null);
     try {
-      const q = new URLSearchParams({ requestedByPartyId: FIX.org });
-      if (why.trim()) q.set("purpose", why.trim());
-      setOut(await api.get("verification", `/v1/parties/${encodeURIComponent(party.trim())}/credentials?` + q));
+      if (!s.orgParty?.id) throw new Error("the signed-in institution could not be resolved");
+      setResult(await s.runVerify(JSON.parse(credential), s.orgParty.id, why.trim()));
     } catch (e) {
-      setMsg(
-        e instanceof ApiError && e.status === 404
-          ? "Nobody resolves to that id — and whether it once merged into another is deliberately not said."
-          : errText(e),
-      );
+      setMsg(e instanceof ApiError && e.status === 404 ? "That presented credential was not found." : errText(e));
     }
   };
-  const creds = out?.credentials || [];
   return (
     <>
-      <div className="eyebrow">V-2 · Resolve a person</div>
-      <h2 className="scr-title">Resolve a person</h2>
+      <div className="eyebrow">V-2 · Receive a worker presentation</div>
+      <h2 className="scr-title">Receive a worker presentation</h2>
       <p className="body-2">
-        Either of a merged person's ids returns their whole chain of credentials — and nothing about the chain itself. A
-        verifier is never told a merge happened (#104): the join is invisible by design, because "these two identities
-        were once separate" is itself a fact about the worker.
+        An institution cannot resolve a worker's private credential history by party id. The worker presents a signed
+        credential directly, or you ask for a per-share presentation and wait for their decision.
       </p>
       <div className="card">
         <form id="personform" onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <input className="mono" required placeholder="did:crest:party:…" value={party} onChange={(e) => setParty(e.target.value)} />
+          <label className="body-2">
+            Worker-presented credential (JSON)
+            <textarea
+              className="mono"
+              name="personcredential"
+              rows={9}
+              required
+              placeholder='{"@context": …}'
+              value={credential}
+              onChange={(e) => setCredential(e.target.value)}
+              style={{ width: "100%", marginTop: 4 }}
+            />
+          </label>
           <input placeholder="why (recorded for the worker)" value={why} onChange={(e) => setWhy(e.target.value)} />
-          <button className="btn">Resolve the chain</button>
+          <button className="btn">Check the presented credential</button>
         </form>
         <div id="personout" style={{ marginTop: 12 }}>
           {msg ? <div className="muted">{msg}</div> : null}
-          {out ? (
-            creds.length ? (
-              <>
-                <p className="body-2">
-                  {String(out.count ?? creds.length)} credential(s) in this person's chain. Each read of this chain
-                  wrote a line into the worker's own trail.
-                </p>
-                <div className="tblwrap">
-                  <table className="tbl">
-                    <tbody>
-                      <tr>
-                        <th>Credential</th>
-                        <th>Activity</th>
-                        <th>Outcome</th>
-                        <th>Period</th>
-                      </tr>
-                      {creds.map((c, i) => {
-                        const we = c.credentialSubject?.workEvent || {};
-                        return (
-                          <tr key={i}>
-                            <td className="mono">{short(c.id)}</td>
-                            <td>{we.activity || "—"}</td>
-                            <td>{we.outcome ? we.outcome.value + " " + we.outcome.unit : "—"}</td>
-                            <td>{day(we.period?.start)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            ) : (
-              <div className="muted">This person's chain holds no credentials yet — an honest empty chain, not an error.</div>
-            )
-          ) : null}
+          {result ? <VerdictChip v={result} /> : null}
         </div>
+      </div>
+      <div className="btn-row">
+        <Link className="btn secondary" to="/requests">Request a consented presentation</Link>
       </div>
     </>
   );

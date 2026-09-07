@@ -1,0 +1,27 @@
+# Optional overlay for the already-running companion project (`crest`).
+#
+# This overlay is intentionally configuration-only.  It does not start or
+# recreate containers and it keeps the existing Certify/Mimoto/Inji volumes.
+# Load .env.certify through Compose's --env-file option; the private key is
+# never copied into this repository or into this file.
+services:
+  inji-certify:
+    environment:
+      # The development DID is served over trusted HTTPS inside the Docker
+      # network by companions.tls.override.yml. The OAuth audience stays public.
+      CERTIFY_DOMAIN_URL: http://localhost:58090
+      CERTIFY_DID_URL: did:web:certify.crest.test:v1:certify:.well-known
+      # The acceptance core is outside the old compose network.  The plugin
+      # signs this request with CREST_SERVICE_PRIVATE_KEY and the acceptance
+      # core verifies the corresponding registered certify peer key.
+      CERTIFY_CREST_DATA_URL: http://host.docker.internal:59400
+      CREST_SERVICE_ID: certify
+      CREST_SERVICE_PRIVATE_KEY: ${CREST_SERVICE_PRIVATE_KEY:?load infra/acceptance/.env.certify with --env-file}
+      # Certify fetches authorization metadata server-side from this host
+      # gateway. Keep the token issuer literal separate so tokens minted by
+      # the browser-facing eSignet URL continue to validate.
+      CERTIFY_AUTHZ_URL: http://host.docker.internal:58088
+      CERTIFY_AUTHZ_ISSUER: http://localhost:58088
+      CERTIFY_AUTHZ_JWKS: http://host.docker.internal:58089/v1/esignet/oauth/.well-known/jwks.json
+    extra_hosts:
+      - host.docker.internal:host-gateway

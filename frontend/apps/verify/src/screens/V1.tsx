@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { links } from "@crest/api";
 import { Chip, KV, Sidecar, OpenNote, NextBlock, DisLi } from "@crest/ui";
-import { useVerify, loadSampleCredential, short, day, type Verdict } from "../state";
+import { useVerify, short, day, type Verdict } from "../state";
+import { parseCredential } from "../offline";
 
 const tick = (
   <svg viewBox="0 0 10 10" aria-hidden="true">
@@ -74,22 +75,29 @@ export function V11() {
 export function V12() {
   const s = useVerify();
   const nav = useNavigate();
-  const [party, setParty] = useState("");
   const [cred, setCred] = useState("");
   const [who, setWho] = useState("");
   const [why, setWhy] = useState("");
-  const loadSample = async () => {
+  const submit = async (ev: React.FormEvent) => {
+    ev.preventDefault();
     try {
-      setCred(JSON.stringify(await loadSampleCredential(party.trim()), null, 2));
+      await s.runVerify(parseCredential(cred), who.trim(), why.trim());
+      nav("/v1_3");
     } catch (e) {
       s.fail(e);
     }
   };
-  const submit = async (ev: React.FormEvent) => {
-    ev.preventDefault();
+  const submitOffline = async () => {
     try {
-      await s.runVerify(JSON.parse(cred), who.trim(), why.trim());
+      await s.runOfflineVerify(parseCredential(cred));
       nav("/v1_3");
+    } catch (e) {
+      s.fail(e);
+    }
+  };
+  const refreshTrust = async () => {
+    try {
+      await s.refreshOfflineTrust();
     } catch (e) {
       s.fail(e);
     }
@@ -104,17 +112,10 @@ export function V12() {
       </p>
       <div className="card">
         <form id="verifyform" onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
-              placeholder="…or borrow one: worker party id"
-              value={party}
-              onChange={(e) => setParty(e.target.value)}
-              style={{ flex: 1 }}
-            />
-            <button type="button" className="btn secondary" id="loadsample" style={{ width: "auto", padding: "10px 14px" }} onClick={loadSample}>
-              Load their newest credential
-            </button>
-          </div>
+          <p className="muted">
+            Bring the signed document from the worker's card or wallet. A pass-only verifier cannot look up a person's
+            private credential history by party id.
+          </p>
           <label className="body-2">
             The credential (JSON, as scanned)
             <textarea
@@ -131,7 +132,12 @@ export function V12() {
             <input placeholder="who is asking (party id, optional)" value={who} onChange={(e) => setWho(e.target.value)} style={{ flex: 1 }} />
             <input placeholder="why (optional — recorded for the worker)" value={why} onChange={(e) => setWhy(e.target.value)} style={{ flex: 1 }} />
           </div>
-          <button className="btn">Check it</button>
+          <div className="btn-row">
+            <button className="btn">Check it online</button>
+            <button type="button" className="btn secondary" onClick={submitOffline}>Check signature offline</button>
+          </div>
+          <button type="button" className="btn secondary" onClick={refreshTrust}>Refresh trusted issuer keys (online)</button>
+          <p className="body-2">Offline checks use only keys refreshed from this deployment. Refresh while online before taking the verifier offline.</p>
         </form>
       </div>
       <Sidecar>
@@ -172,15 +178,17 @@ export function V13() {
   const we = s.credential?.credentialSubject?.workEvent || {};
   const defRef = we.definition?.id || we.definitionRef || we.activity || "";
   const defVersion = we.definition?.version || "";
+  const statusChecked = v.statusCheckedAt ? new Date(v.statusCheckedAt).toLocaleString() : null;
   return (
     <>
       <div className="eyebrow">V-1 · Screen 3 of 3</div>
-      <h2 className="scr-title">{v.valid ? "Verified" : "Not verified"}</h2>
+      <h2 className="scr-title">{v.valid ? (v.offline ? "Signature verified offline" : "Verified") : "Not verified"}</h2>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <VerdictChip v={v} />
-        {v.valid ? <Chip kind={`tier${v.tier || 3}`}>Tier {v.tier ?? "—"} — computed now, never stored</Chip> : null}
+        {v.valid && !v.offline ? <Chip kind={`tier${v.tier || 3}`}>Tier {v.tier ?? "—"} — computed now, never stored</Chip> : null}
         {v.revoked ? <Chip kind="err">Withdrawn</Chip> : null}
         {(v.contested || []).length ? <Chip kind="warn">Contested — the record, not the money</Chip> : null}
+        {v.offline ? <Chip kind="warn">Offline — withdrawal not checked</Chip> : null}
       </div>
       {(v.reasons || []).length ? (
         <div className="card quiet">
@@ -203,6 +211,12 @@ export function V13() {
             </>,
           ],
           ["At what tier", `Tier ${v.tier ?? "—"}, derived from provenance at this moment`],
+          [
+            "Withdrawal status",
+            statusChecked
+              ? `checked online at ${statusChecked}`
+              : "not checked online — an offline signature check cannot establish current withdrawal status",
+          ],
           ["When", `${day(we.period?.start)}${we.period?.end ? " – " + day(we.period.end) : ""}`],
         ]}
       />
@@ -213,11 +227,11 @@ export function V13() {
         published key, verifies the same way — no account, no vetting, and nothing here identifies the worker to you.
       </Sidecar>
       <NextBlock
-        happened="The credential was checked and the check was recorded, one line, even for a bare scan."
+        happened={v.offline ? "The signature was checked on this device. Offline checks are not sent to CREST's presentation trail." : "The credential was checked and the check was recorded, one line, even for a bare scan."}
         who='Nobody has to. The worker can see this check in their own "who checked me" trail.'
-        when="The trail line exists already — it was written with the verdict."
+        when={v.offline ? "No trail line exists: this check stayed on this device." : "The trail line exists already — it was written with the verdict."}
         told="You will not be — the answer above is the whole of what a pass-only verifier gets."
-        ifnot='if the result was "not valid": that is an answer too, and it was recorded the same way. A failed check never quietly disappears.'
+        ifnot={v.offline ? "if the signature did not verify: the credential is not authentic under the cached issuer key." : 'if the result was "not valid": that is an answer too, and it was recorded the same way. A failed check never quietly disappears.'}
       />
       <div className="btn-row">
         <button className="btn secondary" onClick={() => nav("/v1_2")}>

@@ -10,6 +10,7 @@ import (
 	"github.com/theflywheel/crest/pkg/dedi"
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/identity"
+	"github.com/theflywheel/crest/pkg/serviceauth"
 	"github.com/theflywheel/crest/pkg/store"
 )
 
@@ -38,6 +39,16 @@ func Compose(name string, members []Member) {
 	log := newLogger(cfg.LogLevel, name)
 	if err != nil {
 		log.Error("configuration invalid", "error", err)
+		os.Exit(1)
+	}
+
+	if err := deploymentSettingsRefusal(cfg.Env); err != nil {
+		log.Error("deployment configuration refused", "error", err)
+		os.Exit(1)
+	}
+
+	if name == "payments" && config.Str("PAYMENT_PROVIDER", "http") == "http" && config.Str("RAIL_URL", "") == "" {
+		log.Error("RAIL_URL is required by the payments application")
 		os.Exit(1)
 	}
 
@@ -82,6 +93,10 @@ func Compose(name string, members []Member) {
 
 			if len(m.Opts.DeDiRegistries) > 0 {
 				dcfg := dedi.LoadConfig()
+				if cfg.Env != "local" && dcfg.URL == "" {
+					log.Error("DEDI_URL is required outside local development; registry fallback is not acceptance evidence", "member", m.Name)
+					os.Exit(1)
+				}
 				pub, err := dedi.New(dcfg, db, clk, log)
 				if err != nil {
 					log.Error("registry substrate unusable", "member", m.Name, "error", err)
@@ -118,6 +133,7 @@ func Compose(name string, members []Member) {
 				}
 				log.Info("object store ready", "bucket", s3cfg.Bucket)
 				d.Blobs = blobs
+				pings = append(pings, blobs.CheckBucket)
 			}
 		}
 		deps[i] = d
@@ -162,7 +178,34 @@ func Compose(name string, members []Member) {
 		}
 	}
 
+	// The verifier is process-wide in Compose, so one of the already migrated
+	// service schemas supplies its durable nonce claimer. All replicas of this
+	// deployment point at the same database and therefore share the primary-key
+	// race rather than keeping replay state in one process.
+	var replayStore serviceauth.ReplayStore
+	for _, dep := range deps {
+		if dep.DB != nil {
+			replayStore = dep.DB
+			break
+		}
+	}
+
 	var mw []httpx.Middleware
+	if raw := config.Str("CREST_SERVICE_PEERS_JSON", ""); raw != "" {
+		if replayStore == nil {
+			log.Error("service-auth replay protection requires a migrated database")
+			os.Exit(1)
+		}
+		verifier, err := serviceauth.NewVerifier(raw)
+		if err != nil {
+			log.Error("service trust configuration invalid", "error", err)
+			os.Exit(1)
+		}
+		verifier.WithReplayStore(replayStore)
+		mw = append(mw, verifier.Middleware)
+	} else {
+		mw = append(mw, identity.ServiceBoundary(config.Str("CREST_SERVICE_TOKEN", "")))
+	}
 	// CORS is outermost so a browser's preflight is answered before identity
 	// looks for a token the preflight never carries. Off unless the
 	// deployment names its web origins.
@@ -218,6 +261,11 @@ func Compose(name string, members []Member) {
 			m.Opts.Routes(mux, deps[i])
 		}
 	}
+	metricMembers := make([]metricsMember, 0, len(members))
+	for i, m := range members {
+		metricMembers = append(metricMembers, metricsMember{name: m.Name, db: deps[i].DB})
+	}
+	mux.Handle("GET /internal/metrics", outboxMetricsHandler(metricMembers))
 	if driveable != nil {
 		registerClockControl(mux, driveable, log)
 	}

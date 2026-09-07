@@ -43,7 +43,7 @@
         "counter": "",
         "rail": []
       },
-      "text_fingerprint": "3e5d20748b82b7d5744b429524a1f9ddb7f2d5db6dbdbaed0d4f5de66d0e808b",
+      "text_fingerprint": "b2fb9daf01e2d3338eeb3d2521a06af660f66d88cebbc993fe61d36185a2c805",
       "title": "Verify your identity"
     },
     "ext_2": {
@@ -188,7 +188,7 @@
           "Onboarding"
         ]
       },
-      "text_fingerprint": "b2f1b683b2e2c3d5efdcf54037ca2b4c859a03809fda341b893fb08ba4fd8849",
+      "text_fingerprint": "8c9835a8bb2d08ad1df45f0c9e64806ce76de885257ea0c1411195e8e1779915",
       "title": "Amara Kimani — candidate"
     },
     "f1_1": {
@@ -225,7 +225,7 @@
           "Workers"
         ]
       },
-      "text_fingerprint": "3b7defe2a896724a8e312c89ddd72b3a768240e86ec09261e8254bdd014ae6db",
+      "text_fingerprint": "d13d0af5aa8d6384469163dde0b57e2725536d6df397867a343b05b7d32d1760",
       "title": "You have been asked to set the rate"
     },
     "f1_2": {
@@ -386,7 +386,7 @@
           "Workers"
         ]
       },
-      "text_fingerprint": "d8ab625897fa97f1eefd6128d5afbef13d8302c396d75d9d13567fa5f36233e1",
+      "text_fingerprint": "8f49721a42b0523cb9d998449758c4abd7f77786cb3761e732664405660e02ea",
       "title": "What the worker will see"
     },
     "f1_5": {
@@ -423,7 +423,7 @@
           "Workers"
         ]
       },
-      "text_fingerprint": "471fd7573e0a5389c51aa142071f3a9942cd14047d77b78e3e2732d01bc5b9df",
+      "text_fingerprint": "6a73f6b01a195816e8b07dea972ad09a952d51582edccfb1e6109e3bfd2d4c07",
       "title": "The rate is live. The money still cannot move."
     },
     "f2_1": {
@@ -507,7 +507,7 @@
           "Workers"
         ]
       },
-      "text_fingerprint": "c77b7f9d556328b055f5a7118123206a81213acf3d07e26f801e10273d127a23",
+      "text_fingerprint": "74d5faf52a930231be88b782debb71c4a68341f89e4ea8b0f8b6967d00167d3d",
       "title": "Verified — real payments can now run"
     },
     "f2_2": {
@@ -843,7 +843,7 @@
           "Workers"
         ]
       },
-      "text_fingerprint": "3521a357eb78ae96f48839a8f82449c8100603ea27fc5830c0c516e806d27260",
+      "text_fingerprint": "f70dea3fc4c6f2b5ac112688e4bcb5f0111a806f64157ca3f942c4287def712b",
       "title": "Before payment goes live"
     },
     "f2_9": {
@@ -1262,7 +1262,7 @@
           "People"
         ]
       },
-      "text_fingerprint": "532ee8d1e25762255c877a502d5dfc8a1c3f6b382bc5094f34f47b143398b5ce",
+      "text_fingerprint": "f12a612cca0b6d7cf633c70e618c6a11a2a5db84bfa658cf5a256e209fcb321d",
       "title": "You are on PRJ-118"
     },
     "g2_11": {
@@ -1277,7 +1277,7 @@
       ],
       "callouts": [
         {
-          "text": "Two other published sets apply to organisations like yours: , for a partner that sends records but defines nothing, and , which adds the money side and asks for more at the certificate stage. Submit-only Full delivery with payment",
+          "text": "Two other published sets apply to organisations like yours: Submit-only , for a partner that sends records but defines nothing, and Full delivery with payment , which adds the money side and asks for more at the certificate stage.",
           "title": "Other sets you could ask for instead"
         },
         {
@@ -1285,7 +1285,7 @@
           "title": "Why this cannot shift under you"
         },
         {
-          "text": "What these screens call a is the object the PRD calls a . Terms is the word an organisation reads; policy is the word the registry uses. One object, one version number, one approval. set of terms policy",
+          "text": "What these screens call a set of terms is the object the PRD calls a policy . Terms is the word an organisation reads; policy is the word the registry uses. One object, one version number, one approval.",
           "title": "The same object, two words"
         }
       ],
@@ -1306,7 +1306,7 @@
           "Done"
         ]
       },
-      "text_fingerprint": "3d3362b37cd1bc35acfaff81c80314c0a5f4261b0aec6b22cdc5b91d2a254508",
+      "text_fingerprint": "bad4cd45958bc362ac661c72684e1e521c82298571af6f7af2dea92ca7da3b32",
       "title": "Standard delivery terms"
     },
     "g2_12": {
@@ -1393,7 +1393,7 @@
           "Done"
         ]
       },
-      "text_fingerprint": "420d7664c521f31e4603526548ed17e0f64675415e0f374a44810b729001d2a6",
+      "text_fingerprint": "4e942f7f0f8fb9a8c1c078b942f2553f5a03715009fe6b0f0f43987fff917d70",
       "title": "Approved"
     },
     "g2_4": {
@@ -1418,7 +1418,7 @@
       ],
       "callouts": [
         {
-          "text": "Your terms say what you do. A project says what you do, and it can grant less than your terms allow but never more. may will",
+          "text": "Your terms say what you may do. A project says what you will do, and it can grant less than your terms allow but never more.",
           "title": "Terms and projects are different things"
         }
       ],
@@ -1439,7 +1439,7 @@
           "Done"
         ]
       },
-      "text_fingerprint": "dbb96d316e283669f1243c9a36679ed31f00a0515eafd8793e323f7797960528",
+      "text_fingerprint": "ddb259e5277bcee4017e607184b531195b043701a9956ef23dc8c29dc3561bd2",
       "title": "Where you stand"
     },
     "g2_5": {
@@ -1464,7 +1464,7 @@
       ],
       "callouts": [
         {
-          "text": "whether organisations register themselves at all. Three ways are on the table — the deployment creates them administratively; they register and request terms, which is what these screens draw; or an already-recognised organisation vouches for them. What settles it is whether an unfamiliar verifier needs to know stood behind the work, or only . Still being decided: which organisation which country",
+          "text": "Still being decided: whether organisations register themselves at all. Three ways are on the table — the deployment creates them administratively; they register and request terms, which is what these screens draw; or an already-recognised organisation vouches for them. What settles it is whether an unfamiliar verifier needs to know which organisation stood behind the work, or only which country .",
           "title": "One decision above these screens is still open"
         }
       ],
@@ -1485,7 +1485,7 @@
           "Done"
         ]
       },
-      "text_fingerprint": "ee7c92a42b25eac4f2a2d56a1c0654c5d92a8629001b7cfe0f90cd300c2dbc5a",
+      "text_fingerprint": "1e9165bf3590922d9dbb5efcdb721d49945e4fa02a7e05f76044178db130a247",
       "title": "This registration stands alone"
     },
     "g2_6": {
@@ -1608,7 +1608,7 @@
           "People"
         ]
       },
-      "text_fingerprint": "4b0e25f0df3223a4bc7a21418322a10b8c9548f14998ac34c3ed1675e45f13b3",
+      "text_fingerprint": "9ae9d34e2f3e607861563db5e28208881f7c6a31badc1c4bea41d0d0fa87c3a4",
       "title": "Sent for review"
     },
     "g2_9": {
@@ -1838,7 +1838,7 @@
       ],
       "callouts": [
         {
-          "text": "can be lifted overnight by importing a list, duplicates and all. Registrations Guarded by · net new this month, which subtracts merges, and the duplicate rate beside it.",
+          "text": "Registrations can be lifted overnight by importing a list, duplicates and all. Guarded by · net new this month, which subtracts merges, and the duplicate rate beside it.",
           "title": "How this could be gamed"
         },
         {
@@ -1863,7 +1863,7 @@
           "Reuse"
         ]
       },
-      "text_fingerprint": "81f49786b37bac854a165bb74bbaab2b6c5d6f0dd867e9987ea3832758997cbc",
+      "text_fingerprint": "3444135dff276551a1195a5bcf3c12d38bb5e753b748a31dcd736184347800af",
       "title": "Coverage — the gap, by place"
     },
     "g4_5": {
@@ -1888,7 +1888,7 @@
       ],
       "callouts": [
         {
-          "text": "rises if records are touched without being checked. Freshness Guarded by · counting verified updates only — a re-save with identical values does not count.",
+          "text": "Freshness rises if records are touched without being checked. Guarded by · counting verified updates only — a re-save with identical values does not count.",
           "title": "How this could be gamed"
         },
         {
@@ -1913,7 +1913,7 @@
           "Reuse"
         ]
       },
-      "text_fingerprint": "80e145f2c9bab964c318ff118591b87572a9adc7f5e79390b8c65e98aee739e8",
+      "text_fingerprint": "5666c95cff2b1a9e32755a601f388f6482d02b03b5fe02879df67fbf6dbda002",
       "title": "Quality — what is missing, record by record"
     },
     "g4_6": {
@@ -1938,7 +1938,7 @@
       ],
       "callouts": [
         {
-          "text": "falls if pairs are closed as different without being looked at. Duplicate rate Guarded by · median time to resolve, and merges-without-confirmation held at zero.",
+          "text": "Duplicate rate falls if pairs are closed as different without being looked at. Guarded by · median time to resolve, and merges-without-confirmation held at zero.",
           "title": "How this could be gamed"
         },
         {
@@ -1963,7 +1963,7 @@
           "Reuse"
         ]
       },
-      "text_fingerprint": "a0d200631d2ac6aeffb4e3f53439de381ac3a090075932366d3c05dbbbe7d146",
+      "text_fingerprint": "9977097a4d40d96038032a46da45c09b1b42cf4f0bdfd5fe4a6d3681945cbb98",
       "title": "Duplicates — the queue, and the rule for closing one"
     },
     "g4_7": {
@@ -1988,7 +1988,7 @@
       ],
       "callouts": [
         {
-          "text": "rises if you simply stop enrolling anyone new. Reuse rate Guarded by · showing it beside coverage growth, always, and never setting it as a standalone target.",
+          "text": "Reuse rate rises if you simply stop enrolling anyone new. Guarded by · showing it beside coverage growth, always, and never setting it as a standalone target.",
           "title": "How this could be gamed"
         },
         {
@@ -2013,7 +2013,7 @@
           "Reuse"
         ]
       },
-      "text_fingerprint": "78d276d5d717c091f122f41a60db4b6010e28783b35d74b93bef08157bf22263",
+      "text_fingerprint": "45bbe1067b51531c2794a28be0a77178c7b0e36ec0ede8f47e886a46a7738a21",
       "title": "Reuse — the return on a shared registry"
     },
     "n1": {
@@ -2388,7 +2388,7 @@
           "Workers"
         ]
       },
-      "text_fingerprint": "a83a800fe2f2bba6057fa8f23b111756d0ab4e68db6b13789d3760fbf6a06051",
+      "text_fingerprint": "eb394c673d3093fc35191016d2670edc36668d2cdda91442eaf46901a30c19ac",
       "title": "Creating a project, and handing it over"
     },
     "p2_1": {
@@ -2467,7 +2467,7 @@
           "Dashboard"
         ]
       },
-      "text_fingerprint": "dd0d1070a0cb4851ca598f0ffc1edfeb046da42598c5b7ca4c8cfc5e9c6226a3",
+      "text_fingerprint": "ae771f7de27ab9fad826e30987785f113adacc0727a4587cd5523726c0e31184",
       "title": "Who a worker reaches when something goes wrong"
     },
     "p2_11": {
@@ -2529,7 +2529,7 @@
       ],
       "callouts": [
         {
-          "text": "rises if you lower a definition’s tier ceiling — the work gets no better, the number does. Straight-through rate Guarded by · showing it beside the tier mix, and flagging any definition whose ceiling moved this period.",
+          "text": "Straight-through rate rises if you lower a definition’s tier ceiling — the work gets no better, the number does. Guarded by · showing it beside the tier mix, and flagging any definition whose ceiling moved this period.",
           "title": "How this could be gamed"
         },
         {
@@ -2555,7 +2555,7 @@
           "Reports"
         ]
       },
-      "text_fingerprint": "a0e21114001ca2b9c023dd6347607cf57a381a315fb3d5461503ae5e833f619a",
+      "text_fingerprint": "ac53a5a1a7bd8b9e3a2c86f875b4ef8d1df9d6b4520a677e5e27a0c555141d16",
       "title": "Straight-through rate"
     },
     "p2_13": {
@@ -2580,7 +2580,7 @@
       ],
       "callouts": [
         {
-          "text": "improves if low-tier work is simply moved out of the definition, or the ceiling lowered. Tier mix Guarded by · reading it beside straight-through rate and the ceiling-changed flag.",
+          "text": "Tier mix improves if low-tier work is simply moved out of the definition, or the ceiling lowered. Guarded by · reading it beside straight-through rate and the ceiling-changed flag.",
           "title": "How this could be gamed"
         },
         {
@@ -2606,7 +2606,7 @@
           "Reports"
         ]
       },
-      "text_fingerprint": "70d9f554fd7c6b2b0ae1ea346380a0b82d19d04d8e8f78a98c4f2982279e887e",
+      "text_fingerprint": "822aa4d5f174c900ea1f8d2d7e277a28bf4711f46b8a9294deb8ce839597fd23",
       "title": "Data quality by tier"
     },
     "p2_14": {
@@ -2631,7 +2631,7 @@
       ],
       "callouts": [
         {
-          "text": "looks better if slow records are excluded from the period rather than chased. Confirmed-paid percentage Guarded by · ageing buckets and an oldest-unpaid figure that cannot be netted away.",
+          "text": "Confirmed-paid percentage looks better if slow records are excluded from the period rather than chased. Guarded by · ageing buckets and an oldest-unpaid figure that cannot be netted away.",
           "title": "How this could be gamed"
         },
         {
@@ -2657,7 +2657,7 @@
           "Reports"
         ]
       },
-      "text_fingerprint": "df7a398b5c4ffe42da880fb4e4961d3942522ef7babddfdb7b33518b97af114e",
+      "text_fingerprint": "880ea0ec38f48c748d55a9806a576305f85e9e3231c7db9160ddd94e4289651e",
       "title": "Payments, and where the delay is"
     },
     "p2_15": {
@@ -2755,7 +2755,7 @@
           "Reports"
         ]
       },
-      "text_fingerprint": "306ca75e6a2af3950c5e7044050e754dd0765f284fcf23a235c59e9b7c161e9e",
+      "text_fingerprint": "755a8c8295f6815a17a7c51b577a605f3e6a82e3afefac914622af320a2bcd80",
       "title": "Global Fund · Q3 2026"
     },
     "p2_17": {
@@ -3571,7 +3571,7 @@
           "Templates"
         ]
       },
-      "text_fingerprint": "c33713b6f9de0e5978ad49c63f147cc19a31737b5696b6a1bef63556a52229a5",
+      "text_fingerprint": "7c85c5d12bad5d8f2b8f78df3d3a0b8d05a87d81a4ea68f2a4f9f02130d87741",
       "title": "Payment tranches"
     },
     "p3_13": {
@@ -3766,7 +3766,7 @@
           "Open questions 6"
         ]
       },
-      "text_fingerprint": "8e294e629e3cf368e9cf4b6c9c2eb76bc7cc85dc9b15b5ab2288be2ed3a71e85",
+      "text_fingerprint": "afbeb335f3475e82a90f9716ad7b88798dd31e9db6b2cff17f2dd5ed58c4accd",
       "title": "Six open questions"
     },
     "p3_19": {
@@ -3946,7 +3946,7 @@
       ],
       "callouts": [
         {
-          "text": "Whatever you choose here, the evidence rules you just set still apply. The source decides the tier that is structurally possible; the rules decide whether a given record reaches it. highest",
+          "text": "Whatever you choose here, the evidence rules you just set still apply. The source decides the highest tier that is structurally possible; the rules decide whether a given record reaches it.",
           "title": "Why this matters"
         }
       ],
@@ -3968,7 +3968,7 @@
           "Templates"
         ]
       },
-      "text_fingerprint": "850455ee82091cc48b7c5c77336515d61e203a121206beef45d65c2a39ee1754",
+      "text_fingerprint": "e05a7a4828237456ec24d83c70b0400ea7f27a7e85b770c5dac556964de21b85",
       "title": "Where does this evidence come from?"
     },
     "p3_23": {
@@ -3993,7 +3993,7 @@
       ],
       "callouts": [
         {
-          "text": "The template is tied to of the definition. Publish v1.3 and a fresh template is generated; files built on the old one stop being accepted. this version",
+          "text": "The template is tied to this version of the definition. Publish v1.3 and a fresh template is generated; files built on the old one stop being accepted.",
           "title": "What to watch"
         }
       ],
@@ -4015,7 +4015,7 @@
           "Templates"
         ]
       },
-      "text_fingerprint": "af1618810cb08c4968553f293c9437ce907c0370f18f0cbd042d81f99fcb44a1",
+      "text_fingerprint": "bc36141a9c4d728354acf4a249bba22c7923b25c0e6c92e5b1d6d2be8f445b7f",
       "title": "Your spreadsheet template"
     },
     "p3_24": {
@@ -4057,7 +4057,7 @@
           "Templates"
         ]
       },
-      "text_fingerprint": "47ca9ab7e6689a562bdccd61b20d0b1ccb43cfce054952d0bbfbd5e1ed0e8dba",
+      "text_fingerprint": "3115a846aee2b33176b2c44aa55c90147a37cbf3662fcafef072459548974598",
       "title": "Choose a class adaptor"
     },
     "p3_25": {
@@ -4077,11 +4077,11 @@
       ],
       "callouts": [
         {
-          "text": "does not exist in the HCM Individual registry, because that registry describes people rather than work. Options: derive it as a count of related task records, ask the partner to add a field, or drop the tier ceiling to Tier 2 and take the number from a supervisor. Households visited",
+          "text": "Households visited does not exist in the HCM Individual registry, because that registry describes people rather than work. Options: derive it as a count of related task records, ask the partner to add a field, or drop the tier ceiling to Tier 2 and take the number from a supervisor.",
           "title": "Unmapped, and required"
         },
         {
-          "text": "matched by type, not by meaning. is when the worker joined the registry, not when the visit happened. Left as-is, every record would land in the wrong pay period. Visit date dateOfRegistration",
+          "text": "Visit date matched by type, not by meaning. dateOfRegistration is when the worker joined the registry, not when the visit happened. Left as-is, every record would land in the wrong pay period.",
           "title": "Matched, but wrong"
         }
       ],
@@ -4103,7 +4103,7 @@
           "Templates"
         ]
       },
-      "text_fingerprint": "9c1a1b7df510f396b9a11977e57b34434fdbd9781c952ecc497761091596fafc",
+      "text_fingerprint": "5cbd7bf35a1e36b0479d7dd7b9c8376e49a2f4f987b4be6bbcff2697c7810adb",
       "title": "Map their fields onto yours"
     },
     "p3_26": {
@@ -4212,7 +4212,7 @@
       ],
       "callouts": [
         {
-          "text": "This binding is to . Publishing v1.3 unbinds the adaptor, and records will queue rather than clear until someone re-tests it. That is deliberate — but nothing yet tells the source owner it has happened. v1.2",
+          "text": "This binding is to v1.2 . Publishing v1.3 unbinds the adaptor, and records will queue rather than clear until someone re-tests it. That is deliberate — but nothing yet tells the source owner it has happened.",
           "title": "What happens on the next version"
         }
       ],
@@ -4234,7 +4234,7 @@
           "Templates"
         ]
       },
-      "text_fingerprint": "5ea7ac6145f7751ba1d1afa3dbd2b11ef193f7aed0e0bec6b5ea3f841bd3752c",
+      "text_fingerprint": "551a64f05f952c8487d0b8dac9f6d4092cf13d80b09746bc0315a6537ae2cfd1",
       "title": "This source is live"
     },
     "p3_3": {
@@ -4604,7 +4604,7 @@
           "Templates"
         ]
       },
-      "text_fingerprint": "721a6798107056b3b5afb58990d8c95cc56d11c4112e5e6131a805286fd2bc78",
+      "text_fingerprint": "5949d57d03963b93597014cb0c274eecfc0200678ff592a8645d930569c37c99",
       "title": "What counts as proof?"
     },
     "p3_pay": {
@@ -4661,7 +4661,7 @@
       ],
       "callouts": [
         {
-          "text": "With a pass you will see: , , , and . You will not see the worker’s name, identity number, phone, location, employer, or any individual record. whether the credential is valid the skill it names the trust tier it was issued at how many times work was validated",
+          "text": "With a pass you will see: whether the credential is valid , the skill it names , the trust tier it was issued at , and how many times work was validated . You will not see the worker’s name, identity number, phone, location, employer, or any individual record.",
           "title": "What a pass lets you see"
         },
         {
@@ -4700,7 +4700,7 @@
         "counter": "",
         "rail": []
       },
-      "text_fingerprint": "ca6f1e05b80426e62ab1ee315400a948bca9c67111dd5731d7b02966c1d058b9",
+      "text_fingerprint": "9d4800c291d8217b4491a153800cc0631738e834531a53cdf5f4e7ebe387ba20",
       "title": "Get a pass to check credentials"
     },
     "v1_2": {
@@ -4763,7 +4763,7 @@
       ],
       "callouts": [
         {
-          "text": "Withheld because you hold a pass rather than an onboarded account: , , , , , , . name identity number phone district employer individual records and dates payment history",
+          "text": "Withheld because you hold a pass rather than an onboarded account: name , identity number , phone , district , employer , individual records and dates , payment history .",
           "title": "Seven fields you did not get"
         },
         {
@@ -4783,7 +4783,7 @@
         "counter": "",
         "rail": []
       },
-      "text_fingerprint": "2a9a7f4d405f14922aa9f36fc37b85d4c66adbdf7aca1e8be815bc018e31cfe9",
+      "text_fingerprint": "4a198c4936731a935705fc182e22e97e31b456d5c350d940ac07ce010f886b07",
       "title": "Verified"
     },
     "v2_1": {
@@ -4910,7 +4910,7 @@
           "Settings"
         ]
       },
-      "text_fingerprint": "135efb69f564a5cd6a0925330167db377b0877300518caf5381d07b46bc8e0b2",
+      "text_fingerprint": "edf6c6e5b9ad80dd5fc7e45dd6391e2750311edadd290525ad849f9d36ed22bb",
       "title": "Batch BAT-0912 · 400 credentials"
     },
     "v4_1": {
@@ -5001,7 +5001,7 @@
           "Assurance"
         ]
       },
-      "text_fingerprint": "29b9be58d56642a1a318fdf778e8b68c71541e2d5f112dabd10f852f5e9c7c27",
+      "text_fingerprint": "3738779beb497fc8e72424d749c6544785bc3f6ac367df63f94de0c552b77ebd",
       "title": "PRJ-203 · Turkana nutrition"
     },
     "w1_1": {
@@ -5249,7 +5249,7 @@
         "counter": "",
         "rail": []
       },
-      "text_fingerprint": "be082f68703fbb4bc33372637452d08be8fd54ea62daaa5c4b0fadcf1511389b",
+      "text_fingerprint": "e8aa3320f90df011d28990313880f6fe6dd322a7af80b47fced53bd3760e3613",
       "title": "One more thing, and only once"
     },
     "w1_17": {
@@ -5285,7 +5285,7 @@
         "counter": "",
         "rail": []
       },
-      "text_fingerprint": "aa4c803b3d59ac5db3b0baa0af898b5eaded132076a953f70f69769ee5e89c08",
+      "text_fingerprint": "94ad027f2382da53ceb215663b150c0c8501854a9f43972d0b407377df0bd18f",
       "title": "Added"
     },
     "w1_18": {
@@ -5430,7 +5430,7 @@
         "counter": "",
         "rail": []
       },
-      "text_fingerprint": "52c3d69d4163f62a9e5b1fc0134ea5f4b2c22eac9ecc21317156d0d4c6dc65af",
+      "text_fingerprint": "f3f89f3bef0261f1150da2de3356accd2598067be7e39ad291b8007c84bfc8df",
       "title": "Sent"
     },
     "w1_23": {
@@ -6061,7 +6061,7 @@
         "counter": "",
         "rail": []
       },
-      "text_fingerprint": "1d7039a961943cdd0a50c873472a2f162e5631c2a933da30fd1e3c7dd67c7c63",
+      "text_fingerprint": "27f3d1477a1b49131ea379b82ee305f6732e793b45e2ec68743d658e260a7530",
       "title": "Who holds it next"
     },
     "w4_1": {
@@ -6252,7 +6252,7 @@
           "Look up a worker"
         ]
       },
-      "text_fingerprint": "5d35c8937af935189b5a796112d16d9a4932c6ea744fa2e91b9811c034b97a0e",
+      "text_fingerprint": "c53ea036f0cb6aafac0bd93beb439a4f450ff773ee75dabb36d155c668215d4d",
       "title": "Amara Kimani — payment not received"
     },
     "w6_1": {
@@ -6352,7 +6352,7 @@
         "counter": "",
         "rail": []
       },
-      "text_fingerprint": "d01d4246e3abd3357bbb36f07d732479c80f81333559fe32b24de5f14a80f192",
+      "text_fingerprint": "35996c5d31c57f5fc9601b1233524bf6b87d4548ba77f32e1aefbe104613abcb",
       "title": "Three tiers, four kinds of evidence"
     }
   },

@@ -49,9 +49,30 @@ import (
 const cardQRLevel = qr.M
 
 func (h *handlers) credentialCard(w http.ResponseWriter, r *http.Request) {
+	partyID := r.URL.Query().Get("partyId")
+	if partyID == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "missing_parameter", "partyId is required")
+		return
+	}
+	if !authorizeParty(w, r, h.d, partyID) {
+		return
+	}
 	c, err := getCredential(r.Context(), h.d.DB.Q(), r.PathValue("id"))
 	if err != nil {
 		httpx.NotFoundOr(w, h.d.Log, "credential", err, store.ErrNotFound)
+		return
+	}
+	if c.SubjectRef != partyID {
+		httpx.WriteError(w, http.StatusNotFound, "not_found", "credential not found")
+		return
+	}
+	if c.Doc == nil {
+		// Custody transfer deliberately removes the central signed bytes only
+		// after the worker has durably encrypted them. A print request after
+		// transfer must explain the recovery path rather than render an empty
+		// card or claim that the credential is still available here.
+		httpx.WriteError(w, http.StatusGone, "credential_transferred",
+			"the signed credential is held in the worker's encrypted wallet; unlock or import that wallet before printing")
 		return
 	}
 

@@ -33,13 +33,13 @@ const oldest = (arr: Array<Record<string, string | undefined>>, field: string) =
 };
 const median = (xs: number[]) => (xs.length ? xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)] : null);
 
-async function projectRead(defId: string) {
+async function projectRead(contextId: string, defId: string) {
   const [claims, unclear, unreleased, unreached, instr, metrics, def] = await Promise.all([
-    api.get("evidence", "/v1/claims").catch(() => ({ claims: [] })),
-    api.get("evidence", "/v1/unclear").catch(() => ({ unclear: [] })),
-    api.get("confirmation", "/v1/unreleased").catch(() => ({ windows: [] })),
-    api.get("confirmation", "/v1/unreached").catch(() => ({ windows: [] })),
-    api.get("payments", "/v1/instructions").catch(() => ({ instructions: [] })),
+    api.get("evidence", "/v1/claims?contextId=" + encodeURIComponent(contextId)).catch(() => ({ claims: [] })),
+    api.get("evidence", "/v1/unclear?contextId=" + encodeURIComponent(contextId)).catch(() => ({ unclear: [] })),
+    api.get("confirmation", "/v1/unreleased?contextId=" + encodeURIComponent(contextId)).catch(() => ({ windows: [] })),
+    api.get("confirmation", "/v1/unreached?contextId=" + encodeURIComponent(contextId)).catch(() => ({ windows: [] })),
+    api.get("payments", "/v1/instructions?contextId=" + encodeURIComponent(contextId)).catch(() => ({ instructions: [] })),
     api.get("parties", "/v1/holds/metrics").catch(() => null),
     defId ? api.get("definitions", `/v1/definitions/${encodeURIComponent(defId)}`).catch(() => null) : Promise.resolve(null),
   ]);
@@ -61,7 +61,7 @@ const projectTitle = (projectId: string, def: { activity?: { label?: string } } 
 export function Status() {
   const nav = useNavigate();
   const s = useConsole();
-  const r = useLoad(() => projectRead(s.definitionId), [s.definitionId]);
+  const r = useLoad(() => projectRead(s.projectId, s.definitionId), [s.projectId, s.definitionId]);
   return (
     <LoadFrame r={r}>
       {(f) => {
@@ -146,7 +146,7 @@ export function Status() {
 export function Stp() {
   const nav = useNavigate();
   const s = useConsole();
-  const r = useLoad(() => projectRead(s.definitionId), [s.definitionId]);
+  const r = useLoad(() => projectRead(s.projectId, s.definitionId), [s.projectId, s.definitionId]);
   return (
     <LoadFrame r={r}>
       {(f) => {
@@ -229,16 +229,17 @@ export function Quality() {
   const s = useConsole();
   const r = useLoad(async () => {
     const [sources, assess, def] = await Promise.all([
-      api.get("evidence", "/v1/sources").catch(() => ({ sources: [] })),
-      api.get("verification", "/v1/source-assessments").catch(() => ({ assessments: [] })),
+      api.get("evidence", "/v1/sources?contextId=" + encodeURIComponent(s.projectId)).catch(() => ({ sources: [] })),
+      api.get("verification", "/v1/source-assessments?contextId=" + encodeURIComponent(s.projectId)).catch(() => ({ assessments: [] })),
       s.definitionId ? api.get("definitions", `/v1/definitions/${encodeURIComponent(s.definitionId)}`).catch(() => null) : Promise.resolve(null),
     ]);
     return {
       sources: (sources.sources || []) as Array<{ systemRef?: string; adapterRef?: string; state?: string }>,
-      assessments: (assess.assessments || []) as Array<{ adapterRef: string; maxTier: number; reason?: string }>,
+      assessments: (assess.assessments || []) as Array<{ contextId?: string; systemRef?: string; adapterRef: string; maxTier: number; reason?: string }>,
       tierMap: (def?.tierMap || []) as Array<{ tier: number; sourceClassIn?: string[]; captureMethodIn?: string[] }>,
     };
-  }, [s.definitionId]);
+  }, [s.definitionId, s.projectId]);
+  const projectId = s.projectId;
   return (
     <LoadFrame r={r}>
       {({ sources, assessments, tierMap }) => (
@@ -255,7 +256,13 @@ export function Quality() {
           <CardTitled t="Source, and the ceiling it puts on a tier">
             <GridTable cols="1.4fr 1fr 1.6fr" head={["Source", "Ceiling", "Why"]}>
               {sources.map((s) => {
-                const cap = assessments.find((a) => a.adapterRef === (s.adapterRef || s.systemRef));
+                // The same precedence verification applies: this project's own
+                // assessment of the source, then an unscoped one for it, then a
+                // legacy row keyed by adapter alone (no systemRef).
+                const cap =
+                  assessments.find((a) => a.systemRef === s.systemRef && a.contextId === projectId) ||
+                  assessments.find((a) => a.systemRef === s.systemRef && !a.contextId) ||
+                  assessments.find((a) => !a.systemRef && a.adapterRef === s.adapterRef);
                 return (
                   <div className="g-row" key={s.systemRef || s.adapterRef}>
                     <span className="mono">{s.systemRef || s.adapterRef}</span>
@@ -599,7 +606,7 @@ export function Reports() {
   const s = useConsole();
   const nav = useNavigate();
   const [reportNote, setReportNote] = useState<string | null>(null);
-  const r = useLoad(() => projectRead(s.definitionId), [s.definitionId]);
+  const r = useLoad(() => projectRead(s.projectId, s.definitionId), [s.projectId, s.definitionId]);
   return (
     <LoadFrame r={r}>
       {(f) => {

@@ -149,41 +149,28 @@ func TestAnInvitedPersonClaimsTheirRecordWithTheirOwnLogin(t *testing.T) {
 	}
 }
 
-// An organisation that registers at the open door gets its own claim code
-// back, so the applicant can return as the organisation with their login —
-// g2_13's "copy the key", backed.
-func TestARegisteringOrganisationCanClaimItselfWithItsOwnLogin(t *testing.T) {
+// An organisation registration is authenticated at the open door. The caller
+// is bound to the new organisation by the registration transaction, so the
+// applicant can immediately use that same login for applicant-side reads.
+func TestARegisteringOrganisationBindsItsAuthenticatedApplicant(t *testing.T) {
 	w := setup(t)
+	asApplicant := w.registrationApplicant(t, "self-claiming-org")
 
 	var reg struct {
 		Party struct {
 			ID string `json:"id"`
 		} `json:"party"`
-		InviteCode string `json:"inviteCode"`
 	}
-	if err := w.Parties.Post(w.ctx, "/v1/organisations", map[string]any{
+	if err := w.Parties.As(asApplicant).Post(w.ctx, "/v1/organisations", map[string]any{
 		"displayName":   "Self-claiming Org " + runID,
 		"contactRoutes": []map[string]any{{"kind": "email", "value": "org-" + runID + "@example.org"}},
 	}, &reg); err != nil {
-		t.Fatalf("register at the open door: %v", err)
-	}
-	if reg.InviteCode == "" {
-		t.Fatal("registration returned no invite code; the applicant has no way back in as the organisation")
-	}
-
-	token, err := w.oidc.Token(w.ctx, "applicant|"+runID)
-	if err != nil {
-		t.Fatalf("mint the applicant's token: %v", err)
-	}
-	asApplicant := w.Parties.As(harness.Caller{Token: token})
-	if err := asApplicant.Post(w.ctx, "/v1/party-invitations/claim",
-		map[string]any{"code": reg.InviteCode, "provider": "mock-oidc", "providerClass": "generic-oidc"}, nil); err != nil {
-		t.Fatalf("claim the organisation: %v", err)
+		t.Fatalf("register with authenticated applicant: %v", err)
 	}
 	var me struct {
 		PartyID string `json:"partyId"`
 	}
-	if err := asApplicant.Get(w.ctx, "/v1/auth/me", &me); err != nil {
+	if err := w.Parties.As(asApplicant).Get(w.ctx, "/v1/auth/me", &me); err != nil {
 		t.Fatalf("who am I: %v", err)
 	}
 	if me.PartyID != reg.Party.ID {

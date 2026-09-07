@@ -82,7 +82,7 @@ func listDefinitions(ctx context.Context, q store.Querier, state string, limit i
 	}
 	rows, err := q.Query(ctx, `
 		SELECT DISTINCT ON (id) doc FROM definitions
-		WHERE ($1 = '' OR state = $1)
+		WHERE (($1 = '' AND state = 'ACTIVE') OR ($1 <> '' AND state = $1))
 		ORDER BY id,
 		         (state = 'ACTIVE') DESC,
 		         version DESC
@@ -148,12 +148,24 @@ func insertLinkedRecord(ctx context.Context, tx store.Querier, defID string, lr 
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `
+	affected, err := tx.Exec(ctx, `
 		INSERT INTO definition_linked_records (id, definition_id, type, version, state, doc, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, doc = EXCLUDED.doc`,
+		ON CONFLICT (id) DO NOTHING`,
 		lr.ID, defID, lr.Type, lr.Version, lr.State, doc, lr.CreatedAt)
-	return err
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		var same bool
+		if err := tx.QueryRow(ctx, "SELECT definition_id=$2 AND doc=$3::jsonb FROM definition_linked_records WHERE id=$1", lr.ID, defID, doc).Scan(&same); err != nil {
+			return err
+		}
+		if !same {
+			return fmt.Errorf("linked record is immutable; create a new version with a new id")
+		}
+	}
+	return nil
 }
 
 func linkedRecords(ctx context.Context, q store.Querier, defID, recordType string) ([]schema.LinkedRecord, error) {

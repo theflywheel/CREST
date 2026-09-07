@@ -1,0 +1,185 @@
+name: crest-acceptance
+
+x-runtime: &runtime
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: ['/tmp:rw,noexec,nosuid,size=16m']
+  env_file: .env.core
+  environment: &runtime-env
+    CREST_ENV: ${CREST_ENV:-acceptance}
+    ADDR: ':8080'
+    PARTIES_URL: http://core:8080
+    DEFINITIONS_URL: http://core:8080
+    EVIDENCE_URL: http://core:8080
+    VERIFICATION_URL: http://core:8080
+    CONFIRMATION_URL: http://core:8080
+    PAYMENTS_URL: http://payments:8080
+    SELF_URL: http://localhost:8080
+    CLOCK_DRIVEABLE: 'false'
+    CLOCK_START: ''
+    SWEEP_EVERY: 10s
+  healthcheck:
+    test: ['CMD', '/crest-healthcheck']
+    interval: 5s
+    timeout: 3s
+    retries: 20
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: crest
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: crest
+    ports: ['127.0.0.1:56432:5432']
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./private/database-roles.sql:/docker-entrypoint-initdb.d/10-roles.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U crest -d crest']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  dedi-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dedi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: dedi
+    volumes: [dedidata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U dedi -d dedi']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  dedi:
+    image: flywheelai/dedi-node:sha-2d020a3
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=16m']
+    environment:
+      DEDI_DB_URL: postgres://dedi:${POSTGRES_PASSWORD}@dedi-postgres:5432/dedi?sslmode=disable
+      DEDI_KEY_FILE: /keys/dedid.key
+      DEDI_ORIGIN: crest.acceptance/log
+      DEDI_WILDCARD_NAMESPACES: crest.acceptance
+      DEDI_LISTEN: ':8080'
+      DEDI_PUBLISHER_KEYS: ${DEDI_PUBLISHER_KEYS}
+    volumes: [./private/dedid.key:/keys/dedid.key:ro]
+    ports: ['127.0.0.1:58481:8080']
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/healthz']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      dedi-postgres: {condition: service_healthy}
+  objectstore:
+    image: chrislusf/seaweedfs:3.80
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=16m']
+    command: server -dir=/data -s3 -s3.port=8333 -s3.config=/run/credentials/s3.json -master.volumeSizeLimitMB=64
+    ports: ['127.0.0.1:58433:8333']
+    volumes:
+      - objectdata:/data
+      - ./private/s3.json:/run/credentials/s3.json:ro
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8333/healthz']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  vault:
+    image: hashicorp/vault:1.17
+    restart: unless-stopped
+    user: '100:1000'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ['/tmp:rw,noexec,nosuid,size=16m']
+    command: server -config=/vault/custom/server.hcl
+    environment:
+      SKIP_CHOWN: '1'
+      SKIP_SETCAP: '1'
+    ports: ['127.0.0.1:59300:8200']
+    volumes:
+      - vaultdata:/vault/file
+      - ./vault.hcl:/vault/custom/server.hcl:ro
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8200/v1/sys/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  core:
+    <<: *runtime
+    env_file: .env.core
+    environment:
+      <<: *runtime-env
+      S3_ENDPOINT: http://objectstore:8333
+      S3_BUCKET: crest-artefacts
+      VAULT_ADDR: http://vault:8200
+      VAULT_SECRET_PATH: secret/data/crest/issuer
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.service
+      args: {SERVICE: core, REVISION: "${BUILD_REVISION:-development}"}
+    ports: ['127.0.0.1:59400:8080']
+    depends_on:
+      postgres: {condition: service_healthy}
+      objectstore: {condition: service_healthy}
+      vault: {condition: service_healthy}
+      dedi: {condition: service_healthy}
+  payments:
+    <<: *runtime
+    env_file: .env.payments
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.service
+      args: {SERVICE: payments, REVISION: "${BUILD_REVISION:-development}"}
+    ports: ['127.0.0.1:59406:8080']
+    depends_on:
+      core: {condition: service_healthy}
+  apps:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports: ['127.0.0.1:59510:80']
+    volumes:
+      - ../../frontend/dist-site:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on: [core, payments]
+
+  devnotifications:
+    profiles: [development]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    env_file: .env.notifications
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.service
+      args: {SERVICE: devnotifications, REVISION: "${BUILD_REVISION:-development}"}
+    ports: ['127.0.0.1:59511:8080']
+    healthcheck:
+      test: ['CMD', '/crest-healthcheck']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      postgres: {condition: service_healthy}
+
+volumes:
+  pgdata:
+  objectdata:
+  vaultdata:
+  dedidata:

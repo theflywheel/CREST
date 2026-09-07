@@ -9,10 +9,12 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
+	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
@@ -50,6 +52,7 @@ const previewDefinitionID = "crest:definition:0000000000000000000000DRFT"
 func (h *draftHandlers) createDraft(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		CreatedByPartyID      string    `json:"createdByPartyId"`
+		ContextID             string    `json:"contextId"`
 		CloneFromDefinitionID string    `json:"cloneFromDefinitionId,omitempty"`
 		CloneFromVersion      int       `json:"cloneFromVersion,omitempty"`
 		Doc                   *DraftDoc `json:"doc,omitempty"`
@@ -62,12 +65,27 @@ func (h *draftHandlers) createDraft(w http.ResponseWriter, r *http.Request) {
 			"a draft records who is authoring it")
 		return
 	}
+	body.ContextID = strings.TrimSpace(body.ContextID)
+	if body.ContextID == "" {
+		body.ContextID = contextID(r)
+	}
+	if body.ContextID == "" {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "no_context",
+			"a draft must name the project whose authority governs it")
+		return
+	}
+	actor, ok := authorizeFunction(w, r, h.d, body.CreatedByPartyID,
+		body.ContextID, FunctionDefinitionAuthor)
+	if !ok {
+		return
+	}
 
 	now := h.d.Clock.Now()
 	draft := Draft{
 		ID:        id.New(h.d.Clock, "definition-draft"),
+		ContextID: body.ContextID,
 		State:     draftOpen,
-		CreatedBy: body.CreatedByPartyID,
+		CreatedBy: actor,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
@@ -79,6 +97,9 @@ func (h *draftHandlers) createDraft(w http.ResponseWriter, r *http.Request) {
 		src, err := getDefinition(r.Context(), h.d.DB.Q(), body.CloneFromDefinitionID, body.CloneFromVersion)
 		if err != nil {
 			httpx.NotFoundOr(w, h.d.Log, "definition to clone", err, store.ErrNotFound)
+			return
+		}
+		if !authorizeDefinitionRead(w, r, h.d, src) {
 			return
 		}
 		draft.DefinitionID = src.ID
@@ -101,10 +122,21 @@ func (h *draftHandlers) getDraft(w http.ResponseWriter, r *http.Request) {
 		httpx.NotFoundOr(w, h.d.Log, "draft", err, store.ErrNotFound)
 		return
 	}
+	if !authorizeDraft(w, r, h.d, draft, false) {
+		return
+	}
 	httpx.WriteJSON(w, http.StatusOK, draft)
 }
 
 func (h *draftHandlers) listDrafts(w http.ResponseWriter, r *http.Request) {
+	if !identity.Authenticated(w, r, h.d.Log, true) {
+		return
+	}
+	if h.d.Permits == nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, "authorization_unavailable",
+			"the authorization registry is not configured")
+		return
+	}
 	drafts, err := listDrafts(r.Context(), h.d.DB.Q(), r.URL.Query().Get("state"))
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list drafts", err)
@@ -113,7 +145,25 @@ func (h *draftHandlers) listDrafts(w http.ResponseWriter, r *http.Request) {
 	if drafts == nil {
 		drafts = []Draft{}
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"drafts": drafts})
+	visible := make([]Draft, 0, len(drafts))
+	for _, draft := range drafts {
+		// Each draft is gated independently. A list must not become a
+		// membership oracle merely because its detail endpoint is protected.
+		if draft.State == draftSubmitted {
+			if identity.From(r.Context()).PartyID == draft.CreatedBy {
+				if permits, err := h.d.Permits(r.Context(), draft.CreatedBy, FunctionDefinitionAuthor, draft.ContextID); err == nil && permits {
+					visible = append(visible, draft)
+				}
+			} else if permits, err := h.d.Permits(r.Context(), identity.From(r.Context()).PartyID, FunctionDefinitionApprover, draft.ContextID); err == nil && permits {
+				visible = append(visible, draft)
+			}
+		} else if identity.From(r.Context()).PartyID == draft.CreatedBy {
+			if permits, err := h.d.Permits(r.Context(), draft.CreatedBy, FunctionDefinitionAuthor, draft.ContextID); err == nil && permits {
+				visible = append(visible, draft)
+			}
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"drafts": visible})
 }
 
 // putSection replaces one wizard section. Whole-section writes, because that
@@ -124,8 +174,16 @@ func (h *draftHandlers) putSection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	section := r.PathValue("section")
+	draft, err := getDraft(r.Context(), h.d.DB.Q(), r.PathValue("id"))
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "draft", err, store.ErrNotFound)
+		return
+	}
+	if !authorizeDraft(w, r, h.d, draft, true) {
+		return
+	}
 
-	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		draft, err := getDraft(r.Context(), tx, r.PathValue("id"))
 		if err != nil {
 			return err
@@ -158,7 +216,15 @@ func (h *draftHandlers) putSection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *draftHandlers) discard(w http.ResponseWriter, r *http.Request) {
-	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+	draft, err := getDraft(r.Context(), h.d.DB.Q(), r.PathValue("id"))
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "draft", err, store.ErrNotFound)
+		return
+	}
+	if !authorizeDraft(w, r, h.d, draft, true) {
+		return
+	}
+	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		return closeDraft(r.Context(), tx, r.PathValue("id"), draftDiscarded, 0, h.d.Clock.Now())
 	})
 	switch {
@@ -183,11 +249,18 @@ func (h *draftHandlers) validate(w http.ResponseWriter, r *http.Request) {
 		httpx.NotFoundOr(w, h.d.Log, "draft", err, store.ErrNotFound)
 		return
 	}
+	if !authorizeDraft(w, r, h.d, draft, false) {
+		return
+	}
 	defID := draft.DefinitionID
 	if defID == "" {
 		defID = previewDefinitionID
 	}
 	compiled, problems := compile(draft.Doc, defID, draft.BaseVersion+1, draft.CreatedBy, h.d.Clock.Now())
+	ctxID := draft.ContextID
+	if ctxID != "" {
+		compiled.ContextID = &ctxID
+	}
 	if len(problems) == 0 {
 		if err := schema.Validate(schema.IDDefinition, compiled); err != nil {
 			var ve *schema.ValidationError
@@ -217,8 +290,16 @@ func (h *draftHandlers) validate(w http.ResponseWriter, r *http.Request) {
 // the SUBMITTED event, and the draft's closure — so a crash leaves either a
 // draft still open or a version fully accounted for, never something between.
 func (h *draftHandlers) submit(w http.ResponseWriter, r *http.Request) {
+	draft, err := getDraft(r.Context(), h.d.DB.Q(), r.PathValue("id"))
+	if err != nil {
+		httpx.NotFoundOr(w, h.d.Log, "draft", err, store.ErrNotFound)
+		return
+	}
+	if !authorizeDraft(w, r, h.d, draft, true) {
+		return
+	}
 	var out schema.Definition
-	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
+	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		draft, err := getDraft(r.Context(), tx, r.PathValue("id"))
 		if err != nil {
 			return err
@@ -238,6 +319,8 @@ func (h *draftHandlers) submit(w http.ResponseWriter, r *http.Request) {
 
 		now := h.d.Clock.Now()
 		compiled, problems := compile(draft.Doc, defID, version, draft.CreatedBy, now)
+		ctxID := draft.ContextID
+		compiled.ContextID = &ctxID
 		if len(problems) > 0 {
 			return &notReadyError{Problems: problems}
 		}
@@ -294,6 +377,39 @@ func (h *draftHandlers) submit(w http.ResponseWriter, r *http.Request) {
 // particular links by reference, never embeds (§7).
 func insertImpliedRecords(ctx context.Context, tx store.Querier, d service.Deps,
 	doc DraftDoc, def schema.Definition, now time.Time) error {
+	// The mapping and connection are operational configuration, not part of
+	// the signed definition primitive. Keep them as version-pinned linked
+	// records so p3_24–p3_28 survive compilation and a later version cannot
+	// silently inherit a source that was tested against different rules.
+	if s := doc.Sources; s != nil {
+		for _, c := range s.Connections {
+			if c.SystemRef == "" && c.AdapterRef == "" && len(c.Mapping) == 0 {
+				continue
+			}
+			payload := map[string]any{
+				"definitionVersion": def.Version,
+				"systemRef":         c.SystemRef,
+				"adapterRef":        c.AdapterRef,
+				"endpoint":          c.Endpoint,
+				"credentialRef":     c.CredentialRef,
+				"mapping":           c.Mapping,
+				"settings":          c.Settings,
+			}
+			lr := schema.LinkedRecord{
+				ID:        id.New(d.Clock, "linked-record"),
+				Type:      "source-binding",
+				Version:   1,
+				State:     "ACTIVE",
+				KeyedTo:   schema.LinkedRecordKeyedTo{Kind: schema.LinkedRecordKeyedToKindDefinition, ID: def.ID},
+				Payload:   payload,
+				CreatedAt: now,
+			}
+			if err := insertLinkedRecord(ctx, tx, def.ID, lr); err != nil {
+				return err
+			}
+		}
+	}
+
 	if c := doc.Cascade; c != nil && (c.TrainedByDefinitionID != "" || c.RoleLevel != "") {
 		payload := map[string]any{"definitionVersion": def.Version}
 		if c.RoleLevel != "" {

@@ -8,11 +8,11 @@ script's MAPPING and re-run. Assessment context: `docs/JOURNEY_GAP_ASSESSMENT.md
 
 | Status | Screens | Share |
 |---|---:|---:|
-| implemented | 64 | 44% |
-| compressed | 25 | 17% |
+| implemented | 88 | 61% |
+| compressed | 26 | 18% |
 | semantically-different | 8 | 5% |
 | illustrative | 13 | 9% |
-| missing | 33 | 23% |
+| missing | 8 | 5% |
 | **total** | **143** | |
 
 ## The fidelity gate
@@ -26,7 +26,7 @@ red, which is the check that stops this table claiming coverage the
 screens do not have. Nothing here is evidence that an asserted screen
 passed — only the gate run is that.
 
-In scope today (J3 — `p1_*`, `p2_*` — G-2 — `g2_*` — G-1 — `g1_*`, `g4_1`–`g4_3` — the workers wave — `w1_4/7/15/17/19/20`, `w4_1`–`w4_3` — plus the design screens `n1`–`n5`): **68** screens — **52** asserted, **0** quarantined, **16** skipped with a reason.
+In scope today (J3 — `p1_*`, `p2_*` — G-2 — `g2_*` — G-1 — `g1_*`, `g4_1`–`g4_3` — the workers wave — `w1_4/7/15/17/19/20`, `w4_1`–`w4_3` — plus the design screens `n1`–`n5`): **96** screens — **76** asserted, **0** quarantined, **20** skipped with a reason.
 
 ## G-1 — Instance Administrator (8 screens)
 
@@ -99,34 +99,34 @@ In scope today (J3 — `p1_*`, `p2_*` — G-2 — `g2_*` — G-1 — `g1_*`, `g4
 
 | Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |
 |---|---|---|---|---|---|---|
-| `p3_1` | Start | The registry of work definitions | **compressed** | console `#/definework` | — | A registry of one: the seeded definition read via GET /v1/definitions/{id}; no list/registry endpoint |
-| `p3_2` | Scope | Sector first, because it scopes everything after it | **missing** | console `#/definework` | — | Scope/sector: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_3` | Scope | The counting basis fork — the most consequential question in the product | **missing** | console `#/definework` | — | Counting-basis fork: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_4` | Define | A category picker scoped to the sector, with two honest escapes | **missing** | console `#/definework` | — | Category picker: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_5` | Define | The unit of work — and the one field the rate will price | **missing** | console `#/definework` | — | Unit of work: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_21` | Define | A training cascade is a chain of linked definitions | **missing** | console `#/definework` | — | Training cascade: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_6` | Define | The time-based path — where the fork earns its keep | **missing** | console `#/definework` | — | Time-based path: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_7` | Define | The outcome path — proof at population level | **missing** | console `#/definework` | — | Outcome path: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_8` | Parties | Who does the work, who pays, and who sits between | **missing** | console `#/definework` | — | Parties: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_9` | Evidence | What proves it happened, tier by tier | **missing** | console `#/definework` | — | Evidence tiers: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_22` | Source | The choice that caps the trust tier | **missing** | console `#/definework` | — | Source class choice: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_23` | Template | A template the definition writes for you | **missing** | console `#/definework` | — | Template: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_24` | Adaptor | The adaptor library, and what is missing from it | **missing** | console `#/definework` | — | Adaptor library: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_25` | Mapping | Where an integration actually gets hard | **missing** | console `#/definework` | — | Adaptor mapping: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_26` | Connect | Connection details, and the credential CREST never sees | **missing** | console `#/definework` | — | Connection: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_27` | Test | A dry run, before anything is committed | **missing** | console `#/definework` | — | Dry run: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_28` | Live | Registered against one version, and only that one | **missing** | console `#/definework` | — | Version registration: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_10` | Validation | Who decides how validation runs — and it may not be you | **missing** | console `#/definework` | — | Validation posture: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_11` | Payment | One flow, two records, and a delegate for each half | **missing** | console `#/definework` | — | Payment split: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_20` | Roles | Four roles per project, invited separately | **missing** | console `#/definework` | — | Project roles: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_12` | Payment | Stacked pay, tranches, and a rate that varies by item | **missing** | console `#/definework` | — | Stacked pay/tranches: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_13` | Rules | Preconditions and deductions | **missing** | console `#/definework` | — | Preconditions/deductions: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_14` | Extend | Two kinds of extension, with very different costs | **missing** | console `#/definework` | — | Extensions: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt) |
-| `p3_15` | Ratify | Ratifying with fields still pending | **missing** | — | — | Ratify with pending fields: no ratification endpoint; the approver persona surfaces this gap honestly at #/ratify |
-| `p3_16` | Ratify | Two records, one signature, one flow | **missing** | — | — | Two records, one signature: no signing flow |
-| `p3_pay` | Payment | Handing off what is not yours | **missing** | — | — | Payment handoff from author to rate owner: no handoff object |
-| `p3_19` | Schema | What the record actually is, underneath the form | **compressed** | console `#/definework` | — | The schema-under-the-form section renders the real stored definition JSON |
-| `p3_18` | Evidence | What is still undecided | **compressed** | console `#/definework` | — | 'What is still undecided' — the wizard's honest gaps section |
+| `p3_1` | Start | The registry of work definitions | **implemented** | console `#/definework` | **asserted** | GET /v1/definitions + GET/POST /v1/definition-drafts: real registry, resumable drafts, define-new and clone-version |
+| `p3_2` | Scope | Sector first, because it scopes everything after it | **implemented** | console `#/define/sector` | **asserted** | PUT draft section scope; sector vocabulary comes from the selected project's L2 composition, with typed fallback when none is declared |
+| `p3_3` | Scope | The counting basis fork — the most consequential question in the product | **implemented** | console `#/define/counting` | **asserted** | PUT activity.counting.basis; event/time/outcome branches are separate routes and persist before navigation |
+| `p3_4` | Define | A category picker scoped to the sector, with two honest escapes | **implemented** | console `#/define/category` | **asserted** | Sector-scoped L2 category picker plus typed category/code escape; persisted in scope/activity |
+| `p3_5` | Define | The unit of work — and the one field the rate will price | **implemented** | console `#/define/unit` | **asserted** | Unit, frequency, counting model and aggregation level persist in the draft activity; outcomeUnit is the exact field later rates price |
+| `p3_21` | Define | A training cascade is a chain of linked definitions | **implemented** | console `#/define/cascade` | **asserted** | Cascade writes draft.cascade and submission emits a version-pinned linked-definition LinkedRecord |
+| `p3_6` | Define | The time-based path — where the fork earns its keep | **implemented** | console `#/define/period` | **asserted** | Time-period frequency, aggregation and plain-language description persist under activity.counting |
+| `p3_7` | Define | The outcome path — proof at population level | **implemented** | console `#/define/outcome` | **asserted** | Outcome indicator, baseline, target, measurer and aggregation persist under activity.counting.outcome |
+| `p3_8` | Parties | Who does the work, who pays, and who sits between | **implemented** | console `#/define/parties` | **asserted** | Performer role/type and authorised attester functions persist; compile maps the latter to the definition's enforceable attester allow-list |
+| `p3_9` | Evidence | What proves it happened, tier by tier | **implemented** | console `#/define/evidence` | **asserted** | Worker-facing proof wording, ceiling, check intensity and provenance tier-map persist; compile refuses a rule above the declared ceiling |
+| `p3_22` | Source | The choice that caps the trust tier | **implemented** | console `#/define/source` | **asserted** | Source systems/required fields persist and the attainable tier is derived on-screen from sourceClass + captureMethod, never stored |
+| `p3_23` | Template | A template the definition writes for you | **implemented** | console `#/define/template` | **asserted** | GET /v1/definition-drafts/{id}/template derives the next-version CSV mid-wizard; immutable-version endpoint derives the same file after submit |
+| `p3_24` | Adaptor | The adaptor library, and what is missing from it | **implemented** | console `#/define/adaptors` | **asserted** | GET /v1/adaptors renders available and absent classes honestly; csv-batch is selectable and DIGIT HCM is named as unimplemented |
+| `p3_25` | Mapping | Where an integration actually gets hard | **implemented** | console `#/define/mapping` | **asserted** | Canonical/enrichment/constant mappings persist on the draft connection and become a version-pinned source-binding LinkedRecord at submit |
+| `p3_26` | Connect | Connection details, and the credential CREST never sees | **implemented** | console `#/define/connect` | **asserted** | Endpoint, credentialRef and non-secret settings persist; compile refuses secret-shaped keys/credential material and stores no credential value |
+| `p3_27` | Test | A dry run, before anything is committed | **implemented** | console `#/define/dryrun` | **asserted** | POST draft/dry-run uses the real CSV adaptor and strength evaluator, returns per-row reasons and committed:false, and writes nothing |
+| `p3_28` | Live | Registered against one version, and only that one | **compressed** | console `#/define/live` | skipped (compressed) | The tested connection becomes a version-pinned source-binding LinkedRecord atomically at submit. Compressed because no notification tells a source owner when a later version requires re-test; the screen names that gap |
+| `p3_10` | Validation | Who decides how validation runs — and it may not be you | **implemented** | console `#/define/validation` | **asserted** | Validation posture/delay plus enforceable authorised issuers and specifier persist; compile emits verifier-face policy |
+| `p3_11` | Payment | One flow, two records, and a delegate for each half | **compressed** | console `#/define/payment` | skipped (compressed) | Rate/mechanism responsibility is recorded as payment-structure intent and no price can be embedded. Compressed because the named people are not granted authority here |
+| `p3_20` | Roles | Four roles per project, invited separately | **compressed** | console `#/define/roles` | skipped (compressed) | Four descriptive role holders persist into the payment-structure LinkedRecord. Compressed because project invitations/grants remain separate acts and this screen explicitly does not mint them |
+| `p3_12` | Payment | Stacked pay, tranches, and a rate that varies by item | **implemented** | console `#/define/tranches` | **asserted** | Tranche labels/shares/release conditions persist and compile into a schema-validated payment-structure LinkedRecord, never monetary amounts |
+| `p3_13` | Rules | Preconditions and deductions | **implemented** | console `#/define/rules` | **asserted** | Preconditions and deductions are separately authored and emitted in the payment-structure LinkedRecord |
+| `p3_14` | Extend | Two kinds of extension, with very different costs | **implemented** | console `#/define/extend` | **asserted** | Namespaced typed extension fields persist; submit validates number/boolean/date values and keeps extensions outside infrastructure logic |
+| `p3_15` | Ratify | Ratifying with fields still pending | **implemented** | console `#/ratify` | **asserted** | Separate approver queue over submitted drafts; POST ratify records the approver's pending-fields declaration and refuses self-ratification |
+| `p3_16` | Ratify | Two records, one signature, one flow | **implemented** | console `#/ratified` | **asserted** | POST ratify with publish:true atomically ratifies, activates, appends both governance events and enqueues registry publication; screen reads the event trail back |
+| `p3_pay` | Payment | Handing off what is not yours | **compressed** | console `#/handoff` | skipped (compressed) | POST payment-handoff records inviter, invitee and note on the definition and in its event trail. Compressed because it does not itself grant RateOwnerAssignment or notify the invitee |
+| `p3_19` | Schema | What the record actually is, underneath the form | **implemented** | console `#/define/anatomy` | **asserted** | Renders the real stored immutable version and its institution extensions as separate layers; pre-submit it renders the real server-held draft |
+| `p3_18` | Evidence | What is still undecided | **implemented** | console `#/define/open` | **asserted** | POST draft/validate runs the same compile as submit and renders every named refusal; submit creates the immutable next version and closes the draft atomically |
 ## P-10 — External Evidence Contact (3 screens)
 
 | Screen | Stage | Reference title | Status | Surface | Gate | Evidence / gap |

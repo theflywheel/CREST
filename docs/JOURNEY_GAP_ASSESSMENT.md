@@ -4,6 +4,15 @@
 **Reference:** `docs/reference/CREST — Actor Journeys_17Aug.html`  
 **Implementation:** `frontend/apps/{console,field,verify,worker}`
 
+> **Journey 4 update — 4 September 2026.** This assessment captured the
+> pre-authoring baseline. P-3 has since been implemented as a server-backed
+> draft → validate → submit → separate ratifier → atomic publish flow. The
+> current screen-level source of truth is
+> [`journey-traceability.md`](journey-traceability.md#p-3--work-definition-author-28-screens):
+> 24 screens are implemented and four are deliberately compressed. The
+> remaining gaps are real role invitations/grants on `p3_11`/`p3_20`, source
+> owner notification on `p3_28`, and delivery/authority on `p3_pay`.
+
 ## Executive assessment
 
 The React applications do not faithfully implement the Actor Journeys as end-to-end products.
@@ -106,10 +115,12 @@ approver separation for every console action.
 The implementation describes itself as a console reimplementation, but its own components identify
 the missing write side:
 
-- Definition authoring says adaptor mapping, extensions, and authoring writes are not built
-  (`frontend/apps/console/src/views/Admin.tsx:83-90,149`).
-- The 28-screen P-3 journey is reduced to ten selectable read-only sections over one seeded
-  definition (`Admin.tsx:54-130`).
+- At the assessment date, definition authoring said adaptor mapping, extensions, and authoring
+  writes were not built. That reader has since been replaced by the server-backed P-3 wizard in
+  `frontend/apps/console/src/views/Define.tsx`; see the Journey 4 update above.
+- At the assessment date, the 28-screen P-3 journey was reduced to ten selectable read-only
+  sections. All 28 screens now have explicit routes and API evidence in the generated traceability
+  ledger; 24 are implemented and four retain named delivery/authority gaps.
 - Payment setup reads an existing linked rate; its payment rail is labelled illustrative/simulated
   and cannot connect a rail (`Admin.tsx:165-232`).
 - Instance consent scripts cannot be edited and its admission queue is illustrative
@@ -303,7 +314,7 @@ decision, expected state transition, API evidence, and terminal closure.
 | J1 Onboarding an organisation | G-2, 11 detailed screens; 13-screen end-to-end journey | Three public onboarding routes plus an illustrative organisation card | **Partial** | Four reference details plus kind/sector branching, qualification, documents, invitation, enablement, immutable terms, certificate checks |
 | J2 Setting up the instance | G-1, 8 detailed screens; 9-screen journey | One read-only instance/health page, illustrative admission queue | **Read-only / illustrative** | Stand-up, instance identity binding, consent configuration, first invitation, pending-review queue, review and approval |
 | J3 Setting up a project | P-1 (3) + P-2 (21), 16-screen journey path | Org/profile reader and operational project dashboards | **Partial; setup missing** | Assign people to roles, create project, five independent choices, worker sources, definition origin, evidence intake, validation posture, payment posture, owners, partner grants, activation |
-| J4 Defining the work | P-3, 28 detailed screens | Ten-section reader over one seeded definition | **Read-only** | Registry/list, all authoring branches, category/unit/cascade/time/outcome paths, evidence source, adaptor mapping/testing, roles, tranches, deductions, extensions, review/sign/ratify |
+| J4 Defining the work | P-3, 28 detailed screens | 28 mapped routes over server-held drafts, immutable versions, linked records and a separate ratifier | **Mostly implemented (24 implemented, 4 compressed)** | Real role invitation/grant delivery (`p3_11`, `p3_20`), source-owner notification on version change (`p3_28`), and rate-owner notification/assignment after handoff (`p3_pay`) |
 | J5 Payment and putting it right | F-1 (5) + F-2 (10) | Existing rate reader and illustrative rail | **Read-only / illustrative** | Assign owner, author/publish rate, worker terms, mechanism boundary, rails, connection, real payment test, reconciliation file, statement, batching, activation/qualification gates |
 | J6 Registering a worker who cannot self-register | W-2, 5 screens | Offline queue, registration, consent script, duplicate hold, completion | **Mostly implemented** | Real audio artifact, identity assertion, offline consent transaction, card printing, complete no-phone notification/handoff |
 | J7 A worker end to end | W-1, 22 screens | Real work/payment/wallet operations plus several illustrative screens | **Partial** | Equal enrollment pathways, no-document self path, enrollment consent, recovery contacts, offline presentation, declined work, deferred qualification, selective sharing, per-share consent, notifications |
@@ -322,7 +333,7 @@ decision, expected state transition, API evidence, and terminal closure.
 | G-4 Worker Registry Custodian | 4 | Partial | Coverage, quality worklist, reuse; duplicates substantially present |
 | P-1 Org Admin | 3 | Missing as an action flow | Assign roles and create/handover project |
 | P-2 Project Configurator | 21 | Monitoring subset only | Project composition and activation screens; several J11 metrics |
-| P-3 Work Definition Author | 28 | Read-only summary | Entire write/ratification workflow |
+| P-3 Work Definition Author | 28 | Mostly implemented: 24 implemented, 4 compressed | Invitations/grants, source-owner notification, and handoff delivery/authority |
 | P-10 External Evidence Contact | 3 | Illustrative | Scoped request, file return, receipt/result |
 | F-1 Rate Owner | 5 | Read-only summary | Assignment, rate editing, publication, handoff |
 | F-2 Payment Mechanism Owner | 10 | Illustrative | Complete mechanism/rail configuration and activation |
@@ -351,7 +362,7 @@ Reconciliation Reviewer, Auditor, and platform/registry/vocabulary roles.
 3. Complete G-2 identify/qualify/enable onboarding.
 4. Implement P-1 role assignment and project creation.
 5. Implement P-2 project composition, staffing, grants, finance/support setup, and activation.
-6. Implement the P-3 definition registry and authoring/ratification flow.
+6. Close P-3's remaining delivery gaps: turn descriptive role holders and payment handoffs into invitations/assignments, and notify source owners when a new version requires re-test.
 7. Implement F-1 rate authoring/publication and F-2 mechanism/rail configuration.
 8. Separate author, approver, operator, and reviewer sessions and permissions.
 9. Add the missing J11 metric contracts and dashboard drilldowns.
@@ -415,7 +426,7 @@ Reconciliation Reviewer, Auditor, and platform/registry/vocabulary roles.
 
 ### P2: Build the two core creation paths
 
-- Complete P-3 work-definition authoring/ratification.
+- Complete P-3's remaining invitation, authority, and source-owner notification edges.
 - Complete F-1/F-2 payment setup and activation.
 - Correct J8 so evidence is attested where it originates and only then ingested by CREST.
 

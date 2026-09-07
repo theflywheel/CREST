@@ -30,7 +30,18 @@
 // Extending to another journey is adding entries to fidelity-map.json.
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { test, expect } = require("@playwright/test");
+
+function mutationKey(actor, method, pathName, body) {
+  return "e2e-" + crypto.createHash("sha256")
+    .update(JSON.stringify([actor, method.toUpperCase(), pathName, body === undefined ? null : body]))
+    .digest("hex");
+}
+
+function isMutation(method) {
+  return ["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase());
+}
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const read = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
@@ -67,6 +78,10 @@ function fold(s) {
     .replace(/[–—−]/g, "-")
     .replace(/[   ]/g, " ")
     .replace(/\s+/g, " ")
+    // The spec is cut from the reference's HTML, where an inline <b> leaves
+    // a space before the punctuation that follows it ("a policy ."); the
+    // rendered screen has none. Punctuation binds to the word before it.
+    .replace(/\s+([.,;:!?])/g, "$1")
     .trim()
     .toLowerCase();
 }
@@ -89,12 +104,34 @@ const DOORS = { console: "/console/", field: "/enrolment/", worker: "/worker/", 
 // that act, exactly as the walk, the seeder and a real deployment do.
 const FLOW_FIX = {
   org: "did:crest:party:01JCREST000000000000000RGN",
+  specifier: "did:crest:party:01JCREST00000000000000SPEC",
   custodian: "did:crest:party:01JCREST00000000000000CSTD",
   supervisor: "did:crest:party:01JCREST00000000000000SPVR",
   workerA: "did:crest:party:01JCREST00000000000000WRKA",
   chandra: "did:crest:party:01JCREST00000000000000WRKC",
   project: "crest:context:01JCREST00000000000000PRJC",
 };
+const FLOW_IDS = Object.freeze({ ...FLOW_FIX });
+const FLOW_SUBJECTS = {
+  org: "story|01JCREST000000000000000RGN",
+  specifier: "seed|specifier",
+  custodian: "story|01JCREST00000000000000CSTD",
+  supervisor: "story|01JCREST00000000000000SPVR",
+  workerA: "story|01JCREST00000000000000WRKA",
+  chandra: "story|01JCREST00000000000000WRKC",
+};
+let flowRuntimeReady;
+
+function flowFixtureKey(partyId) {
+  return Object.keys(FLOW_IDS).find(key => FLOW_FIX[key] === partyId || FLOW_IDS[key] === partyId);
+}
+
+function flowProviderSubject(partyId) {
+  const key = flowFixtureKey(partyId);
+  return key && FLOW_SUBJECTS[key]
+    ? FLOW_SUBJECTS[key]
+    : "story|" + partyId.replace("did:crest:party:", "");
+}
 
 const FLOW_API = (() => {
   const base = process.env.BASE_URL || "http://localhost:59110";
@@ -204,12 +241,41 @@ async function flowFundersArrive(page, request, mode, route) {
       partyId: FLOW_FIX.supervisor,
       terms: { id: "crest:terms:01JCREST00000000000000TERM", version: 1 },
       scope: { kind: "context", contextId: projId },
-      functions: ["submit-work-evidence"],
+      functions: ["submit-work-evidence", "work-definition-source-owner", "act-for-party"],
       period: { start: "2026-01-01T00:00:00Z", end: "2027-12-31T00:00:00Z" },
       authorityPartyId: me, approvedByPartyId: me,
       approvedAt: "2026-09-01T00:00:00Z", state: "ACTIVE",
     });
     if (r.status() !== 201) return `the supervisor's grant on the flow's project was refused (${r.status()})`;
+    r = await flowAsPartyOn(request, FLOW_API.parties, me, "POST", "/v1/authorizations", {
+      id: "crest:authorization:" + fakeUlid(),
+      partyId: me,
+      terms: { id: "crest:terms:01JCREST00000000000000TERM", version: 1 },
+      scope: { kind: "context", contextId: projId },
+      functions: ["payment-owner", "claim-review", "read-work-evidence"],
+      period: { start: "2026-01-01T00:00:00Z", end: "2027-12-31T00:00:00Z" },
+      authorityPartyId: me, approvedByPartyId: me,
+      approvedAt: "2026-09-01T00:00:00Z", state: "ACTIVE",
+    });
+    if (r.status() !== 201) return `the owner's finance grant on the flow's project was refused (${r.status()})`;
+    // Evidence arrives only from a registered source the definition admits,
+    // and only about a worker who consented to this programme (§9).
+    r = await flowAsPartyOn(request, FLOW_API.evidence, FLOW_FIX.supervisor, "POST", "/v1/sources", {
+      adapterRef: "csv-batch@1", contextId: projId, systemRef: "csv-batch",
+      sourceClass: "programme-system", captureMethod: "digital-capture", sourceExposure: "signed-batch",
+      expectedEvery: "24h", ownerPartyId: FLOW_FIX.supervisor,
+    });
+    if (r.status() !== 201) return `the flow's source registration was refused (${r.status()})`;
+    const consentPath = `/v1/parties/${encodeURIComponent(FLOW_FIX.workerA)}/consents?moment=enrolment&captureMethod=assisted` +
+      `&purpose=work-history-and-payment&capturedBy=${encodeURIComponent(FLOW_FIX.supervisor)}&contextId=${encodeURIComponent(projId)}`;
+    r = await request.post(FLOW_API.parties + consentPath, {
+      headers: {
+        Authorization: "Bearer " + (await flowMintToken(request, FLOW_FIX.supervisor)),
+        "X-CREST-On-Behalf-Of": FLOW_FIX.workerA,
+        "Idempotency-Key": mutationKey(FLOW_FIX.supervisor, "POST", consentPath, null),
+      },
+    });
+    if (r.status() !== 201) return `the worker's consent to the flow's programme was refused (${r.status()})`;
 
     let p = await flowConsolePersona(page, request, "payowner");
     if (p) return p;
@@ -239,11 +305,13 @@ async function flowFundersArrive(page, request, mode, route) {
       "period_start,period_end,geography,household_id,beneficiary_count,source_record_ref\n" +
       `bednet-distribution,3,bednets-distributed,phone,+15550100011,2026-09-01,2026-09-01,` +
       `Riverside,fidelity-HH-${stamp},3,fidelity-funders-${stamp}\n`;
-    const batch = await request.fetch(FLOW_API.evidence +
-      `/v1/batches?contextId=${encodeURIComponent(projId)}&definitionId=${encodeURIComponent(FUNDERS_DEFN)}` +
-      `&submittedBy=${encodeURIComponent(FLOW_FIX.supervisor)}&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch&systemRef=fidelity-gate`, {
+    const batchPath = `/v1/batches?contextId=${encodeURIComponent(projId)}&definitionId=${encodeURIComponent(FUNDERS_DEFN)}&definitionVersion=1` +
+      `&submittedBy=${encodeURIComponent(FLOW_FIX.supervisor)}&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch&systemRef=csv-batch`;
+    const batch = await request.fetch(FLOW_API.evidence + batchPath, {
       method: "POST",
-      headers: { Authorization: "Bearer " + supTok, "Content-Type": "text/csv" },
+      headers: {
+        Authorization: "Bearer " + supTok, "Content-Type": "text/csv",
+      },
       data: csv,
     });
     if (![200, 201].includes(batch.status())) return `the flow's own batch was refused (${batch.status()})`;
@@ -252,18 +320,18 @@ async function flowFundersArrive(page, request, mode, route) {
 
     let windowUp = false;
     for (let i = 0; i < 30 && !windowUp; i++) {
-      const w = await flowAsPartyOn(request, FLOW_API.payments, FLOW_FIX.workerA, "GET", `/v1/windows/${claimId}`);
+      const w = await flowAsPartyOn(request, FLOW_API.evidence, FLOW_FIX.workerA, "GET", `/v1/windows/${claimId}`);
       windowUp = w.status() === 200;
       if (!windowUp) await page.waitForTimeout(2000);
     }
     if (!windowUp) return "the confirmation window never opened within 60s";
-    r = await flowAsPartyOn(request, FLOW_API.payments, FLOW_FIX.workerA, "POST", `/v1/claims/${claimId}/confirm`, {});
+    r = await flowAsPartyOn(request, FLOW_API.evidence, FLOW_FIX.workerA, "POST", `/v1/claims/${claimId}/confirm`, {});
     if (r.status() !== 200) return `the worker's confirmation exit was refused (${r.status()})`;
 
     let instruction;
     let held = false;
     for (let i = 0; i < 30 && !held; i++) {
-      const res = await flowAsPartyOn(request, FLOW_API.payments, me, "GET", `/v1/instructions/by-claim/${claimId}`);
+      const res = await flowAsPartyOn(request, FLOW_API.payments, FLOW_FIX.workerA, "GET", `/v1/instructions/by-claim/${claimId}`);
       if (res.status() === 200) {
         instruction = await res.json();
         held = instruction.state === "HELD";
@@ -330,20 +398,75 @@ async function flowFundersArrive(page, request, mode, route) {
 }
 
 async function flowMintToken(request, partyId) {
-  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  await flowEnsureRuntime(request);
+  const sub = flowProviderSubject(partyId);
   const r = await request.post(FLOW_API.oidc + "/token", {
     data: { sub, aud: "crest", expiresIn: "1h" },
   });
   if (!r.ok()) throw new Error(`the dev issuer refused a token for ${partyId} (${r.status()})`);
-  const d = await r.json();
+  return flowTokenOf(await r.json());
+}
+
+// The dev issuer's token answer, whichever spelling it uses.
+function flowTokenOf(d) {
   return d.accessToken || d.access_token || d.token;
 }
 
+async function flowEnsureRuntime(request) {
+  if (flowRuntimeReady) return flowRuntimeReady;
+  flowRuntimeReady = (async () => {
+    for (const key of ["org", "specifier", "custodian", "supervisor", "workerA"]) {
+      const r = await request.post(FLOW_API.oidc + "/token", {
+        data: { sub: FLOW_SUBJECTS[key], aud: "crest", expiresIn: "1h" },
+      });
+      if (!r.ok()) throw new Error(`the dev issuer refused the seeded ${key} subject`);
+      const token = flowTokenOf(await r.json());
+      const me = await request.get(FLOW_API.parties + "/v1/auth/me", {
+        headers: { Authorization: "Bearer " + token },
+      });
+      if (!me.ok()) throw new Error(`story seed did not bind ${key} (${me.status()})`);
+      const id = (await me.json()).partyId;
+      if (!id) throw new Error(`story seed returned no runtime id for ${key}`);
+      FLOW_FIX[key] = id;
+    }
+    const token = await request.post(FLOW_API.oidc + "/token", {
+      data: { sub: FLOW_SUBJECTS.org, aud: "crest", expiresIn: "1h" },
+    }).then(r => r.json()).then(flowTokenOf);
+    const projects = await request.get(
+      FLOW_API.parties + "/v1/projects?ownerPartyId=" + encodeURIComponent(FLOW_FIX.org),
+      { headers: { Authorization: "Bearer " + token } },
+    );
+    if (!projects.ok()) throw new Error(`seeded organisation cannot list projects (${projects.status()})`);
+    const list = (await projects.json()).projects || [];
+    const project = list.find(p => p.name === "Riverside bednet campaign 2026");
+    if (!project?.id) throw new Error("story seed returned no runtime project id");
+    FLOW_FIX.project = project.id;
+    const custodianToken = await request.post(FLOW_API.oidc + "/token", {
+      data: { sub: FLOW_SUBJECTS.custodian, aud: "crest", expiresIn: "1h" },
+    }).then(r => r.json()).then(flowTokenOf);
+    const resolved = await request.get(
+      FLOW_API.parties + "/v1/resolve?kind=contact-route&value=" +
+        encodeURIComponent("worker-chandra@riverside.invalid") +
+        "&contextId=" + encodeURIComponent(FLOW_FIX.project),
+      { headers: { Authorization: "Bearer " + custodianToken } },
+    );
+    if (!resolved.ok()) throw new Error(`the custodian could not resolve Chandra (${resolved.status()})`);
+    FLOW_FIX.chandra = (await resolved.json()).partyId;
+    if (!FLOW_FIX.chandra) throw new Error("Chandra resolution returned no runtime id");
+  })();
+  return flowRuntimeReady;
+}
+
 async function flowAsPartyOn(request, svcBase, partyId, method, path, body) {
+  await flowEnsureRuntime(request);
+  const key = flowFixtureKey(partyId);
+  if (key && FLOW_FIX[key]) partyId = FLOW_FIX[key];
   const token = await flowMintToken(request, partyId);
+  const headers = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
+  if (isMutation(method)) headers["Idempotency-Key"] = mutationKey(partyId, method, path, body);
   return request.fetch(svcBase + path, {
     method,
-    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    headers,
     data: body === undefined ? undefined : body,
   });
 }
@@ -356,14 +479,21 @@ async function flowAsParty(request, partyId, method, path, body) {
 // exact append the browser's dev login performs, done from the test for a
 // party (the funders walk's worker) that here acts only through the API.
 async function flowBindParty(request, partyId) {
+  await flowEnsureRuntime(request);
+  const key = flowFixtureKey(partyId);
+  if (key && FLOW_FIX[key]) partyId = FLOW_FIX[key];
   const token = await flowMintToken(request, partyId);
-  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const sub = flowProviderSubject(partyId);
   const pw = await request
     .get(FLOW_API.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub))
     .then((r) => r.json());
-  return request.post(FLOW_API.parties + `/v1/parties/${encodeURIComponent(partyId)}/identity-bindings`, {
-    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-    data: { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject },
+  const bindPath = `/v1/parties/${encodeURIComponent(partyId)}/identity-bindings`;
+  const bindBody = { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject };
+  return request.post(FLOW_API.parties + bindPath, {
+    headers: {
+      Authorization: "Bearer " + token, "Content-Type": "application/json",
+    },
+    data: bindBody,
   });
 }
 
@@ -384,13 +514,17 @@ async function flowPublishWiderTerms(request) {
   // Terms are the operator's to publish, and the fixture organisation is
   // this stack's operator.
   const token = await flowMintToken(request, FLOW_FIX.org);
-  const r = await request.post(FLOW_API.parties + "/v1/terms", {
-    headers: { Authorization: "Bearer " + token },
-    data: {
-      id, version: 1, name: "Full delivery with payment",
-      permissions: ["submit-work-evidence", "specify-definition", "ratify-definition", "set-rates", "instruct-payment"],
-      publishedAt: "2026-09-01T00:00:00Z",
+  const termsPath = "/v1/terms";
+  const termsBody = {
+    id, version: 1, name: "Full delivery with payment",
+    permissions: ["submit-work-evidence", "specify-definition", "ratify-definition", "set-rates", "instruct-payment"],
+    publishedAt: "2026-09-01T00:00:00Z",
+  };
+  const r = await request.post(FLOW_API.parties + termsPath, {
+    headers: {
+      Authorization: "Bearer " + token,
     },
+    data: termsBody,
   });
   if (r.status() !== 201) throw new Error(`publishing the wider terms set failed (${r.status()})`);
   return id;
@@ -422,7 +556,7 @@ async function flowInvite(request, orgId) {
 const CONSOLE_PERSONAS = {
   orgadmin: ["org", "Peter Otieno", "Org Admin"],
   configurator: ["org", "Dr. Alice Mutua", "Project Configurator"],
-  author: ["org", "Amina Yusuf", "Work Definition Author"],
+  author: ["specifier", "Amina Yusuf", "Work Definition Author"],
   approver: ["org", "Prof. Ndegwa", "Work Definition Approver"],
   rateowner: ["org", "Nadia Okoth", "Rate Owner"],
   payowner: ["org", "Daniel Mwangi", "Payment Mechanism Owner"],
@@ -431,18 +565,90 @@ const CONSOLE_PERSONAS = {
   support: ["custodian", "Naliaka", "Support Agent"],
   funder: ["org", "Funding oversight", "Funding Viewer"],
 };
+
+// Journey 4 needs a real mutable draft behind every wizard route and real
+// submitted/active versions behind its governance screens. A clone gives the
+// gate a complete, deployment-owned document without inventing form state;
+// the two fields absent from the fixture version are written through the same
+// section endpoints as Continue, then submit/ratify use the public API.
+async function flowDefiningWorkArrive(page, request, mode) {
+  let problem = await flowConsoleLogin(page, request, "author");
+  if (problem) return problem;
+
+  const author = FLOW_FIX.specifier;
+  const seededDefinition = "crest:definition:01JCREST00000000000000DEFN";
+  let r = await flowAsPartyOn(request, FLOW_API.parties, author, "POST", "/v1/definition-drafts", {
+    createdByPartyId: author,
+    // A draft names the project whose authority governs it.
+    contextId: FLOW_FIX.project,
+    cloneFromDefinitionId: seededDefinition,
+    cloneFromVersion: 1,
+  });
+  if (r.status() !== 201) return `the Journey 4 draft could not be cloned (${r.status()})`;
+  let draft = await r.json();
+  const draftId = draft.id;
+
+  await page.evaluate((id) => sessionStorage.setItem("crest.console.draftid", id), draftId);
+
+  if (mode === "defining-work-draft") {
+    return "";
+  }
+
+  const put = async (section, body) => {
+    const out = await flowAsPartyOn(request, FLOW_API.parties, author, "PUT",
+      `/v1/definition-drafts/${encodeURIComponent(draftId)}/sections/${section}`, body);
+    if (!out.ok()) throw new Error(`writing ${section} was refused (${out.status()})`);
+    draft = await out.json();
+  };
+  await put("scope", { ...(draft.doc.scope || {}), sector: "health" });
+  await put("activity", {
+    ...(draft.doc.activity || {}),
+    counting: { ...(draft.doc.activity?.counting || {}), basis: "event" },
+  });
+  r = await flowAsPartyOn(request, FLOW_API.parties, author, "POST",
+    `/v1/definition-drafts/${encodeURIComponent(draftId)}/submit`, {});
+  if (r.status() !== 201) return `the Journey 4 draft could not be submitted (${r.status()})`;
+  const definition = await r.json();
+
+  if (mode === "defining-work-submitted") {
+    problem = await flowConsoleLogin(page, request, "approver");
+    if (problem) return problem;
+    return "";
+  }
+
+  r = await flowAsPartyOn(request, FLOW_API.parties, FLOW_FIX.org, "POST",
+    `/v1/definitions/${encodeURIComponent(definition.id)}/versions/${definition.version}/ratify`, {
+      ratifiedByPartyId: FLOW_FIX.org,
+      publish: true,
+    });
+  if (!r.ok()) return `the Journey 4 version could not be signed and published (${r.status()})`;
+
+  const persona = mode === "defining-work-active-author" ? "author" : "approver";
+  problem = await flowConsoleLogin(page, request, persona);
+  if (problem) return problem;
+  await page.evaluate(([id, version, draft]) => {
+    sessionStorage.setItem("crest.console.signed", `${id}@@${version}`);
+    sessionStorage.setItem("crest.console.draftid", draft);
+  }, [definition.id, definition.version, draftId]);
+  return "";
+}
 async function flowConsoleLogin(page, request, personaKey) {
+  await flowEnsureRuntime(request);
   const row = CONSOLE_PERSONAS[personaKey];
   if (!row) return `unknown console persona "${personaKey}"`;
   const [fixKey, who, role] = row;
   const partyId = FLOW_FIX[fixKey];
   const token = await flowMintToken(request, partyId);
-  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const sub = flowProviderSubject(partyId);
   const pw = await (await request.get(FLOW_API.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub))).json();
+  const bindPath = "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings";
+  const bindBody = { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject };
   const bind = await request.post(
-    FLOW_API.parties + "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
-      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-      data: { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject },
+    FLOW_API.parties + bindPath, {
+      headers: {
+        Authorization: "Bearer " + token, "Content-Type": "application/json",
+      },
+      data: bindBody,
     });
   if (!bind.ok()) return `the self-bind was refused for ${partyId} (${bind.status()})`;
   await page.goto("/console/");
@@ -462,19 +668,43 @@ async function flowConsoleLogin(page, request, personaKey) {
   return "";
 }
 
+async function flowApplicantLogin(page, request, stamp) {
+  const sub = "fidelity-onboard-applicant|" + stamp;
+  // flowMintToken maps fixture parties; applicants have no party yet, so mint
+  // directly from the configured local issuer while keeping the real bearer
+  // authentication path.
+  const minted = await request.post(FLOW_API.oidc + "/token", {
+    data: { sub, aud: "crest", expiresIn: "1h" },
+  });
+  if (!minted.ok()) throw new Error(`the dev issuer refused the onboarding applicant (${minted.status()})`);
+  const d = await minted.json();
+  const applicantToken = d.accessToken || d.access_token || d.token;
+  await page.goto("/console/#/onboard");
+  await page.evaluate((t) => sessionStorage.setItem("crest.console.session", JSON.stringify({
+    token: t, me: { partyId: "", who: "Hon. Peter Okello", role: "Onboarding applicant" }, persona: "orgadmin",
+  })), applicantToken);
+  await page.reload();
+  await settle(page);
+}
+
 // The worker door's login screen shows only the real pathways now, so flows
 // sign in the way the dev card used to work underneath: a mock-issuer token,
 // the same idempotent identity-binding append through the real endpoint, and
 // the session handed to the door as a reload would find it.
 async function flowWorkerLogin(page, request, who) {
+  await flowEnsureRuntime(request);
   const partyId = who === "grace" ? FLOW_FIX.workerA : who === "supervisor" ? FLOW_FIX.supervisor : who;
   const token = await flowMintToken(request, partyId);
-  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const sub = flowProviderSubject(partyId);
   const pw = await (await request.get(FLOW_API.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub))).json();
+  const bindPath = "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings";
+  const bindBody = { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject };
   const bind = await request.post(
-    FLOW_API.parties + "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
-      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-      data: { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject },
+    FLOW_API.parties + bindPath, {
+      headers: {
+        Authorization: "Bearer " + token, "Content-Type": "application/json",
+      },
+      data: bindBody,
     });
   if (!bind.ok()) return `the self-bind was refused for ${partyId} (${bind.status()})`;
   await page.goto("/worker/");
@@ -603,14 +833,15 @@ async function flowWorkerArrive(page, request, mode) {
 // Drives the onboarding flow to the named depth. Returns "" on success or a
 // note saying what actually happened, like every other arrival.
 async function flowArrive(page, request, mode) {
+  await flowEnsureRuntime(request);
+  if (mode.startsWith("defining-work-"))
+    return flowDefiningWorkArrive(page, request, mode);
   if (/^(share-|recovery-|anchor-)/.test(mode)) return flowWorkerArrive(page, request, mode);
   const stamp = flowStamp();
 
-  // g2_1 — register. Anonymous by design (#20); a unique organisation per
-  // arrival so the run is re-runnable and screens never read another run's
-  // state.
-  await page.goto("/console/#/onboard");
-  await settle(page);
+  // g2_1 — register. The form is open to an applicant, but the registry still
+  // requires that applicant's verified bearer token.
+  await flowApplicantLogin(page, request, stamp);
   await page.fill('[name="orgname"]', "Fidelity Gate Trust " + stamp);
   await page.selectOption('[name="country"]', "KE");
   await page.fill('[name="workemail"]', `gate+${stamp}@fidelity.example.org`);
@@ -641,10 +872,10 @@ async function flowArrive(page, request, mode) {
   if (mode === "admissions-queue" || mode === "admissions-review") {
     // g4_1–g4_3 — the operator's side of the same door. The registration
     // above is the queue's real pending row; the reviewer is the instance
-    // administrator, signed in through the door's own persona card — the same
-    // first-login path every console: arrival takes. The token lives in
-    // memory, so the arrival must never reload after signing in; it lands by
-    // hash navigation, which mounts the screen fresh over live reads.
+    // administrator, signed in the way every console: arrival is. The decision
+    // itself is the registry custodian's act (the flow posts it as them). The
+    // token lives in memory, so the arrival must never reload after signing
+    // in; it lands by hash navigation, which mounts the screen fresh.
     {
       const p = await flowConsoleLogin(page, request, "instance");
       if (p) return p;
@@ -801,6 +1032,11 @@ async function checkScreen(page, sid, spec, failures, waived) {
   const wvLayout = waiverFor(sid, "layout");
   if (wvLayout) {
     waived.push({ facet: "layout", needle: spec.layout, why: wvLayout });
+  } else if (spec.frame === "panel") {
+    if (!(await page.locator(".panel-shell").isVisible().catch(() => false)))
+      failures.push({ facet: "layout", needle: "panel", what: "a panel frame renders the standalone confirmation panel" });
+    if (await page.locator(RAIL_SEL).first().isVisible().catch(() => false))
+      failures.push({ facet: "layout", needle: "no rail", what: "a standalone panel must not retain the console rail" });
   } else if (spec.layout === "desktop") {
     if (!(await page.locator(".appbar").isVisible().catch(() => false)))
       failures.push({ facet: "layout", needle: "appbar", what: "a desktop frame renders an appbar" });

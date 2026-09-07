@@ -379,8 +379,8 @@ func TestActorRefusesAnUnauthenticatedRequestWhereItMatters(t *testing.T) {
 	// the service has already said so loudly at start-up. pkg/service refuses
 	// to start a production deployment in that state.
 	got, err := Actor(ctx, Caller{}, "did:crest:party:A", "", false, alwaysPermits)
-	if err != nil || got != "did:crest:party:A" {
-		t.Fatalf("unenforced gave %q, %v", got, err)
+	if !errors.Is(err, ErrNoCaller) || got != "" {
+		t.Fatalf("unconfigured identity must fail closed: %q, %v", got, err)
 	}
 }
 

@@ -2,7 +2,7 @@
 //
 // Two reasons it exists. Sandbox access takes weeks (#19) and P2/P3 cannot wait
 // for it. More importantly, a sandbox will not produce the failures that matter —
-// a timeout after the money moved, a duplicate settlement, a payment that clears
+// a timeout after the money moved, a duplicate settlement, a payment that is accepted
 // but is never confirmed back. This mock injects them on demand, which is how
 // W10 ("every held payment has a reason with an owner") gets tested at all.
 //
@@ -64,20 +64,20 @@ func main() {
 		switch r.failMode {
 		case "timeout":
 			// The nastiest real failure: the money moved, the caller never heard.
-			in.Status = "cleared"
+			in.Status = "confirmed"
 			r.seen[in.IdempotencyKey] = in
 			time.Sleep(50 * time.Millisecond)
 			http.Error(w, "gateway timeout", http.StatusGatewayTimeout)
 			return
 		case "reject":
-			in.Status = "rejected"
+			in.Status = "failed"
 			r.seen[in.IdempotencyKey] = in
 			w.WriteHeader(http.StatusUnprocessableEntity)
 			_ = json.NewEncoder(w).Encode(in)
 			return
 		}
 
-		in.Status = "cleared"
+		in.Status = "confirmed"
 		in.At = time.Now().UTC()
 		r.seen[in.IdempotencyKey] = in
 		w.Header().Set("Content-Type", "application/json")

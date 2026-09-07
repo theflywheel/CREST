@@ -140,9 +140,7 @@ export function Ratify() {
           await api.post("definitions", defpath(def.id, `/versions/${def.version}/ratify`), {
             ratifiedByPartyId: me,
             ...(fields.length ? { pendingFields: fields } : {}),
-          });
-          await api.post("definitions", defpath(def.id, `/versions/${def.version}/activate`), {
-            activatedByPartyId: me,
+            publish: true,
           });
           writeSigned(def.id, def.version);
           setGen((g) => g + 1);

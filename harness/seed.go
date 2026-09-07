@@ -3,11 +3,15 @@ package harness
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/theflywheel/crest/harness/fixtures"
@@ -37,15 +41,96 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 	if err != nil {
 		return nil, err
 	}
+	w.RuntimeIDs = make(map[string]string)
+	manifest, err := loadRuntimeManifest()
+	if err != nil {
+		return nil, err
+	}
+	for fixtureID, runtimeID := range manifest {
+		w.RuntimeIDs[fixtureID] = runtimeID
+		s.SetRuntimeID(fixtureID, runtimeID)
+	}
 
 	if err := s.SetClock(ctx, w.Instance.Epoch); err != nil {
 		return nil, fmt.Errorf("set clock: %w", err)
 	}
-
+	// Mutating reference data and definitions is an authenticated operation.
+	// Keep these callers separate: the definition author and approver must be
+	// real, differently bound identities so the seed exercises separation of
+	// duties instead of putting the fixture's party ids in request bodies.
+	oidc := NewOIDC()
+	if err := oidc.WaitReady(ctx, 60*time.Second); err != nil {
+		return nil, fmt.Errorf("identity provider: %w", err)
+	}
+	setupSub := env("CREST_SETUP_PROVIDER_SUBJECT", "seed|custodian")
+	seedToken, err := oidc.Token(ctx, setupSub)
+	if err != nil {
+		return nil, fmt.Errorf("mint seeding token: %w", err)
+	}
+	authorToken, err := oidc.Token(ctx, "seed|specifier")
+	if err != nil {
+		return nil, fmt.Errorf("mint definition-author token: %w", err)
+	}
+	approverToken, err := oidc.Token(ctx, "seed|approver")
+	if err != nil {
+		return nil, fmt.Errorf("mint definition-approver token: %w", err)
+	}
+	asSeeder := s.Parties.As(Caller{Token: seedToken})
+	if err := setupFixtureOperator(ctx, asSeeder); err != nil {
+		return nil, err
+	}
+	// All non-operator parties are enrolled by the already approved operator.
+	// The public party endpoint therefore creates them without an identity
+	// binding, except for the author and approver who register with their own
+	// mock OIDC sessions. No fixture id or binding is sent to the server.
+	asAuthor := s.Definitions.As(Caller{Token: authorToken})
+	asApprover := s.Definitions.As(Caller{Token: approverToken})
+	for _, actor := range []struct{ id, token string }{
+		{fixtures.SpecifierID, authorToken}, {fixtures.CustodianID, approverToken},
+	} {
+		if partyID, ok := authenticatedParty(ctx, s.Parties, actor.token); ok {
+			if existing := w.ResolveID(actor.id); existing == actor.id {
+				w.RuntimeIDs[actor.id] = partyID
+				s.SetRuntimeID(actor.id, partyID)
+			} else if existing != partyID {
+				return nil, fmt.Errorf("stable actor %s is bound to %s, manifest says %s", actor.id, partyID, existing)
+			}
+		}
+	}
 	for _, p := range w.Parties {
-		if err := s.Parties.Post(ctx, "/v1/parties", p, nil); err != nil {
+		if p.ID == fixtures.OrgID {
+			continue
+		}
+		if existing := w.RuntimeIDs[p.ID]; existing != "" {
+			if err := verifyRuntimeParty(ctx, s.Parties, existing, p.DisplayName); err == nil {
+				continue
+			}
+			delete(w.RuntimeIDs, p.ID)
+		}
+		// The operator is the inviter, so the caller already has a Party and
+		// createParty deliberately leaves the new person unbound.
+		partyCaller := asSeeder
+		switch p.ID {
+		case fixtures.SpecifierID:
+			partyCaller = s.Parties.As(Caller{Token: authorToken})
+		case fixtures.CustodianID:
+			partyCaller = s.Parties.As(Caller{Token: approverToken})
+		}
+		var created schema.Party
+		if err := partyCaller.Post(ctx, "/v1/parties", schema.Party{
+			Kind: p.Kind, DisplayName: p.DisplayName, ContactRoutes: p.ContactRoutes,
+			CreatedAt: p.CreatedAt,
+		}, &created); err != nil {
 			return nil, fmt.Errorf("party %s: %w", p.DisplayName, err)
 		}
+		if created.ID == "" {
+			return nil, fmt.Errorf("party %s: registration returned no id", p.DisplayName)
+		}
+		s.SetRuntimeID(p.ID, created.ID)
+		w.RuntimeIDs[p.ID] = created.ID
+	}
+	if err := saveRuntimeManifest(w.RuntimeIDs); err != nil {
+		return nil, err
 	}
 	// Skills before definitions: a definition names a skill code, and a
 	// deployment that has not adopted the taxonomy would be publishing a
@@ -58,71 +143,43 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 		if err := s.Parties.Get(ctx, "/v1/skills/"+url.PathEscape(sk.Code), nil); err == nil {
 			continue
 		}
-		if err := s.Parties.Post(ctx, "/v1/skills", sk, nil); err != nil {
+		if err := asSeeder.Post(ctx, "/v1/skills", sk, nil); err != nil {
 			return nil, fmt.Errorf("skill %s: %w", sk.Code, err)
 		}
 	}
-	// Terms are published by the instance operator — the fixture organisation,
-	// which CREST_OPERATOR_PARTY_ID names on every stack the seeder runs on —
-	// so the seeder proves it is the organisation before publishing them:
-	// mint a token from the stack's own mock issuer and self-bind its subject
-	// to the never-yet-bound org party (the first-login bootstrap). The
-	// registration walk below re-writes the party from the fixture document
-	// and drops this binding; it is made again afterwards, for the grants.
-	oidc := NewOIDC()
-	if err := oidc.WaitReady(ctx, 60*time.Second); err != nil {
-		return nil, fmt.Errorf("identity provider: %w", err)
-	}
-	token, err := oidc.Token(ctx, "seed|custodian")
-	if err != nil {
-		return nil, fmt.Errorf("mint seeding token: %w", err)
-	}
-	asSeeder := s.Parties.As(Caller{Token: token})
-	bindSeeder := func() error {
-		return asSeeder.Post(ctx, "/v1/parties/"+fixtures.OrgID+"/identity-bindings",
-			map[string]any{
-				"provider":      "mock-oidc",
-				"providerClass": "generic-oidc",
-				"subjectRef":    oidc.Subject("seed|custodian"),
-			}, nil)
-	}
-	if err := bindSeeder(); err != nil {
-		return nil, fmt.Errorf("bind the seeder to the organisation: %w", err)
-	}
+	// Terms are published by the instance operator established by the public
+	// setup route above.
 	for _, t := range w.Terms {
-		if err := asSeeder.Post(ctx, "/v1/terms", t, nil); err != nil {
-			return nil, fmt.Errorf("terms %s: %w", t.Name, err)
+		var listed struct {
+			Terms []schema.Terms `json:"terms"`
+		}
+		if err := s.Parties.Get(ctx, "/v1/terms", &listed); err != nil {
+			return nil, fmt.Errorf("list terms: %w", err)
+		}
+		found := false
+		for _, existing := range listed.Terms {
+			if existing.ID == t.ID && existing.Version == t.Version {
+				found = true
+				break
+			}
+		}
+		if !found {
+			if err := asSeeder.Post(ctx, "/v1/terms", t, nil); err != nil {
+				return nil, fmt.Errorf("terms %s: %w", t.Name, err)
+			}
 		}
 	}
-	for _, c := range w.Contexts {
-		if err := s.Parties.Post(ctx, "/v1/contexts", c, nil); err != nil {
-			return nil, fmt.Errorf("context %s: %w", c.Name, err)
-		}
-	}
-	// Minting a grant is the named authority saying so, and every fixture
-	// grant names the organisation — so the seeder proves it IS the
-	// organisation, exactly as a first login would: mint a token from the
-	// stack's own mock issuer and self-bind its subject to the org party,
-	// which the never-yet-bound org accepts as bootstrap. The rest of the
-	// seed goes through doors that are deliberately open (parties, terms,
-	// contexts).
-	// The organisation must be APPROVED before it can be an authority: the
-	// grant gate reads the registration, not the party's shape. The seeder
-	// walks the same application → terms → decision path a real organisation
-	// takes, resuming from wherever a previous seed left the registration.
-	//
-	// This happens BEFORE the seeder binds itself to the organisation, because
-	// applying re-writes the party from the fixture document, and the identity
-	// keys are rebuilt from that document — a binding made first would be
-	// silently wiped, and every later seeded grant would fail as
-	// subject_not_enrolled.
-	if err := s.approveOrganisation(ctx, oidc, w); err != nil {
-		return nil, err
-	}
-	if err := bindSeeder(); err != nil {
-		return nil, fmt.Errorf("bind the seeder to the organisation: %w", err)
-	}
+	// The operator first grants itself the instance permissions needed to create
+	// the project. Context-scoped grants follow after the server has assigned the
+	// project id.
+	// The setup route records the operator's approval, so grants are still
+	// created through the ordinary authorization API with the authenticated
+	// operator as their actual approver.
 	for _, a := range w.Authorizations {
+		if a.Scope.Kind != schema.AuthorizationScopeKindInstance {
+			continue
+		}
+		a = runtimeAuthorization(a, w)
 		code, body, err := asSeeder.Status(ctx, http.MethodPost, "/v1/authorizations", a)
 		if err != nil {
 			return nil, fmt.Errorf("authorization %s: %w", a.ID, err)
@@ -156,7 +213,7 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 			normalized.Period = a.Period
 			normalized.ApprovedAt = a.ApprovedAt
 			normalized.ReviewBy = a.ReviewBy
-			want, err := json.Marshal(a)
+			want, err := json.Marshal(fixtureAuthorization(a, w))
 			if err != nil {
 				return nil, fmt.Errorf("authorization %s: marshal fixture: %w", a.ID, err)
 			}
@@ -172,6 +229,78 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 			log.Printf("seed: authorization %s already granted by an earlier seed with the fixture's exact shape; left as is", a.ID)
 		default:
 			return nil, fmt.Errorf("authorization %s: %d: %s", a.ID, code, body)
+		}
+	}
+	// First-run setup approves the operator before any terms exist. That narrow
+	// bootstrap is enough to publish terms and establish the initial instance
+	// roles, but project grants and invitations correctly require a real terms
+	// acceptance. Record it through the ordinary reviewed upgrade path before
+	// creating any context-scoped grants.
+	if err := ensureOperatorTerms(ctx, asSeeder,
+		s.Parties.As(Caller{Token: approverToken}), w); err != nil {
+		return nil, err
+	}
+	for _, c := range w.Contexts {
+		if existing := w.RuntimeIDs[c.ID]; existing != "" {
+			var view any
+			if err := asSeeder.Get(ctx, "/v1/projects/"+url.PathEscape(existing), &view); err == nil {
+				continue
+			}
+			delete(w.RuntimeIDs, c.ID)
+		}
+		request := c
+		request.ID = ""
+		request.OwnerPartyID = w.ResolveID(request.OwnerPartyID)
+		request.State = schema.ContextStateDRAFT
+		request.ActivationGates = append([]schema.ContextActivationGatesItem(nil), c.ActivationGates...)
+		for i := range request.ActivationGates {
+			request.ActivationGates[i].SatisfiedAt = nil
+		}
+		var created schema.Context
+		if err := asSeeder.Post(ctx, "/v1/contexts", request, &created); err != nil {
+			return nil, fmt.Errorf("context %s: %w", c.Name, err)
+		}
+		if created.ID == "" {
+			return nil, fmt.Errorf("context %s: response returned no id", c.Name)
+		}
+		s.SetRuntimeID(c.ID, created.ID)
+		w.RuntimeIDs[c.ID] = created.ID
+	}
+	if err := saveRuntimeManifest(w.RuntimeIDs); err != nil {
+		return nil, err
+	}
+	for _, a := range w.Authorizations {
+		if a.Scope.Kind != schema.AuthorizationScopeKindContext {
+			continue
+		}
+		a = runtimeAuthorization(a, w)
+		code, body, err := asSeeder.Status(ctx, http.MethodPost, "/v1/authorizations", a)
+		if err != nil {
+			return nil, fmt.Errorf("authorization %s: %w", a.ID, err)
+		}
+		if code >= 200 && code < 300 {
+			continue
+		}
+		if code == http.StatusConflict {
+			var standing schema.Authorization
+			if err := asSeeder.Get(ctx, "/v1/authorizations/"+url.PathEscape(a.ID), &standing); err == nil {
+				if authorizationMatchesFixture(a, standing, w) {
+					continue
+				}
+				return nil, fmt.Errorf("authorization %s: standing grant differs from fixture", a.ID)
+			}
+		}
+		return nil, fmt.Errorf("authorization %s: %d: %s", a.ID, code, body)
+	}
+	for _, c := range w.Contexts {
+		id := w.ResolveID(c.ID)
+		for _, gate := range c.ActivationGates {
+			if err := asSeeder.Post(ctx, "/v1/projects/"+url.PathEscape(id)+"/activation/gates/"+url.PathEscape(gate.Name)+"/satisfied", nil, nil); err != nil {
+				return nil, fmt.Errorf("satisfy context %s gate %s: %w", c.Name, gate.Name, err)
+			}
+		}
+		if err := asSeeder.Post(ctx, "/v1/projects/"+url.PathEscape(id)+"/activation", nil, nil); err != nil {
+			return nil, fmt.Errorf("activate context %s: %w", c.Name, err)
 		}
 	}
 
@@ -217,24 +346,25 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 			continue
 		}
 		ratifier := d.RatifiedByPartyID
-		draft := d
+		draft := runtimeDefinition(d, w)
 		draft.Faces.Verifier.AuthorisedIssuers = withIssuer(
 			d.Faces.Verifier.AuthorisedIssuers, issuer.Issuer)
 		draft.State = schema.DefinitionStateDRAFT
 		draft.RatifiedByPartyID = nil
 		draft.ActivatedAt = nil
-		if err := s.Definitions.Post(ctx, "/v1/definitions", draft, nil); err != nil {
+		if err := asAuthor.Post(ctx, "/v1/definitions", draft, nil); err != nil {
 			return nil, fmt.Errorf("definition %s: %w", d.ID, err)
 		}
 		if ratifier == nil {
 			return nil, fmt.Errorf("definition %s has no ratifier in the fixture world", d.ID)
 		}
 		path := fmt.Sprintf("/v1/definitions/%s/versions/%d", d.ID, d.Version)
-		if err := s.Definitions.Post(ctx, path+"/ratify",
-			map[string]any{"ratifiedByPartyId": *ratifier}, nil); err != nil {
+		if err := asApprover.Post(ctx, path+"/ratify",
+			map[string]any{"ratifiedByPartyId": w.ResolveID(*ratifier)}, nil); err != nil {
 			return nil, fmt.Errorf("ratify %s: %w", d.ID, err)
 		}
-		if err := s.Definitions.Post(ctx, path+"/activate", nil, nil); err != nil {
+		if err := asApprover.Post(ctx, path+"/activate",
+			map[string]any{"activatedByPartyId": w.ResolveID(*ratifier)}, nil); err != nil {
 			return nil, fmt.Errorf("activate %s: %w", d.ID, err)
 		}
 	}
@@ -243,9 +373,20 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 		if lr.KeyedTo.Kind != schema.LinkedRecordKeyedToKindDefinition {
 			continue
 		}
-		if err := s.Definitions.Post(ctx,
-			"/v1/definitions/"+lr.KeyedTo.ID+"/linked-records", lr, nil); err != nil {
+		linked := lr
+		if payload, ok := remapJSONValue(linked.Payload, w).(map[string]any); ok {
+			linked.Payload = payload
+		}
+		code, body, err := asAuthor.Status(ctx, http.MethodPost,
+			"/v1/definitions/"+w.ResolveID(lr.KeyedTo.ID)+"/linked-records", linked)
+		if err != nil {
 			return nil, fmt.Errorf("linked record %s: %w", lr.ID, err)
+		}
+		if code < 200 || code >= 300 {
+			if code == http.StatusConflict {
+				continue
+			}
+			return nil, fmt.Errorf("linked record %s: %d: %s", lr.ID, code, body)
 		}
 	}
 	return w, nil
@@ -263,6 +404,263 @@ func withIssuer(list []string, id string) []string {
 	out := make([]string, len(list), len(list)+1)
 	copy(out, list)
 	return append(out, id)
+}
+
+func setupFixtureOperator(ctx context.Context, operator *Service) error {
+	body := map[string]any{
+		"displayName":   "Riverside Health Programme",
+		"contactRoutes": []map[string]any{{"kind": "email", "value": "programme@riverside.invalid"}},
+	}
+	code, raw, err := operator.Status(ctx, http.MethodPost, "/v1/instance/setup", body)
+	if err != nil {
+		return fmt.Errorf("instance setup request: %w", err)
+	}
+	if code == http.StatusConflict || code == http.StatusForbidden {
+		partyID, ok := authenticatedParty(ctx, operator, "")
+		if ok && partyID == fixtures.OrgID {
+			return nil
+		}
+		return fmt.Errorf("instance setup was refused with %d and the caller is not the configured operator", code)
+	}
+	if code != http.StatusCreated {
+		return fmt.Errorf("instance setup: %d: %s (set CREST_SETUP_PROVIDER_SUBJECT to the configured administrator subject)", code, raw)
+	}
+	var out struct {
+		Party schema.Party `json:"party"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return fmt.Errorf("decode instance setup: %w", err)
+	}
+	if out.Party.ID != fixtures.OrgID {
+		return fmt.Errorf("instance setup returned operator %q, want configured fixture operator %q", out.Party.ID, fixtures.OrgID)
+	}
+	return nil
+}
+
+func ensureOperatorTerms(ctx context.Context, operator, reviewer *Service, w *fixtures.World) error {
+	if len(w.Terms) == 0 {
+		return fmt.Errorf("fixture world has no terms for its operator to accept")
+	}
+	want := w.Terms[0]
+	var reg struct {
+		TermsID      string `json:"termsId"`
+		TermsVersion int    `json:"termsVersion"`
+	}
+	if err := operator.Get(ctx, "/v1/organisations/"+url.PathEscape(fixtures.OrgID)+"/registration", &reg); err != nil {
+		return fmt.Errorf("read fixture operator registration: %w", err)
+	}
+	if reg.TermsID != "" || reg.TermsVersion != 0 {
+		if reg.TermsID == want.ID && reg.TermsVersion == want.Version {
+			return nil
+		}
+		return fmt.Errorf("fixture operator holds terms %s v%d, want %s v%d",
+			reg.TermsID, reg.TermsVersion, want.ID, want.Version)
+	}
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := operator.Post(ctx, "/v1/organisations/"+url.PathEscape(fixtures.OrgID)+"/terms-requests",
+		map[string]any{"termsId": want.ID, "termsVersion": want.Version, "documents": []any{}}, &req); err != nil {
+		return fmt.Errorf("request fixture operator terms: %w", err)
+	}
+	if req.ID == "" {
+		return fmt.Errorf("request fixture operator terms: response returned no id")
+	}
+	path := "/v1/terms-requests/" + url.PathEscape(req.ID)
+	if err := operator.Post(ctx, path+"/submit", nil, nil); err != nil {
+		return fmt.Errorf("submit fixture operator terms request: %w", err)
+	}
+	reviewerID := w.ResolveID(fixtures.CustodianID)
+	if err := reviewer.Post(ctx, path+"/checks", map[string]any{
+		"name": "fixture-review", "outcome": "PASS", "ownerKind": "party",
+		"owner": reviewerID, "recordedBy": reviewerID,
+		"note": "canonical fixture terms reviewed before project grants",
+	}, nil); err != nil {
+		return fmt.Errorf("review fixture operator terms request: %w", err)
+	}
+	if err := reviewer.Post(ctx, path+"/decision",
+		map[string]any{"approve": true, "decidedBy": reviewerID}, nil); err != nil {
+		return fmt.Errorf("approve fixture operator terms request: %w", err)
+	}
+	return nil
+}
+
+func authenticatedParty(ctx context.Context, parties *Service, token string) (string, bool) {
+	view := parties
+	if token != "" {
+		view = parties.As(Caller{Token: token})
+	}
+	code, raw, err := view.Status(ctx, http.MethodGet, "/v1/auth/me", nil)
+	if err != nil || code != http.StatusOK {
+		return "", false
+	}
+	var out struct {
+		PartyID string `json:"partyId"`
+	}
+	if json.Unmarshal(raw, &out) != nil || out.PartyID == "" {
+		return "", false
+	}
+	return out.PartyID, true
+}
+
+func verifyRuntimeParty(ctx context.Context, parties *Service, id, displayName string) error {
+	// Service.Get reverses runtime ids back to fixture aliases for scenario
+	// assertions. This check is validating the persisted runtime id itself, so
+	// decode the raw response and avoid adopting an alias as if it were a
+	// missing party on the next seed pass.
+	code, raw, err := parties.Status(ctx, http.MethodGet, "/internal/parties/"+url.PathEscape(id), nil)
+	if err != nil {
+		return err
+	}
+	if code < 200 || code >= 300 {
+		return fmt.Errorf("runtime party lookup: %d: %s", code, raw)
+	}
+	var p schema.Party
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return fmt.Errorf("decode runtime party: %w", err)
+	}
+	if p.ID != id || p.DisplayName != displayName {
+		return fmt.Errorf("runtime party %s does not match fixture party %q", id, displayName)
+	}
+	return nil
+}
+
+func runtimeManifestPath() string {
+	if configured := os.Getenv("CREST_HARNESS_RUNTIME_MANIFEST"); configured != "" {
+		return configured
+	}
+	instance := env("CREST_INSTANCE_ID", "crest:instance:local")
+	sum := sha256.Sum256([]byte(instance))
+	return filepath.Join(os.TempDir(), "crest-harness-runtime-"+hex.EncodeToString(sum[:8])+".json")
+}
+
+func loadRuntimeManifest() (map[string]string, error) {
+	raw, err := os.ReadFile(runtimeManifestPath())
+	if os.IsNotExist(err) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read harness runtime manifest: %w", err)
+	}
+	var manifest map[string]string
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return nil, fmt.Errorf("decode harness runtime manifest: %w", err)
+	}
+	if manifest == nil {
+		manifest = map[string]string{}
+	}
+	return manifest, nil
+}
+
+func saveRuntimeManifest(manifest map[string]string) error {
+	raw, err := json.Marshal(manifest)
+	if err != nil {
+		return fmt.Errorf("encode harness runtime manifest: %w", err)
+	}
+	path := runtimeManifestPath()
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		return fmt.Errorf("write harness runtime manifest: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("install harness runtime manifest: %w", err)
+	}
+	return nil
+}
+
+func runtimeAuthorization(a schema.Authorization, w *fixtures.World) schema.Authorization {
+	if a.AuthorityPartyID != "" {
+		a.AuthorityPartyID = w.ResolveID(a.AuthorityPartyID)
+	}
+	if a.ApprovedByPartyID != "" {
+		// The authenticated setup operator is the actual approver of these
+		// initial grants; a fixture body cannot assert a different person.
+		a.ApprovedByPartyID = w.ResolveID(fixtures.OrgID)
+	}
+	a.PartyID = w.ResolveID(a.PartyID)
+	if a.Scope.ContextID != nil {
+		id := w.ResolveID(*a.Scope.ContextID)
+		a.Scope.ContextID = &id
+	}
+	return a
+}
+
+func fixtureAuthorization(a schema.Authorization, w *fixtures.World) schema.Authorization {
+	a.AuthorityPartyID = fixtureID(w, a.AuthorityPartyID)
+	a.ApprovedByPartyID = fixtureID(w, a.ApprovedByPartyID)
+	a.PartyID = fixtureID(w, a.PartyID)
+	if a.Scope.ContextID != nil {
+		id := fixtureID(w, *a.Scope.ContextID)
+		a.Scope.ContextID = &id
+	}
+	return a
+}
+
+func authorizationMatchesFixture(want, standing schema.Authorization, w *fixtures.World) bool {
+	normalized := standing
+	normalized.Period = want.Period
+	normalized.ApprovedAt = want.ApprovedAt
+	normalized.ReviewBy = want.ReviewBy
+	want = fixtureAuthorization(want, w)
+	left, err := json.Marshal(want)
+	if err != nil {
+		return false
+	}
+	right, err := json.Marshal(normalized)
+	return err == nil && bytes.Equal(left, right)
+}
+
+func fixtureID(w *fixtures.World, runtimeID string) string {
+	for fixture, runtime := range w.RuntimeIDs {
+		if runtime == runtimeID {
+			return fixture
+		}
+	}
+	return runtimeID
+}
+
+func runtimeDefinition(d schema.Definition, w *fixtures.World) schema.Definition {
+	d.TierMap = append([]schema.DefinitionTierMapItem(nil), d.TierMap...)
+	d.AuthoredByPartyID = w.ResolveID(d.AuthoredByPartyID)
+	if d.ContextID != nil {
+		id := w.ResolveID(*d.ContextID)
+		d.ContextID = &id
+	}
+	if d.RatifiedByPartyID != nil {
+		id := w.ResolveID(*d.RatifiedByPartyID)
+		d.RatifiedByPartyID = &id
+	}
+	// Fixture definitions predate reference-v1's public tier ordering. Convert
+	// the immutable fixture shape in the request copy only; the source fixture
+	// remains legacy-v0 for strength regression tests.
+	semantics := schema.DefinitionTierSemanticsReferenceV1
+	d.TierSemantics = &semantics
+	if d.Faces.Worker.TierCeiling > 0 {
+		d.Faces.Worker.TierCeiling = 4 - d.Faces.Worker.TierCeiling
+	}
+	for i := range d.TierMap {
+		if d.TierMap[i].Tier > 0 && d.TierMap[i].Tier < 4 {
+			d.TierMap[i].Tier = 4 - d.TierMap[i].Tier
+		}
+	}
+	return d
+}
+
+func remapJSONValue(value any, w *fixtures.World) any {
+	switch v := value.(type) {
+	case string:
+		return w.ResolveID(v)
+	case []any:
+		for i := range v {
+			v[i] = remapJSONValue(v[i], w)
+		}
+	case map[string]any:
+		for key, child := range v {
+			v[key] = remapJSONValue(child, w)
+		}
+	}
+	return value
 }
 
 // PhoneOf returns a party's phone number, which is what a CSV joins on.
@@ -291,72 +689,3 @@ func LocalHasher() (*pii.Hasher, error) {
 // Epoch is the fixture world's starting instant, for tests that need to reason
 // about dates without loading the world.
 func Epoch() time.Time { return time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC) }
-
-// approveOrganisation walks the fixture organisation through the registry's
-// onboarding — application, terms, decision — because an authority is an
-// APPROVED organisation, not an organisation-shaped party. It resumes from
-// wherever an earlier seed left the registration, so reseeding stays
-// idempotent.
-func (s *Stack) approveOrganisation(ctx context.Context, oidc *OIDC, w *fixtures.World) error {
-	var reg struct {
-		State string `json:"state"`
-	}
-	if err := s.Parties.Get(ctx,
-		"/v1/organisations/"+fixtures.OrgID+"/registration", &reg); err != nil {
-		var org *schema.Party
-		for i := range w.Parties {
-			if w.Parties[i].ID == fixtures.OrgID {
-				org = &w.Parties[i]
-			}
-		}
-		if org == nil {
-			return fmt.Errorf("the fixture organisation %s is not among the fixture parties", fixtures.OrgID)
-		}
-		var out struct {
-			Registration struct {
-				State string `json:"state"`
-			} `json:"registration"`
-		}
-		if err := s.Parties.Post(ctx, "/v1/organisations", org, &out); err != nil {
-			return fmt.Errorf("register the fixture organisation: %w", err)
-		}
-		reg.State = out.Registration.State
-	}
-	if reg.State == "APPLIED" {
-		if len(w.Terms) == 0 {
-			return fmt.Errorf("no fixture terms to accept for the organisation")
-		}
-		t := w.Terms[0]
-		if err := s.Parties.Post(ctx, "/v1/organisations/"+fixtures.OrgID+"/terms-acceptance",
-			map[string]any{"termsId": t.ID, "termsVersion": t.Version, "acceptedBy": fixtures.OrgID},
-			&reg); err != nil {
-			return fmt.Errorf("accept terms for the fixture organisation: %w", err)
-		}
-	}
-	if reg.State == "TERMS_ACCEPTED" {
-		// The decision is the custodian's, and the decider's name is checked,
-		// not just recorded — so the seeder binds a subject to the custodian
-		// party the same bootstrap way it bound one to the organisation.
-		token, err := oidc.Token(ctx, "seed|approver")
-		if err != nil {
-			return fmt.Errorf("mint approving token: %w", err)
-		}
-		asApprover := s.Parties.As(Caller{Token: token})
-		if err := asApprover.Post(ctx, "/v1/parties/"+fixtures.CustodianID+"/identity-bindings",
-			map[string]any{
-				"provider":      "mock-oidc",
-				"providerClass": "generic-oidc",
-				"subjectRef":    oidc.Subject("seed|approver"),
-			}, nil); err != nil {
-			return fmt.Errorf("bind the approver to the custodian: %w", err)
-		}
-		if err := asApprover.Post(ctx, "/v1/organisations/"+fixtures.OrgID+"/decision",
-			map[string]any{"approve": true, "decidedBy": fixtures.CustodianID}, &reg); err != nil {
-			return fmt.Errorf("approve the fixture organisation: %w", err)
-		}
-	}
-	if reg.State != "APPROVED" {
-		return fmt.Errorf("the fixture organisation's registration is %s, not APPROVED", reg.State)
-	}
-	return nil
-}

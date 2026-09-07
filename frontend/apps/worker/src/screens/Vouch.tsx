@@ -21,7 +21,7 @@
 // voice; quorum stays the service's 2-of-distinct-authorities rule — this
 // screen never counts votes itself.
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api } from "@crest/api";
 import { Callout, Chip, KV, OpenNote, Sidecar } from "@crest/ui";
 import { useSession } from "../session";
@@ -39,6 +39,8 @@ type Recovery = {
   refusals?: Array<{ refuserPartyId: string; reason: string; refusedAt: string }>;
   completedAt?: string;
 };
+
+type RecoveryRouteState = { recovery?: Recovery; viewer?: string };
 
 function usePartyName(partyId?: string): string | null {
   const out = useLoad(
@@ -111,22 +113,22 @@ function VouchCard({ r }: { r: Recovery }) {
   const [reason, setReason] = useState("");
   const yes = async () => {
     try {
-      await api.post("parties", `/v1/recoveries/${encodeURIComponent(r.id)}/confirmations`, {
+      const recovery = await api.post("parties", `/v1/recoveries/${encodeURIComponent(r.id)}/confirmations`, {
         confirmerPartyId: s.me,
         authorityPartyId: authority.trim(),
       });
-      nav(`/vouch/${encodeURIComponent(r.id)}`);
+      nav(`/vouch/${encodeURIComponent(r.id)}`, { state: { recovery, viewer: s.me } });
     } catch (e) {
       s.fail(e);
     }
   };
   const no = async () => {
     try {
-      await api.post("parties", `/v1/recoveries/${encodeURIComponent(r.id)}/refusals`, {
+      const recovery = await api.post("parties", `/v1/recoveries/${encodeURIComponent(r.id)}/refusals`, {
         refuserPartyId: s.me,
         reason,
       });
-      nav(`/vouch/${encodeURIComponent(r.id)}/refused`);
+      nav(`/vouch/${encodeURIComponent(r.id)}/refused`, { state: { recovery, viewer: s.me } });
     } catch (e) {
       s.fail(e);
     }
@@ -143,7 +145,7 @@ function VouchCard({ r }: { r: Recovery }) {
         recovery.
       </p>
       {mine ? (
-        <Link className="btn secondary" to={`/vouch/${encodeURIComponent(r.id)}`}>
+        <Link className="btn secondary" to={`/vouch/${encodeURIComponent(r.id)}`} state={{ recovery: r, viewer: s.me }}>
           You said YES — see where it stands
         </Link>
       ) : answering === "yes" ? (
@@ -189,9 +191,14 @@ function VouchCard({ r }: { r: Recovery }) {
 
 /* w4_2 — two of three, and the old key dies. */
 export function VouchProgress() {
+  const s = useSession();
   const { id = "" } = useParams();
-  const r = useLoad<Recovery | null>(() =>
-    api.get("parties", `/v1/recoveries/${encodeURIComponent(id)}`).catch(() => null),
+  const location = useLocation();
+  const routeState = location.state as RecoveryRouteState | null;
+  const initial = routeState?.viewer === s.me && routeState?.recovery?.id === id ? routeState.recovery : undefined;
+  const r = useLoad<Recovery | null>(
+    () => initial ? Promise.resolve(initial) : api.get("parties", `/v1/recoveries/${encodeURIComponent(id)}`).catch(() => null),
+    [id, initial],
   );
   const name = usePartyName(r?.partyId);
   if (r === undefined) return null;
@@ -257,8 +264,12 @@ export function VouchProgress() {
 export function VouchRefused() {
   const { id = "" } = useParams();
   const s = useSession();
-  const r = useLoad<Recovery | null>(() =>
-    api.get("parties", `/v1/recoveries/${encodeURIComponent(id)}`).catch(() => null),
+  const location = useLocation();
+  const routeState = location.state as RecoveryRouteState | null;
+  const initial = routeState?.viewer === s.me && routeState?.recovery?.id === id ? routeState.recovery : undefined;
+  const r = useLoad<Recovery | null>(
+    () => initial ? Promise.resolve(initial) : api.get("parties", `/v1/recoveries/${encodeURIComponent(id)}`).catch(() => null),
+    [id, initial],
   );
   const opener = usePartyName(r?.openedByPartyId);
   if (r === undefined) return null;

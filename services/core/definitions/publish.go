@@ -123,6 +123,10 @@ func deliver(d service.Deps) store.Deliverer {
 			return fmt.Errorf("definition %s v%d is %s, not ACTIVE; only an ACTIVE version is published",
 				msg.DefinitionID, msg.Version, def.State)
 		}
+		if err := validateDefinitionSchemaRef(def.Faces.Platform.SchemaRef); err != nil {
+			return fmt.Errorf("definition %s v%d has invalid evidence schema: %w",
+				msg.DefinitionID, msg.Version, err)
+		}
 
 		ref := dedi.Ref{Namespace: d.DeDiNamespace, Registry: registryName, Record: def.ID}
 

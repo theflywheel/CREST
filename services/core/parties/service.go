@@ -8,6 +8,7 @@
 package parties
 
 import (
+	"context"
 	"embed"
 
 	"github.com/theflywheel/crest/pkg/service"
@@ -44,7 +45,13 @@ func Service() service.Options {
 		// Publishes the deployment's own self-description, so a verifier who
 		// resolves a record on the node can find out which deployment owns the
 		// namespace and which publisher key its writes should carry (#70).
-		OnStart: publishInstance,
+		OnStart: func(ctx context.Context, d service.Deps) error {
+			if err := publishInstance(ctx, d); err != nil {
+				return err
+			}
+			go uploadRecoveryLoop(ctx, d)
+			return nil
+		},
 		Deliver: deliver,
 	}
 }

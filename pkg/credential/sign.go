@@ -70,7 +70,10 @@ func (i *Issuer) PublicKeyMultibase() string {
 }
 
 // VerificationMethod is the identifier the proof points at.
-func (i *Issuer) VerificationMethod() string { return i.id + "#key-1" }
+func (i *Issuer) VerificationMethod() string {
+	digest := sha256.Sum256(i.key.Public().(ed25519.PublicKey))
+	return fmt.Sprintf("%s#key-%x", i.id, digest[:12])
+}
 
 // Issue signs a credential. The document handed in must already be complete
 // except for its proof: signing is not the place to fill anything in, because a

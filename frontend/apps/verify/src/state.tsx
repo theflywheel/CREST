@@ -2,12 +2,15 @@
 // ported 1:1 from apps/verify/app.js: the last verdict, the credential it
 // was computed for, and whether the institutional session is held.
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { api, ApiError, loginAs, setSession, FIX } from "@crest/api";
+import { api, ApiError, setSession, startEsignetLogin, whoAmI } from "@crest/api";
+import { readIssuerTrust, refreshIssuerTrust, verifyOffline } from "./offline";
 
 export type Verdict = {
   valid: boolean;
   tier?: number;
   revoked?: boolean;
+  statusCheckedAt?: string;
+  offline?: boolean;
   contested?: unknown[];
   reasons?: string[];
   trustChain?: Array<{ claim: string; checkable: boolean; how?: string; trusting?: string }>;
@@ -39,12 +42,16 @@ type State = {
   clearErr: () => void;
   verdict: Verdict | null;
   credential: Credential | null;
-  verifiedAs: string | null; // null = bare check; FIX.org = institutional
+  verifiedAs: string | null; // null = bare check; otherwise the actual caller
   runVerify: (credential: Credential, requestedByPartyId?: string, purpose?: string) => Promise<Verdict>;
+  runOfflineVerify: (credential: Credential) => Promise<Verdict>;
+  refreshOfflineTrust: () => Promise<void>;
   orgSession: boolean;
   orgParty: Record<string, string> | null;
   orgPartyErr: string | null;
   ensureOrg: () => Promise<void>;
+  beginLogin: () => void;
+  completeEsignet: (token: string) => Promise<"enrolled" | "stranger">;
   dropOrg: () => void;
 };
 
@@ -55,18 +62,6 @@ export const errText = (e: unknown) =>
   e instanceof ApiError
     ? `${e.status} ${e.code || ""} — ${e.message}`
     : String((e as Error)?.message || e);
-
-// The same open chain-read a verifier gets; borrowing the newest credential
-// is exactly what scanning the worker's printed card gives.
-export async function loadSampleCredential(partyId?: string): Promise<Credential> {
-  const out = await api.get(
-    "verification",
-    `/v1/parties/${encodeURIComponent(partyId || FIX.workerA)}/credentials`,
-  );
-  const c = (out.credentials || [])[0];
-  if (!c) throw new Error("that person's chain holds no credentials yet");
-  return c;
-}
 
 export function VerifyProvider(props: { children: ReactNode }) {
   const [err, setErr] = useState<string | null>(null);
@@ -91,12 +86,44 @@ export function VerifyProvider(props: { children: ReactNode }) {
     return v;
   };
 
+  const runOfflineVerify = async (cred: Credential) => {
+    const trust = readIssuerTrust();
+    if (!trust) throw new Error("no fresh issuer keys are cached; refresh trusted issuer keys while online first");
+    const result = await verifyOffline(cred as Record<string, unknown>, trust);
+    const v: Verdict = {
+      valid: result.valid,
+      offline: true,
+      reasons: result.reasons,
+      notEstablished: result.notEstablished,
+      trustChain: result.valid
+        ? [{ claim: "credential signature", checkable: true, how: `verified locally with ${result.verificationMethod}` }]
+        : undefined,
+    };
+    setVerdict(v);
+    setCredential(cred);
+    setVerifiedAs(null);
+    return v;
+  };
+
+  const refreshOfflineTrust = async () => {
+    await refreshIssuerTrust();
+  };
+
   const ensureOrg = async () => {
     if (orgSession) return;
-    await loginAs(FIX.org);
-    setOrgSession(true);
+    // Logged out is a state V-2 renders (its sign-in button), not an error
+    // to bar the screen with: only a session that exists and is refused is.
+    let caller: { partyId?: string };
     try {
-      setOrgParty(await api.get("parties", `/v1/parties/${encodeURIComponent(FIX.org)}`));
+      caller = await whoAmI();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return;
+      throw e;
+    }
+    if (!caller.partyId) return;
+    try {
+      setOrgParty(await api.get("parties", `/v1/parties/${encodeURIComponent(caller.partyId)}`));
+      setOrgSession(true);
       setOrgPartyErr(null);
     } catch (e) {
       setOrgParty(null);
@@ -104,11 +131,26 @@ export function VerifyProvider(props: { children: ReactNode }) {
     }
   };
 
+  const completeEsignet = async (token: string) => {
+    setSession(token);
+    const caller = await whoAmI();
+    if (!caller.partyId) {
+      setSession(null);
+      return "stranger" as const;
+    }
+    setOrgParty(await api.get("parties", `/v1/parties/${encodeURIComponent(caller.partyId)}`));
+    setOrgPartyErr(null);
+    setOrgSession(true);
+    return "enrolled" as const;
+  };
+
   // V-1 is deliberately logged out: the org session is dropped on leaving V-2.
   const dropOrg = () => {
     if (!orgSession) return;
     setSession(null);
     setOrgSession(false);
+    setOrgParty(null);
+    setOrgPartyErr(null);
   };
 
   return (
@@ -121,10 +163,14 @@ export function VerifyProvider(props: { children: ReactNode }) {
         credential,
         verifiedAs,
         runVerify,
+        runOfflineVerify,
+        refreshOfflineTrust,
         orgSession,
         orgParty,
         orgPartyErr,
         ensureOrg,
+        beginLogin: startEsignetLogin,
+        completeEsignet,
         dropOrg,
       }}
     >

@@ -4,10 +4,10 @@
  "generatedBy": "tools/journey-trace/build.py",
  "screens": 143,
  "coverage": {
-  "compressed": 25,
+  "compressed": 26,
   "illustrative": 13,
-  "implemented": 64,
-  "missing": 33,
+  "implemented": 88,
+  "missing": 8,
   "semantically-different": 8
  },
  "statuses": {
@@ -636,11 +636,11 @@
    "title": "The registry of work definitions",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "compressed",
+   "status": "implemented",
    "app": "console",
    "route": "#/definework",
-   "note": "A registry of one: the seeded definition read via GET /v1/definitions/{id}; no list/registry endpoint",
-   "gate": "—"
+   "note": "GET /v1/definitions + GET/POST /v1/definition-drafts: real registry, resumable drafts, define-new and clone-version",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_2",
@@ -649,11 +649,11 @@
    "title": "Sector first, because it scopes everything after it",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Scope/sector: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/sector",
+   "note": "PUT draft section scope; sector vocabulary comes from the selected project's L2 composition, with typed fallback when none is declared",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_3",
@@ -662,11 +662,11 @@
    "title": "The counting basis fork — the most consequential question in the product",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Counting-basis fork: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/counting",
+   "note": "PUT activity.counting.basis; event/time/outcome branches are separate routes and persist before navigation",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_4",
@@ -675,11 +675,11 @@
    "title": "A category picker scoped to the sector, with two honest escapes",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Category picker: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/category",
+   "note": "Sector-scoped L2 category picker plus typed category/code escape; persisted in scope/activity",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_5",
@@ -688,11 +688,11 @@
    "title": "The unit of work — and the one field the rate will price",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Unit of work: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/unit",
+   "note": "Unit, frequency, counting model and aggregation level persist in the draft activity; outcomeUnit is the exact field later rates price",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_21",
@@ -701,11 +701,11 @@
    "title": "A training cascade is a chain of linked definitions",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Training cascade: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/cascade",
+   "note": "Cascade writes draft.cascade and submission emits a version-pinned linked-definition LinkedRecord",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_6",
@@ -714,11 +714,11 @@
    "title": "The time-based path — where the fork earns its keep",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Time-based path: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/period",
+   "note": "Time-period frequency, aggregation and plain-language description persist under activity.counting",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_7",
@@ -727,11 +727,11 @@
    "title": "The outcome path — proof at population level",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Outcome path: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/outcome",
+   "note": "Outcome indicator, baseline, target, measurer and aggregation persist under activity.counting.outcome",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_8",
@@ -740,11 +740,11 @@
    "title": "Who does the work, who pays, and who sits between",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Parties: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/parties",
+   "note": "Performer role/type and authorised attester functions persist; compile maps the latter to the definition's enforceable attester allow-list",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_9",
@@ -753,11 +753,11 @@
    "title": "What proves it happened, tier by tier",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Evidence tiers: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/evidence",
+   "note": "Worker-facing proof wording, ceiling, check intensity and provenance tier-map persist; compile refuses a rule above the declared ceiling",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_22",
@@ -766,11 +766,11 @@
    "title": "The choice that caps the trust tier",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Source class choice: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/source",
+   "note": "Source systems/required fields persist and the attainable tier is derived on-screen from sourceClass + captureMethod, never stored",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_23",
@@ -779,11 +779,11 @@
    "title": "A template the definition writes for you",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Template: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/template",
+   "note": "GET /v1/definition-drafts/{id}/template derives the next-version CSV mid-wizard; immutable-version endpoint derives the same file after submit",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_24",
@@ -792,11 +792,11 @@
    "title": "The adaptor library, and what is missing from it",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Adaptor library: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/adaptors",
+   "note": "GET /v1/adaptors renders available and absent classes honestly; csv-batch is selectable and DIGIT HCM is named as unimplemented",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_25",
@@ -805,11 +805,11 @@
    "title": "Where an integration actually gets hard",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Adaptor mapping: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/mapping",
+   "note": "Canonical/enrichment/constant mappings persist on the draft connection and become a version-pinned source-binding LinkedRecord at submit",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_26",
@@ -818,11 +818,11 @@
    "title": "Connection details, and the credential CREST never sees",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Connection: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/connect",
+   "note": "Endpoint, credentialRef and non-secret settings persist; compile refuses secret-shaped keys/credential material and stores no credential value",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_27",
@@ -831,11 +831,11 @@
    "title": "A dry run, before anything is committed",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Dry run: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/dryrun",
+   "note": "POST draft/dry-run uses the real CSV adaptor and strength evaluator, returns per-row reasons and committed:false, and writes nothing",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_28",
@@ -844,11 +844,11 @@
    "title": "Registered against one version, and only that one",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "compressed",
    "app": "console",
-   "route": "#/definework",
-   "note": "Version registration: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/live",
+   "note": "The tested connection becomes a version-pinned source-binding LinkedRecord atomically at submit. Compressed because no notification tells a source owner when a later version requires re-test; the screen names that gap",
+   "gate": "skipped (compressed)"
   },
   {
    "id": "p3_10",
@@ -857,11 +857,11 @@
    "title": "Who decides how validation runs — and it may not be you",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Validation posture: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/validation",
+   "note": "Validation posture/delay plus enforceable authorised issuers and specifier persist; compile emits verifier-face policy",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_11",
@@ -870,11 +870,11 @@
    "title": "One flow, two records, and a delegate for each half",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "compressed",
    "app": "console",
-   "route": "#/definework",
-   "note": "Payment split: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/payment",
+   "note": "Rate/mechanism responsibility is recorded as payment-structure intent and no price can be embedded. Compressed because the named people are not granted authority here",
+   "gate": "skipped (compressed)"
   },
   {
    "id": "p3_20",
@@ -883,11 +883,11 @@
    "title": "Four roles per project, invited separately",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "compressed",
    "app": "console",
-   "route": "#/definework",
-   "note": "Project roles: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/roles",
+   "note": "Four descriptive role holders persist into the payment-structure LinkedRecord. Compressed because project invitations/grants remain separate acts and this screen explicitly does not mint them",
+   "gate": "skipped (compressed)"
   },
   {
    "id": "p3_12",
@@ -896,11 +896,11 @@
    "title": "Stacked pay, tranches, and a rate that varies by item",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Stacked pay/tranches: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/tranches",
+   "note": "Tranche labels/shares/release conditions persist and compile into a schema-validated payment-structure LinkedRecord, never monetary amounts",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_13",
@@ -909,11 +909,11 @@
    "title": "Preconditions and deductions",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Preconditions/deductions: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/rules",
+   "note": "Preconditions and deductions are separately authored and emitted in the payment-structure LinkedRecord",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_14",
@@ -922,11 +922,11 @@
    "title": "Two kinds of extension, with very different costs",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "Extensions: authoring does not exist — the wizard is a read-only section over the one seeded definition (Admin.tsx names adaptor mapping, extensions and authoring writes as unbuilt)",
-   "gate": "—"
+   "route": "#/define/extend",
+   "note": "Namespaced typed extension fields persist; submit validates number/boolean/date values and keeps extensions outside infrastructure logic",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_15",
@@ -935,11 +935,11 @@
    "title": "Ratifying with fields still pending",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Ratify with pending fields: no ratification endpoint; the approver persona surfaces this gap honestly at #/ratify",
-   "gate": "—"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/ratify",
+   "note": "Separate approver queue over submitted drafts; POST ratify records the approver's pending-fields declaration and refuses self-ratification",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_16",
@@ -948,11 +948,11 @@
    "title": "Two records, one signature, one flow",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Two records, one signature: no signing flow",
-   "gate": "—"
+   "status": "implemented",
+   "app": "console",
+   "route": "#/ratified",
+   "note": "POST ratify with publish:true atomically ratifies, activates, appends both governance events and enqueues registry publication; screen reads the event trail back",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_pay",
@@ -961,11 +961,11 @@
    "title": "Handing off what is not yours",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "missing",
-   "app": "",
-   "route": "",
-   "note": "Payment handoff from author to rate owner: no handoff object",
-   "gate": "—"
+   "status": "compressed",
+   "app": "console",
+   "route": "#/handoff",
+   "note": "POST payment-handoff records inviter, invitee and note on the definition and in its event trail. Compressed because it does not itself grant RateOwnerAssignment or notify the invitee",
+   "gate": "skipped (compressed)"
   },
   {
    "id": "p3_19",
@@ -974,11 +974,11 @@
    "title": "What the record actually is, underneath the form",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "compressed",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "The schema-under-the-form section renders the real stored definition JSON",
-   "gate": "—"
+   "route": "#/define/anatomy",
+   "note": "Renders the real stored immutable version and its institution extensions as separate layers; pre-submit it renders the real server-held draft",
+   "gate": "**asserted**"
   },
   {
    "id": "p3_18",
@@ -987,11 +987,11 @@
    "title": "What is still undecided",
    "source": "reference",
    "roleName": "Work Definition Author",
-   "status": "compressed",
+   "status": "implemented",
    "app": "console",
-   "route": "#/definework",
-   "note": "'What is still undecided' — the wizard's honest gaps section",
-   "gate": "—"
+   "route": "#/define/open",
+   "note": "POST draft/validate runs the same compile as submit and renders every named refusal; submit creates the immutable next version and closes the draft atomically",
+   "gate": "**asserted**"
   },
   {
    "id": "w6_1",
@@ -1996,34 +1996,34 @@
    "p2_14": "**asserted**",
    "p2_15": "**asserted**",
    "p2_16": "skipped (illustrative)",
-   "p3_1": "—",
-   "p3_2": "—",
-   "p3_3": "—",
-   "p3_4": "—",
-   "p3_5": "—",
-   "p3_21": "—",
-   "p3_6": "—",
-   "p3_7": "—",
-   "p3_8": "—",
-   "p3_9": "—",
-   "p3_22": "—",
-   "p3_23": "—",
-   "p3_24": "—",
-   "p3_25": "—",
-   "p3_26": "—",
-   "p3_27": "—",
-   "p3_28": "—",
-   "p3_10": "—",
-   "p3_11": "—",
-   "p3_20": "—",
-   "p3_12": "—",
-   "p3_13": "—",
-   "p3_14": "—",
-   "p3_15": "—",
-   "p3_16": "—",
-   "p3_pay": "—",
-   "p3_19": "—",
-   "p3_18": "—",
+   "p3_1": "**asserted**",
+   "p3_2": "**asserted**",
+   "p3_3": "**asserted**",
+   "p3_4": "**asserted**",
+   "p3_5": "**asserted**",
+   "p3_21": "**asserted**",
+   "p3_6": "**asserted**",
+   "p3_7": "**asserted**",
+   "p3_8": "**asserted**",
+   "p3_9": "**asserted**",
+   "p3_22": "**asserted**",
+   "p3_23": "**asserted**",
+   "p3_24": "**asserted**",
+   "p3_25": "**asserted**",
+   "p3_26": "**asserted**",
+   "p3_27": "**asserted**",
+   "p3_28": "skipped (compressed)",
+   "p3_10": "**asserted**",
+   "p3_11": "skipped (compressed)",
+   "p3_20": "skipped (compressed)",
+   "p3_12": "**asserted**",
+   "p3_13": "**asserted**",
+   "p3_14": "**asserted**",
+   "p3_15": "**asserted**",
+   "p3_16": "**asserted**",
+   "p3_pay": "skipped (compressed)",
+   "p3_19": "**asserted**",
+   "p3_18": "**asserted**",
    "w6_1": "—",
    "w6_2": "—",
    "w6_3": "—",

@@ -164,6 +164,7 @@ const (
 	ClaimConfirmationRouteSelf     ClaimConfirmationRoute = "self"
 	ClaimConfirmationRouteAuto     ClaimConfirmationRoute = "auto"
 	ClaimConfirmationRouteAssisted ClaimConfirmationRoute = "assisted"
+	ClaimConfirmationRouteReview   ClaimConfirmationRoute = "review"
 )
 
 // How this claim came to be attached to this worker, and how confident
@@ -469,6 +470,7 @@ type Definition struct {
 	// Party.attributes precedent (#168). Small bounded strings only; never
 	// provenance, never anything the strength function reads.
 	Classification map[string]any `json:"classification,omitempty"`
+	ContextID      *string        `json:"contextId,omitempty"`
 
 	// How a completed instance is counted. Generic across domains — a
 	// visit, a paid period, a measured result; a training session or an
@@ -528,8 +530,9 @@ type Definition struct {
 	// L2 data read by the L1 strength function (§6). Rules are evaluated
 	// in order; the first whose conditions all hold gives the tier. The
 	// function is identical everywhere; this table is not.
-	TierMap []DefinitionTierMapItem `json:"tierMap"`
-	Version int                     `json:"version"`
+	TierMap       []DefinitionTierMapItem  `json:"tierMap"`
+	TierSemantics *DefinitionTierSemantics `json:"tierSemantics,omitempty"`
+	Version       int                      `json:"version"`
 }
 
 type DefinitionActivity struct {
@@ -619,6 +622,13 @@ type DefinitionTierMapItem struct {
 	SourceClassIn        []SourceClass      `json:"sourceClassIn"`
 	Tier                 int                `json:"tier"`
 }
+
+type DefinitionTierSemantics string
+
+const (
+	DefinitionTierSemanticsReferenceV1 DefinitionTierSemantics = "reference-v1"
+	DefinitionTierSemanticsLegacyV0    DefinitionTierSemantics = "legacy-v0"
+)
 
 // Derived from a Party's identity bindings, never asserted (§4.1).
 // Present in a computed view; never a stored field on Party.
@@ -930,6 +940,7 @@ type Provenance struct {
 
 	// The source system's own identifier for the record. Opaque to CREST.
 	SourceRecordRef *string `json:"sourceRecordRef,omitempty"`
+	SystemRef       *string `json:"systemRef,omitempty"`
 }
 
 // A transferable competence a worker can accumulate evidence of, named by
@@ -1120,6 +1131,7 @@ const (
 	WorkEventCredentialCredentialSubjectConfirmationRouteSelf     WorkEventCredentialCredentialSubjectConfirmationRoute = "self"
 	WorkEventCredentialCredentialSubjectConfirmationRouteAuto     WorkEventCredentialCredentialSubjectConfirmationRoute = "auto"
 	WorkEventCredentialCredentialSubjectConfirmationRouteAssisted WorkEventCredentialCredentialSubjectConfirmationRoute = "assisted"
+	WorkEventCredentialCredentialSubjectConfirmationRouteReview   WorkEventCredentialCredentialSubjectConfirmationRoute = "review"
 )
 
 // Who stands behind this credential, and where a verifier can check it

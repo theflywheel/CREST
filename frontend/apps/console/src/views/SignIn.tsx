@@ -63,12 +63,18 @@ export function SignIn() {
   );
 }
 
-// The eSignet return leg (#155): the callback bounced back to #/auth with a
-// token or an error in the route's query. A token that verifies but binds to
-// no party is an honest refusal — the console has no self-registration; an
-// organisation gets here by being onboarded.
+// The eSignet return leg (#155): the callback bounces back to #/auth with a
+// token or an error in the route's query. A verified stranger may continue to
+// the applicant-only onboarding door; an enrolled identity derives its role
+// from the registry.
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import {
+  clearApplicantSessionStorage,
+  consumeApplicantReturn,
+  pendingApplicantReturn,
+  storeApplicantSession,
+} from "./Onboard";
 
 export function AuthReturn() {
   const s = useConsole();
@@ -76,27 +82,42 @@ export function AuthReturn() {
   const [params] = useSearchParams();
   const [state, setState] = useState<"working" | "stranger" | "failed">("working");
   const [detail, setDetail] = useState<string>("");
+  const [strangerToken, setStrangerToken] = useState<string | null>(null);
 
   useEffect(() => {
     const err = params.get("error");
     const token = params.get("token");
     if (err) {
+      clearApplicantSessionStorage();
       setState("failed");
       setDetail(err);
       return;
     }
     if (!token) {
+      clearApplicantSessionStorage();
       setState("failed");
       setDetail("the login returned neither a token nor an error");
       return;
     }
+    setStrangerToken(token);
     (async () => {
       const outcome = await s.completeEsignet(token);
       if (outcome === "enrolled") {
         // An already-bound login has nothing to claim; a code left over from
         // an earlier attempt must not follow them around.
         clearClaim();
+        clearApplicantSessionStorage();
         nav("/", { replace: true });
+        return;
+      }
+      const applicantTarget = pendingApplicantReturn();
+      if (applicantTarget) {
+        // A verified stranger may apply for an organisation. Keep only the
+        // applicant session and return to the fixed onboarding route; the
+        // console role session is intentionally never written.
+        storeApplicantSession(token);
+        consumeApplicantReturn();
+        nav(applicantTarget, { replace: true });
         return;
       }
       // A stranger holding an invitation is the whole point of #/claim: bind
@@ -105,6 +126,7 @@ export function AuthReturn() {
       // never from anything this browser decided.
       const code = pendingClaim();
       if (!code) {
+        clearApplicantSessionStorage();
         setState("stranger");
         return;
       }
@@ -148,10 +170,23 @@ export function AuthReturn() {
     <AppbarOnly>
       <h1 className="scr-title">You are signed in, but hold no role here</h1>
       <p className="muted" style={{ maxWidth: 700 }}>
-        Your identity checked out, and no party in this deployment is bound to it. The console has no
-        self-registration — an organisation reaches it by being onboarded and granted a role.
+        Your identity checked out, and no party in this deployment is bound to it. Apply as an organisation to bind
+        the application to this verified identity, or return to the console later after somebody grants a role.
       </p>
-      <a className="btn" href="#/">Back</a>
+      <div className="btn-row">
+        <button
+          className="btn dominant"
+          onClick={() => {
+            if (strangerToken) {
+              storeApplicantSession(strangerToken);
+              nav("/onboard", { replace: true });
+            }
+          }}
+        >
+          Apply as an organisation
+        </button>
+        <a className="btn" href="#/">Back</a>
+      </div>
     </AppbarOnly>
   );
 }

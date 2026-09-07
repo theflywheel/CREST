@@ -4,10 +4,14 @@ package scenarios
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/theflywheel/crest/harness/fixtures"
 )
 
 // A window that is due can be exited by two actors in the same instant: the
@@ -21,8 +25,9 @@ func TestASweepAndAConfirmationRacingAtT7ExitOnce(t *testing.T) {
 
 	phone := sharedNumber(207)
 	worker := newWorkerWithPhone(t, w, "Race Exiter", phone)
+	w.consentOf(t, worker)
 	result := w.submit(t, batch(row(phone, 2, "HH-RACE")))
-	claimID := result.ClaimIDs[0]
+	claimID := onlyClaim(t, result)
 
 	// Notifications are dropped (#150): no reach verdict exists, and the
 	// sweep auto-confirms on NULL reach. Wait only for the window itself.
@@ -30,6 +35,7 @@ func TestASweepAndAConfirmationRacingAtT7ExitOnce(t *testing.T) {
 		_, err := w.window(claimID)
 		return err
 	})
+	w.acknowledgeClaim(t, claimID)
 	if err := w.Advance(w.ctx, window+time.Minute); err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +55,8 @@ func TestASweepAndAConfirmationRacingAtT7ExitOnce(t *testing.T) {
 	go func() {
 		defer done.Done()
 		start.Wait()
-		sweepErr = w.Confirmation.Post(w.ctx, "/v1/sweep", nil, nil)
+		sweepErr = w.Confirmation.As(w.login(t, fixtures.CustodianID)).Post(w.ctx,
+			"/v1/sweep?contextId="+url.QueryEscape(fixtures.ProjectID), nil, nil)
 	}()
 	start.Done()
 	done.Wait()
@@ -72,9 +79,16 @@ func TestASweepAndAConfirmationRacingAtT7ExitOnce(t *testing.T) {
 	if *win.ExitRoute != "self" && *win.ExitRoute != "auto" {
 		t.Fatalf("exited by %q, want self or auto", *win.ExitRoute)
 	}
-	if win.PaymentReleasedAt == nil {
-		t.Fatal("the race exited the window without releasing payment")
-	}
+	eventually(t, "the race records the payment release", 20*time.Second, func() error {
+		current, err := w.window(claimID)
+		if err != nil {
+			return err
+		}
+		if current.PaymentReleasedAt == nil {
+			return fmt.Errorf("the race exited the window without releasing payment")
+		}
+		return nil
+	})
 
 	// Exactly one credential for the claim. Two would mean both racers won,
 	// and revoking one worker's slot could then revoke a stranger's.

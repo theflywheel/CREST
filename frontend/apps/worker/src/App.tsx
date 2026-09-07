@@ -15,6 +15,9 @@ import { SharesInbox, ShareDecide, ShareSent } from "./screens/Shares";
 import { VouchInbox, VouchProgress, VouchRefused } from "./screens/Vouch";
 import { Added } from "./screens/Added";
 import { AuthReturn, Join } from "./screens/Auth";
+import { Review } from "./screens/Review";
+import { MergeConfirm } from "./screens/MergeConfirm";
+import { rememberReview } from "./reviewState";
 
 const ic = (d: ReactNode) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -96,18 +99,24 @@ const BOTTOM: NavItem[] = [
 function Shell() {
   const s = useSession();
   const loc = useLocation();
+  useEffect(() => {
+    if (loc.pathname.startsWith("/review/") || loc.pathname.startsWith("/merge-confirm/")) {
+      rememberReview(loc.pathname, loc.search);
+    }
+  }, [loc.pathname, loc.search]);
   // A navigation clears the last request's error, as the old router did.
   useEffect(() => s.clearErr(), [loc.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!s.me) return <Login />;
+  const localWallet = /^\/wallet(?:\/\d+(?:\/show)?)?$/.test(loc.pathname);
+  if (!s.me && !localWallet) return <Login />;
   return (
     <ConsoleShell
       appName="CREST · Worker"
       who={
         <>
-          <span className="who-label">{s.meLabel || "Signed in"}</span>
-          <button onClick={s.logout} id="logout">
+          <span className="who-label">{s.me ? s.meLabel || "Signed in" : "Saved device wallet — passphrase required"}</span>
+          {s.me && <button onClick={s.logout} id="logout">
             Sign out
-          </button>
+          </button>}
         </>
       }
       nav={NAV}
@@ -136,6 +145,8 @@ export function App() {
         <Route path="/work" element={<Work />} />
         <Route path="/work/dispute/:claimId" element={<Dispute />} />
         <Route path="/work/declined" element={<Declined />} />
+        <Route path="/review/:claimId" element={<Review />} />
+        <Route path="/merge-confirm/:holdId" element={<MergeConfirm />} />
         <Route path="/wallet" element={<Wallet />} />
         <Route path="/wallet/share" element={<Share />} />
         <Route path="/wallet/deferred" element={<Deferred />} />

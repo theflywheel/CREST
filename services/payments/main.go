@@ -23,8 +23,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/theflywheel/crest/pkg/client"
-	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -33,40 +31,18 @@ import (
 var migrations embed.FS
 
 func main() {
-	rail := client.New(config.Str("RAIL_URL", "http://mock-rail:8080"))
-	// The window's exit and the instruction's creation are one service now,
-	// but the release still crosses the outbox and this hop on purpose:
-	// at-least-once delivery with an idempotent consumer survived the merge,
-	// and a crash between exit and instruction still cannot lose a payment.
-	self := client.New(config.Str("SELF_URL", "http://localhost:8080"))
-
 	service.Main("payments", service.Options{
 		Migrations: migrations,
 		Dir:        "migrations",
 		Routes: func(mux *http.ServeMux, d service.Deps) {
 			routes(mux, d)
-			windowRoutes(mux, d)
 		},
 		Deliver: func(d service.Deps) store.Deliverer {
+			provider := mustConfiguredProvider(d)
 			return func(ctx context.Context, topic string, payload json.RawMessage) error {
 				switch topic {
-				case topicNotifyClaim:
-					// Notifications are dropped (#150): nothing is enqueued
-					// under this topic any more, and a row already in the
-					// outbox drains here instead of wedging the relay. No
-					// reach verdict is recorded — reach stays NULL, which the
-					// sweep reads as "nobody claimed the worker was told",
-					// not as "the worker was told". The gap is §16's, not
-					// this switch's.
-					d.Log.Warn("notification dropped: no channel exists (#150)",
-						"topic", topic)
-					return nil
-				case topicPaymentRelease:
-					// Idempotent on the claim at the far end; the relay is
-					// at-least-once, and a redelivered release must not pay twice.
-					return self.Do(ctx, "POST", "/internal/instructions", json.RawMessage(payload), nil)
 				case topicRailSend:
-					return sendToRail(ctx, d, rail, payload)
+					return sendToRail(ctx, d, provider, payload)
 				default:
 					return fmt.Errorf("no delivery route for topic %q", topic)
 				}

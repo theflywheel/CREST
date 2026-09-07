@@ -97,6 +97,21 @@ const FUNDERS_ROUTES = [
   "/mech/activate", "/mech/qualify", "/mech/live",
 ];
 
+const P3_RAIL: NavItem[] = [
+  { to: "/definework", label: "Define work 4" },
+  { to: "/definition", label: "Projects" },
+  { to: "/define/payment", label: "Payment set up" },
+  { to: "/define/roles", label: "Roles & invites" },
+  { to: "/define/template", label: "Templates" },
+];
+const P3_ANATOMY_RAIL: NavItem[] = [
+  { to: "/define/anatomy", label: "Anatomy 2 layers" },
+  { to: "/definework", label: "Define work" },
+  { to: "/define/payment", label: "Payment set up" },
+  { to: "/define/template", label: "Templates" },
+];
+const P3_OPEN_RAIL: NavItem[] = [{ to: "/define/open", label: "Open questions 6" }];
+
 // The P-3 authoring wave (reference p3_1–p3_28, p3_pay). The wizard's screens
 // are reached by each frame's own buttons rather than by a rail entry, exactly
 // like the funders wave — the reference draws a five-entry rail on these
@@ -119,7 +134,7 @@ const DEFINE_ROUTES = [
 // document under the form. The approver reads everything and drafts nothing,
 // and these two are reads.
 const P3_READS = ["/define/open", "/define/anatomy", "/ratified"];
-const AUTHOR_ROUTES = [...DEFINE_ROUTES, ...P3_READS, "/handoff"];
+const AUTHOR_ROUTES = [...DEFINE_ROUTES, ...P3_READS, "/handoff", "/definition", "/definework"];
 
 function railFor(pathname: string): NavGroup[] {
   // No caption: the reference's J3 rail is five plain entries, and a caption
@@ -145,14 +160,7 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
   author: [
     {
       caption: "Definition author · P-3",
-      items: [
-        { to: "/definework", label: "Define work" },
-        { to: "/define/payment", label: "Payment set up" },
-        { to: "/define/roles", label: "Roles & invites" },
-        { to: "/define/template", label: "Templates" },
-        { to: "/define/open", label: "Open questions" },
-        { to: "/definition", label: "As published" },
-      ],
+      items: P3_RAIL,
     },
   ],
   // P-3, the approver's half: ratifies, never drafts — no wizard route here,
@@ -174,12 +182,16 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
   rateowner: [{ items: SETUP_RAIL }],
   payowner: [{ items: SETUP_RAIL }],
   instance: [
-    // The reference's own G-1 rail: Instance · Organisations · Consent & data ·
-    // Platform services · People & roles (g1_1–g1_6, g4_1–g4_3).
+    // The reference's own G-1 rail: Instance · Consent & data · Platform
+    // services · People & roles (g1_1–g1_6). Admission review is a G-4
+    // registry-custodian surface below, so the instance administrator does
+    // not receive the queue merely by holding the deployment role.
     {
       caption: "Instance admin · G-1",
       items: [
         { to: "/instance/covers", label: "Instance" },
+        // The reference's G-1 rail lists the admissions queue; the decision
+        // itself is the registry custodian's, which the service enforces.
         { to: "/admissions", label: "Organisations" },
         { to: "/instance/consent", label: "Consent & data" },
         { to: "/instance/services", label: "Platform services" },
@@ -203,6 +215,7 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
     {
       caption: "Registry custodian · G-4",
       items: [
+        { to: "/admissions", label: "Admissions" },
         { to: "/find", label: "Find a worker" },
         { to: "/coverage", label: "Coverage" },
         { to: "/registry-quality", label: "Quality" },
@@ -238,7 +251,7 @@ const NAV: Record<PersonaKey, NavGroup[]> = {
 const isJ3 = (key: PersonaKey) => key === "orgadmin" || key === "configurator";
 const isFunder = (key: PersonaKey) => key === "rateowner" || key === "payowner";
 const homeOf = (key: PersonaKey) =>
-  isJ3(key) ? "/org" : isFunder(key) ? "/paysetup" : NAV[key][0].items[0].to;
+  isJ3(key) ? "/org" : isFunder(key) ? "/paysetup" : key === "approver" ? "/ratify" : NAV[key][0].items[0].to;
 // The G-1 screens the rail does not name: the stand-up front door and the
 // invite frame are reached by the walk's own buttons, and an admission detail
 // is reached from the queue.
@@ -251,10 +264,11 @@ const allowed = (key: PersonaKey, path: string) =>
   (isJ3(key) && (J3_ROUTES.includes(path) || (key === "orgadmin" && FUNDERS_ROUTES.includes(path)))) ||
   (key === "author" && AUTHOR_ROUTES.includes(path)) ||
   // The approver reads the record and the act, and holds no wizard route.
-  (key === "approver" && P3_READS.includes(path)) ||
+  (key === "approver" && (P3_READS.includes(path) || path === "/ratify" || path === "/definition")) ||
   (isFunder(key) && (J3_ROUTES.includes(path) || FUNDERS_ROUTES.includes(path))) ||
-  (key === "instance" && (G1_EXTRA.includes(path) || path.startsWith("/admissions/"))) ||
-  NAV[key].some((g) => g.items.some((i) => i.to === path));
+  (key === "instance" && (G1_EXTRA.includes(path) || path === "/admissions" || path.startsWith("/admissions/"))) ||
+  (key === "custodian" && (path === "/admissions" || path.startsWith("/admissions/"))) ||
+  ((key !== "author" && key !== "approver") && NAV[key].some((g) => g.items.some((i) => i.to === path)));
 
 function Shell() {
   const s = useConsole();
@@ -272,6 +286,24 @@ function Shell() {
   // J3 actors nothing is hidden: both hold every route, and a screen they
   // cannot write to says who can instead of vanishing.
   if (!allowed(s.persona, loc.pathname)) return <Navigate to={homeOf(s.persona)} replace />;
+  // p3_16 is deliberately a confirmation panel, not another console frame.
+  // The act has completed; its two exits take the user back into the console.
+  if (loc.pathname === "/ratified") {
+    return (
+      <div className="screen" key={loc.pathname} style={{ minHeight: "100vh", padding: 30 }}>
+        {s.err ? <ErrBar>{s.err}</ErrBar> : null}
+        <Outlet />
+      </div>
+    );
+  }
+  // The author's rail is the reference's five wizard entries. The approver
+  // ratifies and never drafts, so their rail is their own (no wizard entry —
+  // the second of the three mechanisms named above AUTHOR_ROUTES).
+  const p3nav = s.persona === "author"
+    ? [{ items: loc.pathname === "/define/anatomy" ? P3_ANATOMY_RAIL
+      : loc.pathname === "/define/open" ? P3_OPEN_RAIL
+        : loc.pathname === "/handoff" ? SETUP_RAIL : P3_RAIL }]
+    : null;
   return (
     <ConsoleShell
       appName="CREST Console"
@@ -285,7 +317,7 @@ function Shell() {
           </button>
         </>
       }
-      nav={isJ3(s.persona) || isFunder(s.persona) ? railFor(loc.pathname) : NAV[s.persona]}
+      nav={isJ3(s.persona) || isFunder(s.persona) ? railFor(loc.pathname) : p3nav || NAV[s.persona]}
     >
       <div className="screen" key={loc.pathname} style={{ display: "flex", flexDirection: "column", gap: 15 }}>
         {s.err ? <ErrBar>{s.err}</ErrBar> : null}
@@ -301,6 +333,9 @@ export function App() {
     <Routes>
       {/* Programme onboarding (#155 phase D): reachable with no persona —
           applying is the open bootstrap by design (#20). */}
+      {/* Claiming an invitation (#123): reachable with no session by design —
+          the person claiming has no party here yet, which is the point. */}
+      <Route path="/claim/:code" element={<Claim />} />
       <Route path="/onboard" element={<OnboardApply />} />
       <Route path="/onboard/terms" element={<OnboardTerms />} />
       <Route path="/onboard/checks" element={<OnboardChecks />} />
@@ -386,6 +421,9 @@ export function App() {
         <Route path="/rate" element={<RateAuthor />} />
         <Route path="/ratepublish" element={<RatePublish />} />
         <Route path="/ratestanding" element={<RateStanding />} />
+        <Route path="/mech/where" element={<MechWhere />} />
+        <Route path="/mech/rails" element={<MechRails />} />
+        <Route path="/mech/connect" element={<MechConnect />} />
         <Route path="/mech/test" element={<MechTest />} />
         <Route path="/mech/recon" element={<MechRecon />} />
         <Route path="/mech/statement" element={<MechStatement />} />
@@ -405,9 +443,6 @@ export function App() {
         <Route path="/instance/covers" element={<G1Covers />} />
         <Route path="/instance/consent" element={<G1Consent />} />
         <Route path="/instance/invite" element={<G1Invite />} />
-        <Route path="/mech/where" element={<MechWhere />} />
-        <Route path="/mech/rails" element={<MechRails />} />
-        <Route path="/mech/connect" element={<MechConnect />} />
         <Route path="/instance/services" element={<G1Services />} />
         <Route path="/instance/people" element={<G1People />} />
         {/* G-4 admission review (g4_1–g4_3): the real queue and the real

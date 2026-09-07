@@ -37,6 +37,7 @@ type dryRunRequest struct {
 	// for this source (p3_22): the structural ceiling on tier.
 	SourceClass   schema.SourceClass   `json:"sourceClass"`
 	CaptureMethod schema.CaptureMethod `json:"captureMethod"`
+	AdapterRef    string               `json:"adapterRef"`
 	SystemRef     string               `json:"systemRef,omitempty"`
 	// Mapping is the draft mapping under test (p3_25).
 	Mapping adapters.Mapping `json:"mapping"`
@@ -70,10 +71,24 @@ func (h *draftHandlers) dryRun(w http.ResponseWriter, r *http.Request) {
 			"sourceClass and captureMethod come from the deployment's knowledge of the source, and a dry run cannot guess them")
 		return
 	}
+	registry, err := adapters.NewRegistry(csvadapter.Plugin())
+	if err != nil {
+		httpx.Fail(w, h.d.Log, "build adapter catalogue", err)
+		return
+	}
+	adapter, ok := registry.Lookup(req.AdapterRef)
+	if !ok {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "unknown_adapter",
+			"adapterRef must name an adapter version registered by this deployment")
+		return
+	}
 
 	draft, err := getDraft(r.Context(), h.d.DB.Q(), r.PathValue("id"))
 	if err != nil {
 		httpx.NotFoundOr(w, h.d.Log, "draft", err, store.ErrNotFound)
+		return
+	}
+	if !authorizeDraft(w, r, h.d, draft, false) {
 		return
 	}
 
@@ -98,8 +113,8 @@ func (h *draftHandlers) dryRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	adapter := csvadapter.Adapter{}
 	src := adapters.Source{
+		AdapterRef:    req.AdapterRef,
 		Class:         req.SourceClass,
 		CaptureMethod: req.CaptureMethod,
 		// A dry run is by definition a person uploading a file by hand.

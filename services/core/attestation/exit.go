@@ -1,8 +1,9 @@
-package main
+package attestation
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,12 @@ import (
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
 )
+
+var errAutoNotEligible = errors.New("auto-confirm is no longer eligible")
+
+func autoExitEligible(w Window, now time.Time) bool {
+	return !w.ClosesAt.After(now) && w.Reach != nil && *w.Reach == "reached"
+}
 
 // The four exits from a T=7 window, in one function, on purpose.
 //
@@ -104,6 +111,16 @@ func (e *exiter) exit(ctx context.Context, claimID, route string) (exitResult, e
 		if !w.Open() {
 			alreadyExited = true
 			return nil
+		}
+		// The sweep's due query is only a candidate list. Re-check its
+		// eligibility while holding the same row lock as the exit, because a
+		// worker acknowledgement or a notification failure may have committed
+		// after the query but before this transaction acquired the lock.
+		if route == routeAuto {
+			checkNow := e.clock.Now()
+			if !autoExitEligible(w, checkNow) {
+				return errAutoNotEligible
+			}
 		}
 
 		// The claim's state is owned by evidence, so it moves there first. If
@@ -207,7 +224,7 @@ func (e *exiter) exit(ctx context.Context, claimID, route string) (exitResult, e
 		cred = issued
 	} else if w.CredentialID != nil {
 		var c issuedCredential
-		if err := e.verification.Get(ctx, "/v1/credentials/"+url.PathEscape(*w.CredentialID), &c); err == nil {
+		if err := e.verification.Get(ctx, "/internal/credentials/"+url.PathEscape(*w.CredentialID), &c); err == nil {
 			cred = &c
 		}
 	}

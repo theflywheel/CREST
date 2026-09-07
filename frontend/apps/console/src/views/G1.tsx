@@ -1,5 +1,5 @@
-// G-1 — setting up the instance (g1_1–g1_6) and the admission review the
-// operator actually performs (g4_1–g4_3).
+// G-1 — setting up the instance (g1_1–g1_6) and the separate G-4 admission
+// review performed by the assigned registry custodian (g4_1–g4_3).
 //
 // The honesty rule of this file: a CREST instance is stood up by compose or
 // Railway, not from a console. §3's instance self-description (#70) is
@@ -59,8 +59,9 @@ export function G1Setup() {
   const r = useLoad(async () => {
     const base = await loadInstance();
     // The fourth step of the reference's wizard, answered from the record:
-    // has any organisation been admitted? Operator-only read; a refusal
-    // renders as unknown rather than invented.
+    // has any organisation been admitted? The queue itself belongs to the
+    // registry custodian; a refusal here renders as unknown rather than
+    // inventing a count for the instance administrator.
     const regs = await api.get("parties", "/v1/registrations").catch(() => null);
     return { ...base, regs: regs ? regs.registrations || regs || [] : null };
   });
@@ -92,11 +93,11 @@ export function G1Setup() {
             sub: <>
               Which registers itself, then asks for terms
               {approved === null
-                ? " · the queue answers the operator only"
+                ? " · the queue answers the registry custodian only"
                 : approved > 0
-                  ? ` · ${approved} admitted${undecided ? ` · ${undecided} waiting on your decision` : ""}`
+                  ? ` · ${approved} admitted${undecided ? ` · ${undecided} waiting on the registry custodian` : ""}`
                   : undecided
-                    ? ` · none yet — ${undecided} waiting on your decision in the queue`
+                    ? ` · none yet — ${undecided} waiting on the registry custodian in the queue`
                     : " · none yet — the door is open"}
             </>,
             done: approved === null ? null : approved > 0,
@@ -395,7 +396,7 @@ export function G1Services() {
               </div>
             ))}
           </div>
-          <WalkButtons back="/instance/invite" next="/admissions" nextLabel="Done — awaiting the organisation" />
+          <WalkButtons back="/instance/invite" next="/instance/people" nextLabel="Done — awaiting the organisation" />
         </>
       )}
     </LoadFrame>
@@ -511,7 +512,7 @@ export function Admissions() {
                 empty="No decision has been made yet."
               />
             </CardTitled>
-            <WalkButtons back="/instance/services" />
+            <WalkButtons back="/find" />
           </>
         );
       }}

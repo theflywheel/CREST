@@ -3,16 +3,59 @@
 // screens the story populates show the story's data. Run with the compose
 // stack up and `SEED_STORY=true go run ./tools/seed` done (make apps-up), or
 // BASE_URL pointed at the deployed door.
+const crypto = require("crypto");
 const { test, expect } = require("@playwright/test");
+
+function mutationKey(actor, method, path, body) {
+  return "e2e-" + crypto.createHash("sha256")
+    .update(JSON.stringify([actor, method.toUpperCase(), path, body === undefined ? null : body]))
+    .digest("hex");
+}
+
+function isMutation(method) {
+  return ["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase());
+}
 
 const FIX = {
   workerA: "did:crest:party:01JCREST00000000000000WRKA",
+  workerC: "did:crest:party:01JCREST00000000000000WRKC",
   org: "did:crest:party:01JCREST000000000000000RGN",
   custodian: "did:crest:party:01JCREST00000000000000CSTD",
   supervisor: "did:crest:party:01JCREST00000000000000SPVR",
   specifier: "did:crest:party:01JCREST00000000000000SPEC",
   project: "crest:context:01JCREST00000000000000PRJC",
 };
+
+// The public seeder creates people through the registration API, so person
+// ids are deployment-assigned. Their OIDC subjects remain stable fixture
+// subjects: minting `story|<runtime id>` would authenticate nobody. Resolve
+// the runtime ids once from /auth/me and then keep the rest of this file's
+// request bodies readable in terms of FIX.
+const FIXTURE_IDS = Object.freeze({ ...FIX });
+const FIXTURE_SUBJECTS = {
+  workerA: "story|01JCREST00000000000000WRKA",
+  workerC: "story|01JCREST00000000000000WRKC",
+  org: "story|01JCREST000000000000000RGN",
+  custodian: "story|01JCREST00000000000000CSTD",
+  supervisor: "story|01JCREST00000000000000SPVR",
+  // The definition author is enrolled by the seed with a separate subject.
+  specifier: "seed|specifier",
+};
+let runtimeReady;
+
+// Resolve server-assigned IDs before any test constructs a request payload.
+test.beforeEach(async ({ request }) => { await ensureRuntime(request); });
+
+function fixtureKeyForParty(partyId) {
+  return Object.keys(FIXTURE_IDS).find(key =>
+    FIX[key] === partyId || FIXTURE_IDS[key] === partyId);
+}
+
+function providerSubject(partyId) {
+  const key = fixtureKeyForParty(partyId);
+  if (key && FIXTURE_SUBJECTS[key]) return FIXTURE_SUBJECTS[key];
+  return "story|" + partyId.replace("did:crest:party:", "");
+}
 
 // Every page object carries its uncaught exceptions; .errbar is what the apps
 // render when an API call fails. Both empty = the screen is honestly alive.
@@ -105,6 +148,7 @@ async function pickStoryProject(page) {
 
 test("enrolment app: every route", async ({ page, request }) => {
   const errors = watch(page);
+  await ensureRuntime(request);
   await page.goto("/enrolment/");
   await settle(page);
   await page.click("[data-login]");
@@ -181,7 +225,9 @@ for (const [personaIdx, personaName, who, views] of [
       "define/roles", "define/tranches", "define/rules", "define/extend", "define/open",
       "define/anatomy", "handoff"]],
   [3, "Prof. Ndegwa (definition approver, P-3)", "Prof. Ndegwa",
-    ["ratify", "definition", "define/anatomy", "ratified"]],
+    // #/ratified is the reference's confirmation panel (p3_16), drawn
+    // without the shell; the wizard walk below proves it.
+    ["ratify", "definition", "define/anatomy"]],
   [4, "Nadia Okoth (rate owner, F-1)", "Nadia Okoth",
     ["paysetup", "rateowner", "rate", "ratepublish", "ratestanding"]],
   [5, "Daniel Mwangi (payment mechanism owner, F-2)", "Daniel Mwangi",
@@ -189,9 +235,9 @@ for (const [personaIdx, personaName, who, views] of [
       "mech/activate", "mech/qualify", "mech/live"]],
   [6, "Instance administrator (G-1)", "Instance administrator",
     ["instance", "instance/setup", "instance/covers", "instance/consent", "instance/invite",
-      "instance/services", "instance/people", "admissions", "status", "receipt"]],
+      "instance/services", "instance/people", "status", "receipt"]],
   [7, "Otieno (registry custodian, G-4)", "Otieno",
-    ["find", "coverage", "registry-quality", "dupes", "reuse", "unclear", "recover", "review"]],
+    ["admissions", "find", "coverage", "registry-quality", "dupes", "reuse", "unclear", "recover", "review"]],
   [8, "Naliaka (support agent, W-3)", "Naliaka", ["cases", "supportfind", "supporttrace"]],
   [9, "Funding oversight (V-4)", "Funding oversight", ["portfolio", "status"]],
 ]) {
@@ -301,7 +347,7 @@ test("console: the approver cannot reach the author's wizard", async ({ page, re
   await settle(page);
   await consoleSignIn(page, request, "approver");
   // Their own flow renders.
-  await expect(page.locator("body")).toContainText(/Ratify/i);
+  await expect(page.locator("body")).toContainText(/Review and sign/i);
   // The sidebar carries no wizard entry…
   await expect(page.locator('.sidebar a[href*="definework"]')).toHaveCount(0);
   // …and typing the route lands back on the approver's home, not the wizard.
@@ -362,16 +408,41 @@ test("console: onboarding asks the six identity fields", async ({ page }) => {
   await assertAlive(page, errors, "console onboarding form");
 });
 
+test("console: a verified stranger returns to applicant onboarding without a persona", async ({ page, request }) => {
+  const errors = watch(page);
+  const stamp = Date.now().toString().slice(-6);
+  const token = await mintSubjectToken(request, "apps-auth-onboard|" + stamp, "onboarding applicant");
+
+  await page.goto("/console/#/onboard");
+  await settle(page);
+  await page.evaluate(() => sessionStorage.setItem("crest.console.applicant-return", "/onboard"));
+  await page.goto("/console/#/auth?token=" + encodeURIComponent(token));
+  await settle(page);
+
+  await expect(page.url()).toContain("#/onboard");
+  await expect(page.locator("#orgapplyform")).toBeVisible();
+  await expect(page.locator("#onboard-esignet")).toHaveCount(0);
+  expect(await page.evaluate(() => sessionStorage.getItem("crest.console.session"))).toBeNull();
+
+  await page.fill('[name="orgname"]', "Authenticated Applicant Trust " + stamp);
+  await page.fill('[name="workemail"]', `auth-onboard+${stamp}@example.org`);
+  await page.fill('[name="contactname"]', "Verified Applicant");
+  await page.click("#orgapplyform button.dominant");
+  await page.waitForURL(/#\/onboard\/terms/, { timeout: 20000 });
+  await settle(page);
+  expect(await page.evaluate(() => Boolean(sessionStorage.getItem("crest.console.applicant-session")))).toBeTruthy();
+  await assertAlive(page, errors, "authenticated applicant onboarding");
+});
+
 // #166: the six-field profile round-trips through the registry — the status
 // view renders kind/sector/country/contact from GET .../registration, not
 // from anything this browser held. Proven by clearing sessionStorage of the
 // profile at submit time (the app no longer stores it) and asserting the
 // server-served marker.
-test("console: onboarding profile round-trips through the registry", async ({ page }) => {
+test("console: onboarding profile round-trips through the registry", async ({ page, request }) => {
   const errors = watch(page);
   const stamp = Date.now().toString().slice(-6);
-  await page.goto("/console/#/onboard");
-  await settle(page);
+  await applicantSignIn(page, request, "apps-roundtrip|" + stamp, "Round Tripper");
   await page.fill('[name="orgname"]', "Roundtrip Trust " + stamp);
   await page.selectOption('[name="country"]', "UG");
   await page.fill('[name="workemail"]', `rt+${stamp}@example.org`);
@@ -493,15 +564,30 @@ test("console: the story shows through", async ({ page, request }) => {
   await assertAlive(page, errors, "console story views");
 });
 
-test("verify app: a real check, refusals shown, batch bounded", async ({ page }) => {
+test("verify app: a real check, refusals shown, batch bounded", async ({ page, request }) => {
   const errors = watch(page);
+  await ensureRuntime(request);
   await page.goto("/verify/");
   await settle(page);
 
-  // V-1: load Grace's newest credential and verify it, logged out.
+  // The person's credential history is private. Read it first as the worker,
+  // then hand the same signed document to the logged-out V-1 scanner, exactly
+  // as a verifier would receive it from a card or wallet.
+  const workerCreds = await asPartyOn(
+    request,
+    SVC.verification,
+    FIX.workerA,
+    "GET",
+    `/v1/parties/${encodeURIComponent(FIX.workerA)}/credentials`,
+  );
+  expect(workerCreds.status(), "the worker can read their own credential chain").toBe(200);
+  const workerCredential = ((await workerCreds.json()).credentials || [])[0];
+  expect(workerCredential, "the worker read returns a credential to present").toBeTruthy();
+
+  // V-1: verify Grace's credential while logged out.
   await page.evaluate(() => { location.hash = "#/v1_2"; });
   await settle(page);
-  await page.click("#loadsample");
+  await page.locator("#verifyform textarea").fill(JSON.stringify(workerCredential));
   await settle(page);
   await page.locator("#verifyform button.btn").last().click();
   await settle(page);
@@ -526,13 +612,16 @@ test("verify app: a real check, refusals shown, batch bounded", async ({ page })
   await expect(page.locator("body")).toContainText("Tier count is baked into every credential already issued");
   await expect(page.locator("body")).toContainText("Deciding late is expensive");
 
-  // Resolve a person: the whole chain, by party id.
+  // An institution cannot read a worker's private history by party id. The
+  // worker presents the signed document (or grants a per-share request), and
+  // the institution verifies that document under its own caller identity.
+  await verifyOrgSignIn(page, request, FIX.org);
   await page.evaluate(() => { location.hash = "#/person"; });
   await settle(page);
-  await page.locator("#personform input").first().fill(FIX.workerA);
+  await page.locator("#personform textarea").fill(JSON.stringify(workerCredential));
   await page.locator("#personform button.btn").last().click();
   await settle(page);
-  await expect(page.locator("body")).toContainText(/credential/i);
+  await expect(page.locator("#personout")).toContainText(/valid/i);
 });
 
 test("mobile viewport: no horizontal overflow, console nav becomes a chip rail", async ({ page, request }) => {
@@ -591,7 +680,7 @@ test("console: the J3 handover is real, and so is everything after it", async ({
 
   // The party this session acts as: the story's programme organisation, which
   // is the party every org-side persona signs in as (state.tsx records why).
-  const me = "did:crest:party:01JCREST000000000000000RGN";
+  const me = FIX.org;
 
   // p1_3 — create a project and name a configurator. Naming is a proposal.
   await page.evaluate(() => { location.hash = "#/projects/new"; });
@@ -760,19 +849,66 @@ const G2 = (() => {
 })();
 
 async function mintToken(request, partyId) {
-  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  await ensureRuntime(request);
+  const sub = providerSubject(partyId);
+  return mintSubjectToken(request, sub, partyId);
+}
+
+async function mintSubjectToken(request, sub, label) {
   const r = await request.post(G2.oidc + "/token", {
     data: { sub, aud: "crest", expiresIn: "1h" },
   });
-  expect(r.ok(), "the dev issuer mints a token for " + partyId).toBeTruthy();
+  expect(r.ok(), "the dev issuer mints a token for " + (label || sub)).toBeTruthy();
   const d = await r.json();
   return d.accessToken || d.access_token || d.token;
 }
 
-// The console door offers only eSignet now — no persona cards — so tests sign
-// in the way those cards worked underneath: mint a token, append the same
-// idempotent identity binding, hand the session to the app via the key its
-// provider restores from. Persona keys mirror frontend/apps/console/src/state.tsx.
+async function ensureRuntime(request) {
+  if (runtimeReady) return runtimeReady;
+  runtimeReady = (async () => {
+    for (const key of ["org", "specifier", "custodian", "supervisor", "workerA"]) {
+      const token = await mintSubjectToken(request, FIXTURE_SUBJECTS[key], key);
+      const r = await request.get(G2.parties + "/v1/auth/me", {
+        headers: { Authorization: "Bearer " + token },
+      });
+      expect(r.ok(), `story seed binds ${key} to an authenticated party`).toBeTruthy();
+      const me = await r.json();
+      expect(me.partyId, `story seed returns a runtime party id for ${key}`).toBeTruthy();
+      FIX[key] = me.partyId;
+    }
+    const token = await mintSubjectToken(request, FIXTURE_SUBJECTS.org, "org");
+    const r = await request.get(
+      G2.parties + "/v1/projects?ownerPartyId=" + encodeURIComponent(FIX.org),
+      { headers: { Authorization: "Bearer " + token } },
+    );
+    expect(r.ok(), "the seeded organisation can list its projects").toBeTruthy();
+    const projects = (await r.json()).projects || [];
+    const project = projects.find(p => p.name === "Riverside bednet campaign 2026");
+    expect(project && project.id, "the seed exposes a runtime project id").toBeTruthy();
+    FIX.project = project.id;
+    const workerCToken = await mintSubjectToken(request, FIXTURE_SUBJECTS.custodian, "custodian");
+    const resolved = await request.get(
+      G2.parties + "/v1/resolve?kind=contact-route&value=" +
+        encodeURIComponent("worker-chandra@riverside.invalid") +
+        "&contextId=" + encodeURIComponent(FIX.project),
+      { headers: { Authorization: "Bearer " + workerCToken } },
+    );
+    expect(resolved.ok(), "the custodian resolves the unbound Chandra fixture").toBeTruthy();
+    FIX.workerC = (await resolved.json()).partyId;
+    expect(FIX.workerC, "the Chandra resolution returns a runtime party id").toBeTruthy();
+    SPVR = FIX.supervisor;
+    CHANDRA = FIX.workerC;
+    if (typeof P3 !== "undefined") {
+      P3.author = FIX.specifier;
+      P3.approver = FIX.org;
+    }
+  })();
+  return runtimeReady;
+}
+
+// The console door offers only eSignet now — no persona cards. Existing
+// enrolled fixture personas use the real token-and-binding path below; the
+// applicant path uses the actual callback and its applicant-only session.
 const CONSOLE_PERSONAS = {
   orgadmin: ["org", "Peter Otieno", "Org Admin"],
   configurator: ["org", "Dr. Alice Mutua", "Project Configurator"],
@@ -788,13 +924,17 @@ const CONSOLE_PERSONAS = {
 const CONSOLE_PERSONA_ORDER = Object.keys(CONSOLE_PERSONAS);
 async function consoleSignIn(page, request, personaKey) {
   const [fixKey, who, role] = CONSOLE_PERSONAS[personaKey];
+  await ensureRuntime(request);
   const partyId = FIX[fixKey];
   const token = await mintToken(request, partyId);
-  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const sub = providerSubject(partyId);
   const pw = await (await request.get(G2.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub))).json();
+  const bindPath = "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings";
   const bind = await request.post(
-    G2.parties + "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
-      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    G2.parties + bindPath, {
+      headers: {
+        Authorization: "Bearer " + token, "Content-Type": "application/json",
+      },
       data: { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject },
     });
   expect(bind.ok(), "the self-bind is accepted for " + partyId).toBeTruthy();
@@ -813,12 +953,17 @@ async function consoleSignIn(page, request, personaKey) {
 // the real endpoint, and hand the session to the app the way a reload would
 // find it. Same acts, no test-only UI.
 async function workerSignIn(page, request, partyId, label) {
+  await ensureRuntime(request);
+  partyId = FIX[fixtureKeyForParty(partyId)] || partyId;
   const token = await mintToken(request, partyId);
-  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const sub = providerSubject(partyId);
   const pw = await (await request.get(G2.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub))).json();
+  const bindPath = "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings";
   const bind = await request.post(
-    G2.parties + "/v1/parties/" + encodeURIComponent(partyId) + "/identity-bindings", {
-      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    G2.parties + bindPath, {
+      headers: {
+        Authorization: "Bearer " + token, "Content-Type": "application/json",
+      },
       data: { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject },
     });
   expect(bind.ok(), "the self-bind is accepted for " + partyId).toBeTruthy();
@@ -830,11 +975,40 @@ async function workerSignIn(page, request, partyId, label) {
   await settle(page);
 }
 
-async function asParty(request, partyId, method, path, body) {
+// The verifier's institutional surfaces are private too. Drive the same
+// callback the configured provider uses so request creation/listing carries an
+// enrolled organisation bearer instead of relying on a stale page token.
+async function verifyOrgSignIn(page, request, partyId) {
+  await ensureRuntime(request);
+  // The same idempotent self-bind every other door's sign-in performs: the
+  // callback resolves a party only for a subject the registry has bound.
+  const bound = await bindParty(request, partyId);
+  expect(bound.ok(), "the verifier's self-bind is accepted for " + partyId).toBeTruthy();
   const token = await mintToken(request, partyId);
+  await page.goto("/verify/#/auth?token=" + encodeURIComponent(token));
+  await settle(page);
+  await expect(page.locator(".appbar .who-label")).toContainText(/onboarded verifier/i);
+}
+
+async function applicantSignIn(page, request, sub, label) {
+  const token = await mintSubjectToken(request, sub, label);
+  await page.goto("/console/#/onboard");
+  await settle(page);
+  await page.evaluate(() => sessionStorage.setItem("crest.console.applicant-return", "/onboard"));
+  await page.goto("/console/#/auth?token=" + encodeURIComponent(token));
+  await settle(page);
+  await expect(page.url()).toContain("#/onboard");
+}
+
+async function asParty(request, partyId, method, path, body) {
+  await ensureRuntime(request);
+  partyId = FIX[fixtureKeyForParty(partyId)] || partyId;
+  const token = await mintToken(request, partyId);
+  const headers = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
+  if (isMutation(method)) headers["Idempotency-Key"] = mutationKey(partyId, method, path, body);
   const r = await request.fetch(G2.parties + path, {
     method,
-    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    headers,
     data: body === undefined ? undefined : body,
   });
   return r;
@@ -846,9 +1020,9 @@ test("console: the G-2 onboarding journey is real, screen by screen", async ({ p
   const stamp = Date.now().toString().slice(-6);
   const contact = "Hon. Wangari Otieno";
 
-  // g2_1 — register. The application is anonymous by design (#20).
-  await page.goto("/console/#/onboard");
-  await settle(page);
+  // g2_1 — register. The form is open to an applicant, but the registry
+  // still requires the applicant's verified bearer token.
+  await applicantSignIn(page, request, "apps-onboard-applicant|" + stamp, contact);
   await page.fill('[name="orgname"]', "Lakeside Health Trust " + stamp);
   await page.selectOption('[name="country"]', "KE");
   await page.fill('[name="workemail"]', `w.otieno+${stamp}@lakeside.example.org`);
@@ -1052,9 +1226,9 @@ test("console: G-1 walks the instance, and a person decides the admission", asyn
   const orgName = "Nyanza Care Collective " + stamp;
 
   // The applicant's half: register and accept terms (manual approval model
-  // leaves the registration TERMS_ACCEPTED, waiting on a person).
-  await page.goto("/console/#/onboard");
-  await settle(page);
+  // leaves the registration TERMS_ACCEPTED, waiting on a person). The
+  // registration endpoint requires the applicant's verified bearer token.
+  await applicantSignIn(page, request, "apps-admissions-applicant|" + stamp, "Sister Achieng");
   await page.fill('[name="orgname"]', orgName);
   await page.selectOption('[name="country"]', "KE");
   await page.fill('[name="workemail"]', `admissions+${stamp}@nyanza.example.org`);
@@ -1068,7 +1242,8 @@ test("console: G-1 walks the instance, and a person decides the admission", asyn
   expect(orgId).toMatch(/^did:crest:party:/);
 
   // The instance administrator signs in — a different party from the
-  // applicant, which is what lets the decision stand at all.
+  // applicant, which is what lets the deployment walk stand. Admission
+  // review is a separate registry-custodian session.
   await page.goto("/console/");
   await settle(page);
   await consoleSignIn(page, request, "instance");
@@ -1116,11 +1291,21 @@ test("console: G-1 walks the instance, and a person decides the admission", asyn
   await expect(page.locator(".stat", { hasText: "parties" })).toContainText("healthy");
   await expect(page.locator(".stat")).toHaveCount(6);
 
-  // "Done — awaiting the organisation" lands on the queue (g4_1) — where the
-  // organisation that just applied is genuinely waiting.
+  // The instance walk ends by handing the pending decision to the registry
+  // custodian; the instance administrator cannot open the queue.
   await page.click("#g1-next");
   await settle(page);
-  expect(page.url()).toContain("#/admissions");
+  expect(page.url()).toContain("#/instance/people");
+  await expect(page.locator("body")).toContainText("Nothing at the instance level grants anything");
+
+  await page.click("#logout");
+  await settle(page);
+  await consoleSignIn(page, request, "custodian");
+  await expect(page.locator("#logout")).toBeVisible();
+  await expect(page.locator("body")).toContainText("Otieno");
+  await page.evaluate(() => { location.hash = "#/admissions"; });
+  await settle(page);
+  // The assigned registry custodian owns this queue and the decision below.
   await expect(page.locator("body")).toContainText("Requests a person has to look at");
   // The reference's callouts, verbatim.
   await expect(page.locator("body")).toContainText("Verifiers are not in this queue and never will be.");
@@ -1145,8 +1330,9 @@ test("console: G-1 walks the instance, and a person decides the admission", asyn
   await page.click("#approve-registration");
   await expect(page.locator("body")).toContainText("APPROVED", { timeout: 20000 });
   await expect(page.locator("body")).toContainText("decided by");
-  // The decider on the record is the instance persona's party, not the applicant.
-  await expect(page.locator("body")).toContainText("…" + FIX.org.slice(-6));
+  // The decider on the record is the registry custodian, not the applicant or
+  // the instance operator.
+  await expect(page.locator("body")).toContainText("…" + FIX.custodian.slice(-6));
 
   // The queue no longer holds it; the decided table does, with the decider.
   await page.evaluate(() => { location.hash = "#/admissions"; });
@@ -1180,10 +1366,24 @@ const SVC = (() => {
 
 // asParty against an arbitrary service base (asParty above is parties-only).
 async function asPartyOn(request, svcBase, partyId, method, path, body) {
+  await ensureRuntime(request);
+  partyId = FIX[fixtureKeyForParty(partyId)] || partyId;
   const token = await mintToken(request, partyId);
+  const headers = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
+  if (isMutation(method)) headers["Idempotency-Key"] = mutationKey(partyId, method, path, body);
   return request.fetch(svcBase + path, {
     method,
-    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    headers,
+    data: body === undefined ? undefined : body,
+  });
+}
+
+async function asTokenOn(request, svcBase, token, actor, method, path, body) {
+  const headers = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
+  if (isMutation(method)) headers["Idempotency-Key"] = mutationKey(actor, method, path, body);
+  return request.fetch(svcBase + path, {
+    method,
+    headers,
     data: body === undefined ? undefined : body,
   });
 }
@@ -1192,19 +1392,25 @@ async function asPartyOn(request, svcBase, partyId, method, path, body) {
 // the browser's dev login performs, done from the test for parties that act
 // only through the API here.
 async function bindParty(request, partyId) {
+  await ensureRuntime(request);
+  partyId = FIX[fixtureKeyForParty(partyId)] || partyId;
   const token = await mintToken(request, partyId);
-  const sub = "story|" + partyId.replace("did:crest:party:", "");
+  const sub = providerSubject(partyId);
   const pw = await request
     .get(G2.oidc + "/dev/pairwise?sub=" + encodeURIComponent(sub))
     .then(r => r.json());
-  return request.post(G2.parties + `/v1/parties/${encodeURIComponent(partyId)}/identity-bindings`, {
-    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-    data: { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject },
+  const bindPath = `/v1/parties/${encodeURIComponent(partyId)}/identity-bindings`;
+  const bindBody = { provider: "mock-oidc", providerClass: "generic-oidc", subjectRef: pw.subject };
+  return request.post(G2.parties + bindPath, {
+    headers: {
+      Authorization: "Bearer " + token, "Content-Type": "application/json",
+    },
+    data: bindBody,
   });
 }
 
-const SPVR = "did:crest:party:01JCREST00000000000000SPVR";
-const CHANDRA = "did:crest:party:01JCREST00000000000000WRKC";
+let SPVR = FIX.supervisor;
+let CHANDRA = FIX.workerC;
 const TERM = "crest:terms:01JCREST00000000000000TERM";
 const ULID32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const fakeUlid = () =>
@@ -1215,11 +1421,13 @@ test("per-share consent: the presentation loop on both faces, and the decline pa
   const errors = watch(page);
   const stamp = Date.now().toString().slice(-6);
 
-  // The verifier asks, from the verify door's institutional surface. The org
-  // session is established on entering the route.
-  await page.goto("/verify/#/requests");
+  // The verifier asks, from the verify door's institutional surface. Establish
+  // the org bearer explicitly; private request reads are never anonymous.
+  await verifyOrgSignIn(page, request, FIX.org);
+  await page.evaluate(() => { location.hash = "#/requests"; });
   await settle(page);
   await expect(page.locator("body")).toContainText("Ask to see more");
+  await page.fill('[name="sharesubject"]', FIX.workerA);
   await page.fill('[name="sharepurpose"]', "Hiring for a private clinic " + stamp);
   await page.click("#share-create");
   const card = page.locator("[data-vshare]", { hasText: stamp }).first();
@@ -1266,7 +1474,8 @@ test("per-share consent: the presentation loop on both faces, and the decline pa
   await expect(page.locator("body")).toContainText("very list the verifier sees");
 
   // The verifier collects exactly the approved subset — once.
-  await page.goto("/verify/#/requests");
+  await verifyOrgSignIn(page, request, FIX.org);
+  await page.evaluate(() => { location.hash = "#/requests"; });
   await settle(page);
   const vcard = page.locator(`[data-vshare="${reqId}"]`);
   await expect(vcard).toContainText("APPROVED", { timeout: 20000 });
@@ -1406,26 +1615,45 @@ test("recovery: nomination routes, a refusal is owned, and two authorities confi
 
   // The second voice must come from a DIFFERENT authority: a second approved
   // organisation vouches for the custodian, through the real open doors.
-  const orgR = await request.post(G2.parties + "/v1/organisations", {
-    data: {
-      displayName: "Ward 7 Health Office " + stamp, kind: "organisation",
-      contactRoutes: [{ kind: "email", value: `w7+${stamp}@example.org` }],
+  const applicantSub = "apps-recovery-applicant|" + stamp;
+  const applicantToken = await mintSubjectToken(request, applicantSub, "recovery applicant");
+  const orgPath = "/v1/organisations";
+  const orgBody = {
+    displayName: "Ward 7 Health Office " + stamp, kind: "organisation",
+    contactRoutes: [{ kind: "email", value: `w7+${stamp}@example.org` }],
+  };
+  const orgR = await request.post(G2.parties + orgPath, {
+    headers: {
+      Authorization: "Bearer " + applicantToken,
+      "Content-Type": "application/json",
+      "Idempotency-Key": mutationKey(applicantSub, "POST", orgPath, orgBody),
     },
+    data: orgBody,
   });
   expect(orgR.status()).toBe(201);
   const org2 = (await orgR.json()).party.id;
-  await bindParty(request, org2);
-  let r = await asParty(request, org2, "POST", `/v1/organisations/${org2}/terms-acceptance`,
+  let r = await asTokenOn(request, G2.parties, applicantToken, org2, "POST", `/v1/organisations/${org2}/terms-acceptance`,
     { termsId: TERM, termsVersion: 1, acceptedBy: org2 });
   expect(r.status()).toBe(200);
   r = await asParty(request, FIX.custodian, "POST", `/v1/organisations/${org2}/decision`,
     { approve: true, decidedBy: FIX.custodian });
   expect(r.status()).toBe(200);
-  r = await asParty(request, org2, "POST", "/v1/authorizations", {
+  const ownProjectBody = {
+    kind: "project", name: "Ward 7 authority project " + stamp, ownerPartyId: org2,
+  };
+  r = await asTokenOn(request, G2.parties, applicantToken, org2, "POST", "/v1/projects", ownProjectBody);
+  expect(r.status(), "the second authority's own project").toBe(201);
+  const ownProjectResponse = await r.json();
+  const ownProject = ownProjectResponse.id;
+  expect(ownProject, "the second authority project id").toMatch(/^crest:context:/);
+  r = await asTokenOn(request, G2.parties, applicantToken, org2, "POST",
+    `/v1/projects/${encodeURIComponent(ownProject)}/activation`);
+  expect(r.status(), "the second authority activates its own project").toBe(200);
+  r = await asTokenOn(request, G2.parties, applicantToken, org2, "POST", "/v1/authorizations", {
     id: "crest:authorization:" + fakeUlid(),
     partyId: FIX.custodian,
     terms: { id: TERM, version: 1 },
-    scope: { kind: "context", contextId: FIX.project },
+    scope: { kind: "context", contextId: ownProject },
     functions: ["submit-work-evidence"],
     period: { start: "2026-01-01T00:00:00Z", end: "2027-12-31T00:00:00Z" },
     authorityPartyId: org2, approvedByPartyId: org2,
@@ -1515,12 +1743,20 @@ test("assisted enrolment: the confidence check records a method, never a tier", 
 test("qualification arrival: the anchor lands and earned strength re-derives", async ({ page, request }) => {
   test.setTimeout(120000);
   const errors = watch(page);
+  await ensureRuntime(request);
 
   // Before: Chandra was enrolled with no binding (IA-0). On a clean stack the
   // verifier says so — the tier is computed at the weakest assurance. On a
   // re-run she is already anchored (this very test anchored her), so the
   // before-state is asserted only when it is genuinely there to see.
-  const credsR = await request.get(SVC.verification + `/v1/parties/${CHANDRA}/credentials`);
+  const credsR = await asPartyOn(
+    request,
+    SVC.verification,
+    CHANDRA,
+    "GET",
+    `/v1/parties/${encodeURIComponent(CHANDRA)}/credentials`,
+  );
+  expect(credsR.status(), "Chandra can read her own private credential chain").toBe(200);
   const creds = (await credsR.json()).credentials || [];
   expect(creds.length, "the story gives Chandra a credential").toBeGreaterThan(0);
   const v1 = await request.post(SVC.verification + "/v1/verify", { data: { credential: creds[0] } });
@@ -1595,6 +1831,26 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   const stamp = Date.now().toString().slice(-6);
   const me = FIX.org;
 
+  // The definition registry authorizes a payment-setup linked record with the
+  // rate-owner function in the definition's project context. The older
+  // fixture grant used the retired set-rates name, so the real publication
+  // would be refused by core before the rate-standing screen could render.
+  // Establish the current, scoped authority through the public authorization
+  // API; the publication below still proves the assigned owner is the caller.
+  const rateGrant = await asParty(request, me, "POST", "/v1/authorizations", {
+    id: "crest:authorization:" + fakeUlid(),
+    partyId: me,
+    terms: { id: TERM, version: 1 },
+    scope: { kind: "context", contextId: FIX.project },
+    functions: ["rate-owner"],
+    period: { start: "2026-01-01T00:00:00Z", end: "2027-12-31T23:59:59Z" },
+    authorityPartyId: me,
+    approvedByPartyId: me,
+    approvedAt: "2026-09-01T00:00:00Z",
+    state: "ACTIVE",
+  });
+  expect(rateGrant.status(), "the scoped rate-owner authority is recorded").toBe(201);
+
   // ── F-1 · f1_2: only one person can assign — the Org Admin records it. ──
   await consoleSignIn(page, request, "orgadmin");
   await page.locator("#logout").waitFor({ state: "visible", timeout: 20000 });
@@ -1641,6 +1897,10 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   await expect(page.locator("body")).toContainText("bednets");
   await expect(page.locator('input[name="unitofwork"]')).toHaveCount(0);
   await page.fill('[name="rateamount"]', "175.00");
+  // Work is priced by the version in force when its period started, never
+  // the latest (f1_4). The walk's work below is dated 1 Sep, so this version
+  // is effective from then; the seeded v1 keeps pricing anything earlier.
+  await page.fill('[name="rateeffective"]', "2026-09-01");
   await page.click("#rate-continue");
   await settle(page);
   expect(page.url()).toContain("#/ratepublish");
@@ -1689,12 +1949,50 @@ test("console: the funders walk — rate as terms, held with an owner, released 
     partyId: SPVR,
     terms: { id: TERM, version: 1 },
     scope: { kind: "context", contextId: projId },
-    functions: ["submit-work-evidence"],
+    // Evidence arrives only from a registered source (§9), and only about a
+    // worker who consented to this programme — so the supervisor also owns
+    // the walk's source and acts for the worker at the consent moment.
+    functions: ["submit-work-evidence", "work-definition-source-owner", "act-for-party"],
     period: { start: "2026-01-01T00:00:00Z", end: "2027-12-31T00:00:00Z" },
     authorityPartyId: me, approvedByPartyId: me,
     approvedAt: "2026-09-01T00:00:00Z", state: "ACTIVE",
   });
   expect(r.status(), "the supervisor's grant on the walk's project").toBe(201);
+  // The mechanism owner reads the project's instructions as the finance
+  // surface does — payment-owner on the walk's project, the grant the fixture
+  // world holds on the seeded one.
+  r = await asParty(request, me, "POST", "/v1/authorizations", {
+    id: "crest:authorization:" + fakeUlid(),
+    partyId: me,
+    terms: { id: TERM, version: 1 },
+    scope: { kind: "context", contextId: projId },
+    functions: ["payment-owner", "claim-review", "read-work-evidence"],
+    period: { start: "2026-01-01T00:00:00Z", end: "2027-12-31T00:00:00Z" },
+    authorityPartyId: me, approvedByPartyId: me,
+    approvedAt: "2026-09-01T00:00:00Z", state: "ACTIVE",
+  });
+  expect(r.status(), "the owner's finance grant on the walk's project").toBe(201);
+  const walkSource = await asPartyOn(request, PAYSVC.evidence, SPVR, "POST", "/v1/sources", {
+    adapterRef: "csv-batch@1",
+    contextId: projId,
+    systemRef: "csv-batch",
+    sourceClass: "programme-system",
+    captureMethod: "digital-capture",
+    sourceExposure: "signed-batch",
+    expectedEvery: "24h",
+    ownerPartyId: SPVR,
+  });
+  expect(walkSource.status(), "the walk's source is registered by its owner").toBe(201);
+  const consentPath = `/v1/parties/${encodeURIComponent(FIX.workerA)}/consents?moment=enrolment&captureMethod=assisted` +
+    `&purpose=work-history-and-payment&capturedBy=${encodeURIComponent(SPVR)}&contextId=${encodeURIComponent(projId)}`;
+  const walkConsent = await request.post(G2.parties + consentPath, {
+    headers: {
+      Authorization: "Bearer " + (await mintToken(request, SPVR)),
+      "X-CREST-On-Behalf-Of": FIX.workerA,
+      "Idempotency-Key": mutationKey(SPVR, "POST", consentPath, null),
+    },
+  });
+  expect(walkConsent.status(), "the worker's consent to the walk's programme").toBe(201);
 
   // ── F-2: the mechanism owner configures — and no further. ──
   await consoleSignIn(page, request, "payowner");
@@ -1768,11 +2066,13 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   const csv = "activity,outcome_value,outcome_unit,worker_id_kind,worker_id," +
     "period_start,period_end,geography,household_id,beneficiary_count,source_record_ref\n" +
     `bednet-distribution,3,bednets-distributed,phone,+15550100011,2026-09-01,2026-09-01,Riverside,funders-HH-${stamp},3,funders-${stamp}\n`;
-  const batch = await request.fetch(PAYSVC.evidence +
-    `/v1/batches?contextId=${encodeURIComponent(projId)}&definitionId=${encodeURIComponent(DEFN)}` +
-    `&submittedBy=${encodeURIComponent(SPVR)}&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch&systemRef=funders-walk`, {
+  const batchPath = `/v1/batches?contextId=${encodeURIComponent(projId)}&definitionId=${encodeURIComponent(DEFN)}&definitionVersion=1` +
+    `&submittedBy=${encodeURIComponent(SPVR)}&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch&systemRef=csv-batch`;
+  const batch = await request.fetch(PAYSVC.evidence + batchPath, {
     method: "POST",
-    headers: { Authorization: "Bearer " + supTok, "Content-Type": "text/csv" },
+    headers: {
+      Authorization: "Bearer " + supTok, "Content-Type": "text/csv",
+    },
     data: csv,
   });
   expect([200, 201], "the batch lands").toContain(batch.status());
@@ -1781,16 +2081,17 @@ test("console: the funders walk — rate as terms, held with an owner, released 
 
   // The window opens through the outbox — poll, then the worker confirms.
   await expect.poll(async () =>
-    (await asPartyOn(request, PAYSVC.payments, FIX.workerA, "GET", `/v1/windows/${claimId}`)).status(),
+    (await asPartyOn(request, PAYSVC.evidence, FIX.workerA, "GET", `/v1/windows/${claimId}`)).status(),
   { timeout: 60000 }).toBe(200);
-  r = await asPartyOn(request, PAYSVC.payments, FIX.workerA, "POST", `/v1/claims/${claimId}/confirm`, {});
+  r = await asPartyOn(request, PAYSVC.evidence, FIX.workerA, "POST", `/v1/claims/${claimId}/confirm`, {});
   expect(r.status(), "the worker's confirmation exit").toBe(200);
 
   // The exit released the obligation; the not-live mechanism turned it into a
   // HELD instruction with a reason and a named owner — never a missing one.
   let instruction;
   await expect.poll(async () => {
-    const res = await asPartyOn(request, PAYSVC.payments, me, "GET", `/v1/instructions/by-claim/${claimId}`);
+    // The instruction is the worker's own record: read it as them.
+    const res = await asPartyOn(request, PAYSVC.payments, FIX.workerA, "GET", `/v1/instructions/by-claim/${claimId}`);
     if (res.status() !== 200) return "no instruction yet";
     instruction = await res.json();
     return instruction.state;
@@ -1908,15 +2209,17 @@ test("console: the funders walk — rate as terms, held with an owner, released 
   await expect(page.locator("body")).toContainText(/live/);
   await expect(page.locator("body")).toContainText("went live");
   // What the last gate opened: the very instruction the walk watched being
-  // held is now released, re-priced at its own release moment, with money on it.
+  // held is now released, priced by the version in force when the work
+  // happened, with money on it.
   const released = page.locator(`[data-released="${instruction.id}"]`);
   await expect(released).toBeVisible({ timeout: 20000 });
   await expect(released).toContainText(/RELEASED|SETTLED/);
   await expect(released).toContainText("KES");
   await expect(released).toContainText("opened by this activation");
   // …and the service agrees: the held state is gone, the amount is real
-  // (3 units at the version in force at release: v-latest, 175.00 → 525.00).
-  r = await asPartyOn(request, PAYSVC.payments, me, "GET", `/v1/instructions/by-claim/${claimId}`);
+  // (3 units at the version in force on 1 Sep: 175.00 KES → 525.00).
+  r = await asPartyOn(request, PAYSVC.payments, FIX.workerA, "GET", `/v1/instructions/by-claim/${claimId}`);
+  expect(r.status(), "the worker reads their released instruction").toBe(200);
   const after = await r.json();
   expect(after.state === "RELEASED" || after.state === "SETTLED").toBeTruthy();
   expect(after.held).toBeFalsy();
@@ -1963,6 +2266,22 @@ const DEFSVC = (() => {
 const fill = (page, name, value) => page.locator(`[name="${name}"]`).fill(value);
 const choose = (page, name, value) => page.locator(`[name="${name}"]`).selectOption(value);
 const press = (page, label) => page.click(`[data-btn="${label}"]`);
+
+async function grantP3Approver(request) {
+  const r = await asParty(request, FIX.org, "POST", "/v1/authorizations", {
+    id: "crest:authorization:" + fakeUlid(),
+    partyId: FIX.org,
+    terms: { id: TERM, version: 1 },
+    scope: { kind: "context", contextId: FIX.project },
+    functions: ["work-definition-approver"],
+    period: { start: "2026-01-01T00:00:00Z", end: "2027-12-31T23:59:59Z" },
+    authorityPartyId: FIX.org,
+    approvedByPartyId: FIX.org,
+    approvedAt: "2026-09-01T00:00:00Z",
+    state: "ACTIVE",
+  });
+  expect(r.status(), "the approver's scoped authority is recorded").toBe(201);
+}
 
 // A wizard step: press the frame's own button, wait for the route it names.
 async function step(page, label, route) {
@@ -2032,14 +2351,30 @@ test("console: the registry metrics read real counts, and the receipt shows a re
   // project side. ──
   const stamp = Date.now().toString().slice(-6);
   const supTok = await mintToken(request, SPVR);
+  // The pinned definition admits only its declared source systems; the walk
+  // registers one of them on the project rather than inventing a name.
+  const sourceRef = "csv-batch";
+  const source = await asPartyOn(request, PAYSVC.evidence, SPVR, "POST", "/v1/sources", {
+    adapterRef: "csv-batch@1",
+    contextId: FIX.project,
+    systemRef: sourceRef,
+    sourceClass: "programme-system",
+    captureMethod: "digital-capture",
+    sourceExposure: "signed-batch",
+    expectedEvery: "24h",
+    ownerPartyId: SPVR,
+  });
+  expect(source.status(), "the receipt source is registered by its scoped owner").toBe(201);
   const csv = "activity,outcome_value,outcome_unit,worker_id_kind,worker_id," +
     "period_start,period_end,geography,household_id,beneficiary_count,source_record_ref\n" +
     `bednet-distribution,4,bednets-distributed,phone,+15550100011,2026-09-01,2026-09-01,Riverside,receipt-HH-${stamp},4,receipt-${stamp}\n`;
-  const batchRes = await request.fetch(PAYSVC.evidence +
-    `/v1/batches?contextId=${encodeURIComponent(FIX.project)}&definitionId=${encodeURIComponent(DEFN)}` +
-    `&submittedBy=${encodeURIComponent(SPVR)}&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch&systemRef=receipt-walk`, {
+  const batchPath = `/v1/batches?contextId=${encodeURIComponent(FIX.project)}&definitionId=${encodeURIComponent(DEFN)}&definitionVersion=1` +
+    `&submittedBy=${encodeURIComponent(SPVR)}&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch&systemRef=${encodeURIComponent(sourceRef)}`;
+  const batchRes = await request.fetch(PAYSVC.evidence + batchPath, {
     method: "POST",
-    headers: { Authorization: "Bearer " + supTok, "Content-Type": "text/csv" },
+    headers: {
+      Authorization: "Bearer " + supTok, "Content-Type": "text/csv",
+    },
     data: csv,
   });
   expect([200, 201], "the batch lands").toContain(batchRes.status());
@@ -2062,6 +2397,12 @@ test("console: the registry metrics read real counts, and the receipt shows a re
 test("console: the authoring wizard writes a definition, proves it dry, and has it ratified with its gaps named", async ({ page, request }) => {
   const errors = watch(page);
   test.setTimeout(240000);
+
+  // The approver is a real project-scoped caller. The seed's canonical
+  // definition is ratified by the custodian, while this independent authoring
+  // journey uses the organisation as its approver and therefore records that
+  // authority through the public grant API first.
+  await grantP3Approver(request);
 
   // ── p3_1 · the registry. "Define new work" is a real POST; a draft exists
   //    on the server before the first screen renders. ──
@@ -2160,15 +2501,16 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   //    tier is written onto anything. ──
   await expect(page.locator("#stepcounter")).toContainText("Evidence · 6 of 9");
   await expect(page.locator("body")).toContainText("the floor — no requirements");
-  await expect(page.locator("body")).toContainText(/reference's tier numbering runs the other way/i);
-  await choose(page, "tierCeiling", "3");
+  await expect(page.locator("body")).toContainText("Tier 1 is strongest, Tier 2 is supervised evidence, and Tier 3 is worker asserted evidence.");
+  // Reference numbering: 1 is strongest, so a ceiling of 1 caps nothing.
+  await choose(page, "tierCeiling", "1");
   await fill(page, "checkIntensity", "Sample — 1 in 10");
   await fill(page, "workerSummary", "You handed out bednets and recorded each household you visited.");
   await fill(page, "evidencePlain",
     "The programme's own system has your visit recorded.\nYour supervisor confirmed the day's round.");
-  // Tier 2 requires the household id; tier 3 requires both. This is what the
-  // dry run will judge rows against.
-  await page.locator('[data-requires="3"]').fill("household_id, beneficiary_count");
+  // Tier 2 requires the household id; tier 1 (the strongest) requires both.
+  // This is what the dry run will judge rows against.
+  await page.locator('[data-requires="1"]').fill("household_id, beneficiary_count");
   await page.locator('[data-requires="2"]').fill("household_id");
   // p3_8 was redrawn to the design pack's frame (75f02b7), which carries no
   // green callout here; the stored-tier sentence lives on p3_22's derived
@@ -2190,6 +2532,15 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   // The reference's own callout, on the screen that sets the ceiling.
   await expect(page.locator("body"))
     .toContainText("The source decides the highest tier that is structurally possible");
+
+  // ── p3_23 · the draft writes its next-version template NOW, at the point
+  //    the reference offers the spreadsheet path — not only after submit. ──
+  await step(page, "Use a spreadsheet", "define/template");
+  await expect(page.locator("[data-template-header]")).toContainText("household_id", { timeout: 20000 });
+  await expect(page.locator("[data-template-header]")).toContainText("beneficiary_count");
+  await expect(page.locator("body")).toContainText("The template is tied to this version (v1)");
+  await step(page, "Back", "define/source");
+
   await step(page, "Connect a system", "define/adaptors");
 
   // ── p3_24 · the adaptor library, told honestly: one implemented class, the
@@ -2264,7 +2615,7 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   // cannot have been stored on them.
   await choose(page, "drySourceClass", "self-reported");
   await press(page, "Run the sample");
-  await expect(page.locator('[data-dryrow="row 2"]')).toContainText("Tier 1", { timeout: 25000 });
+  await expect(page.locator('[data-dryrow="row 2"]')).toContainText("Tier 3", { timeout: 25000 });
   await choose(page, "drySourceClass", "programme-system");
   await press(page, "Run the sample");
   await expect(page.locator('[data-dryrow="row 2"]')).toContainText("Tier 2", { timeout: 25000 });
@@ -2347,6 +2698,17 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await expect(page.locator("[data-anatomy-ext]")).toContainText("mgnrega.contractorRef");
   await expect(page.locator("body")).toContainText(/versioned separately/i);
 
+  // The source connection is not transient wizard state: compilation keeps
+  // the tested mapping as a LinkedRecord pinned to this exact version.
+  const linkedAfterSubmit = await page.evaluate(async ({ svc, id }) => {
+    const r = await fetch(`${svc}/v1/definitions/${encodeURIComponent(id)}/linked-records`);
+    return r.json();
+  }, { svc: DEFSVC, id: JSON.parse(baseJson).id });
+  const sourceBinding = linkedAfterSubmit.linkedRecords.find((x) => x.type === "source-binding");
+  expect(sourceBinding, "the tested source mapping survives draft compilation").toBeTruthy();
+  expect(sourceBinding.payload.definitionVersion).toBe(1);
+  expect(sourceBinding.payload.systemRef).toBe("dhis2-riverside");
+
   // ── REFUSAL · editing after submit. The version is immutable and the draft
   //    is its provenance, so the service refuses a section write on it. ──
   await page.evaluate(() => { location.hash = "#/define/sector"; });
@@ -2377,7 +2739,9 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await expect(page.locator("body")).toContainText("Review and sign");
   await expect(page.locator("body")).toContainText("awaiting ratification");
   await expect(page.locator("#ratify-read")).toContainText("bednets-distributed");
-  await expect(page.locator("#ratify-read")).toContainText(/01JCREST00000000000000SPEC|SPEC/);
+  // The author is the runtime's specifier party (server-assigned on a fresh
+  // stack), shown shortened: its tail is what the read carries.
+  await expect(page.locator("#ratify-read")).toContainText(FIX.specifier.slice(-6));
   // The ratifier names what is still open. Nothing prices this unit yet, and
   // that is a real pending field derived from the real record.
   await page.locator('[data-pending="ratePerOutcomeUnit"]').check();
@@ -2393,7 +2757,7 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
   await expect(page.locator("[data-event='SUBMITTED']")).toBeVisible();
   // Every act names its actor, and the two names are different parties.
   const trail = await page.locator(".grid-tbl").first().innerText();
-  expect(trail, "the submission is the author's act").toMatch(/SPEC/);
+  expect(trail, "the submission is the author's act").toContain(FIX.specifier.slice(-6));
   expect(trail, "the signature is the approver's act").toMatch(/RGN/);
   // Ratified WITH pending fields — a real recorded state, named by the
   // ratifier and not by the author.
@@ -2431,6 +2795,8 @@ test("console: the authoring wizard writes a definition, proves it dry, and has 
 test("console: a clone submits as the next version, and ratifying names nothing pending", async ({ page, request }) => {
   const errors = watch(page);
   test.setTimeout(180000);
+
+  await grantP3Approver(request);
 
   await signInAs(page, request, "author", "Amina Yusuf");
   await page.evaluate(() => { location.hash = "#/definework"; });

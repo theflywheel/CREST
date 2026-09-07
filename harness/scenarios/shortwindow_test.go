@@ -36,8 +36,9 @@ func TestAShortWindowPaysByRealTimeAlone(t *testing.T) {
 	w := setup(t)
 	phone := sharedNumber(208)
 	worker := newWorkerWithPhone(t, w, "Short Window", phone)
+	w.consentOf(t, worker)
 	result := w.submit(t, batch(row(phone, 2, "HH-SHORTWIN")))
-	claimID := result.ClaimIDs[0]
+	claimID := onlyClaim(t, result)
 
 	// The sweep only auto-confirms a reached worker, so the notification has
 	// to land inside the window — with seconds on the clock, that is itself
@@ -48,6 +49,7 @@ func TestAShortWindowPaysByRealTimeAlone(t *testing.T) {
 		_, err := w.window(claimID)
 		return err
 	})
+	w.acknowledgeClaim(t, claimID)
 
 	// No Advance, no SetClock, no POST /v1/sweep. The wall clock is the only
 	// thing that moves, and it must be enough.

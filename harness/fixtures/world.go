@@ -63,6 +63,10 @@ type World struct {
 	Contexts       []schema.Context       `json:"contexts"`
 	Definitions    []schema.Definition    `json:"definitions"`
 	LinkedRecords  []schema.LinkedRecord  `json:"linkedRecords"`
+	// RuntimeIDs contains server-assigned ids for a seeded run. It is kept out
+	// of the fixture document: callers continue to use the stable fixture names
+	// while the harness resolves them to ids returned by public APIs.
+	RuntimeIDs map[string]string `json:"-"`
 }
 
 // Load reads tests/fixtures/world.yaml and validates every object in it, at
@@ -250,8 +254,26 @@ func (w *World) Party(id string) (schema.Party, bool) {
 		if p.ID == id {
 			return p, true
 		}
+		// Runtime ids are allocated by the registry, while the fixture slice
+		// intentionally keeps its stable ids. Accept either spelling without
+		// replacing the fixture id and then looking for that runtime id in the
+		// unchanged slice.
+		if runtime, ok := w.RuntimeIDs[p.ID]; ok && runtime == id {
+			return p, true
+		}
 	}
 	return schema.Party{}, false
+}
+
+// ResolveID returns the server-assigned id for a fixture id, or the input when
+// the fixture object deliberately retains its stable id (definitions, terms,
+// and linked records are immutable public documents whose ids are supplied at
+// creation).
+func (w *World) ResolveID(id string) string {
+	if runtime, ok := w.RuntimeIDs[id]; ok {
+		return runtime
+	}
+	return id
 }
 
 func toAny[T any](items []T) []any {

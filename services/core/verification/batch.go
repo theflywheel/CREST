@@ -85,6 +85,9 @@ func (h *handlers) verifyBatch(w http.ResponseWriter, r *http.Request) {
 				"and for a batch that answer must not be nobody")
 		return
 	}
+	if !authorizeParty(w, r, h.d, req.RequestedByPartyID) {
+		return
+	}
 	if len(req.Credentials) == 0 {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "no credentials to verify")
 		return

@@ -52,7 +52,7 @@ func (w *world) grantSubmitter(t *testing.T, name string, reviewBy *time.Time) (
 // submitAs is submit with the submitter chosen by the scenario.
 func (w *world) submitAs(t *testing.T, submitter string, csv []byte) (int, []byte) {
 	t.Helper()
-	path := fmt.Sprintf("/v1/batches?contextId=%s&definitionId=%s&submittedBy=%s"+
+	path := fmt.Sprintf("/v1/batches?contextId=%s&definitionId=%s&definitionVersion=1&submittedBy=%s"+
 		"&sourceClass=programme-system&captureMethod=digital-capture&sourceExposure=signed-batch"+
 		"&systemRef=dhis2-riverside",
 		fixtures.ProjectID, fixtures.DefinitionID, url.QueryEscape(submitter))
@@ -225,17 +225,15 @@ func TestAValidTokenIsNotAuthorityToMintOrRevokeGrants(t *testing.T) {
 	// Bootstrapping an organisation-shaped party is not authority either: the
 	// open party door plus a first bind must not add up to a grant mint. Only
 	// the registry's APPROVED decision makes an organisation an authority.
-	var fakeOrg schema.Party
-	if err := w.Parties.Post(w.ctx, "/v1/parties", schema.Party{
-		Kind:        schema.PartyKindOrganisation,
-		DisplayName: "Bootstrapped Front " + runID,
-		ContactRoutes: []schema.PartyContactRoutesItem{{
-			Kind: schema.PartyContactRoutesItemKindEmail, Value: "front-" + runID + "@example.org",
-		}},
-	}, &fakeOrg); err != nil {
+	fakeApplicant := w.registrationApplicant(t, "fake-org-"+runID)
+	var fakeRegistration struct {
+		Party schema.Party `json:"party"`
+	}
+	if err := w.Parties.As(fakeApplicant).Post(w.ctx, "/v1/organisations", orgParty("Bootstrapped Front "+runID), &fakeRegistration); err != nil {
 		t.Fatalf("bootstrap the front organisation: %v", err)
 	}
-	code, body, err := w.Parties.As(w.login(t, fakeOrg.ID)).Status(w.ctx, http.MethodPost,
+	fakeOrg := fakeRegistration.Party
+	code, body, err := w.Parties.As(fakeApplicant).Status(w.ctx, http.MethodPost,
 		"/v1/authorizations", schema.Authorization{
 			PartyID: attacker,
 			Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
@@ -275,17 +273,31 @@ func TestAValidTokenIsNotAuthorityToMintOrRevokeGrants(t *testing.T) {
 	// public facts; letting this through would replace the original grant's
 	// state and doc through another authority's gate.
 	victimParty, victimID := w.grantSubmitter(t, "Grant To Overwrite "+runID, nil)
-	rival := w.newOrganisation(t, "Rival Authority "+runID)
-	code, body, err = w.Parties.As(w.login(t, rival)).Status(w.ctx, http.MethodPost,
+	rivalName := "Rival Authority " + runID
+	rival := w.newOrganisation(t, rivalName)
+	rivalCaller := w.registrationApplicant(t, rivalName)
+	var rivalProject struct {
+		ID string `json:"id"`
+	}
+	if err := w.Parties.As(rivalCaller).Post(w.ctx, "/v1/projects", map[string]any{
+		"kind": "project", "name": "Rival project " + runID, "ownerPartyId": rival,
+	}, &rivalProject); err != nil {
+		t.Fatalf("create rival project: %v", err)
+	}
+	if err := w.Parties.As(rivalCaller).Post(w.ctx,
+		"/v1/projects/"+url.PathEscape(rivalProject.ID)+"/activation", nil, nil); err != nil {
+		t.Fatalf("activate rival project: %v", err)
+	}
+	code, body, err = w.Parties.As(rivalCaller).Status(w.ctx, http.MethodPost,
 		"/v1/authorizations", schema.Authorization{
 			ID:      victimID,
 			PartyID: rival,
 			Terms:   schema.VersionedRef{ID: fixtures.TermsID, Version: 1},
 			Scope: schema.AuthorizationScope{
 				Kind:      schema.AuthorizationScopeKindContext,
-				ContextID: ptr(fixtures.ProjectID),
+				ContextID: ptr(rivalProject.ID),
 			},
-			Functions:         []string{"submit-evidence"},
+			Functions:         []string{"submit-work-evidence"},
 			Period:            schema.Period{Start: epoch, End: &end},
 			AuthorityPartyID:  rival,
 			ApprovedByPartyID: rival,
@@ -385,23 +397,29 @@ func TestAGrantIsReadableByItsAuthorityAlone(t *testing.T) {
 	}
 }
 
-// Issuance is the substrate's act (#127, #137). The confirmation service —
-// the payments application — no longer holds keys, a credential store or a
-// status list: it asks verification to issue at a confirming exit, and every
-// credential question is answered on the infrastructure side of the boundary.
-// The positive half (an exit still lands a signed credential in the wallet)
-// is the spine's assertion; this is the negative half — the application
-// really did give the surface up.
+// Issuance is the substrate's act (#127, #137). Confirmation and verification
+// are now two surfaces of the same core substrate, so the public issuer and
+// status-list documents are intentionally available through either service
+// entry point. Credential history remains private and still requires the
+// authenticated party scope.
 func TestIssuanceLivesInTheSubstrateNotThePaymentsApplication(t *testing.T) {
 	w := setup(t)
-	for _, path := range []string{"/v1/issuer", "/v1/status-list", "/v1/credentials?partyId=x"} {
+	for _, path := range []string{"/v1/issuer", "/v1/status-list"} {
 		code, _, err := w.Confirmation.Status(w.ctx, http.MethodGet, path, nil)
 		if err != nil {
 			t.Fatalf("%s: %v", path, err)
 		}
-		if code != http.StatusNotFound {
-			t.Fatalf("confirmation still answers %s (%d); issuance belongs to the substrate", path, code)
+		if code != http.StatusOK {
+			t.Fatalf("confirmation substrate did not publish %s (%d)", path, code)
 		}
+	}
+	code, body, err := w.Confirmation.Status(w.ctx, http.MethodGet,
+		"/v1/credentials?partyId=x", nil)
+	if err != nil {
+		t.Fatalf("private credential list: %v", err)
+	}
+	if code != http.StatusUnauthorized {
+		t.Fatalf("anonymous credential list answered %d: %s", code, body)
 	}
 	var issuer struct {
 		Issuer string `json:"issuer"`
@@ -428,8 +446,9 @@ func TestADisputeRevokesACrashOrphanedCredential(t *testing.T) {
 	w := setup(t)
 	phone := sharedNumber(209)
 	worker := newWorkerWithPhone(t, w, "Orphan Dispute", phone)
+	w.consentOf(t, worker)
 	result := w.submit(t, batch(row(phone, 2, "HH-ORPHAN")))
-	claimID := result.ClaimIDs[0]
+	claimID := onlyClaim(t, result)
 	// The window opens through evidence's outbox, not synchronously with the
 	// submission.
 	var win winView
@@ -443,12 +462,17 @@ func TestADisputeRevokesACrashOrphanedCredential(t *testing.T) {
 	})
 
 	// The crash's leftover: issuance committed, exit never recorded.
+	if err := w.Evidence.Post(w.ctx, "/internal/claims/"+claimID+"/transition",
+		map[string]any{"to": "ACCEPTED", "route": "self"}, nil); err != nil {
+		t.Fatalf("accept claim before the issuance crash seam: %v", err)
+	}
 	var orphan struct {
 		ID string `json:"id"`
 	}
 	if err := w.Verification.Post(w.ctx, "/internal/credentials/issue", map[string]any{
 		"claimId": claimID, "unitId": win.UnitID, "partyId": worker,
-		"route": "self", "at": win.OpenedAt,
+		"contextId": fixtures.ProjectID,
+		"route":     "self", "at": win.OpenedAt,
 	}, &orphan); err != nil {
 		t.Fatalf("plant the orphan: %v", err)
 	}
@@ -459,18 +483,23 @@ func TestADisputeRevokesACrashOrphanedCredential(t *testing.T) {
 		t.Fatalf("dispute: %v", err)
 	}
 
-	after, err := w.window(claimID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.ExitRoute == nil || *after.ExitRoute != "dispute" {
-		t.Fatalf("window exit is %v, want dispute", after.ExitRoute)
-	}
+	var after winView
+	eventually(t, "the dispute payment release is recorded", 20*time.Second, func() error {
+		var err error
+		after, err = w.window(claimID)
+		if err != nil {
+			return err
+		}
+		if after.ExitRoute == nil || *after.ExitRoute != "dispute" {
+			return fmt.Errorf("window exit is %v, want dispute", after.ExitRoute)
+		}
+		if after.PaymentReleasedAt == nil {
+			return fmt.Errorf("the dispute exit released no payment yet")
+		}
+		return nil
+	})
 	if after.CredentialID != nil {
 		t.Fatalf("a dispute exit recorded credential %s", *after.CredentialID)
-	}
-	if after.PaymentReleasedAt == nil {
-		t.Fatalf("the dispute exit released no payment (every exit releases payment)")
 	}
 	var got struct {
 		RevokedAt *time.Time `json:"revokedAt"`

@@ -170,16 +170,18 @@ paths:
           application/json:
             schema:
               type: object
-              required: [adapterRef, reason, assessedByPartyId]
+              required: [adapterRef, contextId, systemRef, maxTier, reason]
               properties:
-                adapterRef: { type: string }
-                maxTier: { type: integer, minimum: 0, maximum: 3 }
+                adapterRef: { type: string, description: The registered source's adapter; it must match the registration. }
+                contextId: { type: string, description: The project the source is registered in. An assessment is the project's, not the name's. }
+                systemRef: { type: string, description: The registered source instance being assessed. }
+                maxTier: { type: integer, minimum: 1, maximum: 3, description: Reference numbering, 1 strongest. }
                 reason: { type: string }
-                assessedByPartyId: { type: string }
+                assessedByPartyId: { type: string, description: Ignored; the authenticated caller is recorded as the assessor. }
       responses:
-        "204": { description: Recorded, replacing any previous assessment of that source. }
+        "204": { description: Recorded, replacing any previous assessment of that source in that project. }
         "400":
-          description: A missing adapter, reason or assessor, or a maxTier outside 0 to 3.
+          description: A missing adapter, context, system reference or reason, or a maxTier outside 1 to 3.
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "500": { $ref: "#/components/responses/Internal" }
 
@@ -188,10 +190,14 @@ paths:
       summary: What does this deployment think of its sources?
       description: >
         The recorded caps, with who set each one and why. A verifier reading a tier
-        can read this alongside it and see the judgement that shaped it.
+        can read this alongside it and see the judgement that shaped it. A project
+        read: the project's own rows and the rows assessed before scoping (no
+        context), which still apply everywhere.
+      parameters:
+        - { name: contextId, in: query, required: true, schema: { type: string }, description: The project whose sources are asked about; the caller must hold read-work-evidence there. }
       responses:
         "200":
-          description: The assessments, ordered by adapter.
+          description: The assessments, ordered by source.
           content:
             application/json:
               schema:
@@ -203,6 +209,8 @@ paths:
                     items:
                       type: object
                       properties:
+                        contextId: { type: string, description: Absent on a row assessed before scoping. }
+                        systemRef: { type: string, description: Absent on a legacy row keyed by adapter alone. }
                         adapterRef: { type: string }
                         maxTier: { type: integer }
                         reason: { type: string }
@@ -226,6 +234,8 @@ paths:
           required: true
           schema: { type: string }
           description: The adapter reference as it appears in a record's provenance.
+        - { name: contextId, in: query, required: true, schema: { type: string }, description: The project the source is registered in. }
+        - { name: systemRef, in: query, required: true, schema: { type: string }, description: The registered source instance whose assessment is lifted. }
       responses:
         "204": { description: "Cleared. Clearing a source with no assessment is not an error." }
         "500": { $ref: "#/components/responses/Internal" }

@@ -10,6 +10,7 @@ package main
 
 import (
 	"github.com/theflywheel/crest/pkg/service"
+	"github.com/theflywheel/crest/services/core/attestation"
 	"github.com/theflywheel/crest/services/core/definitions"
 	"github.com/theflywheel/crest/services/core/evidence"
 	"github.com/theflywheel/crest/services/core/parties"
@@ -25,5 +26,6 @@ func main() {
 		{Name: "definitions", Opts: definitions.Service()},
 		{Name: "evidence", Opts: evidence.Service()},
 		{Name: "verification", Opts: verification.Service()},
+		{Name: "attestation", Opts: attestation.Service()},
 	})
 }

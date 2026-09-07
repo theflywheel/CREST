@@ -791,6 +791,15 @@ func (h *projectHandlers) grantProjectRole(w http.ResponseWriter, r *http.Reques
 	if _, ok := h.requireApprovedOrganisation(w, r, c.OwnerPartyID, "the project's owning organisation"); !ok {
 		return
 	}
+	terms, err := acceptedTerms(r.Context(), h.d.DB.Q(), c.OwnerPartyID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusConflict, "no_terms_for_grant", "the owning organisation has accepted no terms")
+		return
+	}
+	if missing := narrowerThanTerms(body.Functions, terms.Permissions); len(missing) > 0 {
+		httpx.WriteProblems(w, "wider_than_terms", "a grant cannot exceed the owning organisation's accepted terms", missing)
+		return
+	}
 	h.writeGrant(w, r, c, body, actor, false)
 }
 
@@ -860,8 +869,22 @@ func (h *projectHandlers) writeGrant(w http.ResponseWriter, r *http.Request, c s
 		httpx.NotFoundOr(w, h.d.Log, "party", err, store.ErrNotFound)
 		return
 	}
+	callerID, callerOK := actualCaller(r)
+	if !callerOK {
+		httpx.WriteError(w, http.StatusForbidden, "caller_identity_required", "a grant must record the authenticated approver")
+		return
+	}
 	now := h.d.Clock.Now()
 	terms := body.Terms
+	ownerTerms, ownerTermsErr := acceptedTerms(r.Context(), h.d.DB.Q(), c.OwnerPartyID)
+	if ownerTermsErr != nil {
+		httpx.WriteError(w, http.StatusConflict, "no_terms_for_grant", "the owning organisation has accepted no terms")
+		return
+	}
+	if missing := narrowerThanTerms(body.Functions, ownerTerms.Permissions); len(missing) > 0 {
+		httpx.WriteProblems(w, "wider_than_terms", "a grant cannot exceed the owning organisation's accepted terms", missing)
+		return
+	}
 	if terms == nil {
 		// A role grant under an organisation's authority stands on the terms
 		// that organisation itself accepted. Defaulted rather than required
@@ -875,6 +898,10 @@ func (h *projectHandlers) writeGrant(w http.ResponseWriter, r *http.Request, c s
 			return
 		}
 		terms = &schema.VersionedRef{ID: t.ID, Version: t.Version}
+	}
+	if !partner && (terms.ID != ownerTerms.ID || terms.Version != ownerTerms.Version) {
+		httpx.WriteError(w, http.StatusForbidden, "terms_not_accepted", "a role grant must cite the owning organisation's accepted terms")
+		return
 	}
 	period := schema.Period{Start: now}
 	if body.Period != nil {
@@ -895,7 +922,7 @@ func (h *projectHandlers) writeGrant(w http.ResponseWriter, r *http.Request, c s
 		Period:            period,
 		ReviewBy:          body.ReviewBy,
 		AuthorityPartyID:  c.OwnerPartyID,
-		ApprovedByPartyID: cmpOr(actor, c.OwnerPartyID),
+		ApprovedByPartyID: callerID,
 		ApprovedAt:        now,
 		State:             schema.AuthorizationStateACTIVE,
 	}
