@@ -123,3 +123,73 @@ func TestASpentInvitationSaysSpentNotBound(t *testing.T) {
 		t.Fatalf("got %v, want %v", got, errInviteClaimed)
 	}
 }
+
+// invitedOrg is the record the instance operator writes at g1_5: the
+// reference's five fields, and nothing resembling an identity document.
+func invitedOrg() schema.Party {
+	return schema.Party{
+		Kind:        schema.PartyKindOrganisation,
+		DisplayName: "Ministry of Health",
+		CreatedAt:   inviteNow,
+		Attributes: map[string]any{
+			"kind":          "Delivery organisation",
+			"contactPerson": "Dr. Grace Wanjiru",
+			"contactRole":   "Principal Secretary",
+		},
+		ContactRoutes: []schema.PartyContactRoutesItem{
+			{Kind: schema.PartyContactRoutesItemKindEmail, Value: "g.wanjiru@health.go.ke"},
+		},
+	}
+}
+
+// The invitation addresses a record, not a person (#185, ruled 2026-09-07) —
+// but it must still record WHOM it was handed to, because delivery is "shown
+// once, out of band" (#150) and the row is the only account of that.
+func TestAnInstanceInvitationRecordsWhoItWasAddressedTo(t *testing.T) {
+	noSignatory := invitedOrg()
+	noSignatory.Attributes = map[string]any{"kind": "Delivery organisation"}
+	blankSignatory := invitedOrg()
+	blankSignatory.Attributes["contactPerson"] = "   "
+	noEmail := invitedOrg()
+	noEmail.ContactRoutes = []schema.PartyContactRoutesItem{
+		{Kind: schema.PartyContactRoutesItemKindPhone, Value: "+254700000000"},
+	}
+	blankEmail := invitedOrg()
+	blankEmail.ContactRoutes = []schema.PartyContactRoutesItem{
+		{Kind: schema.PartyContactRoutesItemKindEmail, Value: " "},
+	}
+
+	cases := []struct {
+		name  string
+		party schema.Party
+		want  error
+	}{
+		{"the reference's five fields", invitedOrg(), nil},
+		{"no signatory named", noSignatory, errNoSignatory},
+		{"signatory is whitespace", blankSignatory, errNoSignatory},
+		{"reachable, but not by email", noEmail, errNoWorkEmail},
+		{"work email is whitespace", blankEmail, errNoWorkEmail},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := instanceInvitationAddressed(c.party)
+			if c.want == nil {
+				if got != nil {
+					t.Fatalf("instanceInvitationAddressed = %v, want admitted", got)
+				}
+				return
+			}
+			if !errors.Is(got, c.want) {
+				t.Fatalf("instanceInvitationAddressed = %v, want %v", got, c.want)
+			}
+			// Every refusal reaches the caller under its own name, so an
+			// operator is told which field is missing rather than "422".
+			if want := map[error]string{
+				errNoSignatory: "signatory_required",
+				errNoWorkEmail: "work_email_required",
+			}[c.want]; invitationRefusal(got) != want {
+				t.Fatalf("refusal code = %q, want %q", invitationRefusal(got), want)
+			}
+		})
+	}
+}

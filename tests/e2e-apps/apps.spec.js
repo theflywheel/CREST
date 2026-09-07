@@ -1275,13 +1275,33 @@ test("console: G-1 walks the instance, and a person decides the admission", asyn
   await expect(page.locator("body")).toContainText("Consent rules, before the first worker");
   await expect(page.locator("body")).toContainText(/never unwinds a payment already made/i);
 
-  // g1_5 — the invite frame refuses to fake a send, and names the finding.
+  // g1_5 — the instance-level invitation, for real (#185, ruled option (b)):
+  // the five reference fields create the organisation's record and mint a
+  // one-time claim link, shown once because nothing sends it.
   await page.click("#g1-next");
   await settle(page);
   expect(page.url()).toContain("#/instance/invite");
   await expect(page.locator("body")).toContainText("Inviting the first organisation");
-  await expect(page.locator("body")).toContainText(/No Send button, on purpose/i);
-  await expect(page.locator("body")).toContainText(/design finding/i);
+  for (const f of ["orgname", "category", "signatory", "signatoryrole", "workemail"])
+    await expect(page.locator(`#g1-invite-form [name="${f}"]`)).toHaveCount(1);
+  const invited = "Ministry of Health " + Date.now();
+  await page.fill('#g1-invite-form [name="orgname"]', invited);
+  await page.fill('#g1-invite-form [name="category"]', "Delivery organisation");
+  await page.fill('#g1-invite-form [name="signatory"]', "Dr. Grace Wanjiru");
+  await page.fill('#g1-invite-form [name="signatoryrole"]', "Principal Secretary");
+  await page.fill('#g1-invite-form [name="workemail"]', `g.wanjiru+${Date.now()}@health.go.ke`);
+  await page.click("#g1-invite");
+  await settle(page);
+  // The link is real, shown once, and the screen says nothing delivers it.
+  await expect(page.locator("[data-invite-link]")).toContainText(/#\/claim\/[a-z2-7]{24}$/);
+  await expect(page.locator("body")).toContainText(/Nothing sends it/i);
+  await expect(page.locator("body")).toContainText("APPLIED");
+  // The record it claims exists and is the organisation just created.
+  const invitedParty = await page.locator("[data-invite-party]").getAttribute("data-invite-party");
+  expect(invitedParty).toMatch(/^did:crest:party:/);
+  // No fake send survives, and the settled decision is no longer called open.
+  await expect(page.locator("body")).not.toContainText(/No Send button, on purpose/i);
+  await expect(page.locator("body")).not.toContainText(/design finding #185/i);
 
   // g1_6 — the live health sweep: six services, each really asked.
   await page.click("#g1-next");

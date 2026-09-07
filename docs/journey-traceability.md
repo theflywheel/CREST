@@ -8,8 +8,8 @@ script's MAPPING and re-run. Assessment context: `docs/JOURNEY_GAP_ASSESSMENT.md
 
 | Status | Screens | Share |
 |---|---:|---:|
-| implemented | 88 | 61% |
-| compressed | 26 | 18% |
+| implemented | 89 | 62% |
+| compressed | 25 | 17% |
 | semantically-different | 8 | 5% |
 | illustrative | 13 | 9% |
 | missing | 8 | 5% |
@@ -26,7 +26,7 @@ red, which is the check that stops this table claiming coverage the
 screens do not have. Nothing here is evidence that an asserted screen
 passed — only the gate run is that.
 
-In scope today (J3 — `p1_*`, `p2_*` — G-2 — `g2_*` — G-1 — `g1_*`, `g4_1`–`g4_3` — the workers wave — `w1_4/7/15/17/19/20`, `w4_1`–`w4_3` — plus the design screens `n1`–`n5`): **96** screens — **76** asserted, **0** quarantined, **20** skipped with a reason.
+In scope today (J3 — `p1_*`, `p2_*` — G-2 — `g2_*` — G-1 — `g1_*`, `g4_1`–`g4_3` — the workers wave — `w1_4/7/15/17/19/20`, `w4_1`–`w4_3` — plus the design screens `n1`–`n5`): **96** screens — **77** asserted, **0** quarantined, **19** skipped with a reason.
 
 ## G-1 — Instance Administrator (8 screens)
 
@@ -35,7 +35,7 @@ In scope today (J3 — `p1_*`, `p2_*` — G-2 — `g2_*` — G-1 — `g1_*`, `g4
 | `g1_1` | Stand up | The first screen anyone ever sees | **implemented** | console `#/instance/setup` | **asserted** | Honest stand-up front door: deployment read live from GET /v1/instance; stand-up is deploy-time (compose/Railway); no wizard write faked |
 | `g1_2` | Instance | Naming the instance, and binding identity | **implemented** | console `#/instance/covers` | **asserted** | Read-only by design: published self-description live; the four unpublished reference fields named as deploy-time config, not invented |
 | `g1_3` | Consent | Consent rules come before the first worker | **implemented** | console `#/instance/consent` | **asserted** | Consent floor stated as enforced infrastructure facts; scripts/templates are deployment config (#59); officer appointment recordless, said so |
-| `g1_5` | Invite | The invitation names a person | **compressed** | console `#/instance/invite` | skipped (compressed) | Reference's five fields, no Send: instance-level invitation has no primitive (#182 is project→org; entry decision open per g2_5) — design finding #185 |
+| `g1_5` | Invite | The invitation names a person | **implemented** | console `#/instance/invite` | **asserted** | The reference's five fields, writing for real: #185 is settled (option (b), ruled 2026-09-07) — the instance-level invitation is a party record plus a claim code. POST /v1/organisations from the operator's session creates the organisation UNBOUND with its APPLIED registration and mints a one-time code; the named signatory claims it with their own login (POST /v1/party-invitations/claim), binding only their own subject, so #102 is not widened. The invitation addresses a record, not a person, which is how it needs no prior Party. Delivery is the link shown once and handed over out of band — nothing sends it (#150), and the 'Send invitation' label is a counted waiver rather than a faked channel. No self-approval: the registry custodian still decides |
 | `g1_6` | Services | Services, not roles | **implemented** | console `#/instance/services` | **asserted** | Real six-service /healthz sweep in the reference frame; 'Done — awaiting the organisation' walks to the queue |
 | `g4_1` | Queue | A queue of exceptions, not of everybody | **implemented** | console `#/admissions` | **asserted** | Real queue: GET /v1/registrations (new) + GET /v1/terms-requests; both reference callouts verbatim |
 | `g4_2` | Review | What can actually be checked, and what cannot | **implemented** | console `#/admissions/:pid` | **asserted** | Registration read with declared name/attributes; 'what this does not prove' callout verbatim |

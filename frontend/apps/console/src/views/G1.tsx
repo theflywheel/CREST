@@ -330,34 +330,149 @@ export function G1Consent() {
   );
 }
 
-// g1_5 — inviting the first organisation. The reference's frame, the
-// primitive's honest refusal: see the OpenNote.
+// g1_5 — inviting the first organisation, for real (#185, ruled option (b) on
+// 2026-09-07).
+//
+// The instance-level invitation is the party-record-plus-claim-code mechanism:
+// this screen creates the organisation's Party and its APPLIED registration
+// through POST /v1/organisations, and the registry mints a one-time claim
+// code for it. The invitation addresses a RECORD, not a person, which is how
+// it can exist before the named signatory has a Party of their own — they
+// claim it later with their own sign-in, and bind nobody's identity but
+// their own.
+//
+// Delivery is honest: the link is shown once, here, and handed over out of
+// band. Notifications are dropped (#150), so nothing sends it, and this screen
+// says so rather than drawing a Send that does nothing.
 export function G1Invite() {
+  const [org, setOrg] = useState("");
+  const [category, setCategory] = useState("");
+  const [signatory, setSignatory] = useState("");
+  const [role, setRole] = useState("");
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [out, setOut] = useState<{ partyId: string; code: string; expiresAt?: string } | null>(null);
+  const link = out ? `${location.origin}${location.pathname}#/claim/${out.code}` : "";
+
+  const submit = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    setBusy(true);
+    setErr("");
+    try {
+      const res = await api.post("parties", "/v1/organisations", {
+        kind: "organisation",
+        displayName: org.trim(),
+        // The work email is a contact route — the address the invitation was
+        // handed to. Nothing here is an identity document.
+        contactRoutes: [{ kind: "email", value: email.trim() }],
+        // Self-declared registry facts on §2's attributes map. L1 holds the
+        // map; these key choices are this console's vocabulary (L2), the same
+        // ones the open registration door uses.
+        attributes: { kind: category.trim(), contactPerson: signatory.trim(), contactRole: role.trim() },
+      });
+      setOut({ partyId: res.party.id, code: res.inviteCode, expiresAt: res.expiresAt });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+    setBusy(false);
+  };
+
   return (
     <>
       <Title t="Inviting the first organisation" />
       <Lede>
-        The reference draws the instance sending a named person an invitation to bring the first organisation in.
-        This deployment's invitation primitive (#182) is a different act: a <em>project's</em> offer of a scoped
-        grant to an organisation that already exists as a party, acceptable only once its registration is approved
-        (Blueprint §15 J1). An instance-level "come and exist" invitation has no primitive — and g2_5 records the
-        decision above it as still open: administrative creation, self-registration, or vouching.
+        This creates the organisation's record and a one-time link the named signatory claims with their own
+        sign-in. The invitation addresses the <em>record</em>, not the person — so nobody needs to exist in CREST
+        before they are invited. The organisation enters <span className="mono">APPLIED</span> and walks terms and
+        approval like any other; nothing here approves it.
       </Lede>
-      <CardTitled t="What the reference asks for">
-        <KVR rows={[
-          ["Organisation", "e.g. Ministry of Health"],
-          ["Category", "e.g. Delivery organisation"],
-          ["Signatory", "a named person"],
-          ["Role", "their role in the organisation"],
-          ["Work email", "where the invitation would go"],
-        ]} />
-        <OpenNote>
-          No Send button, on purpose. Sending would need an invitation object this deployment does not have, and
-          faking the send would settle an open design decision by accident. What is real today: the organisation
-          registers itself at the open door (<span className="mono">#/onboard</span>), and its application lands in
-          this instance's admission queue for a person to look at. The gap is recorded as design finding #185.
-        </OpenNote>
-      </CardTitled>
+      {out ? (
+        <CardTitled t="The invitation, shown once">
+          <p className="body-2">
+            Hand this link to {signatory || "the signatory"} by a route you trust. <strong>Nothing sends it.</strong>{" "}
+            This deployment has no notification channel (#150), so the link travels out of band or not at all — and
+            this screen is the only place it is ever shown, because CREST keeps only its hash.
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", margin: "10px 0" }}>
+            <span className="mono" data-invite-link style={{ wordBreak: "break-all" }}>
+              {link}
+            </span>
+            <button
+              className="btn secondary"
+              data-act="copy-invite"
+              style={{ width: "auto", padding: "9px 16px" }}
+              onClick={() => {
+                navigator.clipboard?.writeText(link).then(() => setCopied(true), () => setCopied(false));
+              }}
+            >
+              {copied ? "Copied" : "Copy the link"}
+            </button>
+          </div>
+          <KVR
+            rows={[
+              ["Organisation", org],
+              ["Category", category],
+              ["Signatory", signatory],
+              ["Role", role],
+              ["Work email", email],
+              ["the record it claims", <span data-invite-party={out.partyId}><MonoShort id={out.partyId} /></span>],
+              ["registration", <Chip kind="warn">APPLIED</Chip>],
+              ["expires", out.expiresAt ? when(out.expiresAt) : "—"],
+              ["what claiming does", "binds the identity they sign in with to this record — nothing more"],
+            ]}
+          />
+          <Callout kind="grey" title="What this does not do">
+            It does not approve the organisation and it does not prove who the signatory is. The application lands in
+            this instance's admission queue for a person to decide, and the signatory's own identity provider is what
+            establishes who they are, at the moment they claim.
+          </Callout>
+        </CardTitled>
+      ) : (
+        <CardTitled t="Who is being invited">
+          {err ? <p className="errbar">{err}</p> : null}
+          <form id="g1-invite-form" onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <label className="field">
+              <span className="eyebrow">Organisation</span>
+              <input name="orgname" value={org} onChange={(e) => setOrg(e.target.value)} required
+                placeholder="Ministry of Health" />
+            </label>
+            <label className="field">
+              <span className="eyebrow">Category</span>
+              <input name="category" value={category} onChange={(e) => setCategory(e.target.value)} required
+                placeholder="Delivery organisation" />
+            </label>
+            <label className="field">
+              <span className="eyebrow">Signatory</span>
+              <input name="signatory" value={signatory} onChange={(e) => setSignatory(e.target.value)} required
+                placeholder="Dr. Grace Wanjiru" />
+            </label>
+            <label className="field">
+              <span className="eyebrow">Role</span>
+              <input name="signatoryrole" value={role} onChange={(e) => setRole(e.target.value)} required
+                placeholder="Principal Secretary" />
+            </label>
+            <label className="field">
+              <span className="eyebrow">Work email</span>
+              <input name="workemail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
+                placeholder="g.wanjiru@health.go.ke" />
+            </label>
+            <div>
+              <button id="g1-invite" className="btn dominant" type="submit" disabled={busy}
+                style={{ width: "auto", padding: "9px 16px" }}>
+                {busy ? "Creating…" : "Create the record and mint the link"}
+              </button>
+            </div>
+          </form>
+          <OpenNote>
+            The button does not send anything, and does not pretend to: it writes the record and mints the code, and
+            the next screen shows the link once for you to hand over. The work email is recorded as the contact the
+            invitation was addressed to — with no channel delivering it, that row is the only account of who was
+            given the code.
+          </OpenNote>
+        </CardTitled>
+      )}
       <WalkButtons back="/instance/consent" next="/instance/services" />
     </>
   );

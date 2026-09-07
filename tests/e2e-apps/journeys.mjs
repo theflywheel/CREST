@@ -505,8 +505,8 @@ const J2 = async (p, cap) => {
     "The floor is enforced infrastructure: consent before any record, an artefact the worker can hear back, withdrawal that never unwinds a payment. Scripts and templates are deployment configuration (#59).");
   await pause(p, 5000);
   await hash(p, "#/instance/invite", 2200);
-  await cap("Inviting the first organisation — no Send button, on purpose (g1_5)",
-    "An instance-level invitation has no primitive: #182's invitation is a project's offer to an existing party, and g2_5 records the entry decision as still open. The gap is design finding #185, not a faked send.");
+  await cap("Inviting the first organisation — a record and a one-time link (g1_5)",
+    "The instance-level invitation, settled as #185's option (b) on 2026-09-07: the operator creates the organisation's record and the registry mints a claim code the named signatory redeems with their own sign-in. The invitation addresses the record, not the person, so nobody needs a party before they exist. Nothing sends the link — notifications are dropped (#150) — so it is shown once and handed over out of band. The organisation still enters APPLIED and walks terms and approval.");
   await pause(p, 5500);
   await hash(p, "#/instance/services", 2200);
   await cap("The services behind all of it (g1_6)",

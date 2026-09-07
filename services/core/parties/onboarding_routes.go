@@ -3,6 +3,8 @@ package parties
 import (
 	"errors"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
@@ -12,18 +14,48 @@ import (
 	"github.com/theflywheel/crest/pkg/store"
 )
 
-// registerOrganisation is an organisation applying for itself (#20).
+// registerOrganisation is an organisation coming into the deployment (#20),
+// by either of the two doors that reach the same APPLIED registration.
 //
 // It creates the Party and the application in one transaction. Two calls would
 // leave a window where an organisation exists with nobody having applied for
 // it, and a Party with no application is a Party no approval path can ever
 // reach — it would simply sit there looking legitimate.
+//
+// Door one, self-registration: an applicant arrives at the open door holding
+// their own verified token and the registration binds them as they apply.
+//
+// Door two, the instance-level invitation (g1_5, finding #185, ruled option
+// (b) on 2026-09-07): the instance operator creates the organisation's record
+// and the registry mints a one-time claim code for it. The invitation
+// addresses a RECORD, not a person — which is exactly how it can exist before
+// the named signatory has a Party of their own — and the signatory later
+// claims it through POST /v1/party-invitations/claim with their own eSignet
+// login, binding nobody's subject but their own.
+//
+// Which rule could this break: verification — who may put a binding on a
+// party (#102). It is not widened. The operator writes an UNBOUND party and
+// never a binding; the only binding that ever lands comes from the claimant's
+// own authenticated subject through the existing claim route, on a party that
+// must still be unbound. The operator gains the power to create a record and
+// mint a code, which is the power it already had over persons
+// (POST /v1/parties + POST /v1/parties/{id}/invitations); what is new is that
+// the organisation door now also writes the registration, so an operator-made
+// organisation enters APPLIED and walks terms → approval like any other. No
+// self-approval: the decision stays the registry custodian's.
+//
+// And "never persist a raw national ID": untouched. The signatory's work
+// email is a contact route — the address the invitation was handed to — of
+// exactly the kind g2_1's registration already stores, and pkg/pii's hashing
+// is for national identifiers, which this endpoint neither asks for nor
+// accepts.
 func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) {
 	if !identity.Authenticated(w, r, h.d.Log, true) {
 		return
 	}
 	caller := identity.From(r.Context())
-	if caller.PartyID != "" {
+	byOperator := h.callerIsInstanceOperator(r)
+	if caller.PartyID != "" && !byOperator {
 		httpx.WriteError(w, http.StatusConflict, "already_enrolled", "this identity already has a party")
 		return
 	}
@@ -36,7 +68,13 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	p.ID = id.Party(h.d.Clock)
-	p.IdentityBindings = []schema.PartyIdentityBindingsItem{{Provider: caller.Issuer, ProviderClass: schema.PartyIdentityBindingsItemProviderClassGenericOidc, SubjectRef: caller.Subject, AssertedAt: h.d.Clock.Now()}}
+	if byOperator {
+		// Unbound, on purpose: the record exists, and nobody holds it until
+		// the signatory claims the code with their own login.
+		p.IdentityBindings = nil
+	} else {
+		p.IdentityBindings = []schema.PartyIdentityBindingsItem{{Provider: caller.Issuer, ProviderClass: schema.PartyIdentityBindingsItemProviderClassGenericOidc, SubjectRef: caller.Subject, AssertedAt: h.d.Clock.Now()}}
+	}
 	if p.CreatedAt.IsZero() {
 		p.CreatedAt = h.d.Clock.Now()
 	}
@@ -52,10 +90,17 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 		writeValidation(w, err)
 		return
 	}
+	if byOperator {
+		if err := instanceInvitationAddressed(p); err != nil {
+			httpx.WriteError(w, http.StatusUnprocessableEntity, invitationRefusal(err), "%v", err)
+			return
+		}
+	}
 
 	var (
 		reg        Registration
 		inviteCode string
+		expiresAt  time.Time
 	)
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		if err := insertParty(r.Context(), tx, p); err != nil {
@@ -69,12 +114,18 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 		if err != nil {
 			return err
 		}
-		// The applicant registered at an open door and holds no session as
-		// the organisation yet. The code is how they come back as it: their
-		// own login claims the unbound organisation party (g2_13's "copy the
-		// key"). Invited by the party itself — nobody with standing exists
-		// yet, and that is the honest record of an open-door registration.
-		return nil
+		if !byOperator {
+			// A self-registering applicant is already bound by the binding
+			// written above; there is nothing left to claim.
+			return nil
+		}
+		// The operator's invitation: the record exists and nobody holds it.
+		// The code is how the named signatory comes back as the organisation
+		// — their own login claims the unbound party. Invited by the operator,
+		// which is the honest record of who addressed the invitation.
+		expiresAt = h.d.Clock.Now().Add(inviteTTL(0))
+		inviteCode, err = mintInvitation(r.Context(), tx, p.ID, caller.PartyID, h.d.Clock.Now(), 0)
+		return err
 	})
 	switch {
 	case errors.Is(err, ErrAlreadyApplied):
@@ -89,10 +140,49 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 		if h.d.ForgetSubject != nil {
 			h.d.ForgetSubject(caller.Subject)
 		}
-		httpx.WriteJSON(w, http.StatusCreated, map[string]any{
-			"party": p, "registration": reg, "inviteCode": inviteCode,
-		})
+		out := map[string]any{"party": p, "registration": reg, "inviteCode": inviteCode}
+		if byOperator {
+			out["invitedBy"] = caller.PartyID
+			out["expiresAt"] = expiresAt
+		}
+		httpx.WriteJSON(w, http.StatusCreated, out)
 	}
+}
+
+// instanceInvitationAddressed is the whole admission decision for an
+// operator-created organisation, as a pure function so it can be read and
+// tested without a database.
+//
+// The ruling on #185 is that the invitation addresses a record rather than a
+// person — nobody needs a Party before they exist. What the record must still
+// carry is whom it was addressed TO, because delivery is "the link is shown
+// once" and handed over out of band (notifications are dropped, #150): with no
+// channel sending anything, the registry's row is the only account of who was
+// given the code, and an invitation with no addressee would be an unbound
+// organisation nobody can be asked about.
+//
+// Neither field is identity data and neither is checked against anything. The
+// signatory's name is a self-declared attribute like every other on §2's
+// attributes map, and the work email is a contact route — the address, not a
+// credential; nothing here verifies that the person is who the operator says,
+// and the claim proves that instead, through their own provider.
+func instanceInvitationAddressed(p schema.Party) error {
+	if s, _ := p.Attributes["contactPerson"].(string); strings.TrimSpace(s) == "" {
+		return errNoSignatory
+	}
+	for _, c := range p.ContactRoutes {
+		if c.Kind == schema.PartyContactRoutesItemKindEmail && strings.TrimSpace(c.Value) != "" {
+			return nil
+		}
+	}
+	return errNoWorkEmail
+}
+
+func invitationRefusal(err error) string {
+	if errors.Is(err, errNoSignatory) {
+		return "signatory_required"
+	}
+	return "work_email_required"
 }
 
 // listRegistrations is the reviewer's queue read (g4_1): every registration a

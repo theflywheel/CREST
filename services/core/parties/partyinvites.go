@@ -50,6 +50,11 @@ var (
 	errPartyBound     = errors.New("the party is already bound to an identity")
 	errNotAnInviter   = errors.New("only the instance operator or an approved organisation may invite")
 	errSubjectIsParty = errors.New("this identity is already bound to a party")
+
+	// The two facts an instance-level invitation must record about whom it
+	// was addressed to (#185; see instanceInvitationAddressed).
+	errNoSignatory = errors.New("an instance invitation records the named signatory it was addressed to")
+	errNoWorkEmail = errors.New("an instance invitation records the work email it was addressed to; it is a contact route, never an identifier")
 )
 
 // partyInvitation is the recorded offer: who invited whom to claim which
