@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	"github.com/theflywheel/crest/pkg/client"
-	"github.com/theflywheel/crest/pkg/clockctl"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
@@ -18,6 +17,24 @@ import (
 var migrations embed.FS
 
 // Service returns the attestation member wiring and its outbox delivery hooks.
+//
+// This is the confirmation window: its four exits, its sweep, its contests and
+// its notifications. #127 ruled all of it the payments application's rather
+// than the substrate's — a window's length is programme policy, and two
+// deployments can set it differently and both still be CREST — so the member
+// is composed into the payments process (services/payments/main.go) and is no
+// longer part of the core infrastructure deployable.
+//
+// Its Postgres schema is still named `attestation` and its tables keep their
+// names. That is deliberate: moving the member across a deployable boundary
+// must not move a single row of a worker's confirmation history. Both
+// processes address the same database (`crest`); what changed is which
+// process owns and migrates this schema, which is now payments alone.
+//
+// Everything it needs from the substrate it asks for over HTTP with the
+// service token — evidence, verification and parties by their public
+// `/internal` surfaces, exactly as it did before the move, because it always
+// held clients rather than in-process handles.
 func Service() service.Options {
 	notifier, err := configuredNotifier()
 	if err != nil {
@@ -28,15 +45,11 @@ func Service() service.Options {
 	parties := client.New(config.Str("PARTIES_URL", ""))
 	payments := client.New(config.Str("PAYMENTS_URL", ""))
 	return service.Options{
-		// The one infrastructure-side mount of the driveable clock, and it is
-		// here under protest: this member holds the confirmation window and
-		// its sweep, which #127 ruled are the payments application's, not the
-		// substrate's. Moving the member is a separate change; until it
-		// happens the harness cannot advance a window without advancing core,
-		// so the seam stays named here rather than hidden in pkg/service where
-		// it silently applied to parties, definitions, evidence and
-		// verification too. Delete this line with the member.
-		ClockSeam: clockctl.Seam,
+		// No ClockSeam here. This member holds the window, but it runs inside
+		// the payments process, and a process has one clock: payments declares
+		// the seam once, in its own wiring, for the whole application (#127).
+		// Two members declaring it is a wiring mistake Compose refuses at
+		// startup rather than a merge.
 		OnStart: func(ctx context.Context, d service.Deps) error {
 			return adoptLegacyOpenWindows(ctx, d)
 		},

@@ -8,10 +8,10 @@ title: Services and their responsibilities
 
 | Deployable | Members | Responsibility | Must never |
 |---|---|---|---|
-| **`crest-core`** (`services/core`, local port 59000) | parties · definitions · evidence · verification · attestation | The infrastructure layer as one process. Each member keeps its own Postgres schema, migrations, outbox and route family; the process boundary is one, the API boundaries are five. | Persist a raw national identifier or biometric. Store a trust tier. Merge a probable identity match without a person's confirmation. |
-| **`crest-payments`** (`services/payments`, local port 59006) | one | The payments application: rate ownership and versioned rates, payment mechanisms with their activation gates, instructions priced by the rate in force when the work happened, holds with an owned reason, reconciliation, the rail provider. | Withhold money on a dispute. Reprice a held instruction outside the activation gate. Leave a held payment without a named owner. |
+| **`crest-core`** (`services/core`, local port 59000) | parties · definitions · evidence · verification | The infrastructure layer as one process. Each member keeps its own Postgres schema, migrations, outbox and route family; the process boundary is one, the API boundaries are four. Since #127 it holds no confirmation window. It still declares the driveable clock seam, on `evidence` and `parties` only, for scheduled behaviour of its own that a test must move time to reach (#215, ruled 2026-09-07: the seam is a non-production harness surface, refused in production, so declaring it is not a layering claim). | Persist a raw national identifier or biometric. Store a trust tier. Merge a probable identity match without a person's confirmation. Hold a confirmation window — that is the application's. |
+| **`crest-payments`** (`services/payments`, local port 59006) | payments · attestation | The payments application, and since #127 the only process in the fleet that holds a confirmation window: rate ownership and versioned rates, payment mechanisms with their activation gates, instructions priced by the rate in force when the work happened, holds with an owned reason, reconciliation, the rail provider. | Withhold money on a dispute. Reprice a held instruction outside the activation gate. Leave a held payment without a named owner. |
 
-## The five members of core
+## The four members of core
 
 ### parties
 
@@ -41,6 +41,10 @@ title: Services and their responsibilities
 - **Responsibilities:** issuance from an accepted claim, signed with the issuer seed in Vault; the status list and revocation; custody transfer to a wallet; verification with a checkable trust chain, online and offline; per-project source assessments that cap a tier without reissuance; share requests the worker decides per presentation; the presentation trail; the printed card.
 - **Routes:** `credentials`, `verify`, `status-list`, `issuer`, `source-assessments`, `presentations`, `presentation-requests`.
 
+## The payments application
+
+Two members, one process, one port. `attestation` moved here from core with [#127](https://github.com/theflywheel/CREST/issues/127): a window's length is programme policy, so the window is the application's and not the substrate's. Its Postgres schema is still named `attestation` and its tables kept their names — the deployable boundary moved, the rows did not.
+
 ### attestation
 
 - **Owns:** the review window over a Claim.
@@ -48,7 +52,7 @@ title: Services and their responsibilities
 - **Responsibilities:** open a window on every claim; the acknowledgement token; the four exits — confirm, dispute, auto-confirm by the clock, supervisor-assisted — every one of which releases the payment obligation; contests over a disputed claim; the sweep; the unreached and unreleased lists, scoped to a project.
 - **Routes:** `windows`, `claims/{id}/confirm`, `claims/{id}/dispute`, `claims/{id}/assist`, `contests`, `unreached`, `unreleased`, `sweep`.
 
-## The payments application
+### payments
 
 - **Owns:** rate ownership, rates as versioned terms, mechanisms, instructions, holds, reconciliation.
 - **Responsibilities:** assign a rate owner per definition; publish rates effective from a date, never edited; stand up a mechanism naming its owner; the activation gate (test disbursement, reconciliation agreed, statement agreed, batching recorded, qualification verified) that refuses readably; turn every window exit into an instruction priced by the rate in force when the work happened; hold with a code, an explanation and an owner when money cannot move; submit through the configured provider; reconcile.

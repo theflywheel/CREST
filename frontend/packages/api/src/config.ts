@@ -26,13 +26,15 @@ declare global {
 const host = location.hostname || "localhost";
 const at = (port: number) => `http://${host}:${port}`;
 
-// The four member names all answer from the one core service (#150);
-// the payments application answers the window (#129).
+// The four member names all answer from the one core service (#150); the
+// payments application answers the window (#129), and since #127 it is also
+// the process that runs it — so `confirmation` and `payments` are one port,
+// and it is not core's. Core answers no window route at all.
 const localPorts: Record<ServiceName, string> = {
   parties: at(59000),
   definitions: at(59000),
   evidence: at(59000),
-  confirmation: at(59000),
+  confirmation: at(59006),
   verification: at(59000),
   payments: at(59006),
   oidc: at(59103),

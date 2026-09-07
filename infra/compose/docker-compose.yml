@@ -80,8 +80,11 @@ x-service: &crest-service
     PARTIES_URL: http://core:8080
     DEFINITIONS_URL: http://core:8080
     EVIDENCE_URL: http://core:8080
-    # The confirmation window lives in the payments application (#129).
-    CONFIRMATION_URL: http://core:8080
+    # The confirmation window lives in the payments application (#129), and
+    # since #127 it runs there too: the attestation member moved out of core,
+    # so this name now resolves to a different process than the four member
+    # names above.
+    CONFIRMATION_URL: http://payments:8080
     PAYMENTS_URL: http://payments:8080
     VERIFICATION_URL: http://core:8080
     RAIL_URL: http://mock-rail:8080
@@ -140,11 +143,20 @@ x-service: &crest-service
     # is programme policy (seven days in the CHW programme), and the only
     # reason a CREST process ever wants driveable time is to cross one.
     #
-    # This anchor is consumed by exactly two services, core and payments, and
-    # since #127 the variable only does anything where the service declares
-    # the seam (service.Options.ClockSeam, pkg/clockctl) — payments, and the
-    # core member that still holds the window. parties, definitions, evidence
-    # and verification read wall time and have no /internal/clock at all.
+    # CONFIRMATION_WINDOW is read in exactly one place: the attestation member
+    # inside the payments process. core never reads it — the window is the
+    # application's (#127), and that is the layering statement.
+    #
+    # CLOCK_DRIVEABLE is a different kind of thing and #215 (ruled 2026-09-07)
+    # says so: a non-production harness surface, refused outside local/test by
+    # pkg/clockctl and again by pkg/service's deployment refusal. It does
+    # anything only where a service declares the seam
+    # (service.Options.ClockSeam, pkg/clockctl), and the services that declare
+    # it are the ones with scheduled behaviour a test must move time to reach —
+    # payments for the window, evidence for the source-quiet monitor, parties
+    # for the override review date. definitions and verification declare
+    # nothing and have no /internal/clock at all: not a route that refuses, no
+    # route.
     #
     # Both are refused in production — see pkg/clockctl.Seam for why a
     # driveable clock in a live deployment is a way to close a worker's window

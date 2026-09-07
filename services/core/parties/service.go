@@ -11,6 +11,7 @@ import (
 	"context"
 	"embed"
 
+	"github.com/theflywheel/crest/pkg/clockctl"
 	"github.com/theflywheel/crest/pkg/service"
 )
 
@@ -27,6 +28,20 @@ func Service() service.Options {
 		Migrations: migrations,
 		Dir:        "migrations",
 		Routes:     routes,
+		// An identity override carries a review date, and a review that has
+		// come due has to be findable — "flagged for review" only means
+		// something if somebody can find the flag. That is this member's own
+		// scheduled behaviour, and it is asserted by moving time past the
+		// review date rather than by waiting for it.
+		//
+		// Declared again after #127 briefly took it away, for the reason
+		// written out in evidence's Service(): the ruling that the
+		// confirmation window is the payments application's stands, and no
+		// window lives here — what was wrong was the corollary that a window
+		// is the only reason a process wants driveable time (#215, ruled
+		// 2026-09-07). The seam is a non-production harness surface and
+		// refuses to start in production, so it carries no programme policy.
+		ClockSeam: clockctl.Seam,
 		// The registry owns the parties table, so it answers both identity
 		// questions locally. Everybody else asks it over HTTP.
 		Binder:    localBinder,

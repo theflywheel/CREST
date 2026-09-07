@@ -2,7 +2,9 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -26,6 +28,19 @@ type ServiceStatus struct {
 	Transparency string // "dedi" | "postgres", from GET /healthz
 	Revision     string // build/version fingerprint, from GET /healthz
 	ClockTicking bool   // true when the service's clock is a driveable Offset (GET /internal/clock reports "ticking")
+
+	// HasClock is whether this service answers GET /internal/clock at all.
+	//
+	// The seam is opt-in since #213, so a service that declares none has no
+	// route — not one that refuses — and asking it whether its clock is
+	// ticking is asking about a route that does not exist. Both processes in
+	// the fleet do declare it today (#215: payments for the window, core for
+	// evidence's source monitor and parties' override review), so this reads
+	// true for both; it is here because "which processes are running" and
+	// "which processes let the harness move time" stopped being the same
+	// question, and a stack that answered it wrongly would fail every
+	// window-dependent scenario for a reason no scenario names.
+	HasClock bool
 }
 
 // ExpectedConfig is what this harness invocation expects of the stack it is
@@ -67,10 +82,13 @@ func (m Mismatch) String() string {
 //   - every service's transparency substrate must agree with what this
 //     harness invocation expects (a stack half-pointed at the deployed DeDi
 //     node is the exact failure mode #79 names);
-//   - every service's clock must be a driveable Offset clock ("ticking"),
-//     because the harness moves time rather than sleeping (docs/TESTING.md)
-//     and a service that cannot be driven fails every window-dependent
-//     scenario for a reason that has nothing to do with the scenario;
+//   - every service that HAS a clock route must report a driveable Offset
+//     clock ("ticking"), because the harness moves time rather than sleeping
+//     (docs/TESTING.md) and a service that cannot be driven fails every
+//     window-dependent scenario for a reason that has nothing to do with the
+//     scenario — and at least one service must have one at all, because a
+//     stack where nothing answers /internal/clock is a stack where no window
+//     can be crossed and every T=7 scenario times out instead of failing;
 //   - and every service's build revision must agree with every other
 //     service's, because one image rebuilt and another left stale from a
 //     previous run is the same "environment vs. defect" confusion one layer
@@ -88,15 +106,19 @@ func ComparePreflight(expected ExpectedConfig, actual map[string]ServiceStatus) 
 	sort.Strings(names)
 
 	revisions := map[string]bool{}
+	clocks := 0
 	for _, name := range names {
 		st := actual[name]
+		if st.HasClock {
+			clocks++
+		}
 		if expected.Transparency != "" && st.Transparency != "" && st.Transparency != expected.Transparency {
 			out = append(out, Mismatch{
 				Service: name, Field: "transparency substrate",
 				Expected: expected.Transparency, Actual: st.Transparency,
 			})
 		}
-		if !st.ClockTicking {
+		if st.HasClock && !st.ClockTicking {
 			out = append(out, Mismatch{
 				Service: name, Field: "clock mode",
 				Expected: "driveable (ticking)", Actual: "not driveable",
@@ -106,6 +128,18 @@ func ComparePreflight(expected ExpectedConfig, actual map[string]ServiceStatus) 
 			revisions[st.Revision] = true
 		}
 	}
+	// One process must own a driveable clock. Since #127 that is payments and
+	// only payments, so "none of them" is no longer a per-service mismatch —
+	// it is one fact about the stack, and without it every scenario that
+	// crosses a window fails for a reason no scenario names.
+	if len(names) > 0 && clocks == 0 {
+		out = append(out, Mismatch{
+			Service: "stack", Field: "clock seam",
+			Expected: "one process answering /internal/clock (the payments application, #127)",
+			Actual:   "no process answers it, so the harness cannot move time",
+		})
+	}
+
 	// A build-revision mismatch is only meaningful once there is more than one
 	// distinct revision reported: nothing to compare with a single service, or
 	// with services that report no revision at all (BuildRevision unset).
@@ -197,6 +231,12 @@ func (s *Stack) runPreflight(ctx context.Context) error {
 	return nil
 }
 
+// isNotFound reports whether err is this stack saying "no such route".
+func isNotFound(err error) bool {
+	var httpErr *HTTPError
+	return errors.As(err, &httpErr) && httpErr.Code == http.StatusNotFound
+}
+
 func gatherServiceStatus(ctx context.Context, svc *Service) (ServiceStatus, error) {
 	var health struct {
 		Transparency string `json:"transparency"`
@@ -205,15 +245,24 @@ func gatherServiceStatus(ctx context.Context, svc *Service) (ServiceStatus, erro
 	if err := svc.Get(ctx, "/healthz", &health); err != nil {
 		return ServiceStatus{}, err
 	}
+	// A service that declares no clock seam has no /internal/clock route at
+	// all (#127), so a 404 here is a fact about the deployment rather than a
+	// failure to gather. Distinguishing the two matters: treating it as an
+	// error would drop the whole service from the preflight, and the stale
+	// build revision or wrong transparency substrate that #79 exists to catch
+	// would go unreported on core precisely because core stopped owning a
+	// clock. Anything other than "the route is not there" is still an error.
 	var clk struct {
 		Ticking bool `json:"ticking"`
 	}
-	if err := svc.Get(ctx, "/internal/clock", &clk); err != nil {
+	status := ServiceStatus{Transparency: health.Transparency, Revision: health.Revision}
+	switch err := svc.Get(ctx, "/internal/clock", &clk); {
+	case err == nil:
+		status.HasClock, status.ClockTicking = true, clk.Ticking
+	case isNotFound(err):
+		status.HasClock = false
+	default:
 		return ServiceStatus{}, err
 	}
-	return ServiceStatus{
-		Transparency: health.Transparency,
-		Revision:     health.Revision,
-		ClockTicking: clk.Ticking,
-	}, nil
+	return status, nil
 }

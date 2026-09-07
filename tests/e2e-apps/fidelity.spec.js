@@ -318,14 +318,17 @@ async function flowFundersArrive(page, request, mode, route) {
     const claimId = (await batch.json()).claimIds[0];
     if (!claimId) return "the batch minted no claim";
 
+    // The window is asked for on the payments base, not evidence: since #127
+    // the confirmation window is the payments application's and core answers
+    // no window route at all.
     let windowUp = false;
     for (let i = 0; i < 30 && !windowUp; i++) {
-      const w = await flowAsPartyOn(request, FLOW_API.evidence, FLOW_FIX.workerA, "GET", `/v1/windows/${claimId}`);
+      const w = await flowAsPartyOn(request, FLOW_API.payments, FLOW_FIX.workerA, "GET", `/v1/windows/${claimId}`);
       windowUp = w.status() === 200;
       if (!windowUp) await page.waitForTimeout(2000);
     }
     if (!windowUp) return "the confirmation window never opened within 60s";
-    r = await flowAsPartyOn(request, FLOW_API.evidence, FLOW_FIX.workerA, "POST", `/v1/claims/${claimId}/confirm`, {});
+    r = await flowAsPartyOn(request, FLOW_API.payments, FLOW_FIX.workerA, "POST", `/v1/claims/${claimId}/confirm`, {});
     if (r.status() !== 200) return `the worker's confirmation exit was refused (${r.status()})`;
 
     let instruction;

@@ -56,29 +56,49 @@ func Compose(name string, members []Member) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// The process clock. Wall time unless a member asks for the driveable
-	// seam — which only the payments application, and for now the core member
-	// that still holds its window, does (#127). One process has one clock, so
-	// one member asking is the whole process asking; two members asking with
-	// different seams is a wiring mistake, not a merge.
+	// The process clock. Wall time unless a member asks for the driveable seam.
+	//
+	// One process has one clock, so one member asking is the whole process
+	// asking. Several members asking is not a conflict as long as they ask for
+	// the SAME seam — which they do, because pkg/clockctl.Seam is the only one
+	// and it reads the same deployment configuration whoever calls it. That
+	// matters since #215: `evidence` and `parties` have scheduled behaviour of
+	// their own and both declare it, and refusing to start because two members
+	// of core want the same driveable clock would be a wiring rule inventing a
+	// problem. Two members asking for DIFFERENT seams is still a wiring
+	// mistake, because then which clock the process runs on would depend on
+	// member order.
 	clk := clock.Clock(clock.System{})
 	var mountClock func(*http.ServeMux)
+	var seam ClockSeamFunc
+	var askedBy []string
 	for _, m := range members {
 		if m.Opts.ClockSeam == nil {
 			continue
 		}
-		if mountClock != nil {
-			log.Error("two members ask for a clock seam; a process has one clock", "member", m.Name)
+		if seam != nil && !sameSeam(seam, m.Opts.ClockSeam) {
+			log.Error("two members ask for different clock seams; a process has one clock",
+				"first", askedBy[0], "second", m.Name)
 			os.Exit(1)
 		}
+		askedBy = append(askedBy, m.Name)
+		if seam != nil {
+			continue
+		}
+		seam = m.Opts.ClockSeam
 		var c clock.Clock
-		c, mountClock = m.Opts.ClockSeam(cfg, log)
+		c, mountClock = seam(cfg, log)
 		clk = c
 		if mountClock == nil {
 			// The seam was declared but the deployment did not turn it on.
-			// Keep the loop going only to catch a second declaration.
 			mountClock = func(*http.ServeMux) {}
 		}
+	}
+	if len(askedBy) > 0 {
+		// Named in the log because "which members wanted a driveable clock"
+		// is the question #215 exists about, and a deployment should be able
+		// to answer it from its own startup output rather than from the source.
+		log.Info("the driveable clock seam is declared", "members", askedBy)
 	}
 
 	deps := make([]Deps, len(members))

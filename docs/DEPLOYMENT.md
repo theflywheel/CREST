@@ -76,6 +76,15 @@ Two new logical databases on the **existing** Postgres, owned by a non-superuser
 
 Nothing runs as `postgres`. A payments-adjacent system that connects as a superuser has no story for "what could this service have done".
 
+**The `attestation` schema is `crest-payments`' since #127.** Both services address the same database (`crest`), and the confirmation window's member moved from `crest-core` to `crest-payments` without moving a table: the schema is still named `attestation`, its tables keep their names, and its migration chain moved unrenumbered. So there is no data migration to run and nothing to back up before deploying it. What changes is which process migrates and writes it, and that flips the moment both services are on the new image.
+
+Deploy order matters for one window only. `crest-core` on the new image no longer serves `/internal/windows`, and `crest-payments` on the new image does. Deploy **payments first**: a `claim.created` outbox delivery that arrives while core is new and payments is old retries — the outbox is at-least-once and the message is not lost — but a window that opens late is a worker asked late, so the shorter that gap the better. The two environment settings that must be right before either deploy:
+
+- `crest-core`'s `CONFIRMATION_URL` must be `http://crest-payments.railway.internal:8080`. It was already required to be (see the #151 incident below); after #127 a self-pointed value silently opens no windows at all rather than eventually working.
+- `crest-payments` needs `CONFIRMATION_WINDOW` (and `SWEEP_EVERY`, if the deployment wants the auto-confirm sweep, which every real one does). `crest-core` no longer reads either and can drop them.
+
+Neither service should carry `CLOCK_DRIVEABLE` in any deployed environment; `pkg/clockctl` and `pkg/service`'s deployment refusal both reject it, and since #127 core has no clock route to drive even in principle.
+
 ## How a change reaches production
 
 ```

@@ -21,7 +21,13 @@ func TestEveryServiceMigratesAnEmptyStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, member := range []string{"core/parties", "core/definitions", "core/evidence", "core/verification", "core/attestation", "payments"} {
+	// Every member's migration chain, wherever its deployable is. attestation
+	// moved from core to the payments application with #127; its chain moved
+	// with it unrenumbered, because the tables and their names did not change.
+	for _, member := range []string{
+		"core/parties", "core/definitions", "core/evidence", "core/verification",
+		"payments", "payments/attestation",
+	} {
 		t.Run(member, func(t *testing.T) {
 			schema := fmt.Sprintf("migrations_contract_%d", time.Now().UnixNano())
 			db, err := store.Open(context.Background(), dsn, schema, clock.System{})

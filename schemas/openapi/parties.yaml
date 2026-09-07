@@ -1622,6 +1622,10 @@ paths:
       operationId: readClock
       summary: What time does this service think it is?
       description: >
+        Why this service has one (#215, ruled 2026-09-07): the identity-override review date: an override past its review date
+        has to appear on the review list, and "flagged for review" only means
+        something if somebody can find the flag.
+
         Present only when CLOCK_DRIVEABLE is set, which pkg/service refuses in
         production. The confirmation window is seven days; a harness that waits
         seven days is not a harness, and one that shortens the window to a second

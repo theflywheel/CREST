@@ -76,9 +76,9 @@ func New() *Stack {
 		Parties:     svc("PARTIES_URL", "http://localhost:59000"),
 		Definitions: svc("DEFINITIONS_URL", "http://localhost:59000"),
 		Evidence:    svc("EVIDENCE_URL", "http://localhost:59000"),
-		// Confirmation windows answer on the core application; the client keeps
-		// the name because the questions it asks kept theirs.
-		Confirmation: svc("CONFIRMATION_URL", "http://localhost:59000"),
+		// Confirmation windows answer on the payments application since #127;
+		// the client keeps its name because the questions it asks kept theirs.
+		Confirmation: svc("CONFIRMATION_URL", "http://localhost:59006"),
 		Verification: svc("VERIFICATION_URL", "http://localhost:59000"),
 		Payments:     svc("PAYMENTS_URL", "http://localhost:59006"),
 		Rail:         svc("RAIL_URL", "http://localhost:59102"),
@@ -125,6 +125,27 @@ func (s *Stack) reverseRuntimeText(text string) string {
 func (s *Stack) Services() []*Service {
 	// One entry per PROCESS, not per name: Parties/Definitions/Evidence/
 	// Verification are one core deployable (#150), so it appears once.
+	// Confirmation is the payments process since #127, so it does not add a
+	// third entry either.
+	return []*Service{s.Parties, s.Payments}
+}
+
+// clockServices are the processes that answer /internal/clock.
+//
+// Both of them, and together on purpose: they compare timestamps with each
+// other, and a stack where evidence is on Tuesday and the window is on Friday
+// produces results that are nobody's design — the seven-days-from-resolution
+// guarantee is exactly that comparison, evidence's `resolvedAt` against the
+// window's `closesAt`.
+//
+// A separate list from Services() even so, because the two questions are no
+// longer the same one. Since #127 the payments process declares the seam for
+// the window, and since #215 core declares it for `evidence`'s source-quiet
+// monitor and `parties`' override review — scheduled infrastructure behaviour
+// that has nothing to do with a window. A process that declared neither would
+// have no clock route at all, and posting to it would 404 rather than move
+// time, so this list must name declarers rather than everything that is up.
+func (s *Stack) clockServices() []*Service {
 	return []*Service{s.Parties, s.Payments}
 }
 
@@ -160,17 +181,17 @@ func (s *Stack) WaitReady(ctx context.Context, within time.Duration) error {
 
 // SetClock moves every service's clock to the same instant.
 //
-// Every service, together: they compare timestamps with each other, and a stack
-// where evidence is on Tuesday and confirmation is on Friday produces results
-// that are nobody's design.
+// Every service, together: they compare timestamps with each other, and a
+// stack where evidence is on Tuesday and confirmation is on Friday produces
+// results that are nobody's design.
 //
-// "Every service" is now two processes and both are here on purpose. The
-// driveable clock is the payments application's harness surface since #127 —
-// it is mounted by payments, and by the core process only because the
-// confirmation window still lives in its attestation member. When that member
-// moves, core stops answering /internal/clock and this loop stops naming it.
+// "Every service" is two processes, and both are here because both declare the
+// seam. #127 moved the window — and the clock that crosses it — to the
+// payments application; #215 then established that core wants driveable time
+// for reasons of its own, the source-quiet monitor and the override review
+// date, neither of which is a window. See clockServices.
 func (s *Stack) SetClock(ctx context.Context, at time.Time) error {
-	for _, svc := range s.Services() {
+	for _, svc := range s.clockServices() {
 		if err := svc.Post(ctx, "/internal/clock", map[string]any{"now": at}, nil); err != nil {
 			return fmt.Errorf("%s: %w", svc.Name, err)
 		}
@@ -186,7 +207,7 @@ func (s *Stack) SetClock(ctx context.Context, at time.Time) error {
 // demo stack left frozen at the seeder's last step is one where no window ever
 // reaches T=7 again.
 func (s *Stack) LiveClock(ctx context.Context) error {
-	for _, svc := range s.Services() {
+	for _, svc := range s.clockServices() {
 		if err := svc.Post(ctx, "/internal/clock", map[string]any{"live": true}, nil); err != nil {
 			return fmt.Errorf("%s: %w", svc.Name, err)
 		}
@@ -194,9 +215,9 @@ func (s *Stack) LiveClock(ctx context.Context) error {
 	return nil
 }
 
-// Advance moves every service's clock forward by d.
+// Advance moves every clock-owning process forward by d.
 func (s *Stack) Advance(ctx context.Context, d time.Duration) error {
-	for _, svc := range s.Services() {
+	for _, svc := range s.clockServices() {
 		if err := svc.Post(ctx, "/internal/clock", map[string]any{"advance": d.String()}, nil); err != nil {
 			return fmt.Errorf("%s: %w", svc.Name, err)
 		}

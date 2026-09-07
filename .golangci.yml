@@ -30,20 +30,30 @@ linters:
         # core/main.go composing them is the design — but the members still
         # must not import each other (they keep talking over HTTP so the
         # boundaries stay honest), and nothing in core touches payments.
+        #
+        # The core members are four since #127: attestation, which holds the
+        # confirmation window, moved to the payments application and is now
+        # governed by payments-boundary below.
         no-cross-service-imports:
           files:
             - "**/services/core/parties/**"
             - "**/services/core/definitions/**"
             - "**/services/core/evidence/**"
             - "**/services/core/verification/**"
-            - "**/services/core/attestation/**"
           deny:
             - pkg: github.com/theflywheel/crest/services
               desc: "services must not import each other — talk over HTTP, like in production"
 
+        # Everything in the payments application, its attestation member
+        # included since #127, reaches core over HTTP. The one exception is
+        # the clock-seam test, which reads the core members' wirings in order
+        # to assert that none of them declares a driveable clock — a test that
+        # proves a boundary is the one place allowed to look across it, and it
+        # imports no core code into anything that runs.
         payments-boundary:
           files:
             - "**/services/payments/**"
+            - "!**/services/payments/clockseam_test.go"
           deny:
             - pkg: github.com/theflywheel/crest/services/core
               desc: "payments talks to core over HTTP"

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/theflywheel/crest/pkg/client"
+	"github.com/theflywheel/crest/pkg/clockctl"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/notify"
 	"github.com/theflywheel/crest/pkg/service"
@@ -29,7 +30,12 @@ var migrations embed.FS
 
 // Service is this member's wiring, composed into the core binary (#150).
 func Service() service.Options {
-	confirmation := client.New(config.Str("CONFIRMATION_URL", "http://core:8080"))
+	// The confirmation window is the payments application's since #127, and
+	// since the attestation member moved there it is a different process.
+	// This client is the only thing in the infrastructure that knows a window
+	// exists at all, and it does not: it delivers `claim.created` to whatever
+	// CONFIRMATION_URL names and has no opinion about what happens next.
+	confirmation := client.New(config.Str("CONFIRMATION_URL", "http://payments:8080"))
 
 	notifier, err := notify.Configured()
 	if err != nil {
@@ -37,6 +43,21 @@ func Service() service.Options {
 	}
 	parties := client.New(config.Str("PARTIES_URL", ""))
 	return service.Options{
+		// The source-quiet monitor is this member's own scheduled behaviour
+		// (#22): a feed that stops sending has to be noticed by a clock, and
+		// "a daily source went 25 hours without a batch" is asserted by moving
+		// time rather than by waiting a day (docs/TESTING.md).
+		//
+		// Declared again after #127 briefly took it away. #127's ruling — the
+		// confirmation window is programme policy and belongs to the payments
+		// application — is untouched by this; what was wrong was the corollary
+		// that a window is the ONLY reason a CREST process wants driveable
+		// time. Ruled on 2026-09-07 (#215): the seam is a non-production
+		// harness surface, refused outside local/test by pkg/clockctl and
+		// again by pkg/service's deployment refusal, so declaring it leaks no
+		// programme policy into the substrate. What #127 forbade is the window
+		// living here, and no window does.
+		ClockSeam: clockctl.Seam,
 		OnStart: func(ctx context.Context, d service.Deps) error {
 			every, err := config.Duration("SOURCE_MONITOR_EVERY", time.Minute)
 			if err != nil || every <= 0 {

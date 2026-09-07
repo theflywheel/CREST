@@ -42,11 +42,14 @@ func windowRoutes(mux *http.ServeMux, d service.Deps) {
 		supportOwner: config.Str("SUPPORT_OWNER_PARTY_ID", config.Str("CREST_OPERATOR_PARTY_ID", "")),
 		ex: &exiter{
 			db:       d.DB,
-			evidence: client.New(config.Str("EVIDENCE_URL", "http://evidence:8080")),
+			evidence: client.New(config.Str("EVIDENCE_URL", "http://core:8080")),
 			// Issuance is requested from the credential substrate, never
-			// performed here (#137): this service holds no keys, no status
-			// list and no credential record.
-			verification: client.New(config.Str("VERIFICATION_URL", "http://verification:8080")),
+			// performed here (#137): this application holds no keys, no status
+			// list and no credential record. Since #127 that request also
+			// crosses a deployable boundary — payments to core — so it is an
+			// authenticated HTTP call carrying the service token, which is
+			// what it already was.
+			verification: client.New(config.Str("VERIFICATION_URL", "http://core:8080")),
 			log:          d.Log,
 			clock:        d.Clock,
 		},
