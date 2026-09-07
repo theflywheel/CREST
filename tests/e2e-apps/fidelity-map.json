@@ -113,7 +113,7 @@
     "g1_1": { "app": "console", "arrive": "console:instance", "route": "#/instance/setup", "note": "the stand-up front door reads GET /v1/instance — deployment state, no session, so a cold load is the honest arrival" },
     "g1_2": { "app": "console", "arrive": "console:instance", "route": "#/instance/covers" },
     "g1_3": { "app": "console", "arrive": "console:instance", "route": "#/instance/consent" },
-    "g1_5": { "app": "console", "arrive": "console:instance", "route": "#/instance/invite", "note": "ledger says compressed (design finding #185: no instance-level invitation primitive), so the gate skips with that note" },
+    "g1_5": { "app": "console", "arrive": "console:instance", "route": "#/instance/invite", "note": "the instance-level invitation, settled as #185's option (b): the operator's own console session posts the five reference fields to POST /v1/organisations and the registry mints the one-time claim code. Only the empty form is asserted — the reference draws the fields before the send, and the link-shown-once state is proven end to end by apps.spec.js and the harness scenario" },
     "g1_6": { "app": "console", "arrive": "console:instance", "route": "#/instance/services" },
 
     "g4_1": { "app": "console", "arrive": "flow:admissions-queue", "route": "", "note": "#/admissions — the queue must have a real pending row, so the arrival registers an organisation first, signs in as the instance administrator, and lands the page itself (the console token is in-memory, so the gate's post-flow reload would sign the reviewer out)" },

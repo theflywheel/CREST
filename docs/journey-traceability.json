@@ -4,9 +4,9 @@
  "generatedBy": "tools/journey-trace/build.py",
  "screens": 143,
  "coverage": {
-  "compressed": 26,
+  "compressed": 25,
   "illustrative": 13,
-  "implemented": 88,
+  "implemented": 89,
   "missing": 8,
   "semantically-different": 8
  },
@@ -64,11 +64,11 @@
    "title": "The invitation names a person",
    "source": "reference",
    "roleName": "Instance Administrator",
-   "status": "compressed",
+   "status": "implemented",
    "app": "console",
    "route": "#/instance/invite",
-   "note": "Reference's five fields, no Send: instance-level invitation has no primitive (#182 is project→org; entry decision open per g2_5) — design finding #185",
-   "gate": "skipped (compressed)"
+   "note": "The reference's five fields, writing for real: #185 is settled (option (b), ruled 2026-09-07) — the instance-level invitation is a party record plus a claim code. POST /v1/organisations from the operator's session creates the organisation UNBOUND with its APPLIED registration and mints a one-time code; the named signatory claims it with their own login (POST /v1/party-invitations/claim), binding only their own subject, so #102 is not widened. The invitation addresses a record, not a person, which is how it needs no prior Party. Delivery is the link shown once and handed over out of band — nothing sends it (#150), and the 'Send invitation' label is a counted waiver rather than a faked channel. No self-approval: the registry custodian still decides",
+   "gate": "**asserted**"
   },
   {
    "id": "g1_6",
@@ -1952,7 +1952,7 @@
    "g1_1": "**asserted**",
    "g1_2": "**asserted**",
    "g1_3": "**asserted**",
-   "g1_5": "skipped (compressed)",
+   "g1_5": "**asserted**",
    "g1_6": "**asserted**",
    "g4_1": "**asserted**",
    "g4_2": "**asserted**",

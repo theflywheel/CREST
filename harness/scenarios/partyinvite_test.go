@@ -177,3 +177,137 @@ func TestARegisteringOrganisationBindsItsAuthenticatedApplicant(t *testing.T) {
 		t.Fatalf("the applicant resolves to %q, want the organisation %s", me.PartyID, reg.Party.ID)
 	}
 }
+
+// The instance-level invitation (g1_5, finding #185 ruled option (b) on
+// 2026-09-07): the operator creates the organisation's record with the
+// reference's five fields and gets back a one-time claim code; the named
+// signatory redeems it with their own login; the organisation sits APPLIED,
+// waiting on a person's decision.
+//
+// The point of the scenario is that the invitation addresses a RECORD. The
+// signatory is a stranger the registry has never seen at the moment the
+// invitation is written — no Party, no binding — which is exactly the
+// objection #185 raised against an invitation that addresses a person.
+//
+// Which rule this holds: verification, who may bind a party (#102). The
+// operator writes an unbound party and never a binding; the only binding that
+// lands is the claimant's own subject, through the claim route.
+func TestTheOperatorInvitesAnOrganisationAndItsSignatoryClaimsIt(t *testing.T) {
+	w := setup(t)
+	// "seed|custodian" is bound to CREST_OPERATOR_PARTY_ID in the stack.
+	operatorToken, err := w.oidc.Token(w.ctx, "seed|custodian")
+	if err != nil {
+		t.Fatalf("mint the operator's token: %v", err)
+	}
+	asOperator := w.Parties.As(harness.Caller{Token: operatorToken})
+
+	// An invitation with no addressee is refused by name: with no channel
+	// delivering anything (#150), the row is the only account of who was
+	// handed the code.
+	code, body, err := asOperator.Status(w.ctx, http.MethodPost, "/v1/organisations", map[string]any{
+		"kind": "organisation", "displayName": "Unaddressed " + runID,
+		"contactRoutes": []map[string]any{{"kind": "email", "value": "nobody-" + runID + "@example.org"}},
+		"attributes":    map[string]any{"kind": "Delivery organisation"},
+	})
+	if err != nil {
+		t.Fatalf("unaddressed invitation: %v", err)
+	}
+	if code != http.StatusUnprocessableEntity || !strings.Contains(string(body), "signatory_required") {
+		t.Fatalf("an invitation naming no signatory answered %d %s, want 422 signatory_required", code, body)
+	}
+	code, body, err = asOperator.Status(w.ctx, http.MethodPost, "/v1/organisations", map[string]any{
+		"kind": "organisation", "displayName": "Unreachable " + runID,
+		"contactRoutes": []map[string]any{{"kind": "phone", "value": "+15550100" + runID[:3]}},
+		"attributes":    map[string]any{"kind": "Delivery organisation", "contactPerson": "Dr. Grace Wanjiru"},
+	})
+	if err != nil {
+		t.Fatalf("unreachable invitation: %v", err)
+	}
+	if code != http.StatusUnprocessableEntity || !strings.Contains(string(body), "work_email_required") {
+		t.Fatalf("an invitation with no work email answered %d %s, want 422 work_email_required", code, body)
+	}
+
+	// The real one: the reference's five fields, in one call.
+	var invited struct {
+		Party struct {
+			ID               string           `json:"id"`
+			IdentityBindings []map[string]any `json:"identityBindings"`
+		} `json:"party"`
+		Registration struct {
+			State string `json:"state"`
+		} `json:"registration"`
+		InviteCode string `json:"inviteCode"`
+		InvitedBy  string `json:"invitedBy"`
+	}
+	if err := asOperator.Post(w.ctx, "/v1/organisations", map[string]any{
+		"kind": "organisation", "displayName": "Ministry of Health " + runID,
+		"contactRoutes": []map[string]any{{"kind": "email", "value": "g.wanjiru-" + runID + "@health.go.ke"}},
+		"attributes": map[string]any{
+			"kind": "Delivery organisation", "contactPerson": "Dr. Grace Wanjiru",
+			"contactRole": "Principal Secretary",
+		},
+	}, &invited); err != nil {
+		t.Fatalf("the operator's invitation: %v", err)
+	}
+	if invited.InviteCode == "" {
+		t.Fatal("the invitation came back with no claim code")
+	}
+	if invited.InvitedBy != fixtures.OrgID {
+		t.Fatalf("invitedBy = %q, want the operator %s", invited.InvitedBy, fixtures.OrgID)
+	}
+	// Unbound: the operator wrote a record, never a binding.
+	if len(invited.Party.IdentityBindings) != 0 {
+		t.Fatalf("the invited organisation carries %d bindings, want none until it is claimed",
+			len(invited.Party.IdentityBindings))
+	}
+	// It entered the ordinary door: APPLIED, the decision still ahead of it.
+	if invited.Registration.State != "APPLIED" {
+		t.Fatalf("registration state = %q, want APPLIED", invited.Registration.State)
+	}
+
+	// The signatory: a stranger who had no Party when the invitation was
+	// written, signing in for the first time with their own login.
+	token, err := w.oidc.Token(w.ctx, "signatory|"+runID)
+	if err != nil {
+		t.Fatalf("mint the signatory's token: %v", err)
+	}
+	asSignatory := w.Parties.As(harness.Caller{Token: token})
+	var me struct {
+		PartyID string `json:"partyId"`
+	}
+	if err := asSignatory.Get(w.ctx, "/v1/auth/me", &me); err != nil {
+		t.Fatalf("who is the signatory, before claiming: %v", err)
+	}
+	if me.PartyID != "" {
+		t.Fatalf("the signatory already resolved to %s before claiming", me.PartyID)
+	}
+	var claimed struct {
+		PartyID string `json:"partyId"`
+	}
+	if err := asSignatory.Post(w.ctx, "/v1/party-invitations/claim",
+		map[string]any{"code": invited.InviteCode, "provider": "mock-oidc", "providerClass": "generic-oidc"},
+		&claimed); err != nil {
+		t.Fatalf("the signatory's claim: %v", err)
+	}
+	if claimed.PartyID != invited.Party.ID {
+		t.Fatalf("the claim bound %s, want the invited organisation %s", claimed.PartyID, invited.Party.ID)
+	}
+	if err := asSignatory.Get(w.ctx, "/v1/auth/me", &me); err != nil {
+		t.Fatalf("who is the signatory, after claiming: %v", err)
+	}
+	if me.PartyID != invited.Party.ID {
+		t.Fatalf("after the claim the signatory resolves to %q, want %s", me.PartyID, invited.Party.ID)
+	}
+
+	// And the organisation is still only APPLIED: claiming is not approval,
+	// and nothing here let the invitation approve itself.
+	var readBack struct {
+		State string `json:"state"`
+	}
+	if err := asSignatory.Get(w.ctx, "/v1/organisations/"+invited.Party.ID+"/registration", &readBack); err != nil {
+		t.Fatalf("read the registration back: %v", err)
+	}
+	if readBack.State != "APPLIED" {
+		t.Fatalf("after claiming, the registration is %q — claiming must never approve", readBack.State)
+	}
+}
