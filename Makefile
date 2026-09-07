@@ -15,7 +15,7 @@ GO ?= go
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
         harness-logs verify-deploy web-up apps-build apps-dev apps-up e2e-apps clean todo poc poc-batch poc-dhis2 dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
-        spike-dedi-deployed spike-esignet deploy-demo verify-deployed verify-registry hooks generate generate-check \
+        spike-dedi-deployed spike-esignet deploy-demo verify-deployed verify-registry verify-keystore hooks generate generate-check \
         e2e-up e2e-run journey-spec journey-spec-check fidelity fidelity-check fidelity-sheet
 
 help: ## Show available targets
@@ -188,7 +188,11 @@ test-invariants: ## W1-W10 as executable acceptance tests
 
 # ── Local stack ─────────────────────────────────────────────────────────────
 
-substrate-up: ## Substrate only (Postgres, object store, DeDi, Inji, eSignet) — what P0 needs
+verify-keystore: ## Mint the Inji Verify signing key this deployment holds (#65)
+	@INJI_VERIFY_KEYSTORE_PASSWORD="$$INJI_VERIFY_KEYSTORE_PASSWORD" \
+		sh infra/verify/verify-keystore.sh
+
+substrate-up: verify-keystore ## Substrate only (Postgres, object store, DeDi, Inji, eSignet) — what P0 needs
 	$(COMPOSE) --profile substrate up -d postgres objectstore dedi-postgres dedi \
 		inji-certify inji-verify-service inji-verify-ui esignet esignet-mock-identity
 	@echo "substrate starting; check with: $(COMPOSE) ps"

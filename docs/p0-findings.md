@@ -83,6 +83,29 @@ replacing it with a generated one breaks start-up. Anyone who can pull the image
 holds the key the verifier signs with. Acceptable for a spike; it must be an
 explicit gate before any verification result is trusted by a payer.
 
+> **Resolved 2026-09-07 ([#65](../../issues/65)).** The keystore is
+> `BOOT-INF/classes/sample-keystore/test.p12`, alias `test`, password `mosip`,
+> all three public, and its certificate expired on 2026-07-28 — nothing checks.
+> **The start-up break was the key algorithm, not the alias, the path or the
+> password.** `io.inji.verify.key.impl.P12KeyExtractor` enumerates aliases and
+> takes the first key entry whose public key algorithm is `Ed25519` or `EdDSA`;
+> anything else throws from a `@PostConstruct`, killing the Spring context with
+> `java.lang.Exception: No EdDSA key entry found in the P12 file.` — reproduced
+> deliberately with an RSA keystore. A `keytool -genkeypair` default is RSA,
+> which is almost certainly what was tried. The alias may be anything.
+> `make verify-keystore` now mints an Ed25519 PKCS#12 into
+> `infra/verify/secrets/` under `INJI_VERIFY_KEYSTORE_PASSWORD` (no default, and
+> `mosip` refused); `infra/compose/Dockerfile.verify` refuses to start without
+> it rather than falling back. Proven by the `did.json` the running service
+> publishes decoding to the generated key's own 32 bytes — `docs/DEPLOYMENT.md`.
+>
+> **What this does not close.** It makes the verifier's *request* signature
+> attributable. Inji Verify 0.16.0's verification **result** is a plain
+> `VCVerificationStatusDto` — unsigned JSON, no signature of any kind. A payer
+> relying on that answer is relying on the operator and the transport. That is
+> still not evidence, and the strength function §6 depends on is computed by
+> CREST's own `verification` service, which does sign.
+
 **The printed card and the offline check now exist** (`make printed-card`, `make offline-verify-sealed`). A credential issued by the deployed Certify is rendered to a PixelPass QR, decodes back byte-identical, and its Ed25519 proof verifies from local files only — the verifier has no HTTP client at all, by construction rather than configuration, and the last run was inside a container started with `--network none`. It reports what it cannot know: validity at issuance, never currency. This is what found C19.
 
 **Still open on #1:** the wallet download through Inji Web against the deployed stack, and the *physical* leg — a printed card scanned on a real device with its radios off. A container asserting it has no network is stronger evidence than a mock and weaker evidence than a phone, and the gap between them is exactly where a QR that is too dense to scan, or a card nobody can hold at the right distance, would show up. That needs a person, a printer and a phone.

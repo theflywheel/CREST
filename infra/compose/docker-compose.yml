@@ -322,10 +322,42 @@ services:
 
   # Inji Verify is two containers upstream, not one (P0 finding, #1). The tag we
   # had guessed for a single `inji-verify` image does not exist.
+  #
+  # The signing key is CREST's, not the image's (#65, p0 finding V1). Upstream
+  # 0.16.0 signs OpenID4VP authorization requests with a keystore that ships in
+  # the public image under the published password `mosip`, so the signature
+  # identifies nobody. `make verify-keystore` mints an Ed25519 PKCS#12 into
+  # infra/verify/secrets/ — which is gitignored — and it is bind-mounted below.
+  # The password has no default on purpose: compose fails loudly rather than
+  # quietly falling back to the published one.
   inji-verify-service:
-    image: ${INJI_VERIFY_SERVICE_IMAGE:-mosipid/inji-verify-service:0.16.0}
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.verify
+      args:
+        INJI_VERIFY_SERVICE_IMAGE: ${INJI_VERIFY_SERVICE_IMAGE:-mosipid/inji-verify-service:0.16.0}
     ports: ["${VERIFY_SERVICE_PORT:-58091}:8080"]
+    volumes:
+      # The directory, not the file: a missing bind-mount source makes Docker
+      # create a *directory* at that path, and a directory named
+      # verify-signing.p12 is a trap that survives `make verify-keystore`.
+      - ../verify/secrets:/home/mosip/keystore:ro
     environment:
+      # Both are @Value-injected in P12KeyExtractor, so Spring's relaxed
+      # environment binding makes these the override for
+      # inji.keystore.file.path / inji.keystore.file.pass.
+      INJI_KEYSTORE_FILE_PATH: file:/home/mosip/keystore/verify-signing.p12
+      # Empty, never `mosip`. A `:?` here would be louder but compose
+      # interpolates the whole file on every invocation, so an unset variable
+      # would break `make harness-up` for services that have nothing to do with
+      # the verifier. The refusal belongs in verify-start.sh, which sees only
+      # this container: it exits 1 on an empty or published password rather
+      # than starting on the image's key.
+      INJI_KEYSTORE_FILE_PASS: ${INJI_VERIFY_KEYSTORE_PASSWORD:-}
+      # The DID this verifier publishes at /v1/verify/did.json, so the document
+      # names this deployment rather than injiverify.dev.mosip.net.
+      INJI_DID_VERIFY_URI: ${INJI_DID_VERIFY_URI:-did:web:localhost%3A58091:v1:verify}
+      INJI_DID_VERIFY_PUBLIC_KEY_URI: ${INJI_DID_VERIFY_PUBLIC_KEY_URI:-did:web:localhost%3A58091:v1:verify#key-0}
       # The same variables the deployed service runs on (docs/DEPLOYMENT.md);
       # without them the datasource URL's placeholders reach the JDBC driver
       # literally and every request 500s while the container looks healthy.
