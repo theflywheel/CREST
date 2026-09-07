@@ -7,8 +7,6 @@
 infra/acceptance/private
 infra/compose/dedi-keys
 infra/certify/plugin/target
-# The docs image fetches the recordings it serves from the repository at build
-# time; nothing under docs/assets enters the build context.
 docs/assets
 docs/.fidelity-sheet
 demos

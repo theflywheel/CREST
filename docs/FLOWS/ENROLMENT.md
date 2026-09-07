@@ -38,7 +38,7 @@ sequenceDiagram
 
 ## Recordings
 
-- [The agent registers a worker](../assets/clean-slate-watch/J6-j6-agent-registers-a-worker.mp4) (24 s)
-- [The worker registers herself](../assets/clean-slate-watch/J7-j7-worker-registers-herself.mp4) (34 s)
+- The agent registers a worker (recording `J6-j6-agent-registers-a-worker.mp4`) (24 s)
+- The worker registers herself (recording `J7-j7-worker-registers-herself.mp4`) (34 s)
 
 Screens: w1_1–w1_20, w2_1–w2_5. Next: [EVIDENCE_INGESTION.md](EVIDENCE_INGESTION.md).

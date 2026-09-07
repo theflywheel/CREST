@@ -23,17 +23,6 @@ COPY docs/ARCHITECTURE /docs/ARCHITECTURE
 COPY docs/FLOWS /docs/FLOWS
 COPY docs/PLUGINS /docs/PLUGINS
 COPY docs/BUILDING_ON_CREST /docs/BUILDING_ON_CREST
-# The recordings the FLOWS pages link to are served beside the rendered pages
-# at the same relative paths the markdown uses. They are not uploaded with the
-# build context (.railwayignore keeps the upload small); the stage fetches the
-# two tracked sets from the public repository at the ref being built.
-ARG DOCS_ASSETS_REF=main
-RUN git clone --depth 1 --filter=blob:none --sparse --branch "$DOCS_ASSETS_REF" \
-      https://github.com/theflywheel/CREST.git /crest-assets \
-    && git -C /crest-assets sparse-checkout set docs/assets/clean-slate-watch docs/assets/crest-development-validation \
-    && mkdir -p /docs/assets \
-    && mv /crest-assets/docs/assets/clean-slate-watch /crest-assets/docs/assets/crest-development-validation /docs/assets/ \
-    && rm -rf /crest-assets
 COPY infra/railway/quartz-theme.mjs /quartz/quartz-theme.mjs
 # docs/README.md is the index of the design docs, so it becomes the site root.
 RUN rm -rf content && mkdir content \
@@ -52,7 +41,6 @@ RUN rm -rf content && mkdir content \
     && node quartz-theme.mjs \
     && node ./quartz/bootstrap-cli.mjs build \
     && cp /docs/*.html public/ \
-    && cp -r /docs/assets public/assets \
     # A section's README.md became its index page; links written for GitHub
     # still say README, so answer that name too.
     && for d in ARCHITECTURE FLOWS PLUGINS BUILDING_ON_CREST; do cp public/$d/index.html public/$d/README.html; done

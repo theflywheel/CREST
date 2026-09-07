@@ -34,7 +34,7 @@ sequenceDiagram
 
 ## Recordings
 
-- [The organisation registers and claims](../assets/clean-slate-watch/J1-g2-organisation-registers-and-claims.mp4) (41 s)
-- [The operator admits the organisation](../assets/clean-slate-watch/J1-g4-operator-admits-the-organisation.mp4) (16 s)
+- The organisation registers and claims (recording `J1-g2-organisation-registers-and-claims.mp4`) (41 s)
+- The operator admits the organisation (recording `J1-g4-operator-admits-the-organisation.mp4`) (16 s)
 
 Screens: g2_1–g2_12, g4_1–g4_3. Next: [PROJECT_SETUP.md](PROJECT_SETUP.md).

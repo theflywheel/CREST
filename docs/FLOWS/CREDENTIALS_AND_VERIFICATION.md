@@ -36,7 +36,7 @@ sequenceDiagram
 
 ## Recordings
 
-- [The verifier panels](../assets/clean-slate-watch/J8-j8-verifier-panels.mp4) (24 s)
-- [The wallet: encrypted restore, offline verification and the Inji guest download](../assets/crest-development-validation/crest-development-validation.mp4) (2 m 17 s)
+- The verifier panels (recording `J8-j8-verifier-panels.mp4`) (24 s)
+- The wallet: encrypted restore, offline verification and the Inji guest download (recording `crest-development-validation.mp4`) (2 m 17 s)
 
 Screens: v1_1–v1_3, v2_1–v2_3, w1_15–w1_17. Next: [CONSENT_PER_SHARE.md](CONSENT_PER_SHARE.md).

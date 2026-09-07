@@ -19,7 +19,6 @@ docs/reference/
 /payments
 /notify
 
-# The docs image fetches the recordings it serves from GitHub at build time
-# (infra/railway/Dockerfile.apps); nothing under docs/assets is uploaded to
-# the builder, which keeps the upload far under Railway's size limit.
+# Nothing under docs/assets is uploaded to the builder; the docs pages do not
+# serve recordings, and the upload stays far under Railway's size limit.
 docs/assets/

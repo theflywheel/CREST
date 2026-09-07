@@ -38,6 +38,6 @@ sequenceDiagram
 
 ## Recording
 
-- [The agent closes the roster](../assets/clean-slate-watch/J6-j6-agent-closes-the-roster.mp4) (26 s)
+- The agent closes the roster (recording `J6-j6-agent-closes-the-roster.mp4`) (26 s)
 
 Screens: w4_1–w4_5, p2_20. Next: [CONFIRMATION_WINDOW.md](CONFIRMATION_WINDOW.md).
