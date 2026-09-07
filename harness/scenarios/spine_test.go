@@ -84,6 +84,14 @@ func setup(t *testing.T) *world {
 	if err := s.WaitReady(ctx, 90*time.Second); err != nil {
 		t.Fatalf("the stack never came up: %v\n\nis it running? `make harness-up`", err)
 	}
+	// Before any scenario assertion runs: does this stack match what this
+	// invocation expects? #79 — a stale or half-reconfigured stack surfaces as
+	// twenty identical scenario failures with nothing naming the cause. This
+	// runs once per test binary (harness.Stack.Preflight), so the ~20 tests in
+	// this package pay for one round trip, not twenty.
+	if err := s.Preflight(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.Reset(ctx); err != nil {
 		t.Fatalf("reset the mocks: %v", err)
 	}
