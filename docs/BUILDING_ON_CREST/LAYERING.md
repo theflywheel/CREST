@@ -26,7 +26,7 @@ A product will meet a primitive that needs a field, an adapter class that needs 
 2. Correct the blueprint in the same change, and say so plainly.
 3. Only then build the thing.
 
-Quietly patching around a design error in the product is the one failure this project cannot afford, because the error then survives into a pilot wearing a passing test. The findings so far ([#63](https://github.com/theflywheel/CREST/issues/63), [#64](https://github.com/theflywheel/CREST/issues/64), [#117](https://github.com/theflywheel/CREST/issues/117), [#172](https://github.com/theflywheel/CREST/issues/172), [#180](https://github.com/theflywheel/CREST/issues/180)) are the pattern to follow.
+Quietly patching around a design error in the product is the one failure this project cannot afford, because the error then survives into a pilot wearing a passing test. The findings so far (#63, #64, #117, #172, #180) are the pattern to follow.
 
 ## Where a product's code goes
 

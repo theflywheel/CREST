@@ -52,4 +52,4 @@ Bump the ref whenever a translation change could alter a canonical record. Old e
 
 An adapter translates a bounded payload; it does not schedule network calls or own credentials. A source-side job pulls an API, handles pagination and posts each resulting payload to `/v1/batches`; a source may push directly instead. Keeping transport outside the parser makes retries observable and lets one adapter serve push, scheduled pull and supervised upload. API keys never go in mappings, payloads or adapter metadata; the deployment's secret manager supplies them to the transport.
 
-The worked example, with a complete adapter skeleton, is [`adapters/README.md`](https://github.com/theflywheel/CREST/blob/main/adapters/README.md).
+The worked example, with a complete adapter skeleton, is `adapters/README.md` (`adapters/README.md` in the repository).

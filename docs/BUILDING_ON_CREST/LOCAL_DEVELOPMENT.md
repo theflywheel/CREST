@@ -19,7 +19,7 @@ make test         # unit tests
 - **The fixture world** (`tests/fixtures/world.yaml`): parties, a definition, terms and grants; the community health profile.
 - **The story week** (`harness/story.go`): consents, sources, batches, every kind of window exit, a held payment, a duplicate hold, an open recovery, an overdue grant. Written so every rule has a screen where you can watch it hold, and ending mid-story so three windows are open for you to confirm, dispute or assist live.
 
-Every person in it signs in through the mock issuer locally and through eSignet on the fleet with PIN `112233`. [../DEMO.md](../DEMO.md) records what the story shows and refuses to fake.
+Every person in it signs in through the mock issuer locally and through eSignet on the fleet with PIN `112233`. ../DEMO.md (`docs/DEMO.md` in the repository) records what the story shows and refuses to fake.
 
 ## Things that bite
 
@@ -38,4 +38,4 @@ Every person in it signs in through the mock issuer locally and through eSignet 
 3. Review: an automated reviewer reads every push and blocks on findings; a human merges.
 4. Bookkeeping in the same change: the issue's "done when", the manifest row, the PR body naming the rule a change could break and how it was proven.
 
-[../TESTING.md](../TESTING.md) explains the layers; [../TRACKING.md](../TRACKING.md) the board; [../DEPLOYMENT.md](../DEPLOYMENT.md) how a merge reaches the fleet.
+../TESTING.md (`docs/TESTING.md` in the repository) explains the layers; ../TRACKING.md (`docs/TRACKING.md` in the repository) the board; ../DEPLOYMENT.md (`docs/DEPLOYMENT.md` in the repository) how a merge reaches the fleet.

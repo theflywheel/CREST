@@ -4,7 +4,7 @@ title: The reference material
 
 # The reference material
 
-The design of record, the [Infrastructure Blueprint](../crest-infrastructure-blueprint.html), was derived from three documents. They live in [`docs/reference/`](https://github.com/theflywheel/CREST/tree/main/docs/reference) and are the requirements authority when the blueprint and the code disagree about intent.
+The design of record, the Infrastructure Blueprint (`docs/crest-infrastructure-blueprint.html` in the repository), was derived from three documents. They live in `docs/reference/` (`docs/reference/` in the repository) and are the requirements authority when the blueprint and the code disagree about intent.
 
 | Document | Form | What it decided |
 |---|---|---|
@@ -15,7 +15,7 @@ The design of record, the [Infrastructure Blueprint](../crest-infrastructure-blu
 ## How the blueprint uses them
 
 - The concept note gives the **layering test** and the primitive model: eleven generic primitives, profiles per domain.
-- The readout gives the **payments application** its rules, and by ruling them application-level (Blueprint §10, [#127](https://github.com/theflywheel/CREST/issues/127)) shows where a product's rules stop and the layer's begin.
+- The readout gives the **payments application** its rules, and by ruling them application-level (Blueprint §10, #127) shows where a product's rules stop and the layer's begin.
 - The journeys give the **scope map** (§15): per journey, what L1 must provide, what is L2 data, what stays L3 product. A screen the backend cannot serve is drawn and says so, never faked.
 
 ## When you build a product

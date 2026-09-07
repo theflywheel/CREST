@@ -17,8 +17,8 @@ Six engineering rules serve the blueprint's ten worker guarantees (§11). They a
 
 ## How a change is checked against them
 
-When a change touches evidence, confirmation, payments or verification, its pull request names which rule it could break and how that was proven. The [test manifest](../test-manifest.md) carries a row per feature; the harness scenarios in `harness/scenarios` drive each rule on real services in CI. [../TESTING.md](../TESTING.md) explains the layers.
+When a change touches evidence, confirmation, payments or verification, its pull request names which rule it could break and how that was proven. The test manifest (`docs/test-manifest.md` in the repository) carries a row per feature; the harness scenarios in `harness/scenarios` drive each rule on real services in CI. ../TESTING.md (`docs/TESTING.md` in the repository) explains the layers.
 
 ## The ten worker guarantees
 
-The blueprint's §11 enumerates ten promises to a person — exist without a document, phone or literacy; be provable to a stranger in a minute, offline; and so on. The six rules above are the engineering that keeps those promises. Reconciling the two numberings is tracked in [#57](https://github.com/theflywheel/CREST/issues/57); until it lands, cite a rule by its sentence rather than a number.
+The blueprint's §11 enumerates ten promises to a person — exist without a document, phone or literacy; be provable to a stranger in a minute, offline; and so on. The six rules above are the engineering that keeps those promises. Reconciling the two numberings is tracked in #57; until it lands, cite a rule by its sentence rather than a number.

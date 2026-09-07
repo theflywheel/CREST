@@ -266,7 +266,7 @@ verify-deployed: ## Check every deployed fleet member answers, and verify the lo
 	@# The docs ride inside the apps door (#148); prove the rendering and an
 	@# extensionless Quartz link, not just the directory.
 	@curl -fsS --max-time 10 -o /dev/null https://crest-apps-production.up.railway.app/docs/ \
-		&& curl -fsS --max-time 10 -o /dev/null https://crest-apps-production.up.railway.app/docs/DEMO \
+		&& curl -fsS --max-time 10 -o /dev/null https://crest-apps-production.up.railway.app/docs/ARCHITECTURE/HLD \
 		&& echo ok || exit 1
 	@# crest-registry has no public hostname since #150 — the name is an
 	@# alias proxied to crest-core, and the alias sweep above already proved it.

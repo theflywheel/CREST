@@ -37,4 +37,4 @@ sequenceDiagram
 - The operator claims and stands up (recording `J1-g1-operator-claims-and-stands-up.mp4`) (39 s)
 - The operator publishes terms (recording `J1-g1-operator-publishes-terms.mp4`) (22 s)
 
-Screens: g1_1–g1_6 in the [journey traceability](../journey-traceability.md). Next: [ORGANISATION_ONBOARDING.md](ORGANISATION_ONBOARDING.md).
+Screens: g1_1–g1_6 in the journey traceability (`docs/journey-traceability.md` in the repository). Next: [ORGANISATION_ONBOARDING.md](ORGANISATION_ONBOARDING.md).

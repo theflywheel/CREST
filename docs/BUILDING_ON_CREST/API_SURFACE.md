@@ -4,7 +4,7 @@ title: The API surface
 
 # The API surface
 
-Five boundaries, named by what they answer, all under `/v1`, reached through a door's nginx as `/api/crest-<service>/…`. The OpenAPI contracts are in [`schemas/openapi/`](https://github.com/theflywheel/CREST/tree/main/schemas/openapi); the JSON Schemas in [`schemas/`](https://github.com/theflywheel/CREST/tree/main/schemas) are the source of truth for every type.
+Five boundaries, named by what they answer, all under `/v1`, reached through a door's nginx as `/api/crest-<service>/…`. The OpenAPI contracts are in `schemas/openapi/` (`schemas/openapi` in the repository); the JSON Schemas in `schemas/` (`schemas` in the repository) are the source of truth for every type.
 
 ## Conventions every call follows
 

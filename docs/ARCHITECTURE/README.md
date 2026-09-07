@@ -4,7 +4,7 @@ title: Architecture
 
 # Architecture
 
-The engineering view of the design of record, the [Infrastructure Blueprint](../crest-infrastructure-blueprint.html). Where the two disagree, the blueprint wins and this section is the defect.
+The engineering view of the design of record, the Infrastructure Blueprint (`docs/crest-infrastructure-blueprint.html` in the repository). Where the two disagree, the blueprint wins and this section is the defect.
 
 The one test every boundary answers to: **if two deployments could reasonably disagree about it and both still be CREST, it is not infrastructure.**
 
@@ -19,4 +19,4 @@ The one test every boundary answers to: **if two deployments could reasonably di
 | [INVARIANTS.md](INVARIANTS.md) | The six rules that do not bend, and the code that enforces each |
 | [DATA_BOUNDARIES.md](DATA_BOUNDARIES.md) | What goes to the public log, what stays in the private store, what lives on the device |
 
-The roster with ports and deployed names is the older [../SERVICES.md](../SERVICES.md); the run-versus-build reasoning is [../COMPONENTS.md](../COMPONENTS.md). Both stay authoritative for what they cover.
+The roster with ports and deployed names is the older ../SERVICES.md (`docs/SERVICES.md` in the repository); the run-versus-build reasoning is ../COMPONENTS.md (`docs/COMPONENTS.md` in the repository). Both stay authoritative for what they cover.

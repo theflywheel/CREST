@@ -13,7 +13,7 @@ Not a plug point today, but integrated the same way: through one small surface t
 | CREST's work-event credential | The deployment's issuer, seed in Vault | DataIntegrityProof | `POST /v1/verify`, and offline from the signature |
 | The wallet credential | Inji Certify, the deployment's plugin | Ed25519Signature2020 | Inji Verify, natively |
 
-Two suites because Inji Verify implements no DataIntegrity suite. Both sign the same fact; the wallet credential carries the newest confirmed work event, because the OpenID4VCI flow has no record-selection step. Both are recorded in the [test manifest](../test-manifest.md) with what each cannot show.
+Two suites because Inji Verify implements no DataIntegrity suite. Both sign the same fact; the wallet credential carries the newest confirmed work event, because the OpenID4VCI flow has no record-selection step. Both are recorded in the test manifest (`docs/test-manifest.md` in the repository) with what each cannot show.
 
 ## What stays derived
 
@@ -23,4 +23,4 @@ The tier is never in either credential. A verifier computes it from the provenan
 
 A dispute. A contest is resolved at verification time from the deployment that holds it, so a bare QR scan shows a valid credential with no sign it is contested. This is stated on the verify door rather than hidden.
 
-The lifecycle mapping is [CREST on Inji](../crest-inji-architecture.html); the Certify plugin, the Mimoto patch and the guest download path are in `infra/certify/` and [../DEPLOYMENT.md](../DEPLOYMENT.md).
+The lifecycle mapping is CREST on Inji (`docs/crest-inji-architecture.html` in the repository); the Certify plugin, the Mimoto patch and the guest download path are in `infra/certify/` and ../DEPLOYMENT.md (`docs/DEPLOYMENT.md` in the repository).

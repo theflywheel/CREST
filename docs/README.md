@@ -1,6 +1,6 @@
 # CREST design documents
 
-Everything the implementation builds against. Each is a self-contained HTML page — clone and open in a browser, or read the hosted rendering at **https://crest-apps-production.up.railway.app/docs/** (the markdown docs rendered by Quartz, the HTML design docs served beside them, inside the journey-apps door since #148; see DEPLOYMENT.md for how it publishes).
+Everything the implementation builds against. The four technical sections below are the hosted documentation at **https://crest-apps-production.up.railway.app/docs/** (rendered by Quartz inside the journey-apps door; `docs/INDEX.md` is the site's front page; see DEPLOYMENT.md for how it publishes). The design documents and working notes that follow are read from the repository: each HTML one is self-contained, so clone and open it in a browser.
 
 ## The technical sections
 

@@ -21,7 +21,7 @@ Postgres, one schema per member, holds everything about a person and every polic
 - A national identifier enters as a salted hash and a pairwise subject reference; the raw number is resolved at ingestion and discarded, never persisted, not even in fixtures.
 - Private reads are scoped: a list of windows, instructions, claims or assessments names its project and is answered only to a caller holding the right function there. An unscoped read is refused, never answered with everybody's data.
 - Consent artefacts (a voice recording) go to the object store; the row holds the key.
-- Backups are quiesced and verified: [../DEPLOYMENT.md](../DEPLOYMENT.md) and `infra/acceptance/backup.sh`.
+- Backups are quiesced and verified: ../DEPLOYMENT.md (`docs/DEPLOYMENT.md` in the repository) and `infra/acceptance/backup.sh`.
 
 ## The device
 
