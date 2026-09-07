@@ -16,7 +16,7 @@ GO ?= go
         lint fmt structure substrate-up substrate-down harness-up harness-down \
         harness-logs verify-deploy web-up apps-build apps-dev apps-up e2e-apps clean todo poc poc-batch poc-dhis2 dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
         spike-dedi-deployed spike-esignet deploy-demo verify-deployed verify-registry verify-keystore hooks generate generate-check \
-        e2e-up e2e-run journey-spec journey-spec-check fidelity fidelity-check fidelity-sheet
+        e2e-up e2e-run e2e-reset journey-spec journey-spec-check fidelity fidelity-check fidelity-sheet
 
 help: ## Show available targets
 	@grep -E '^[a-z][a-z-]*:.*?## ' $(MAKEFILE_LIST) | sed 's/:.*## /\t/' | expand -t26
@@ -83,6 +83,7 @@ test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
 	@# saying `transparent: true`, and the next run on the Postgres fallback then
 	@# fails an assertion that is entirely correct about a database that is
 	@# entirely stale. It cost two "is this flaky?" investigations to find.
+	@$(GO) run ./tools/e2e-fingerprint mark-start
 	@$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true
 	@# A stack that fails to come up must say which container and why. Without
 	@# this, `up --wait` aborts the recipe before the log step below, and CI
@@ -96,6 +97,8 @@ test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
 		$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 ; \
 		exit 1 ; \
 	}
+	@$(GO) run ./tools/e2e-fingerprint write >/dev/null
+	@$(GO) run ./tools/e2e-fingerprint header
 	@$(LOCAL_AUTH) run -- $(GO) test -tags=e2e -count=1 -timeout=10m ./harness/... ; \
 		status=$$? ; \
 		if [ $$status -ne 0 ]; then \
@@ -121,7 +124,17 @@ poc-batch: ## Regenerate the PoC batches from their generators
 	@echo "wrote tests/fixtures/poc/*.csv"
 
 e2e-up: ## Bring up just what the spine needs, and leave it running
+	@$(GO) run ./tools/e2e-fingerprint mark-start
 	PAYMENT_SUBSCRIBER_ENABLED=true $(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES)
+	@# Records what this stack was brought up as (#79): a hash of the compose
+	@# config plus the environment variables that shape behaviour (transparency
+	@# substrate, window, sweep cadence), and a start timestamp. `e2e-run`
+	@# compares against this before running a single scenario.
+	@$(GO) run ./tools/e2e-fingerprint write
+
+e2e-reset: ## Tear the e2e stack down WITH its volumes — use when a stack might be stale (#79)
+	@$(COMPOSE) down -v --remove-orphans
+	@rm -rf .e2e
 
 web-up: e2e-up ## Bring up the stack with the web app, seeded and ready to click
 	@$(COMPOSE) up -d --wait web
@@ -180,6 +193,12 @@ test-e2e-short-window: ## Prove the window length is configuration: seconds-long
 	@$(COMPOSE) down -v --remove-orphans
 
 e2e-run: ## Run the spine against an already-running stack (fast iteration)
+	@# Fails once, before any scenario runs, if the running stack's fingerprint
+	@# disagrees with what this invocation expects (#79) — e.g. this stack was
+	@# left up from a run against the DeDi node, and this run expects the
+	@# Postgres fallback.
+	@$(GO) run ./tools/e2e-fingerprint check
+	@$(GO) run ./tools/e2e-fingerprint header
 	$(LOCAL_AUTH) run -- $(GO) test -tags=e2e -count=1 -timeout=10m ./harness/...
 
 test-invariants: ## W1-W10 as executable acceptance tests

@@ -9,6 +9,9 @@ __pycache__/
 dist/
 /tmp/
 
+# The e2e stack fingerprint (#79) — local run state, never committed.
+/.e2e/
+
 # DeDi node signing keys and the locally built dedid binary. Never committed.
 infra/compose/dedi-keys/
 

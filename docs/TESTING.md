@@ -60,6 +60,42 @@ paragraph is the fix.
 
 Every manual test run costs a person twenty minutes and an agent a few thousand tokens, and the result is not recorded anywhere. The harness converts that into one command whose result is a diff. This is the single highest-leverage thing to build early, which is why it is a Phase 2 deliverable rather than a Phase 4 one.
 
+### A repeated failure is investigated, not re-run (#79)
+
+[#79](https://github.com/theflywheel/CREST/issues/79) was filed after `make test-e2e` failed **every** scenario at `POST /v1/parties -> 500`, with no code change involved — a stack that had been started by hand against the deployed DeDi node, then run against by an invocation expecting the Postgres fallback. Nothing said so. Twenty identical scenario failures read exactly like a broken build, and re-running until it goes green launders a real hazard as noise.
+
+**The convention:** if a scenario run fails and a second, unmodified run of the same command passes, that is not "flaky" — it is unproven. Write down what changed between the two runs (was the stack brought up freshly? was `DEDI_URL` set at some point in the session? does `docker volume ls` show a Postgres volume older than this run?) before dismissing it. The run header below and the preflight check exist so this investigation is usually one line instead of twenty minutes.
+
+**What the preflight checks**, before any scenario assertion runs (`harness/preflight.go`, wired into `harness/scenarios`' shared `setup(t)`, run once per test binary):
+
+- **Transparency substrate.** Every service's `GET /healthz` reports `"transparency": "dedi"` or `"postgres"` (`pkg/httpx`, reading `DEDI_URL`/`DEDI_PUBLISHER_KEY` the same way `infra/compose/docker-compose.yml` does). This must agree with what the harness process itself expects, from the same two variables in its own environment. This is the exact #79 hazard: a stack pointed at the real DeDi node, run against by an invocation expecting the local fallback (or the reverse).
+- **Clock mode.** Every service's `GET /internal/clock` must report `"ticking": true` — a driveable `Offset` clock (`pkg/clock`). The harness moves time instead of sleeping; a service that cannot be driven fails every window-dependent scenario for a reason that has nothing to do with the scenario.
+- **Build revision.** If more than one distinct `revision` comes back across `GET /healthz` calls, that means one service was rebuilt and another was not — the same "which of these is stale" confusion one layer down.
+
+On any mismatch it fails once, with a `StaleEnvironmentError` whose message always contains the literal phrase `stale environment` and names expected vs. actual for every mismatch found — see `harness/preflight_test.go` for the comparison function (`ComparePreflight`) exercised directly, with no Docker.
+
+At the shell level, `make e2e-up` writes `.e2e/stack.fingerprint` — a hash of the compose config plus the environment variables that shape behaviour (transparency substrate, confirmation window, sweep cadence), and a start timestamp (`tools/e2e-fingerprint`). `make e2e-run` recomputes that hash from the *current* environment and fails, in the same `stale environment` shape, before the harness binary even starts, if they disagree or if no fingerprint exists at all. `make e2e-reset` (`docker compose down -v`, plus removing `.e2e/`) is the fix — it is the one target guaranteed to leave nothing behind, and it is what `make test-e2e` already does at both ends of its own run.
+
+### Reading the run header
+
+`make test-e2e` and `make e2e-run` both print a header before any scenario runs:
+
+```
+── e2e run header ──────────────────────────────────────────
+transparency substrate : postgres
+clock mode              : driveable (services take an Offset clock; the harness moves it — see docs/TESTING.md)
+confirmation window     : 168h (default)
+service revision        : 3f9a21c
+compose project         : crest
+db volume predates run  : no — created 4s ago, by this invocation
+────────────────────────────────────────────────────────────
+```
+
+- **transparency substrate / clock mode / confirmation window** — what this invocation itself expects, from its own environment (the same thing the preflight checks the running services against).
+- **service revision** — `git rev-parse --short HEAD` for this checkout, `+dirty` if there are uncommitted changes; a mismatch between this and what a service later reports on `/healthz` is exactly the "stale build" case the preflight names.
+- **compose project** — always `crest` (fixed by `name: crest` in `infra/compose/docker-compose.yml`), so the header does not depend on where the command happens to be run from.
+- **db volume predates run** — whether the compose project's Postgres volume (`crest_pgdata`) already existed before this invocation started it, by comparing the volume's `CreatedAt` against wall-clock now. `test-e2e`'s leading `down -v` means this should always read "no" there; on `e2e-run` a "yes" is the first thing worth reading before treating a failure as a defect.
+
 ## What gets a unit test
 
 - **Anything with a truth table.** The strength function is the archetype: provenance facts + identity assurance → tier. It ships with test vectors (#15) covering every tier, every assurance level, and the retroactive-upgrade case.
