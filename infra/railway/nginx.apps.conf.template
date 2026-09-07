@@ -24,8 +24,9 @@ server {
     # (?<svc>[a-z-]+) would proxy to any service in it.
     # Alias names for links already in the wild: the four member names
     # answer from crest-core since #150, and crest-confirmation answers from
-    # the payments application since #129. The old names proxy rather than
-    # 404 on stakeholders.
+    # the payments application since #129 — and since #127 it is answered by
+    # the payments *process*, because the window's attestation member moved
+    # out of core. The old names proxy rather than 404 on stakeholders.
     location ~ ^/api/crest-(registry|definitions|evidence|verification)/(?<crest>.*)$ {
         set $upstream http://crest-core.railway.internal:8080/$crest$is_args$args;
         proxy_pass $upstream;
@@ -34,10 +35,10 @@ server {
         proxy_read_timeout 30s;
     }
     location ~ ^/api/crest-confirmation/(?<crest>.*)$ {
-        set $upstream http://crest-core.railway.internal:8080/$crest$is_args$args;
+        set $upstream http://crest-payments.railway.internal:8080/$crest$is_args$args;
         proxy_pass $upstream;
         limit_req zone=crest_api burst=40 nodelay;
-        proxy_set_header Host crest-core.railway.internal;
+        proxy_set_header Host crest-payments.railway.internal;
         proxy_read_timeout 30s;
     }
 

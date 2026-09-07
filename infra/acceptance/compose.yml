@@ -14,7 +14,8 @@ x-runtime: &runtime
     DEFINITIONS_URL: http://core:8080
     EVIDENCE_URL: http://core:8080
     VERIFICATION_URL: http://core:8080
-    CONFIRMATION_URL: http://core:8080
+    # The confirmation window runs in the payments application since #127.
+    CONFIRMATION_URL: http://payments:8080
     PAYMENTS_URL: http://payments:8080
     SELF_URL: http://localhost:8080
     CLOCK_DRIVEABLE: 'false'

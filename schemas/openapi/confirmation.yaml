@@ -27,6 +27,12 @@ info:
     keeps its name so the surface's history stays findable, and
     payments.yaml documents the instruction side of the same service.
 
+    Since #127 the payments service is also the process that *runs* them: the
+    window's `attestation` member moved out of the `core` infrastructure
+    deployable, so these paths and `/internal/clock` are now the only place in
+    the fleet either exists. The four substrate specs say so where their clock
+    path used to be.
+
     Credentials and contests are referenced by the `$id` of their JSON Schema
     under `schemas/` rather than restated here. `schemas/` is the source of truth;
     a second copy of a primitive is what `schemas/README.md` exists to prevent.

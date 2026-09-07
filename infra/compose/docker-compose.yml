@@ -80,8 +80,11 @@ x-service: &crest-service
     PARTIES_URL: http://core:8080
     DEFINITIONS_URL: http://core:8080
     EVIDENCE_URL: http://core:8080
-    # The confirmation window lives in the payments application (#129).
-    CONFIRMATION_URL: http://core:8080
+    # The confirmation window lives in the payments application (#129), and
+    # since #127 it runs there too: the attestation member moved out of core,
+    # so this name now resolves to a different process than the four member
+    # names above.
+    CONFIRMATION_URL: http://payments:8080
     PAYMENTS_URL: http://payments:8080
     VERIFICATION_URL: http://core:8080
     RAIL_URL: http://mock-rail:8080
@@ -142,9 +145,12 @@ x-service: &crest-service
     #
     # This anchor is consumed by exactly two services, core and payments, and
     # since #127 the variable only does anything where the service declares
-    # the seam (service.Options.ClockSeam, pkg/clockctl) — payments, and the
-    # core member that still holds the window. parties, definitions, evidence
-    # and verification read wall time and have no /internal/clock at all.
+    # the seam (service.Options.ClockSeam, pkg/clockctl) — which is payments
+    # alone, now that the window moved there. core reads wall time and has no
+    # /internal/clock at all: not a route that refuses, no route.
+    #
+    # CONFIRMATION_WINDOW is read in one place too, by the attestation member
+    # inside the payments process. core never reads it.
     #
     # Both are refused in production — see pkg/clockctl.Seam for why a
     # driveable clock in a live deployment is a way to close a worker's window

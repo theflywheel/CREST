@@ -29,7 +29,12 @@ var migrations embed.FS
 
 // Service is this member's wiring, composed into the core binary (#150).
 func Service() service.Options {
-	confirmation := client.New(config.Str("CONFIRMATION_URL", "http://core:8080"))
+	// The confirmation window is the payments application's since #127, and
+	// since the attestation member moved there it is a different process.
+	// This client is the only thing in the infrastructure that knows a window
+	// exists at all, and it does not: it delivers `claim.created` to whatever
+	// CONFIRMATION_URL names and has no opinion about what happens next.
+	confirmation := client.New(config.Str("CONFIRMATION_URL", "http://payments:8080"))
 
 	notifier, err := notify.Configured()
 	if err != nil {

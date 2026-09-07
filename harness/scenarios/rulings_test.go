@@ -397,23 +397,51 @@ func TestAGrantIsReadableByItsAuthorityAlone(t *testing.T) {
 	}
 }
 
-// Issuance is the substrate's act (#127, #137). Confirmation and verification
-// are now two surfaces of the same core substrate, so the public issuer and
-// status-list documents are intentionally available through either service
-// entry point. Credential history remains private and still requires the
-// authenticated party scope.
+// Issuance is the substrate's act (#127, #137), and since #127 finished moving
+// the confirmation window into the payments application this test can finally
+// assert what its name always claimed.
+//
+// It used to assert the opposite of the interesting thing. Confirmation and
+// verification were two surfaces of one core process, so the issuer and
+// status-list documents answered on the confirmation base too, and the test
+// checked that they did — which proved only that a merged process serves all
+// its own routes. Now confirmation IS the payments application, a separate
+// deployable, and the substrate documents are absent from it. That absence is
+// the ruling made observable: an application that pays people holds no issuer
+// key, publishes no status list, and cannot issue a credential — it asks the
+// substrate to, over HTTP.
 func TestIssuanceLivesInTheSubstrateNotThePaymentsApplication(t *testing.T) {
 	w := setup(t)
+
+	// The payments application publishes no issuance surface at all. 404,
+	// not 401 or 403: the route does not exist there, rather than existing
+	// and refusing, which is the difference between "not this layer's job"
+	// and "this layer's job, guarded".
 	for _, path := range []string{"/v1/issuer", "/v1/status-list"} {
-		code, _, err := w.Confirmation.Status(w.ctx, http.MethodGet, path, nil)
+		code, body, err := w.Confirmation.Status(w.ctx, http.MethodGet, path, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		if code != http.StatusNotFound {
+			t.Fatalf("the payments application answered %s with %d: %s; issuance is the "+
+				"substrate's and the application must not publish it", path, code, body)
+		}
+	}
+
+	// And the substrate does publish them, so the assertion above is "it is
+	// somewhere else", not "it is nowhere".
+	for _, path := range []string{"/v1/issuer", "/v1/status-list"} {
+		code, body, err := w.Verification.Status(w.ctx, http.MethodGet, path, nil)
 		if err != nil {
 			t.Fatalf("%s: %v", path, err)
 		}
 		if code != http.StatusOK {
-			t.Fatalf("confirmation substrate did not publish %s (%d)", path, code)
+			t.Fatalf("the substrate did not publish %s (%d): %s", path, code, body)
 		}
 	}
-	code, body, err := w.Confirmation.Status(w.ctx, http.MethodGet,
+
+	// Credential history stays private wherever it is asked for.
+	code, body, err := w.Verification.Status(w.ctx, http.MethodGet,
 		"/v1/credentials?partyId=x", nil)
 	if err != nil {
 		t.Fatalf("private credential list: %v", err)

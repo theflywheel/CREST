@@ -9,8 +9,8 @@ import "testing"
 func TestComparePreflightAgreesOnNothingToReport(t *testing.T) {
 	expected := ExpectedConfig{Transparency: "postgres"}
 	actual := map[string]ServiceStatus{
-		"core":     {Transparency: "postgres", Revision: "abc123", ClockTicking: true},
-		"payments": {Transparency: "postgres", Revision: "abc123", ClockTicking: true},
+		"core":     {Transparency: "postgres", Revision: "abc123"},
+		"payments": {Transparency: "postgres", Revision: "abc123", HasClock: true, ClockTicking: true},
 	}
 
 	if got := ComparePreflight(expected, actual); len(got) != 0 {
@@ -23,8 +23,8 @@ func TestComparePreflightCatchesTheDeDiNodeLeftFromAPreviousRun(t *testing.T) {
 	// node, and a run that expects the Postgres fallback.
 	expected := ExpectedConfig{Transparency: "postgres"}
 	actual := map[string]ServiceStatus{
-		"core":     {Transparency: "dedi", Revision: "abc123", ClockTicking: true},
-		"payments": {Transparency: "dedi", Revision: "abc123", ClockTicking: true},
+		"core":     {Transparency: "dedi", Revision: "abc123"},
+		"payments": {Transparency: "dedi", Revision: "abc123", HasClock: true, ClockTicking: true},
 	}
 
 	got := ComparePreflight(expected, actual)
@@ -44,7 +44,7 @@ func TestComparePreflightCatchesTheDeDiNodeLeftFromAPreviousRun(t *testing.T) {
 func TestComparePreflightCatchesAFrozenNonDriveableClock(t *testing.T) {
 	expected := ExpectedConfig{Transparency: "postgres"}
 	actual := map[string]ServiceStatus{
-		"core": {Transparency: "postgres", Revision: "abc123", ClockTicking: false},
+		"payments": {Transparency: "postgres", Revision: "abc123", HasClock: true, ClockTicking: false},
 	}
 
 	got := ComparePreflight(expected, actual)
@@ -53,11 +53,44 @@ func TestComparePreflightCatchesAFrozenNonDriveableClock(t *testing.T) {
 	}
 }
 
+// Since #127 core answers no /internal/clock at all, and that is the design.
+// The preflight must not read "core has no driveable clock" as a stale
+// environment, or every e2e run fails on the thing the change set out to do.
+func TestComparePreflightAcceptsAnInfrastructureServiceWithNoClockAtAll(t *testing.T) {
+	expected := ExpectedConfig{Transparency: "postgres"}
+	actual := map[string]ServiceStatus{
+		// core: no seam, so no route, so HasClock false and ClockTicking
+		// meaningless. The zero value is the honest report.
+		"core":     {Transparency: "postgres", Revision: "abc123"},
+		"payments": {Transparency: "postgres", Revision: "abc123", HasClock: true, ClockTicking: true},
+	}
+
+	if got := ComparePreflight(expected, actual); len(got) != 0 {
+		t.Fatalf("core having no clock is #127's design, not a stale stack; got %v", got)
+	}
+}
+
+// The other half of the same rule. Accepting "no clock" per service must not
+// quietly accept a stack where nothing at all can be driven — that is a stack
+// where every window scenario hangs at T=0 and blames itself.
+func TestComparePreflightCatchesAStackWhereNoProcessOwnsTheClock(t *testing.T) {
+	expected := ExpectedConfig{Transparency: "postgres"}
+	actual := map[string]ServiceStatus{
+		"core":     {Transparency: "postgres", Revision: "abc123"},
+		"payments": {Transparency: "postgres", Revision: "abc123"},
+	}
+
+	got := ComparePreflight(expected, actual)
+	if len(got) != 1 || got[0].Field != "clock seam" {
+		t.Fatalf("want one clock-seam mismatch naming the stack, got %v", got)
+	}
+}
+
 func TestComparePreflightCatchesAStaleServiceLeftFromAPreviousBuild(t *testing.T) {
 	expected := ExpectedConfig{Transparency: "postgres"}
 	actual := map[string]ServiceStatus{
-		"core":     {Transparency: "postgres", Revision: "old-build", ClockTicking: true},
-		"payments": {Transparency: "postgres", Revision: "new-build", ClockTicking: true},
+		"core":     {Transparency: "postgres", Revision: "old-build"},
+		"payments": {Transparency: "postgres", Revision: "new-build", HasClock: true, ClockTicking: true},
 	}
 
 	got := ComparePreflight(expected, actual)
@@ -78,7 +111,7 @@ func TestComparePreflightIgnoresAnUnsetExpectation(t *testing.T) {
 	// fail every single service on a mismatch nobody intended to assert.
 	expected := ExpectedConfig{}
 	actual := map[string]ServiceStatus{
-		"core": {Transparency: "dedi", Revision: "abc123", ClockTicking: true},
+		"core": {Transparency: "dedi", Revision: "abc123", HasClock: true, ClockTicking: true},
 	}
 
 	if got := ComparePreflight(expected, actual); len(got) != 0 {

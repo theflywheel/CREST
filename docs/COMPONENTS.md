@@ -44,7 +44,7 @@ The architectural point is that **it should not matter much**. Consent artefacts
 | `registry` | Instances, organisations, terms, authorizations, worker records, the duplicate hold queue |
 | `definitions` | Work definitions: author → ratify → ACTIVE, three-face rendering, DeDi publication |
 | `evidence` | Adapter intake, canonical record validation, identity matching, unit + claim creation, the unclear queue |
-| `confirmation` | The T=7 state machine; notification, confirm/dispute/auto-confirm, issuance calls to Certify |
+| `confirmation` | The T=7 state machine; notification, confirm/dispute/auto-confirm, an issuance *request* to `verification`. Not a service and not infrastructure: it is the `attestation` member of the **payments application** (#127, #129, #137), and the window's length is programme policy rather than a CREST constant. The rows either side of it are infrastructure; this one is not. See `docs/ARCHITECTURE/SERVICES.md`, which is current where this table is not |
 | `verification` | Verifier passes, trust-chain walk, strength derivation, per-request disclosure consent, check audit trail |
 | `payments` | Rate resolution, PaymentInstruction emission with idempotency, rail connectors, reconciliation |
 

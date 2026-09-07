@@ -5,12 +5,16 @@
 // orchestration — and one process can say so. The four members keep their
 // schemas, migrations, outboxes and route families; what merged is the
 // deployment shape, not the boundaries. The payments application (#127,
-// #129) deliberately stays outside.
+// #129) deliberately stays outside — including the confirmation window,
+// which moved out of this process with its attestation member (#127).
+//
+// Nothing here mounts a driveable clock. The only reason a CREST process ever
+// wanted one was to cross a week-long confirmation window, and no window
+// lives here any more.
 package main
 
 import (
 	"github.com/theflywheel/crest/pkg/service"
-	"github.com/theflywheel/crest/services/core/attestation"
 	"github.com/theflywheel/crest/services/core/definitions"
 	"github.com/theflywheel/crest/services/core/evidence"
 	"github.com/theflywheel/crest/services/core/parties"
@@ -26,6 +30,5 @@ func main() {
 		{Name: "definitions", Opts: definitions.Service()},
 		{Name: "evidence", Opts: evidence.Service()},
 		{Name: "verification", Opts: verification.Service()},
-		{Name: "attestation", Opts: attestation.Service()},
 	})
 }
