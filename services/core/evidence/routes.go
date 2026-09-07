@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/theflywheel/crest/adapters"
-	csvadapter "github.com/theflywheel/crest/adapters/csv"
+	"github.com/theflywheel/crest/adapters/builtin"
 	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/httpx"
@@ -38,7 +38,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	}
 	hasher = h
 
-	adapterRegistry, err := adapters.NewRegistry(csvadapter.Plugin())
+	adapterRegistry, err := adapters.NewRegistry(builtin.Plugins()...)
 	if err != nil {
 		d.Log.Error("adapter catalogue is invalid", "error", err)
 		panic(err)
