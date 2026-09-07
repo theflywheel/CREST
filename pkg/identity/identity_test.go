@@ -370,6 +370,82 @@ func TestActorRefusesAPartyItCannotProve(t *testing.T) {
 	}
 }
 
+// #216. A worker whose duplicate record was closed has two ids and both are
+// theirs. The binder deliberately follows merges, so what a request PROVES is
+// always the survivor; what it NAMES may be the absorbed id — a verifier's
+// saved link, a message sent last month, a device that enrolled before the
+// merge. Until this, that combination was refused as impersonation, and §16's
+// "the absorbed id keeps working" never got as far as the handler that
+// implements it.
+func TestActorAcceptsAnAbsorbedIdAsTheSamePerson(t *testing.T) {
+	ctx := context.Background()
+	const (
+		survivor = "did:crest:party:SURVIVOR"
+		absorbed = "did:crest:party:ABSORBED"
+		stranger = "did:crest:party:STRANGER"
+	)
+	// The chain, as the registry answers it: one person, two ids.
+	chain := func(_ context.Context, partyID string) ([]string, error) {
+		if partyID == survivor || partyID == absorbed {
+			return []string{survivor, absorbed}, nil
+		}
+		return []string{partyID}, nil
+	}
+	worker := Caller{Subject: "s", PartyID: survivor}.WithSameParty(chain)
+
+	// Naming the absorbed id stands, and the SURVIVOR comes back: the caller
+	// acts as themselves under their current id, and a handler that expands it
+	// gets the whole chain. The merge is never disclosed to say so.
+	got, err := Actor(ctx, worker, absorbed, "", true, neverPermits)
+	if err != nil {
+		t.Fatalf("naming their own absorbed id was refused: %v", err)
+	}
+	if got != survivor {
+		t.Fatalf("acting party = %q, want the survivor %q", got, survivor)
+	}
+
+	// And the refusal it must not have widened: a stranger's id is not in the
+	// chain, so it is still impersonation.
+	if _, err := Actor(ctx, worker, stranger, "", true, neverPermits); !errors.Is(err, ErrImpersonation) {
+		t.Fatalf("naming somebody else's party produced %v, want ErrImpersonation", err)
+	}
+}
+
+// An outage is not an accusation. If the registry cannot say whether two ids
+// are one person, the request is undecided — telling a merged worker they are
+// impersonating somebody because a lookup failed points the investigation at
+// the worker instead of at the registry.
+func TestActorSaysOutageRatherThanImpersonationWhenTheRegistryIsDown(t *testing.T) {
+	ctx := context.Background()
+	down := func(context.Context, string) ([]string, error) {
+		return nil, errors.New("registry unreachable")
+	}
+	worker := Caller{Subject: "s", PartyID: "did:crest:party:A"}.WithSameParty(down)
+
+	_, err := Actor(ctx, worker, "did:crest:party:B", "", true, neverPermits)
+	if !errors.Is(err, ErrRegistryUnavailable) {
+		t.Fatalf("a registry outage produced %v, want ErrRegistryUnavailable", err)
+	}
+	if errors.Is(err, ErrImpersonation) {
+		t.Fatal("an outage must not be reported as impersonation")
+	}
+	status, code, _, ok := Denial(err)
+	if !ok || status != 503 || code != "registry_unavailable" {
+		t.Fatalf("Denial = %d %q %v, want 503 registry_unavailable", status, code, ok)
+	}
+}
+
+// A service with no expander wired behaves exactly as it did before #216. The
+// safe direction is refusing: a deployment that cannot ask the registry must
+// not start accepting ids it cannot check.
+func TestActorWithNoExpanderStillRefusesAnUnprovenParty(t *testing.T) {
+	ctx := context.Background()
+	worker := Caller{Subject: "s", PartyID: "did:crest:party:A"}
+	if _, err := Actor(ctx, worker, "did:crest:party:B", "", true, neverPermits); !errors.Is(err, ErrImpersonation) {
+		t.Fatalf("with no expander, naming another party produced %v", err)
+	}
+}
+
 func TestActorRefusesAnUnauthenticatedRequestWhereItMatters(t *testing.T) {
 	ctx := context.Background()
 	if _, err := Actor(ctx, Caller{}, "did:crest:party:A", "", true, alwaysPermits); !errors.Is(err, ErrNoCaller) {

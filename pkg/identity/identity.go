@@ -64,6 +64,31 @@ type Caller struct {
 	// mistake costs a worker their record. Acting is the only way out, and it
 	// takes the permission check as an argument.
 	requestedFor string
+
+	// sameParty expands a party id across any merge (#100, #104). Set by the
+	// middleware from the deployment's registry; nil in a service with no
+	// identity provider, and in unit tests that construct a Caller directly.
+	//
+	// It is called lazily and only by Actor, only when the named party and the
+	// proven one differ. That is deliberate on both counts: the answer costs a
+	// registry round trip in every service but parties, and the case it exists
+	// for — somebody's record was merged — is rare. A request that names the
+	// party it proved, which is nearly all of them, never asks.
+	sameParty SameFunc
+}
+
+// SameFunc answers which party ids are one person, following merges.
+//
+// The same shape the services already thread through service.Deps, so this
+// package is given the registry's existing answer rather than inventing a
+// second notion of who is who.
+type SameFunc func(ctx context.Context, partyID string) ([]string, error)
+
+// WithSameParty returns a copy of the caller that can expand ids across
+// merges. The middleware wires it; handlers never need to.
+func (c Caller) WithSameParty(f SameFunc) Caller {
+	c.sameParty = f
+	return c
 }
 
 // Authenticated reports whether a token was verified for this request.
@@ -85,7 +110,20 @@ var (
 	// ErrImpersonation means the request named one party and proved another.
 	// This is the failure #89 is about: before this package, it had no name
 	// because there was nothing to compare the named party against.
+	//
+	// "Another" means another person, not another id. A person whose duplicate
+	// record was closed has more than one id and both are theirs (#100, #104);
+	// naming the absorbed one is not impersonation. See Actor.
 	ErrImpersonation = errors.New("identity: the request names a party it has not proven")
+
+	// ErrRegistryUnavailable means the registry could not say whether two ids
+	// are the same person, so this request cannot be decided either way.
+	//
+	// Deliberately not folded into ErrImpersonation. Refusing a merged worker
+	// with "you are impersonating somebody" because a lookup timed out is a
+	// false accusation in a log an operator will later read, and it points the
+	// investigation at the worker instead of at the outage.
+	ErrRegistryUnavailable = errors.New("identity: the registry could not say which ids are this party")
 )
 
 // PermitsFunc answers whether a party may perform a function in a context. It
@@ -165,6 +203,29 @@ func (c Caller) RequestedFor() string { return c.requestedFor }
 // that its callers are not authenticated. pkg/service refuses to start a
 // production deployment in that state, which is what keeps this branch out of
 // anywhere it would matter.
+//
+// # A person is not one id (#216)
+//
+// The cross-check was string equality until #216, and that made a merged
+// worker's own history unreachable. A person whose duplicate record was closed
+// keeps both ids: parties' binder deliberately follows merges, so the id this
+// request PROVES is always the survivor, while the id it NAMES may be the
+// absorbed one — a verifier's saved bookmark, a link in a message sent last
+// month, a worker's own device that enrolled before the merge. Comparing the
+// two as strings called that impersonation and refused, three lines above the
+// handler that would have expanded the ids correctly.
+//
+// So the comparison asks the registry the same question the handlers ask it:
+// are these ids one person? If they are, the request stands and the SURVIVOR
+// is returned — the caller acts as themselves under their current id, and a
+// handler that goes on to expand it gets the whole chain. §16 and #104 rule
+// that continuity wins and the merge is not disclosed; returning the survivor
+// keeps the absorbed id working without the response ever saying why.
+//
+// This does not widen anything. An id that is genuinely somebody else's is not
+// in the chain, so it is still refused, and the assisted route through
+// X-CREST-On-Behalf-Of and FunctionActForParty is still the only way to act
+// for another person.
 func Actor(ctx context.Context, c Caller, claimed, contextID string, enforced bool, permits PermitsFunc) (string, error) {
 	if !c.Authenticated() {
 		return "", ErrNoCaller
@@ -173,10 +234,40 @@ func Actor(ctx context.Context, c Caller, claimed, contextID string, enforced bo
 	if err != nil {
 		return "", err
 	}
-	if claimed != "" && claimed != proven {
+	if claimed == "" || claimed == proven {
+		return proven, nil
+	}
+	same, err := c.samePartyAs(ctx, proven, claimed)
+	if err != nil {
+		return "", err
+	}
+	if !same {
 		return "", fmt.Errorf("%w: named %s, proved %s", ErrImpersonation, claimed, proven)
 	}
 	return proven, nil
+}
+
+// samePartyAs reports whether `claimed` is another id for the person who
+// proved `proven`.
+//
+// With no expander wired — a service with no identity provider, or a unit test
+// building a Caller by hand — this is the old string comparison, which has
+// already failed by the time it is called. That is the safe direction: a
+// deployment that cannot ask the registry refuses rather than accepts.
+func (c Caller) samePartyAs(ctx context.Context, proven, claimed string) (bool, error) {
+	if c.sameParty == nil {
+		return false, nil
+	}
+	ids, err := c.sameParty(ctx, proven)
+	if err != nil {
+		return false, fmt.Errorf("%w: %s: %w", ErrRegistryUnavailable, proven, err)
+	}
+	for _, id := range ids {
+		if id == claimed {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 type ctxKey struct{}
@@ -238,6 +329,15 @@ func Denial(err error) (status int, code, detail string, ok bool) {
 	case errors.Is(err, ErrNotPermitted):
 		return 403, "not_permitted_to_act_for",
 			"acting for another party needs the " + FunctionActForParty + " authorization in this context", true
+	case errors.Is(err, ErrRegistryUnavailable):
+		// 503, and the fourth genuinely different outcome. The registry could
+		// not say whether the named id is another id for this same person, so
+		// nothing about the caller was rejected — the question was never
+		// answered. A 403 here would tell a merged worker they are somebody
+		// else because a lookup timed out.
+		return 503, "registry_unavailable",
+			"the registry could not say which ids are this party, so this request cannot be decided; " +
+				"this is an outage, not a refusal", true
 	}
 	return 0, "", "", false
 }
