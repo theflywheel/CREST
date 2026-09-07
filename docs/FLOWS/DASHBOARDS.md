@@ -31,8 +31,8 @@ sequenceDiagram
 
 ## Recordings
 
-- [The project dashboards](../assets/clean-slate-watch/J9-j9-project-dashboards.mp4) (34 s)
-- [The registry dashboards](../assets/clean-slate-watch/J11-j11-registry-dashboards.mp4) (31 s)
+- The project dashboards (recording `J9-j9-project-dashboards.mp4`) (34 s)
+- The registry dashboards (recording `J11-j11-registry-dashboards.mp4`) (31 s)
 
 Not recorded: the funding viewer, because no record derives that persona on a clean deployment.
 

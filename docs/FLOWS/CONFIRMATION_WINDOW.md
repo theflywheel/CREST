@@ -43,7 +43,7 @@ sequenceDiagram
 
 ## Recordings
 
-- [The worker confirms her record](../assets/clean-slate-watch/J7-j7-worker-confirms-her-record.mp4) (39 s)
-- [Assisted confirmation and the handoff](../assets/clean-slate-watch/J8-j8-assisted-confirmation-and-handoff.mp4) (17 s)
+- The worker confirms her record (recording `J7-j7-worker-confirms-her-record.mp4`) (39 s)
+- Assisted confirmation and the handoff (recording `J8-j8-assisted-confirmation-and-handoff.mp4`) (17 s)
 
 Screens: w1_7–w1_12, w4_2–w4_4. Next: [CREDENTIALS_AND_VERIFICATION.md](CREDENTIALS_AND_VERIFICATION.md).

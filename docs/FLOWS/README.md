@@ -6,7 +6,7 @@ title: Flows
 
 Every flow the system carries, in the order a deployment meets them. Each document has the sequence diagram and links to the recording that shows it running.
 
-The recordings are the clean-slate run of 5 September 2026 against the production fleet: one deployment stood up from nothing and walked to a paid worker, every person signing in through eSignet. Most are under 40 seconds; the long wizards are cut to eight-times speed. The journey numbers are the blueprint's twelve (§15); the persona codes are the Actor Journeys' (G-1, P-3, W-1 …).
+The recordings are the clean-slate run of 5 September 2026 against the production fleet: one deployment stood up from nothing and walked to a paid worker, every person signing in through eSignet. Most are under 40 seconds; the long wizards are cut to eight-times speed. **The recordings are not hosted with these pages yet**; each is named below by file so the hosted links can be added when they exist. The journey numbers are the blueprint's twelve (§15); the persona codes are the Actor Journeys' (G-1, P-3, W-1 …).
 
 | # | Flow | Journeys | Document |
 |---|---|---|---|
@@ -27,29 +27,29 @@ The recordings are the clean-slate run of 5 September 2026 against the productio
 
 | # | Recording | Journey | Who | Length |
 |---|---|---|---|---|
-| 1 | [operator claims and stands up](../assets/clean-slate-watch/J1-g1-operator-claims-and-stands-up.mp4) | G-1 | the operator | 39 s |
-| 2 | [operator publishes terms](../assets/clean-slate-watch/J1-g1-operator-publishes-terms.mp4) | G-1 | the operator | 22 s |
-| 3 | [organisation registers and claims](../assets/clean-slate-watch/J1-g2-organisation-registers-and-claims.mp4) | G-2 | Peter Otieno | 41 s |
-| 4 | [operator admits the organisation](../assets/clean-slate-watch/J1-g4-operator-admits-the-organisation.mp4) | G-4 | the operator | 16 s |
-| 5 | [org admin sets up the project and invites](../assets/clean-slate-watch/J3-j3-org-admin-sets-up-the-project-and-invites-8x.mp4) | J3 | Peter | 11 s at 8× |
-| 6–12 | claims by [Alice](../assets/clean-slate-watch/J3-claim-alice.mp4), [Amina](../assets/clean-slate-watch/J3-claim-amina.mp4), [Ndegwa](../assets/clean-slate-watch/J3-claim-ndegwa.mp4), [Joseph](../assets/clean-slate-watch/J3-claim-joseph.mp4), [Naomi](../assets/clean-slate-watch/J3-claim-naomi.mp4), [Nadia](../assets/clean-slate-watch/J3-claim-nadia.mp4), [Daniel](../assets/clean-slate-watch/J3-claim-daniel.mp4) | J3 | each invitee | 16–33 s |
-| 13 | [author writes and submits the definition](../assets/clean-slate-watch/J4-p3-author-writes-and-submits-the-definition-8x.mp4) | P-3 | Amina Yusuf | 14 s at 8× |
-| 14 | [approver ratifies with the gaps named](../assets/clean-slate-watch/J4-p3-approver-ratifies-with-the-gaps-named.mp4) | P-3 | Prof. Ndegwa | 22 s |
-| 15 | [org assigns the rate owner](../assets/clean-slate-watch/J5-f1-org-assigns-the-rate-owner.mp4) | F-1 | Peter | 23 s |
-| 16 | [rate owner publishes the rate](../assets/clean-slate-watch/J5-f1-rate-owner-publishes-the-rate.mp4) | F-1 | Nadia Okoth | 29 s |
-| 17 | [org stands up the mechanism under its owner](../assets/clean-slate-watch/J5-f2-org-stands-up-the-mechanism-under-its-owner.mp4) | F-2 | Peter | 22 s |
-| 18 | [mechanism owner connects, tests and activates](../assets/clean-slate-watch/J5-f2-mechanism-owner-connects-tests-and-activates.mp4) | F-2 | Daniel Mwangi | 77 s |
-| 19 | [agent registers a worker](../assets/clean-slate-watch/J6-j6-agent-registers-a-worker.mp4) | J6 | Naomi Achieng | 24 s |
-| 20 | [worker registers herself](../assets/clean-slate-watch/J7-j7-worker-registers-herself.mp4) | J7 | Grace Wanjiru | 34 s |
-| 21 | [agent closes the roster](../assets/clean-slate-watch/J6-j6-agent-closes-the-roster.mp4) | J6 | Naomi | 26 s |
-| 22 | [worker confirms her record](../assets/clean-slate-watch/J7-j7-worker-confirms-her-record.mp4) | J7 | Grace | 39 s |
-| 23 | [assisted confirmation and handoff](../assets/clean-slate-watch/J8-j8-assisted-confirmation-and-handoff.mp4) | J8 | Naomi | 17 s |
-| 24 | [verifier panels](../assets/clean-slate-watch/J8-j8-verifier-panels.mp4) | P-10 | nobody | 24 s |
-| 25 | [project dashboards](../assets/clean-slate-watch/J9-j9-project-dashboards.mp4) | J9 | Dr. Alice Mutua | 34 s |
-| 26 | [registry dashboards](../assets/clean-slate-watch/J11-j11-registry-dashboards.mp4) | J11 | Joseph Kariuki | 31 s |
-| 27 | [the wallet: encrypted restore, offline verification, Inji guest download](../assets/crest-development-validation/crest-development-validation.mp4) | W-1, V-1 | Grace | 2 m 17 s |
+| 1 | operator claims and stands up (recording `J1-g1-operator-claims-and-stands-up.mp4`) | G-1 | the operator | 39 s |
+| 2 | operator publishes terms (recording `J1-g1-operator-publishes-terms.mp4`) | G-1 | the operator | 22 s |
+| 3 | organisation registers and claims (recording `J1-g2-organisation-registers-and-claims.mp4`) | G-2 | Peter Otieno | 41 s |
+| 4 | operator admits the organisation (recording `J1-g4-operator-admits-the-organisation.mp4`) | G-4 | the operator | 16 s |
+| 5 | org admin sets up the project and invites (recording `J3-j3-org-admin-sets-up-the-project-and-invites-8x.mp4`) | J3 | Peter | 11 s at 8× |
+| 6–12 | claims by Alice (recording `J3-claim-alice.mp4`), Amina (recording `J3-claim-amina.mp4`), Ndegwa (recording `J3-claim-ndegwa.mp4`), Joseph (recording `J3-claim-joseph.mp4`), Naomi (recording `J3-claim-naomi.mp4`), Nadia (recording `J3-claim-nadia.mp4`), Daniel (recording `J3-claim-daniel.mp4`) | J3 | each invitee | 16–33 s |
+| 13 | author writes and submits the definition (recording `J4-p3-author-writes-and-submits-the-definition-8x.mp4`) | P-3 | Amina Yusuf | 14 s at 8× |
+| 14 | approver ratifies with the gaps named (recording `J4-p3-approver-ratifies-with-the-gaps-named.mp4`) | P-3 | Prof. Ndegwa | 22 s |
+| 15 | org assigns the rate owner (recording `J5-f1-org-assigns-the-rate-owner.mp4`) | F-1 | Peter | 23 s |
+| 16 | rate owner publishes the rate (recording `J5-f1-rate-owner-publishes-the-rate.mp4`) | F-1 | Nadia Okoth | 29 s |
+| 17 | org stands up the mechanism under its owner (recording `J5-f2-org-stands-up-the-mechanism-under-its-owner.mp4`) | F-2 | Peter | 22 s |
+| 18 | mechanism owner connects, tests and activates (recording `J5-f2-mechanism-owner-connects-tests-and-activates.mp4`) | F-2 | Daniel Mwangi | 77 s |
+| 19 | agent registers a worker (recording `J6-j6-agent-registers-a-worker.mp4`) | J6 | Naomi Achieng | 24 s |
+| 20 | worker registers herself (recording `J7-j7-worker-registers-herself.mp4`) | J7 | Grace Wanjiru | 34 s |
+| 21 | agent closes the roster (recording `J6-j6-agent-closes-the-roster.mp4`) | J6 | Naomi | 26 s |
+| 22 | worker confirms her record (recording `J7-j7-worker-confirms-her-record.mp4`) | J7 | Grace | 39 s |
+| 23 | assisted confirmation and handoff (recording `J8-j8-assisted-confirmation-and-handoff.mp4`) | J8 | Naomi | 17 s |
+| 24 | verifier panels (recording `J8-j8-verifier-panels.mp4`) | P-10 | nobody | 24 s |
+| 25 | project dashboards (recording `J9-j9-project-dashboards.mp4`) | J9 | Dr. Alice Mutua | 34 s |
+| 26 | registry dashboards (recording `J11-j11-registry-dashboards.mp4`) | J11 | Joseph Kariuki | 31 s |
+| 27 | the wallet: encrypted restore, offline verification, Inji guest download (recording `crest-development-validation.mp4`) | W-1, V-1 | Grace | 2 m 17 s |
 
-Not recorded: J10, the funding oversight viewer, because no record derives that persona on a clean deployment. How the run was made is in the recordings' own [README](../assets/clean-slate-watch/README.md).
+Not recorded: J10, the funding oversight viewer, because no record derives that persona on a clean deployment.
 
 ## How these are proven
 

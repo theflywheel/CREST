@@ -41,9 +41,9 @@ sequenceDiagram
 
 ## Recordings
 
-- [The org assigns the rate owner](../assets/clean-slate-watch/J5-f1-org-assigns-the-rate-owner.mp4) (23 s)
-- [The rate owner publishes the rate](../assets/clean-slate-watch/J5-f1-rate-owner-publishes-the-rate.mp4) (29 s)
-- [The org stands up the mechanism](../assets/clean-slate-watch/J5-f2-org-stands-up-the-mechanism-under-its-owner.mp4) (22 s)
-- [The owner connects, tests and activates](../assets/clean-slate-watch/J5-f2-mechanism-owner-connects-tests-and-activates.mp4) (77 s)
+- The org assigns the rate owner (recording `J5-f1-org-assigns-the-rate-owner.mp4`) (23 s)
+- The rate owner publishes the rate (recording `J5-f1-rate-owner-publishes-the-rate.mp4`) (29 s)
+- The org stands up the mechanism (recording `J5-f2-org-stands-up-the-mechanism-under-its-owner.mp4`) (22 s)
+- The owner connects, tests and activates (recording `J5-f2-mechanism-owner-connects-tests-and-activates.mp4`) (77 s)
 
 Screens: f1_1–f1_5, f2_1–f2_10. Next: [ENROLMENT.md](ENROLMENT.md).

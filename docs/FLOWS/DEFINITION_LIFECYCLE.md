@@ -40,7 +40,7 @@ sequenceDiagram
 
 ## Recordings
 
-- [The author writes and submits](../assets/clean-slate-watch/J4-p3-author-writes-and-submits-the-definition-8x.mp4) (14 s at 8×)
-- [The approver ratifies with the gaps named](../assets/clean-slate-watch/J4-p3-approver-ratifies-with-the-gaps-named.mp4) (22 s)
+- The author writes and submits (recording `J4-p3-author-writes-and-submits-the-definition-8x.mp4`) (14 s at 8×)
+- The approver ratifies with the gaps named (recording `J4-p3-approver-ratifies-with-the-gaps-named.mp4`) (22 s)
 
 Screens: p3_1–p3_28. Next: [PAYMENT_SETUP.md](PAYMENT_SETUP.md).

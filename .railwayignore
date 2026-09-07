@@ -18,3 +18,7 @@ docs/reference/
 /verification
 /payments
 /notify
+
+# Nothing under docs/assets is uploaded to the builder; the docs pages do not
+# serve recordings, and the upload stays far under Railway's size limit.
+docs/assets/
