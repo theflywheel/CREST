@@ -248,7 +248,12 @@ func Compose(name string, members []Member) {
 			binder = members[authority].Opts.Binder(deps[authority])
 		}
 		var m httpx.Middleware
-		m, forget = identity.Middleware(identity.NewMultiVerifier(idCfg), binder, clk, log)
+		// The same expansion the handlers get through Deps.SameParty, so that
+		// "is this the same person?" has one answer in this process and not
+		// two (#216). Actor calls it only when a request names an id other
+		// than the one it proved.
+		m, forget = identity.Middleware(identity.NewMultiVerifier(idCfg), binder,
+			identity.SameFunc(sameParty), clk, log)
 		mw = append(mw, m)
 		log.Info("callers are authenticated", "issuer", idCfg.Issuer, "jwks", idCfg.JWKSURL)
 	} else {

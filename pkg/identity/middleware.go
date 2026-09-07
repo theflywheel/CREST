@@ -60,7 +60,14 @@ type Forget func(subject string)
 
 // Middleware verifies bearer tokens and resolves callers. The returned Forget
 // invalidates one subject's cache entry; services that never bind ignore it.
-func Middleware(v TokenVerifier, binder Binder, clk clock.Clock, log *slog.Logger) (func(http.Handler) http.Handler, Forget) {
+//
+// `same` expands a party id across merges. It is put on the Caller rather than
+// called here: only Actor needs it, and only when a request names an id other
+// than the one it proved (#216), which is the merged-worker case and not the
+// ordinary one. Wiring it here rather than threading a parameter through
+// thirty-odd Authorize call sites keeps the fix in one place. May be nil, and
+// then a request naming an id it did not prove is refused as it was before.
+func Middleware(v TokenVerifier, binder Binder, same SameFunc, clk clock.Clock, log *slog.Logger) (func(http.Handler) http.Handler, Forget) {
 	cache := &bindingCache{ttl: time.Minute, clk: clk, entries: map[string]bindingEntry{}}
 	forget := func(subject string) {
 		cache.mu.Lock()
@@ -109,6 +116,7 @@ func Middleware(v TokenVerifier, binder Binder, clk clock.Clock, log *slog.Logge
 				caller.PartyID = party
 			}
 			caller.requestedFor = strings.TrimSpace(r.Header.Get(HeaderOnBehalfOf))
+			caller.sameParty = same
 
 			next.ServeHTTP(w, r.WithContext(NewContext(r.Context(), caller)))
 		})
