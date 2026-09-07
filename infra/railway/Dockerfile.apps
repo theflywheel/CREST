@@ -17,10 +17,23 @@ WORKDIR /quartz
 RUN npm ci --no-audit --no-fund
 COPY docs/*.md /docs/
 COPY docs/*.html /docs/
+# The four technical sections, each a folder of pages with its own README as
+# the folder's index page.
+COPY docs/ARCHITECTURE /docs/ARCHITECTURE
+COPY docs/FLOWS /docs/FLOWS
+COPY docs/PLUGINS /docs/PLUGINS
+COPY docs/BUILDING_ON_CREST /docs/BUILDING_ON_CREST
+# The demo recordings FLOWS.md links to (docs/assets/…): served beside the
+# rendered pages, at the same relative paths the markdown uses.
+COPY docs/assets/clean-slate-watch /docs/assets/clean-slate-watch
+COPY docs/assets/crest-development-validation /docs/assets/crest-development-validation
 COPY infra/railway/quartz-theme.mjs /quartz/quartz-theme.mjs
 # docs/README.md is the index of the design docs, so it becomes the site root.
 RUN rm -rf content && mkdir content \
     && cp /docs/*.md content/ && mv content/README.md content/index.md \
+    && for d in ARCHITECTURE FLOWS PLUGINS BUILDING_ON_CREST; do \
+         cp -r /docs/$d content/$d && mv content/$d/README.md content/$d/index.md; \
+       done \
     # Quartz titles a page by filename unless frontmatter says otherwise, and
     # the site root should not be called "index".
     && printf -- '---\ntitle: CREST design documents\n---\n' > /tmp/fm \
@@ -31,7 +44,11 @@ RUN rm -rf content && mkdir content \
     # fails the build if the pinned Quartz defaults are not found verbatim.
     && node quartz-theme.mjs \
     && node ./quartz/bootstrap-cli.mjs build \
-    && cp /docs/*.html public/
+    && cp /docs/*.html public/ \
+    && cp -r /docs/assets public/assets \
+    # A section's README.md became its index page; links written for GitHub
+    # still say README, so answer that name too.
+    && for d in ARCHITECTURE FLOWS PLUGINS BUILDING_ON_CREST; do cp public/$d/index.html public/$d/README.html; done
 
 # The rebuilt doors (React/Vite, frontend/ pnpm workspace) build here; doors
 # not yet ported keep shipping as the static files under apps/.

@@ -18,7 +18,9 @@ The layering test: *if two deployments could reasonably disagree and both still 
 
 Each is a self-contained HTML page — clone and open in a browser.
 
-Full index with section map: [`docs/README.md`](docs/README.md). Source material sits in [`reference/`](reference/).
+Technical documentation, by section: [Architecture](docs/ARCHITECTURE/README.md) · [Flows, with recordings](docs/FLOWS/README.md) · [Plugins](docs/PLUGINS/README.md) · [Building on CREST](docs/BUILDING_ON_CREST/README.md). Hosted at https://crest-apps-production.up.railway.app/docs/.
+
+Full index with section map: [`docs/README.md`](docs/README.md). Source material sits in [`docs/reference/`](docs/reference/).
 
 ## Repository
 
