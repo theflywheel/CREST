@@ -13,6 +13,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -130,7 +131,7 @@ func computeHash(env map[string]string, composeContents []byte) string {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		fmt.Fprintf(h, "%s=%s\n", k, env[k])
+		_, _ = fmt.Fprintf(h, "%s=%s\n", k, env[k])
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -250,12 +251,14 @@ func cmdHeader() {
 }
 
 func gitRevision() string {
-	out, err := exec.Command("git", "rev-parse", "--short", "HEAD").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "rev-parse", "--short", "HEAD").Output()
 	if err != nil {
 		return "unknown (not a git checkout, or git unavailable)"
 	}
 	rev := strings.TrimSpace(string(out))
-	dirty, err := exec.Command("git", "status", "--porcelain").Output()
+	dirty, err := exec.CommandContext(ctx, "git", "status", "--porcelain").Output()
 	if err == nil && len(strings.TrimSpace(string(dirty))) > 0 {
 		rev += "+dirty"
 	}
@@ -280,7 +283,9 @@ func composeProjectName() string {
 // leading `down -v` is supposed to prevent and e2e-run has no such guard for.
 func postgresVolumeAge(project string) string {
 	name := project + "_pgdata"
-	out, err := exec.Command("docker", "volume", "inspect", name, "--format", "{{.CreatedAt}}").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "docker", "volume", "inspect", name, "--format", "{{.CreatedAt}}").Output()
 	if err != nil {
 		return "no volume found (fresh — or the stack is not up)"
 	}
