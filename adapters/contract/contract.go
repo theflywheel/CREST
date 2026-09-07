@@ -39,6 +39,12 @@ func Run(t *testing.T, suite Suite) {
 	if suite.Adapter.Ref() == "" {
 		t.Fatal("adapter ref is empty")
 	}
+	if suite.Source.AdapterRef != suite.Adapter.Ref() {
+		t.Fatalf("the suite's source is registered with %q, not the adapter under test %q", suite.Source.AdapterRef, suite.Adapter.Ref())
+	}
+	if suite.Source.SystemRef == "" {
+		t.Fatal("the suite's source names no system: a record's provenance must say where it came from")
+	}
 	if len(suite.Cases) == 0 {
 		t.Fatal("contract suite has no cases")
 	}
@@ -65,9 +71,17 @@ func Run(t *testing.T, suite Suite) {
 				if err := schema.Validate(schema.IDEvidenceRecord, row.Record); err != nil {
 					t.Errorf("%s: canonical schema: %v", row.Ref, err)
 				}
+				// The whole provenance tuple is the deployment's, never the
+				// payload's: the adapter version (the one under test, and the
+				// one the source is registered with), the source's class,
+				// capture and exposure, the system the record came from —
+				// which is what an assessment later downgrades by — and the
+				// receipt time it was handed.
 				p := row.Record.Provenance
-				if p.AdapterRef != suite.Adapter.Ref() || p.SourceClass != suite.Source.Class ||
+				if p.AdapterRef != suite.Adapter.Ref() || p.AdapterRef != suite.Source.AdapterRef ||
+					p.SourceClass != suite.Source.Class ||
 					p.CaptureMethod != suite.Source.CaptureMethod || p.SourceExposure != suite.Source.Exposure ||
+					p.SystemRef == nil || *p.SystemRef != suite.Source.SystemRef ||
 					!p.ReceivedAt.Equal(suite.ReceivedAt) {
 					t.Errorf("%s: connector did not preserve deployment-controlled provenance: %#v", row.Ref, p)
 				}
