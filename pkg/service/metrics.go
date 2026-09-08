@@ -15,6 +15,8 @@ type metricsMember struct {
 	db   interface {
 		OutboxStats(context.Context) (store.OutboxStats, error)
 	}
+	// own is the member's own counters, nil for a member that publishes none.
+	own func() []Metric
 }
 
 // outboxMetricsHandler serves a deliberately small Prometheus exposition.
@@ -53,6 +55,25 @@ func outboxMetricsHandler(members []metricsMember) http.HandlerFunc {
 			_, _ = fmt.Fprintf(w, "crest_outbox_pending{member=%s} %d\n", label, stats[i].Pending)
 			_, _ = fmt.Fprintf(w, "crest_outbox_retrying{member=%s} %d\n", label, stats[i].Retrying)
 			_, _ = fmt.Fprintf(w, "crest_outbox_oldest_age_seconds{member=%s} %g\n", label, stats[i].OldestAgeSecs)
+		}
+		// Then whatever each member publishes for itself. Written after the
+		// outbox block so a member's own counter can never displace the
+		// delivery gauges, which are the ones that say whether anything is
+		// moving at all.
+		for _, member := range members {
+			if member.own == nil {
+				continue
+			}
+			label := strconv.Quote(member.name)
+			for _, m := range member.own() {
+				if m.Help != "" {
+					_, _ = fmt.Fprintf(w, "# HELP %s %s\n", m.Name, m.Help)
+				}
+				if m.Type != "" {
+					_, _ = fmt.Fprintf(w, "# TYPE %s %s\n", m.Name, m.Type)
+				}
+				_, _ = fmt.Fprintf(w, "%s{member=%s} %g\n", m.Name, label, m.Value)
+			}
 		}
 	}
 }

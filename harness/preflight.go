@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Preflight distinguishes a stale environment from a real defect (#79).
@@ -41,7 +42,32 @@ type ServiceStatus struct {
 	// question, and a stack that answered it wrongly would fail every
 	// window-dependent scenario for a reason no scenario names.
 	HasClock bool
+
+	// Now is what this service thinks the time is: /internal/clock's `now`
+	// where the service declares the seam, and /healthz's `time` otherwise.
+	//
+	// It is here because the confirmation window's opening instant is stamped
+	// by one process and honoured by another (#221). Two processes that
+	// disagree about the time move a worker's deadline, and until this the
+	// harness could not tell the difference between a stack whose clocks were
+	// driven together and one whose clocks had drifted apart — every
+	// window-crossing scenario simply asserted something slightly wrong and
+	// usually got away with it.
+	//
+	// Zero means the service reported no time at all, and the skew rule then
+	// says nothing rather than guessing.
+	Now time.Time
 }
+
+// ClockSkewThreshold is how far two processes' clocks may differ before the
+// stack is stale-environment-class.
+//
+// The same five minutes as the payments application's CLOCK_SKEW_ALERT
+// default, deliberately: the harness should fail on the disagreement a
+// deployment would warn about, not on a tighter or looser one of its own. It is
+// generous on purpose — the statuses are gathered one service at a time over
+// HTTP, so a small difference is the gathering, not the stack.
+const ClockSkewThreshold = 5 * time.Minute
 
 // ExpectedConfig is what this harness invocation expects of the stack it is
 // about to run against, derived from its own environment — the same
@@ -92,7 +118,12 @@ func (m Mismatch) String() string {
 //   - and every service's build revision must agree with every other
 //     service's, because one image rebuilt and another left stale from a
 //     previous run is the same "environment vs. defect" confusion one layer
-//     down.
+//     down;
+//   - and every service must think it is roughly the same time as every other
+//     (#221). The confirmation window's opening instant is stamped by core and
+//     honoured by payments, so two processes that disagree about the time move
+//     a worker's deadline — silently, and in a way that reads as a scenario
+//     asserting the wrong number rather than as a stack that is wrong.
 //
 // Deterministic order: mismatches are returned sorted by service then field,
 // so a repeated run reports the same thing in the same order.
@@ -138,6 +169,41 @@ func ComparePreflight(expected ExpectedConfig, actual map[string]ServiceStatus) 
 			Expected: "one process answering /internal/clock (the payments application, #127)",
 			Actual:   "no process answers it, so the harness cannot move time",
 		})
+	}
+
+	// Two processes that disagree about the time (#221). Simple and honest: the
+	// earliest reported time against the latest, one mismatch naming both, and
+	// nothing said at all unless at least two services reported a time.
+	//
+	// The same rule covers both cases the ruling names, because there is only
+	// one thing to check. Driveable clocks are aligned by the harness before
+	// scenarios run, so a difference here is a drive that did not take;
+	// wall-clock services are aligned by whatever keeps the host's time, so a
+	// difference there is drift. Either way the stack cannot be trusted about
+	// when a window closes, and that is what the failure says.
+	var earliest, latest string
+	for _, name := range names {
+		if actual[name].Now.IsZero() {
+			continue
+		}
+		if earliest == "" || actual[name].Now.Before(actual[earliest].Now) {
+			earliest = name
+		}
+		if latest == "" || actual[name].Now.After(actual[latest].Now) {
+			latest = name
+		}
+	}
+	if earliest != "" && latest != earliest {
+		if skew := actual[latest].Now.Sub(actual[earliest].Now); skew > ClockSkewThreshold {
+			out = append(out, Mismatch{
+				Service: "stack", Field: "clock skew",
+				Expected: fmt.Sprintf("every process within %s of every other", ClockSkewThreshold),
+				Actual: fmt.Sprintf("%s is %s ahead of %s (%s vs %s); a confirmation window opened by one "+
+					"and closed by the other would move a worker's deadline",
+					latest, skew, earliest,
+					actual[latest].Now.Format(time.RFC3339), actual[earliest].Now.Format(time.RFC3339)),
+			})
+		}
 	}
 
 	// A build-revision mismatch is only meaningful once there is more than one
@@ -239,8 +305,9 @@ func isNotFound(err error) bool {
 
 func gatherServiceStatus(ctx context.Context, svc *Service) (ServiceStatus, error) {
 	var health struct {
-		Transparency string `json:"transparency"`
-		Revision     string `json:"revision"`
+		Transparency string    `json:"transparency"`
+		Revision     string    `json:"revision"`
+		Time         time.Time `json:"time"`
 	}
 	if err := svc.Get(ctx, "/healthz", &health); err != nil {
 		return ServiceStatus{}, err
@@ -253,12 +320,20 @@ func gatherServiceStatus(ctx context.Context, svc *Service) (ServiceStatus, erro
 	// would go unreported on core precisely because core stopped owning a
 	// clock. Anything other than "the route is not there" is still an error.
 	var clk struct {
-		Ticking bool `json:"ticking"`
+		Ticking bool      `json:"ticking"`
+		Now     time.Time `json:"now"`
 	}
-	status := ServiceStatus{Transparency: health.Transparency, Revision: health.Revision}
+	// /healthz reports the service's own clock, so a service with no seam
+	// still says what time it thinks it is (#221). Where the seam exists,
+	// /internal/clock is the same clock and is preferred only because it is
+	// the one the harness drives.
+	status := ServiceStatus{Transparency: health.Transparency, Revision: health.Revision, Now: health.Time}
 	switch err := svc.Get(ctx, "/internal/clock", &clk); {
 	case err == nil:
 		status.HasClock, status.ClockTicking = true, clk.Ticking
+		if !clk.Now.IsZero() {
+			status.Now = clk.Now
+		}
 	case isNotFound(err):
 		status.HasClock = false
 	default:
