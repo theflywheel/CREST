@@ -110,6 +110,9 @@ The deploy matrix covers the whole demo fleet (2026-08-28, #138): the seven serv
 | DeDi publisher private key | Railway service variables only; the local copy is gitignored |
 | DeDi node signing key | Minted by the node on first boot, kept in its own database, never exported |
 | Inji Verify signing keystore | `make verify-keystore` mints it into `infra/verify/secrets/` (gitignored); on Railway it is `INJI_VERIFY_KEYSTORE_P12_B64` + `INJI_VERIFY_KEYSTORE_PASSWORD` as service variables |
+| `CREST_SERVICE_TOKEN` | The shared service-boundary token, at least 32 bytes, the **same value** on `crest-core`, `crest-payments` and `crest-seed` (the sender sets `X-CREST-Service-Token` from it; the receiver's boundary compares against it). Railway service variables only |
+
+**`CREST_SERVICE_TOKEN` is mandatory outside `CREST_ENV=local` since #207.** A service without one (or without the signed identity `CREST_SERVICE_ID` + `CREST_SERVICE_PRIVATE_KEY` + `CREST_SERVICE_PEERS_JSON`) logs `deployment configuration refused` and exits, and Railway restarts it forever while reporting the deployment as SUCCESS — the door then times out on `/readyz` and the deploy workflow fails on "did not answer within 10 minutes" with nothing pointing at the cause. That is how the demo fleet was dark from #207's merge until 2026-09-08, when the token was set on the three services above. When a deploy fails readiness, read the service's logs before anything else: `railway logs --service crest-core --json | head`.
 
 **None of these are in the repository**, and `.railwayignore` keeps key material out of the build upload as well — an upload is a copy, and a copy of a signing key is a signing key.
 
