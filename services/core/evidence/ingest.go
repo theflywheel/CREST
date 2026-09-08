@@ -201,7 +201,13 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 				ContextID:    a.unit.ContextID,
 				DefinitionID: def.ID,
 				Version:      def.Version,
-				CreatedAt:    now,
+				// The record and the worker's first sight of it are the same
+				// instant on this path: a matched row becomes a claim the
+				// moment the batch is ingested, and that is when it becomes
+				// visible to the worker. They differ on the unclear-queue
+				// path — see unclear.go.
+				CreatedAt:      now,
+				FirstVisibleAt: now,
 			}); err != nil {
 				return err
 			}
@@ -308,14 +314,34 @@ func redact(rec schema.CanonicalWorkEvidenceRecord) schema.CanonicalWorkEvidence
 // confirmation needs and nothing more — no outcome, no provenance. Confirmation
 // asks a worker whether a record is true; it does not need to be able to
 // re-derive the record.
+//
+// Two instants, and the difference between them is the whole of #221 (ruled
+// 2026-09-08):
+//
+//   - CreatedAt is when the record this claim attaches to entered CREST. On the
+//     ingest path that is now; on the unclear-queue path it is when the batch
+//     arrived, weeks before anybody worked the queue, which is the same instant
+//     the unit carries and for the same reason.
+//   - FirstVisibleAt is when the worker could first have seen the record. It is
+//     the window's opening instant, and the payments application computes
+//     `closesAt` from it rather than from its own clock at the moment the
+//     handoff arrives. A delivery retried through an outage therefore opens the
+//     window at the right time, late-arriving, instead of granting a fresh
+//     seven days that started when the network came back.
+//
+// Both are stamped by evidence's clock. Payments trusts them — the peer is
+// service-token-authenticated — and records the delta against its own arrival
+// clock, which is the core↔payments clock-skew detector (#215's second
+// observation).
 type windowRequest struct {
-	ClaimID      string    `json:"claimId"`
-	UnitID       string    `json:"unitId"`
-	PartyID      string    `json:"partyId"`
-	ContextID    string    `json:"contextId"`
-	DefinitionID string    `json:"definitionId"`
-	Version      int       `json:"definitionVersion"`
-	CreatedAt    time.Time `json:"createdAt"`
+	ClaimID        string    `json:"claimId"`
+	UnitID         string    `json:"unitId"`
+	PartyID        string    `json:"partyId"`
+	ContextID      string    `json:"contextId"`
+	DefinitionID   string    `json:"definitionId"`
+	Version        int       `json:"definitionVersion"`
+	CreatedAt      time.Time `json:"createdAt"`
+	FirstVisibleAt time.Time `json:"firstVisibleAt"`
 }
 
 // consider decides one row's fate, returning a reason when it cannot become a

@@ -224,18 +224,25 @@ func (h *handlers) resolveUnclear(w http.ResponseWriter, r *http.Request) {
 		if !created {
 			return nil
 		}
-		// The window request carries `now`, so the seven days run from the
-		// resolution. Confirmation opens the window against its own clock at
-		// the moment it handles this message, which is the same decision from
-		// the other side.
+		// This is the path where the two instants come apart, and #221 is why
+		// they are both sent rather than one being inferred at the far end.
+		// The record entered CREST when its batch arrived — weeks ago, which
+		// is what the unit carries — and the worker could first have seen it
+		// only now, when somebody put their name to it. The seven days run
+		// from `now`, and they run from `now` because evidence says so, not
+		// because payments happened to handle the message promptly: before
+		// #221 the window opened against the payments process's own clock at
+		// delivery, so a retry after an outage quietly moved a worker's
+		// deadline.
 		return store.Enqueue(r.Context(), tx, topicClaimCreated, windowRequest{
-			ClaimID:      claim.ID,
-			UnitID:       unitID,
-			PartyID:      claim.PartyID,
-			ContextID:    unit.ContextID,
-			DefinitionID: batch.DefinitionID,
-			Version:      batch.DefinitionVersion,
-			CreatedAt:    now,
+			ClaimID:        claim.ID,
+			UnitID:         unitID,
+			PartyID:        claim.PartyID,
+			ContextID:      unit.ContextID,
+			DefinitionID:   batch.DefinitionID,
+			Version:        batch.DefinitionVersion,
+			CreatedAt:      unit.CreatedAt,
+			FirstVisibleAt: now,
 		})
 	})
 	switch {

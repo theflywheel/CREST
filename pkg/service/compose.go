@@ -312,7 +312,7 @@ func Compose(name string, members []Member) {
 	}
 	metricMembers := make([]metricsMember, 0, len(members))
 	for i, m := range members {
-		metricMembers = append(metricMembers, metricsMember{name: m.Name, db: deps[i].DB})
+		metricMembers = append(metricMembers, metricsMember{name: m.Name, db: deps[i].DB, own: m.Opts.Metrics})
 	}
 	mux.Handle("GET /internal/metrics", outboxMetricsHandler(metricMembers))
 	if mountClock != nil {

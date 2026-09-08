@@ -333,6 +333,48 @@ paths:
   /readyz: { $ref: "#/components/pathItems/readyz" }
 
 
+  /internal/windows:
+    post:
+      operationId: openWindow
+      summary: Open a confirmation window for a claim that was just created
+      description: >
+        The `claim.created` handoff, delivered from `evidence`'s outbox to
+        whatever CONFIRMATION_URL names (#127). Never a public write: it carries
+        the claim's authoritative party, and a caller who could post here could
+        open a payment window for somebody else.
+
+
+        The window's opening instant is `firstVisibleAt` — the instant the
+        worker could first have seen the record, stamped by `evidence` — and
+        never this process's clock at the moment the delivery lands (#221, ruled
+        2026-09-08). A delivery retried through an outage therefore opens the
+        window at the right time, late-arriving, rather than granting a fresh
+        seven days that started when the network came back.
+
+
+        The supplied instant is trusted, because the peer is authenticated with
+        the service token. The disagreement between it and this process's
+        arrival clock is recorded even so: past CLOCK_SKEW_ALERT (default 5m) it
+        is logged at warn with both instants and counted in
+        `crest_window_clock_skew_events` on /internal/metrics. That counter is
+        the core↔payments clock-skew detector; a deployment whose two processes
+        drift moves every worker's deadline and had no symptom anywhere before
+        it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WindowRequest" }
+      responses:
+        "201":
+          description: >
+            The window, open. A redelivery of a message already handled returns
+            the window that exists rather than opening a second one.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Window" }
+        "400": { $ref: "#/components/responses/BadBody" }
+
   /internal/clock:
     get:
       operationId: readClock
@@ -437,6 +479,42 @@ components:
           type: array
           items: { type: string }
           description: Per-field detail from schema validation, when there is any.
+
+    WindowRequest:
+      type: object
+      description: >
+        What `evidence` tells the payments application when a claim is created.
+        Deliberately the facts a window needs and nothing more — no outcome, no
+        provenance. Confirmation asks a worker whether a record is true; it does
+        not need to be able to re-derive the record.
+      required: [claimId, unitId, partyId, contextId]
+      properties:
+        claimId: { type: string }
+        unitId: { type: string }
+        partyId: { type: string }
+        contextId: { type: string }
+        definitionId: { type: string }
+        definitionVersion: { type: integer }
+        createdAt:
+          type: string
+          format: date-time
+          description: >
+            When the record this claim attaches to entered CREST. On the ingest
+            path that is when the batch arrived; on the unclear-queue path it is
+            still when the batch arrived, weeks before anybody worked the queue,
+            which is the same instant the unit carries. Carried for
+            reconciliation; it is not what the window runs from.
+        firstVisibleAt:
+          type: string
+          format: date-time
+          description: >
+            When the worker could first have seen the record, and therefore when
+            the window opens (#221). Equal to `createdAt` on the ingest path;
+            the resolution instant on the unclear-queue path, because a worker
+            cannot object to a record they were never shown. Absent only from a
+            core deployed before #221, in which case the window falls back to
+            the payments process's arrival clock and says so in the log — for
+            exactly one deploy (see docs/DEPLOYMENT.md).
 
     Window:
       type: object

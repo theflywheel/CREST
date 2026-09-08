@@ -36,9 +36,19 @@ func windowRoutes(mux *http.ServeMux, d service.Deps) {
 		panic(err)
 	}
 
+	// How far the two processes may disagree about the time before somebody
+	// should be told (#221). Unreadable rather than absent gets the default and
+	// says so, for the same reason SWEEP_EVERY does below: a typo here would
+	// otherwise silently switch the detector off.
+	skewAlert, err := config.Duration("CLOCK_SKEW_ALERT", 5*time.Minute)
+	if err != nil {
+		d.Log.Error("CLOCK_SKEW_ALERT unusable; using the default", "error", err, "threshold", skewAlert)
+	}
+
 	h := &windowHandlers{
 		d:            d,
 		window:       window,
+		skewAlert:    skewAlert,
 		supportOwner: config.Str("SUPPORT_OWNER_PARTY_ID", config.Str("CREST_OPERATOR_PARTY_ID", "")),
 		ex: &exiter{
 			db:       d.DB,
@@ -100,7 +110,10 @@ type windowHandlers struct {
 	d            service.Deps
 	window       time.Duration
 	supportOwner string
-	ex           *exiter
+	// skewAlert is how far apart evidence's clock and this process's may be
+	// before the disagreement is worth a warning and a counter (#221).
+	skewAlert time.Duration
+	ex        *exiter
 }
 
 // openWindow is called by evidence's outbox when a claim is created.
@@ -108,6 +121,10 @@ type windowHandlers struct {
 // Opening the window and queueing the notification happen together: a window
 // nobody was told about is a worker who cannot confirm and cannot dispute,
 // which is W5–W6 broken quietly.
+//
+// The opening instant comes from the handoff, never from this process's clock
+// (#221, ruled 2026-09-08). See opening.go for why, and for what happens when a
+// payload arrives without it.
 func (h *windowHandlers) openWindow(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ClaimID      string    `json:"claimId"`
@@ -117,17 +134,37 @@ func (h *windowHandlers) openWindow(w http.ResponseWriter, r *http.Request) {
 		DefinitionID string    `json:"definitionId"`
 		Version      int       `json:"definitionVersion"`
 		CreatedAt    time.Time `json:"createdAt"`
+		// When the worker could first have seen the record. Absent only from a
+		// core deployed before #221.
+		FirstVisibleAt time.Time `json:"firstVisibleAt"`
 	}
 	if !httpx.ReadJSON(w, r, &req) {
 		return
 	}
-	now := h.d.Clock.Now()
+	arrived := h.d.Clock.Now()
+	open := decideOpening(req.FirstVisibleAt, arrived)
+	windowSkew.observe(open, h.skewAlert)
+	switch {
+	case !open.Supplied:
+		h.d.Log.Warn("the claim handoff carried no first-visible instant; falling back to this "+
+			"process's arrival clock",
+			"claimId", req.ClaimID, "arrivedAt", arrived,
+			"consequence", "a delivery delayed by a retry grants a fresh window instead of the one the worker was owed",
+			"expected", "one deploy only — see DEPLOYMENT.md")
+	case open.exceeds(h.skewAlert):
+		h.d.Log.Warn("evidence and payments disagree about the time by more than CLOCK_SKEW_ALERT",
+			"claimId", req.ClaimID,
+			"firstVisibleAt", req.FirstVisibleAt, "arrivedAt", arrived,
+			"delta", open.Delta.String(), "threshold", h.skewAlert.String(),
+			"cause", "either the two processes' clocks have drifted or this handoff was delivered late",
+			"consequence", "the window still opens at the instant evidence supplied, which is the point")
+	}
 	win := Window{
 		ClaimID: req.ClaimID, UnitID: req.UnitID, PartyID: req.PartyID,
 		ContextID: req.ContextID, DefinitionID: req.DefinitionID,
 		DefinitionVersion: req.Version,
-		OpenedAt:          now,
-		ClosesAt:          now.Add(h.window),
+		OpenedAt:          open.At,
+		ClosesAt:          closesFrom(open.At, h.window),
 	}
 	token, err := newReviewToken()
 	if err != nil {
@@ -837,14 +874,19 @@ func (h *windowHandlers) recordAcknowledgement(ctx context.Context, claimID, by,
 			out = win
 			return nil
 		}
+		// The same rule as openWindow's, expressed once (#221): the window
+		// runs from the instant the worker could first have seen the record,
+		// and here that instant is the acknowledgement this process is
+		// handling.
 		at := h.d.Clock.Now()
-		if err := recordAcknowledgement(ctx, tx, claimID, at, by, reason, evidence, at.Add(h.window)); err != nil {
+		if err := recordAcknowledgement(ctx, tx, claimID, at, by, reason, evidence,
+			closesFrom(at, h.window)); err != nil {
 			return err
 		}
 		win.Reach, win.ReachDetail = stringPtr("reached"), stringPtr(reason)
 		win.ReviewStartedAt, win.AcknowledgedAt, win.AcknowledgedBy = &at, &at, &by
 		win.AcknowledgementReason, win.AcknowledgementEvidence = &reason, &evidence
-		win.ClosesAt = at.Add(h.window)
+		win.ClosesAt = closesFrom(at, h.window)
 		out = win
 		return nil
 	})

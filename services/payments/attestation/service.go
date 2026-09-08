@@ -54,6 +54,27 @@ func Service() service.Options {
 			return adoptLegacyOpenWindows(ctx, d)
 		},
 		Migrations: migrations, Dir: "migrations", Routes: windowRoutes,
+		// The core↔payments clock-skew detector, readable rather than only
+		// logged (#221). `crest_window_clock_skew_events` staying at zero is
+		// the claim being made; a deployment whose two processes drift moves
+		// every worker's deadline, and before this there was no symptom
+		// anywhere.
+		Metrics: func() []service.Metric {
+			events, fallbacks, worst := windowSkew.snapshot()
+			return []service.Metric{{
+				Name: "crest_window_clock_skew_events", Type: "counter",
+				Help:  "Claim handoffs whose supplied instant differed from this process's arrival clock by more than CLOCK_SKEW_ALERT.",
+				Value: events,
+			}, {
+				Name: "crest_window_clock_skew_worst_seconds", Type: "gauge",
+				Help:  "Largest absolute disagreement seen between evidence's supplied instant and this process's arrival clock.",
+				Value: worst.Seconds(),
+			}, {
+				Name: "crest_window_opening_instant_fallbacks", Type: "counter",
+				Help:  "Claim handoffs that carried no first-visible instant, so the window opened on this process's arrival clock.",
+				Value: fallbacks,
+			}}
+		},
 		Deliver: func(d service.Deps) store.Deliverer {
 			return func(ctx context.Context, topic string, payload json.RawMessage) error {
 				switch topic {

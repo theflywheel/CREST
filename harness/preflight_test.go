@@ -1,6 +1,9 @@
 package harness
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // ComparePreflight is pure — expected config in, actual service reports in,
 // mismatches out — so it is exercised directly, with no Docker and no stack
@@ -85,6 +88,58 @@ func TestComparePreflightCatchesAStackWhereNoProcessOwnsTheClock(t *testing.T) {
 	got := ComparePreflight(expected, actual)
 	if len(got) != 1 || got[0].Field != "clock seam" {
 		t.Fatalf("want one clock-seam mismatch naming the stack, got %v", got)
+	}
+}
+
+// The confirmation window's opening instant is stamped by core and honoured by
+// payments (#221). A stack whose two processes disagree about the time moves
+// every worker's deadline, and every window-crossing scenario then asserts a
+// number that is quietly wrong — which is the "environment vs. defect"
+// confusion #79 exists to end, one layer down.
+func TestComparePreflightCatchesTwoProcessesOnDifferentClocks(t *testing.T) {
+	expected := ExpectedConfig{Transparency: "postgres"}
+	noon := time.Date(2026, 3, 4, 12, 0, 0, 0, time.UTC)
+	actual := map[string]ServiceStatus{
+		"core":     {Transparency: "postgres", Revision: "abc123", HasClock: true, ClockTicking: true, Now: noon},
+		"payments": {Transparency: "postgres", Revision: "abc123", HasClock: true, ClockTicking: true, Now: noon.Add(2 * time.Hour)},
+	}
+
+	got := ComparePreflight(expected, actual)
+	if len(got) != 1 || got[0].Field != "clock skew" {
+		t.Fatalf("want one clock-skew mismatch naming the stack, got %v", got)
+	}
+	if !contains(got[0].Actual, "payments") || !contains(got[0].Actual, "core") {
+		t.Fatalf("the mismatch must name both processes, got %q", got[0].Actual)
+	}
+}
+
+// The threshold is generous on purpose: the statuses are gathered one service
+// at a time over HTTP, and a stack that is a second apart is the gathering, not
+// a drifting deployment. A suite that fails on that is a suite people re-run.
+func TestComparePreflightToleratesTheTimeGatheringTakesAgainstTheThreshold(t *testing.T) {
+	expected := ExpectedConfig{Transparency: "postgres"}
+	noon := time.Date(2026, 3, 4, 12, 0, 0, 0, time.UTC)
+	actual := map[string]ServiceStatus{
+		"core":     {Transparency: "postgres", Revision: "abc123", Now: noon},
+		"payments": {Transparency: "postgres", Revision: "abc123", HasClock: true, ClockTicking: true, Now: noon.Add(ClockSkewThreshold - time.Second)},
+	}
+
+	if got := ComparePreflight(expected, actual); len(got) != 0 {
+		t.Fatalf("a difference inside the threshold is not a stale stack; got %v", got)
+	}
+}
+
+// A service that reported no time says nothing about skew. Guessing from one
+// clock is how a check starts failing runs for a reason it cannot substantiate.
+func TestComparePreflightSaysNothingAboutSkewWithOnlyOneReportedTime(t *testing.T) {
+	expected := ExpectedConfig{Transparency: "postgres"}
+	actual := map[string]ServiceStatus{
+		"core":     {Transparency: "postgres", Revision: "abc123"},
+		"payments": {Transparency: "postgres", Revision: "abc123", HasClock: true, ClockTicking: true, Now: time.Date(2026, 3, 4, 12, 0, 0, 0, time.UTC)},
+	}
+
+	if got := ComparePreflight(expected, actual); len(got) != 0 {
+		t.Fatalf("one clock cannot disagree with itself; got %v", got)
 	}
 }
 

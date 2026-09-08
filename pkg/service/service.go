@@ -179,7 +179,33 @@ type Options struct {
 	// implementation, and it is the payments application's.
 	ClockSeam ClockSeamFunc
 
+	// Metrics contributes this member's own counters to GET
+	// /internal/metrics, beside the outbox gauges every member already
+	// publishes.
+	//
+	// It exists because a fact worth alerting on has to be readable from
+	// outside the process. The first one is the core↔payments clock skew the
+	// confirmation window's opening instant depends on (#221): payments logs
+	// a warning when the instant evidence supplied and its own arrival clock
+	// disagree, and a log line nobody greps is not a detector.
+	//
+	// Called on every scrape, so it must be cheap and must not touch the
+	// database — the outbox gauges are the only thing here allowed a query.
+	Metrics func() []Metric
+
 	Routes Routes
+}
+
+// Metric is one number a member publishes on /internal/metrics.
+//
+// Deliberately small: a name, a help line, a type and a value. Nothing here
+// carries a payload, a topic or an identity, for the reason metrics.go gives —
+// this surface is protected by service auth, not by hoping nobody looks.
+type Metric struct {
+	Name  string
+	Help  string
+	Type  string // "counter" | "gauge"
+	Value float64
 }
 
 // ClockSeamFunc chooses the process clock and, when it is driveable, returns
