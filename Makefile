@@ -136,7 +136,11 @@ e2e-reset: ## Tear the e2e stack down WITH its volumes — use when a stack migh
 	@$(COMPOSE) down -v --remove-orphans
 	@rm -rf .e2e
 
-web-up: e2e-up ## Bring up the stack with the web app, seeded and ready to click
+# `tools/seed` is a LOCAL/E2E fixture and nothing else (#155 phase 4,
+# 2026-09-09): the deployed fleet has no seeder and no seeded world — its demo
+# world is whatever real people create through the doors, logging in via
+# eSignet. Never point these targets at a deployed stack.
+web-up: e2e-up ## Bring up the local stack with the web app, seeded and ready to click
 	@$(COMPOSE) up -d --wait web
 	@$(LOCAL_AUTH) run -- $(GO) run ./tools/seed
 	@echo "open http://localhost:59100"
@@ -147,19 +151,19 @@ apps-build: ## Build the rebuilt doors (frontend/ pnpm workspace) and assemble t
 apps-dev: ## Vite dev servers for the rebuilt doors (services on their compose ports)
 	@cd frontend && pnpm install --frozen-lockfile && pnpm dev
 
-apps-up: e2e-up apps-build ## Bring up the stack with the journey apps, story-seeded
+apps-up: e2e-up apps-build ## Bring up the LOCAL stack with the journey apps, story-seeded
 	@$(COMPOSE) up -d --wait apps
 	@SEED_STORY=true $(LOCAL_AUTH) run -- $(GO) run ./tools/seed
 	@echo "open http://localhost:59110"
 
-e2e-apps: ## Walk every journey-app route with Playwright (needs apps-up; BASE_URL overrides)
+e2e-apps: ## Walk every journey-app route with Playwright (LOCAL stack only; needs apps-up)
 	@cd tests/e2e-apps && npm ci --no-audit --no-fund >/dev/null && npx playwright test apps.spec.js review-token.spec.js dev-login.spec.js merge-confirm.spec.js field-queue-migration.spec.js
 
 # The fidelity gate: every in-scope screen held to its docs/journey-spec.json
-# entry on the real stack (needs apps-up; BASE_URL overrides). Two commands
+# entry on the real LOCAL stack (needs apps-up). Two commands
 # because they answer different questions — this one is a verdict, the sheet
 # below is for a human's eye.
-fidelity: ## Assert every in-scope screen against the design reference (needs apps-up)
+fidelity: ## Assert every in-scope screen against the design reference (LOCAL stack only; needs apps-up)
 	@rm -f tests/e2e-apps/fidelity-results.jsonl
 	@cd tests/e2e-apps && npm ci --no-audit --no-fund >/dev/null && npx playwright test fidelity.spec.js
 	@python3 tools/journey-trace/fidelity-ledger.py
@@ -168,7 +172,7 @@ fidelity-check: ## Fail if the gate's scope/waivers/quarantine or the ledger are
 	@python3 tools/journey-trace/fidelity-ledger.py --static
 	@python3 tools/journey-trace/build.py --check
 
-fidelity-sheet: ## Reference frame beside built screen, as PNG pairs for review (needs apps-up)
+fidelity-sheet: ## Reference frame beside built screen, as PNG pairs for review (LOCAL stack only; needs apps-up)
 	@cd tests/e2e-apps && npm ci --no-audit --no-fund >/dev/null
 	@# Run from the suite's directory: the Playwright dependency lives there.
 	@cd tests/e2e-apps && node ../../tools/journey-trace/contact-sheet.mjs
@@ -254,7 +258,12 @@ CREST_WEB_URL ?= https://crest-web-production.up.railway.app
 # the sweep still proves each name a stakeholder link might carry.
 FLEET_SERVICES := core payments
 FLEET_ALIASES := registry definitions evidence verification confirmation
-FLEET_MOCKS := mock-oidc mock-rail
+# mock-rail alone since 2026-09-09 (#155 phase 4): `crest-mock-oidc` was
+# deleted from the Railway project, eSignet is the fleet's only trusted OIDC
+# issuer, and the dev issuer survives as a local/e2e fixture only. mock-rail
+# stays because the payments application's `http` provider still needs a rail
+# to talk to (RAIL_URL) until #26 lands a real connector.
+FLEET_MOCKS := mock-rail
 # docs is not a door of its own since #148: the design docs ride inside
 # crest-apps at /docs/.
 FLEET_DOORS := web apps worker field console verifier

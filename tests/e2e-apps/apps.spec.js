@@ -1,8 +1,14 @@
 // A walk of every journey app against a story-seeded stack: every route
 // renders real content with no JS exception and no API error banner, and the
 // screens the story populates show the story's data. Run with the compose
-// stack up and `SEED_STORY=true go run ./tools/seed` done (make apps-up), or
-// BASE_URL pointed at the deployed door.
+// stack up and `SEED_STORY=true go run ./tools/seed` done (make apps-up).
+//
+// LOCAL STACK ONLY since 2026-09-09 (#155 phase 4). This suite used to accept
+// BASE_URL pointed at the Railway door; the deployed fleet no longer runs the
+// dev OIDC issuer or the seeder, so there is no story data to assert and no
+// way to mint a token — the door there is eSignet's, and the demo world is
+// whatever real people made. The guard below refuses a non-local BASE_URL
+// rather than letting the suite fail deep inside a screen assertion.
 const crypto = require("crypto");
 const { test, expect } = require("@playwright/test");
 
@@ -838,13 +844,25 @@ test("console: the J3 handover is real, and so is everything after it", async ({
 // the same service doors as bearer-authenticated API calls by the party who
 // holds that act (the fixture organisation owns the seeded project; the
 // custodian decides), exactly as the seeder and a real deployment would.
+// Local-stack only since 2026-09-09 (#155 phase 4). This walk mints its own
+// tokens from the dev issuer and reads the seeded story world; the deployed
+// fleet has neither — `crest-mock-oidc` and `crest-seed` are gone, eSignet is
+// the only issuer it trusts, and its world is whatever real people created.
+// Pointing BASE_URL at the Railway door used to "work"; now it would fail deep
+// inside a screen assertion and read as a product bug, so refuse up front.
 const G2 = (() => {
   const base = process.env.BASE_URL || "http://localhost:59110";
   const local = new URL(base).port === "59110";
   const host = new URL(base).hostname;
+  if (!local) {
+    throw new Error(
+      "apps.spec.js is a local-stack suite (make apps-up): it needs the dev OIDC issuer and the seeded " +
+      "story world, and the deployed fleet has neither since #155 phase 4 (2026-09-09). " +
+      "BASE_URL must be the compose door on :59110.");
+  }
   return {
-    parties: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-registry",
-    oidc: local ? `http://${host}:59103` : base.replace(/\/$/, "") + "/api/crest-mock-oidc",
+    parties: `http://${host}:59000`,
+    oidc: `http://${host}:59103`,
   };
 })();
 
@@ -1379,12 +1397,8 @@ test("console: G-1 walks the instance, and a person decides the admission", asyn
 //    here takes a national ID or a phone number as an identity.
 
 const SVC = (() => {
-  const base = process.env.BASE_URL || "http://localhost:59110";
-  const local = new URL(base).port === "59110";
-  const host = new URL(base).hostname;
-  return {
-    verification: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-verification",
-  };
+  const host = new URL(process.env.BASE_URL || "http://localhost:59110").hostname;
+  return { verification: `http://${host}:59000` };
 })();
 
 // asParty against an arbitrary service base (asParty above is parties-only).
@@ -1838,13 +1852,8 @@ test("qualification arrival: the anchor lands and earned strength re-derives", a
 // finds the same starting state: a mechanism is per context, and activation
 // is one-way.
 const PAYSVC = (() => {
-  const base = process.env.BASE_URL || "http://localhost:59110";
-  const local = new URL(base).port === "59110";
-  const host = new URL(base).hostname;
-  return {
-    payments: local ? `http://${host}:59006` : base.replace(/\/$/, "") + "/api/crest-payments",
-    evidence: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-evidence",
-  };
+  const host = new URL(process.env.BASE_URL || "http://localhost:59110").hostname;
+  return { payments: `http://${host}:59006`, evidence: `http://${host}:59000` };
 })();
 const DEFN = "crest:definition:01JCREST00000000000000DEFN";
 
@@ -2284,13 +2293,7 @@ const P3 = {
 const FIX_DEFINITION = "crest:definition:01JCREST00000000000000DEFN";
 
 // The definitions service, reached the way the doors reach it.
-const DEFSVC = (() => {
-  const base = process.env.BASE_URL || "http://localhost:59110";
-  const url = new URL(base);
-  return url.port === "59110"
-    ? `http://${url.hostname}:59000`
-    : base.replace(/\/$/, "") + "/api/crest-definitions";
-})();
+const DEFSVC = `http://${new URL(process.env.BASE_URL || "http://localhost:59110").hostname}:59000`;
 
 const fill = (page, name, value) => page.locator(`[name="${name}"]`).fill(value);
 const choose = (page, name, value) => page.locator(`[name="${name}"]`).selectOption(value);

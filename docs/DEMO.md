@@ -7,6 +7,15 @@ services, and one seeder (`harness/story.go`) that gives those journeys a week
 of coherent history to render. This document records the design decisions
 behind both — what they are, what they refuse to be, and why.
 
+**Where the demo layer runs (2026-09-09, #155 phase 4).** Locally, and in the
+e2e harness. **Not on the deployed fleet.** The Railway demo no longer runs a
+mock OIDC issuer and no longer seeds: `crest-mock-oidc` and `crest-seed` were
+deleted, eSignet is the only issuer `crest-core` and `crest-payments` trust,
+and the deployed demo world is whatever real people created by walking in
+through the doors. So everything below — `loginAs` against the dev issuer, the
+scripted week, the story fixtures — describes a **local/e2e fixture**. Read
+"the demo stack" here as "the compose stack", never as "the fleet".
+
 Blueprint sections referenced: §10 payments boundary, §11 worker invariants,
 §13 API surface, §15 journey scope map.
 
@@ -23,10 +32,14 @@ below exists to keep it honest about that:
    If a screen is empty, the deployment's data is empty — the app never fills
    the silence.
 2. **It authenticates through the real first-login path.** `loginAs` in
-   `api.js` mints a token from the dev stack's mock OIDC issuer, then binds by
-   token possession through `POST /v1/parties/{id}/identity-bindings` — the
-   same self-proof path a production eSignet callback uses (#102). Replacing
-   the mock with eSignet changes nothing after the token.
+   `api.js` mints a token from the **local** dev stack's mock OIDC issuer,
+   then binds by token possession through
+   `POST /v1/parties/{id}/identity-bindings` — the same self-proof path a
+   production eSignet callback uses (#102). Replacing the mock with eSignet
+   changes nothing after the token, which is exactly what the fleet did on
+   2026-09-09: there the doors log in through eSignet and this path is dead —
+   the deployed nginx does not even proxy `/api/crest-mock-oidc`, and the
+   rebuilt doors' `loginAs` refuses to run off the local stack.
 3. **It has no privileged door.** The app calls public `/v1` endpoints as the
    signed-in party. It cannot reach `/internal/*`; in the Railway deployment
    the nginx in front of it refuses those paths at the door (§16
@@ -94,6 +107,8 @@ scripted user, not a database load.
 
 Design decisions:
 
+- **Local and e2e only.** `tools/seed` has no deployed counterpart since
+  2026-09-09 (#155 phase 4). Never run it against a fleet.
 - **Opt-in, never ambient.** `SEED_STORY=true` on `tools/seed`. The e2e
   scenarios assume a bare fixture world and must never find a pre-disputed
   claim in it.
