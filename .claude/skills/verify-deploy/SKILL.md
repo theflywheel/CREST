@@ -18,6 +18,8 @@ make verify-deploy ENV=production   # read-only checks only
 
 **Production — read-only only.** Service health, a status-list fetch, a DeDi checkpoint fetch, and the trust chain walked for an *existing* credential.
 
+**Never seed a deployed environment, and never expect seeded data there.** Since 2026-09-09 (#155 phase 4) the demo fleet runs no seeder and no mock OIDC issuer — `crest-seed` and `crest-mock-oidc` were deleted, eSignet is the only issuer `crest-core` and `crest-payments` trust, and the deployed world is whatever real people created through the doors. So a deployed check asserts *health and shape*, never "the story's held payment is on the screen"; the story-world Playwright suites (`tests/e2e-apps/apps.spec.js`, `fidelity.spec.js`, `journeys.mjs`) are local-stack only and refuse a non-local `BASE_URL`.
+
 Nothing in the production path creates a credential, a claim, or a payment. A smoke test that issues a real credential to a real worker's record is not a smoke test — it is a data-quality incident with a green tick next to it.
 
 ## Reading the result

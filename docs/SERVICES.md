@@ -23,7 +23,10 @@ member names alias onto `crest-core`, and the §16 fence refuses
 Names that look like services but aren't: `crest-registry`, `crest-definitions`,
 `crest-evidence` and `crest-verification` are aliases for `crest-core`, and
 `crest-confirmation` for `crest-payments` — kept so links already in the wild
-proxy instead of 404ing. `crest-seed` is a one-shot job, not a server.
+proxy instead of 404ing. `crest-seed` was a one-shot seeding job and was
+**deleted from the fleet on 2026-09-09** (#155 phase 4): nothing seeds the
+deployed world any more — its demo data is whatever real people created
+through the doors, and `tools/seed` is a local/e2e fixture only.
 `notify` is **gone** (#150): notifications are dropped entirely for now, a
 recorded gap (Blueprint §16) — a worker learns about a window or a held
 payment only by opening the app.
@@ -34,8 +37,15 @@ Demo and local stand-ins, never part of the product:
 
 | Mock | Deployed as | Local port | Stands in for | Retires when |
 |---|---|---|---|---|
-| `mock-oidc` | `crest-mock-oidc` | 59103 | eSignet login | #130 promotes eSignet to the real login |
+| `mock-oidc` | — (**local/e2e only** since 2026-09-09, #155 phase 4) | 59103 | The dev OIDC issuer for compose and the harness | eSignet is the only issuer everywhere, not just on the fleet |
 | `mock-rail` | `crest-mock-rail` | 59102 | The payment rail | #26 lands a real rail connector |
+
+**The deployed fleet trusts eSignet alone (2026-09-09, #155 phase 4).** The
+`crest-mock-oidc` service was deleted, `CREST_OIDC_EXTRA_PROVIDERS` removed
+from `crest-core` and `crest-payments`, and eSignet made their primary
+provider. `mock-oidc` still runs in compose and the e2e harness — it mints
+real ES256 tokens against a real JWKS, which is what makes it useful as a
+fixture — and it is deployed nowhere.
 
 ## The substrate
 

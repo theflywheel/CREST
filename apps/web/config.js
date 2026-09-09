@@ -12,6 +12,11 @@ if (location.port !== "59100") {
     confirmation: "/api/crest-payments", // the payments application answers the window (#129)
     verification: "/api/crest-verification",
     payments:     "/api/crest-payments",
+    // Dead on the deployed fleet, deliberately: the Railway nginx allowlist
+    // does not proxy crest-mock-oidc, and since 2026-09-09 (#155 phase 4)
+    // there is no mock issuer to proxy to — eSignet is the fleet's only
+    // trusted issuer. `loginAs` in api.js therefore works on the local
+    // compose stack alone; this door is the older demo face (see DEMO.md).
     oidc:         "/api/crest-mock-oidc",
   };
 }

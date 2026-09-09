@@ -60,4 +60,4 @@ Two members, one process, one port. `attestation` moved here from core with [#12
 
 ## Names that still resolve
 
-`crest-registry`, `crest-definitions`, `crest-evidence` and `crest-verification` alias onto core, and `crest-confirmation` onto payments. `crest-seed` is a one-shot job. `/internal/*` routes are service-to-service, authenticated by service identity, and refused at every door.
+`crest-registry`, `crest-definitions`, `crest-evidence` and `crest-verification` alias onto core, and `crest-confirmation` onto payments. `crest-seed` was a one-shot seeding job, deleted from the fleet on 2026-09-09 (#155 phase 4) — the deployed world is seeded by nobody, and `tools/seed` is a local/e2e fixture. `/internal/*` routes are service-to-service, authenticated by service identity, and refused at every door.

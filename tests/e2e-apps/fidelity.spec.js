@@ -133,16 +133,26 @@ function flowProviderSubject(partyId) {
     : "story|" + partyId.replace("did:crest:party:", "");
 }
 
+// Local-stack only since 2026-09-09 (#155 phase 4) — same reason as
+// apps.spec.js: the gate mints dev-issuer tokens and drives the seeded story
+// world, and the deployed fleet has neither (no `crest-mock-oidc`, no
+// `crest-seed`; eSignet is its only trusted issuer).
 const FLOW_API = (() => {
   const base = process.env.BASE_URL || "http://localhost:59110";
   const local = new URL(base).port === "59110";
   const host = new URL(base).hostname;
+  if (!local) {
+    throw new Error(
+      "fidelity.spec.js is a local-stack gate (make apps-up): it needs the dev OIDC issuer and the seeded " +
+      "story world, and the deployed fleet has neither since #155 phase 4 (2026-09-09). " +
+      "BASE_URL must be the compose door on :59110.");
+  }
   return {
-    parties: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-registry",
-    verification: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-verification",
-    oidc: local ? `http://${host}:59103` : base.replace(/\/$/, "") + "/api/crest-mock-oidc",
-    payments: local ? `http://${host}:59006` : base.replace(/\/$/, "") + "/api/crest-payments",
-    evidence: local ? `http://${host}:59000` : base.replace(/\/$/, "") + "/api/crest-evidence",
+    parties: `http://${host}:59000`,
+    verification: `http://${host}:59000`,
+    oidc: `http://${host}:59103`,
+    payments: `http://${host}:59006`,
+    evidence: `http://${host}:59000`,
   };
 })();
 

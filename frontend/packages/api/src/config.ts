@@ -47,6 +47,11 @@ const proxyPaths: Record<ServiceName, string> = {
   confirmation: "/api/crest-confirmation",
   verification: "/api/crest-verification",
   payments: "/api/crest-payments",
+  // Local only in practice. The deployed nginx allowlist does not proxy
+  // crest-mock-oidc (it 404s), and since 2026-09-09 (#155 phase 4) the fleet
+  // runs no mock issuer at all — eSignet is the only issuer it trusts. The
+  // only caller of services.oidc is `loginAs`, which refuses to run off the
+  // local stack; the entry stays so the shape of `services` is one type.
   oidc: "/api/crest-mock-oidc",
 };
 

@@ -26,9 +26,9 @@ Four are designed for (Blueprint §4.1), integrated once per class and configure
 
 | Class | Where it fits | Today |
 |---|---|---|
-| **eSignet** | MOSIP's OIDC broker; the preferred front door wherever a MOSIP or eSignet-fronted national ID exists | Runs on the production fleet and in the substrate profile locally |
+| **eSignet** | MOSIP's OIDC broker; the preferred front door wherever a MOSIP or eSignet-fronted national ID exists | Runs on the production fleet and in the substrate profile locally. Since 2026-09-09 (#155 phase 4) it is the **only** issuer the deployed fleet trusts — the mock issuer was deleted and `CREST_OIDC_EXTRA_PROVIDERS` removed. Honesty note: its identity backend here is still `esignet-mock-identity` (#53) |
 | **MOSIP IDA** | Direct authentication where eSignet is not deployed | Designed, not built |
-| **Generic OIDC / eKYC** | Non-MOSIP national systems and portals | Runs; the local `mock-oidc` issuer mints real ES256 tokens against a real JWKS |
+| **Generic OIDC / eKYC** | Non-MOSIP national systems and portals | Runs; the `mock-oidc` issuer mints real ES256 tokens against a real JWKS — a **local/e2e fixture only**, deployed nowhere |
 | **Mobile OTP** | The floor: proves control of a contact route, not legal identity | Designed, not built |
 
 ## Several at once

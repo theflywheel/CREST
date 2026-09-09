@@ -29,13 +29,19 @@ const STAMP = Date.now().toString().slice(-6);
 // Bearer-authenticated service calls for the acts that are not the recorded
 // actor's own — a verifier asking, a custodian opening a recovery. The same
 // doors apps.spec.js's walks and the seeder use.
+// Local-stack only since 2026-09-09 (#155 phase 4): the recorder mints
+// dev-issuer tokens and walks the seeded story world. The deployed fleet has
+// no `crest-mock-oidc` and no `crest-seed` — eSignet is its only trusted
+// issuer and its world is whatever real people created — so a recording made
+// against it would be a recording of failures.
 const LOCAL = new URL(BASE).port === "59110";
-const SVCBASE = LOCAL
-  ? `http://${new URL(BASE).hostname}:59000`
-  : BASE.replace(/\/$/, "") + "/api/crest-registry";
-const OIDCBASE = LOCAL
-  ? `http://${new URL(BASE).hostname}:59103`
-  : BASE.replace(/\/$/, "") + "/api/crest-mock-oidc";
+if (!LOCAL) {
+  throw new Error(
+    "journeys.mjs records the LOCAL story-seeded stack (make apps-up). The deployed fleet has no dev " +
+    "issuer and no seeded world since #155 phase 4 (2026-09-09). BASE must be the compose door on :59110.");
+}
+const SVCBASE = `http://${new URL(BASE).hostname}:59000`;
+const OIDCBASE = `http://${new URL(BASE).hostname}:59103`;
 
 const FIXTURE_IDS = Object.freeze({
   worker: FIXWORKER, org: FIXORG, supervisor: FIXSPVR, custodian: FIXCSTD,
@@ -476,9 +482,7 @@ const J2 = async (p, cap) => {
   // The admission queue at the end of this walk needs a real pending
   // application. Register one through the same open door the g2_1 form
   // posts to — a unique organisation per run, so J2 re-records cleanly.
-  const PARTIES = new URL(BASE).port === "59110"
-    ? `http://${new URL(BASE).hostname}:59000`
-    : BASE.replace(/\/$/, "") + "/api/crest-registry";
+  const PARTIES = SVCBASE;
   const regOut = await fetch(PARTIES + "/v1/organisations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

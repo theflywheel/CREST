@@ -134,6 +134,10 @@ export async function whoAmI(): Promise<{ subjectRef: string; partyId: string; i
 // provider/providerClass are derived from the issuer this deployment actually
 // authenticated against, not from a guess: an eSignet issuer is recorded as
 // eSignet, anything else as the generic OIDC provider the dev stack runs.
+// On the deployed fleet the second branch is unreachable — eSignet has been
+// its only trusted issuer since 2026-09-09 (#155 phase 4), so `who.issuer` is
+// always eSignet's — but the branch stays because the derivation must follow
+// the token, not the deployment's reputation.
 export async function claimInvitation(code: string): Promise<{
   partyId: string;
   identityAssurance?: string;

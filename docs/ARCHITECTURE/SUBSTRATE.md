@@ -19,7 +19,7 @@ A local stack runs with mocks where a real provider is absent. They stand in; th
 
 | Mock | Stands in for | Retires when |
 |---|---|---|
-| `mock-oidc` | The identity provider; mints real ES256 tokens against a real JWKS | eSignet is the only door (it already is on the production fleet) |
+| `mock-oidc` | The identity provider; mints real ES256 tokens against a real JWKS. **Local and e2e only** since 2026-09-09 (#155 phase 4) — the deployed fleet trusts eSignet alone and runs no mock issuer | eSignet is the only door everywhere, not just on the fleet |
 | `mock-rail` | The payment rail | A real rail connector lands |
 | `mock-notify` | The notification inbox | A delivery channel exists |
 | the payments `simulator` provider | Settlement | Refuses to run outside a local environment |
