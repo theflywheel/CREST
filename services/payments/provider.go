@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/service"
@@ -15,7 +16,7 @@ func configuredProvider(d service.Deps) (providers.Provider, error) {
 		URL:  config.Str("RAIL_URL", ""),
 		Env:  d.Config.Env,
 		DB:   d.DB.Q(),
-		Now:  d.Clock.Now,
+		Now:  func() time.Time { return time.Now().UTC() },
 	})
 }
 

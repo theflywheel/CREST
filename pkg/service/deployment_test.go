@@ -39,7 +39,7 @@ func TestStrictDeploymentConfigurationFailsClosed(t *testing.T) {
 		"CREST_OIDC_JWKS_URL":     "https://identity.example.test/keys",
 		"CREST_INSTANCE_ID":       "crest:instance:acceptance",
 		"CREST_OPERATOR_PARTY_ID": "did:crest:party:operator",
-		"CLOCK_DRIVEABLE":         "false", "SWEEP_EVERY": "1m",
+		"CONFIRMATION_WINDOW":     "168h", "SWEEP_EVERY": "1m",
 	}
 	for _, env := range []string{"acceptance", "development"} {
 		t.Run(env, func(t *testing.T) {
@@ -49,7 +49,8 @@ func TestStrictDeploymentConfigurationFailsClosed(t *testing.T) {
 			for _, tc := range []struct{ key, value string }{
 				{"CREST_SERVICE_PRIVATE_KEY", ""}, {"CREST_OIDC_ISSUER", ""}, {"CREST_OIDC_AUDIENCE", ""}, {"CREST_SUBJECT_SALT", "short"},
 				{"CREST_OIDC_JWKS_URL", "http://mock-oidc:8080/keys"}, {"RAIL_URL", "http://mock-rail:8080"},
-				{"CLOCK_DRIVEABLE", "true"}, {"CLOCK_START", "2020-01-01T00:00:00Z"}, {"SWEEP_EVERY", "0"},
+				{"SWEEP_EVERY", "0"}, {"CONFIRMATION_WINDOW", "0s"}, {"CONFIRMATION_WINDOW", "-1h"},
+				{"SOURCE_MONITOR_EVERY", "not-a-duration"}, {"CLOCK_SKEW_ALERT", "0"},
 			} {
 				if env == "development" && (tc.key == "RAIL_URL" || tc.key == "CREST_OIDC_JWKS_URL") {
 					if err := deploymentRefusal(env, func(k string) string {

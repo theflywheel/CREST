@@ -103,7 +103,7 @@ func (h *handlers) credentialCard(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(renderCard(c, payload, code.PNG(), h.d.Clock.Now())))
+	_, _ = w.Write([]byte(renderCard(c, payload, code.PNG(), time.Now().UTC())))
 }
 
 // renderCard builds the printable page.

@@ -198,11 +198,11 @@ func (h *handlers) addIdentityBinding(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if b.AssertedAt.IsZero() {
-		b.AssertedAt = h.d.Clock.Now()
+		b.AssertedAt = time.Now().UTC()
 	}
 	// An assertion dated in the future is either a clock problem or an attempt
 	// to hold an assurance level open past its expiry. Neither should be stored.
-	if b.AssertedAt.After(h.d.Clock.Now().Add(time.Minute)) {
+	if b.AssertedAt.After(time.Now().UTC().Add(time.Minute)) {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body",
 			"a binding cannot have been asserted in the future")
 		return
@@ -267,7 +267,7 @@ func (h *handlers) addIdentityBinding(w http.ResponseWriter, r *http.Request) {
 	// The assurance is returned because it is the thing the caller actually
 	// wanted to change, and computing it here saves a second request that could
 	// otherwise be made against a stale read.
-	level, because := assuranceOf(party, h.d.Clock.Now())
+	level, because := assuranceOf(party, time.Now().UTC())
 	status := http.StatusCreated
 	if !appended {
 		status = http.StatusOK

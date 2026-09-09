@@ -19,17 +19,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/esignet"
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/service"
 )
-
-// wallClock: the login handshake runs on real time, like token verification
-// (pkg/identity) — never the driveable clock.
-var wallClock = clock.System{}
 
 type authConfig struct {
 	client *esignet.Client
@@ -137,7 +132,7 @@ func registerAuth(mux *http.ServeMux, d service.Deps, a *authConfig) {
 		}
 		payload, _ := json.Marshal(map[string]any{
 			"state": p.State, "verifier": p.Verifier, "door": door,
-			"exp": wallClock.Now().Add(10 * time.Minute).Unix(),
+			"exp": time.Now().UTC().Add(10 * time.Minute).Unix(),
 		})
 		http.SetCookie(w, &http.Cookie{
 			Name:     "crest_auth",
@@ -166,7 +161,7 @@ func registerAuth(mux *http.ServeMux, d service.Deps, a *authConfig) {
 			State, Verifier, Door string
 			Exp                   int64
 		}
-		if json.Unmarshal(payload, &st) != nil || wallClock.Now().Unix() > st.Exp {
+		if json.Unmarshal(payload, &st) != nil || time.Now().UTC().Unix() > st.Exp {
 			httpx.WriteError(w, http.StatusBadRequest, "login_expired", "the login attempt expired; start again")
 			return
 		}

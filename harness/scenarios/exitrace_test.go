@@ -36,9 +36,13 @@ func TestASweepAndAConfirmationRacingAtT7ExitOnce(t *testing.T) {
 		return err
 	})
 	w.acknowledgeClaim(t, claimID)
-	if err := w.Advance(w.ctx, window+time.Minute); err != nil {
-		t.Fatal(err)
-	}
+
+	// Wait the window out rather than moving a clock. The scheduled sweep is
+	// running on this stack, so by the time the two racers below start the
+	// sweep may already have taken the window — which is not a weakness of the
+	// scenario but the same race arriving on its own. What must hold either
+	// way is that exactly one exit completes.
+	w.waitForTheWindowToRunOut(t, claimID)
 
 	// Fire both exits from the same starting line.
 	caller := w.login(t, worker)

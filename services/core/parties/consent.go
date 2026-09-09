@@ -225,12 +225,12 @@ func (h *handlers) recordConsent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c := Consent{
-		ID:            id.New(h.d.Clock, "consent"),
+		ID:            id.New("consent"),
 		PartyID:       partyID,
 		Moment:        q.Get("moment"),
 		Purpose:       q.Get("purpose"),
 		CaptureMethod: q.Get("captureMethod"),
-		CapturedAt:    h.d.Clock.Now(),
+		CapturedAt:    time.Now().UTC(),
 	}
 	if c.Moment == "" {
 		c.Moment = "enrolment"
@@ -586,7 +586,7 @@ func (h *handlers) withdrawConsent(w http.ResponseWriter, r *http.Request) {
 	var c Consent
 	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		var err error
-		c, err = withdrawConsent(r.Context(), tx, r.PathValue("id"), body.Reason, h.d.Clock.Now())
+		c, err = withdrawConsent(r.Context(), tx, r.PathValue("id"), body.Reason, time.Now().UTC())
 		return err
 	})
 	if err != nil {

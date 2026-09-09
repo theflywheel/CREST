@@ -12,8 +12,6 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-
-	"github.com/theflywheel/crest/pkg/clock"
 )
 
 // ReadyFunc reports whether the service can serve. Nil means "always ready",
@@ -34,7 +32,7 @@ type Middleware func(http.Handler) http.Handler
 // New builds a server for a service. The mux is the service's own routes;
 // health endpoints are added here so every service reports readiness the same
 // way — the harness polls these instead of sleeping.
-func New(name, addr string, mux *http.ServeMux, clk clock.Clock, log *slog.Logger, ready ReadyFunc,
+func New(name, addr string, mux *http.ServeMux, log *slog.Logger, ready ReadyFunc,
 	mw ...Middleware) *Server {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -42,7 +40,7 @@ func New(name, addr string, mux *http.ServeMux, clk clock.Clock, log *slog.Logge
 			"revision":     buildRevision(),
 			"transparency": transparencyMode(),
 			"status":       "ok",
-			"time":         clk.Now(),
+			"time":         time.Now().UTC(),
 		})
 	})
 	// readyz is separate on purpose: a service can be alive but not yet able to

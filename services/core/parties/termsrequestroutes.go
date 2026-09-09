@@ -3,6 +3,7 @@ package parties
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
@@ -53,8 +54,8 @@ func (h *g2Handlers) createTermsRequest(w http.ResponseWriter, r *http.Request) 
 		httpx.Fail(w, h.d.Log, "read requested terms", err)
 		return
 	}
-	req, ev, err := newTermsRequest(id.New(h.d.Clock, "terms-request"), orgID,
-		body.TermsID, body.TermsVersion, body.Documents, cmpOr(actor, orgID), h.d.Clock.Now())
+	req, ev, err := newTermsRequest(id.New("terms-request"), orgID,
+		body.TermsID, body.TermsVersion, body.Documents, cmpOr(actor, orgID), time.Now().UTC())
 	if err != nil {
 		httpx.WriteError(w, http.StatusUnprocessableEntity, "invalid_request", "%v", err)
 		return
@@ -202,7 +203,7 @@ func (h *g2Handlers) replaceRequestDocuments(w http.ResponseWriter, r *http.Requ
 // freeze and the request enters the review queue (g2_8).
 func (h *g2Handlers) submitTermsRequest(w http.ResponseWriter, r *http.Request) {
 	h.mutateRequest(w, r, func(req termsRequest, actor string) (termsRequest, *termsRequestEvent, error) {
-		next, ev, err := submitTermsRequest(req, actor, h.d.Clock.Now())
+		next, ev, err := submitTermsRequest(req, actor, time.Now().UTC())
 		return next, &ev, err
 	})
 }
@@ -216,7 +217,7 @@ func (h *g2Handlers) withdrawTermsRequest(w http.ResponseWriter, r *http.Request
 		return
 	}
 	h.mutateRequest(w, r, func(req termsRequest, actor string) (termsRequest, *termsRequestEvent, error) {
-		next, ev, err := withdrawTermsRequest(req, actor, body.Reason, h.d.Clock.Now())
+		next, ev, err := withdrawTermsRequest(req, actor, body.Reason, time.Now().UTC())
 		return next, &ev, err
 	})
 }
@@ -257,7 +258,7 @@ func (h *g2Handlers) recordCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := newCheckVerdict(req, body.Name, body.Outcome, body.OwnerKind, body.Owner,
-		body.Note, cmpOr(recordedBy, body.RecordedBy), h.d.Clock.Now())
+		body.Note, cmpOr(recordedBy, body.RecordedBy), time.Now().UTC())
 	if err != nil {
 		if errors.Is(err, errRequestNotSubmitted) {
 			httpx.WriteError(w, http.StatusConflict, "wrong_state", "%v", err)
@@ -326,7 +327,7 @@ func (h *g2Handlers) decideTermsRequest(w http.ResponseWriter, r *http.Request) 
 			return err
 		}
 		next, ev, err := decideTermsRequest(fresh, body.Approve,
-			cmpOr(decidedBy, body.DecidedBy), body.Reason, h.d.Clock.Now())
+			cmpOr(decidedBy, body.DecidedBy), body.Reason, time.Now().UTC())
 		if err != nil {
 			return err
 		}

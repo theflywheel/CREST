@@ -322,10 +322,10 @@ func (h *handlers) verify(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := h.record(r.Context(), presentation{
-		ID: id.New(h.d.Clock, "presentation"), CredentialID: credID,
+		ID: id.New("presentation"), CredentialID: credID,
 		SubjectRef: subjectRef, RequestedBy: req.RequestedByPartyID, Purpose: req.Purpose,
 		Scope: scope, Outcome: outcomeOf(verdict), Tier: verdict.Tier,
-		CreatedAt: h.d.Clock.Now(),
+		CreatedAt: time.Now().UTC(),
 	}); err != nil {
 		httpx.Fail(w, h.d.Log, "record presentation", err)
 		return
@@ -368,7 +368,7 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 		return v, subjectRef, credID
 	}
 	v.Revoked = revoked
-	v.StatusCheckedAt = h.d.Clock.Now()
+	v.StatusCheckedAt = time.Now().UTC()
 	if revoked {
 		v.Reasons = append(v.Reasons, "this credential has been withdrawn")
 		return v, subjectRef, credID
@@ -611,7 +611,7 @@ func (h *handlers) partyCredentials(w http.ResponseWriter, r *http.Request) {
 	if requestedBy != "" || purpose != "" {
 		scope = "scoped"
 	}
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	for _, doc := range out.Credentials {
 		var cred struct {
 			ID      string `json:"id"`
@@ -621,7 +621,7 @@ func (h *handlers) partyCredentials(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.Unmarshal(doc, &cred)
 		if err := h.record(r.Context(), presentation{
-			ID: id.New(h.d.Clock, "presentation"), CredentialID: cred.ID,
+			ID: id.New("presentation"), CredentialID: cred.ID,
 			SubjectRef: cred.Subject.ID, RequestedBy: requestedBy, Purpose: purpose,
 			Scope: scope, Outcome: "listed", CreatedAt: now,
 		}); err != nil {
@@ -751,7 +751,7 @@ func (h *handlers) revoked(ctx context.Context, doc map[string]any) (bool, error
 		if statusDoc["issuer"] != issuerID || statusDoc["id"] != statusEndpoint {
 			return false, errors.New("trusted status list identity does not match its configured issuer")
 		}
-		if !statusFresh(statusDoc, h.d.Clock.Now()) {
+		if !statusFresh(statusDoc, time.Now().UTC()) {
 			return false, errors.New("trusted status list is outside its signed validity window")
 		}
 		subject, _ := statusDoc["credentialSubject"].(map[string]any)
@@ -954,7 +954,7 @@ func (h *handlers) assess(w http.ResponseWriter, r *http.Request) {
 			SET max_tier = EXCLUDED.max_tier, reason = EXCLUDED.reason,
 			    assessed_by = EXCLUDED.assessed_by, assessed_at = EXCLUDED.assessed_at,
 			    adapter_ref = EXCLUDED.adapter_ref`,
-			req.AdapterRef, req.ContextID, req.SystemRef, req.MaxTier, req.Reason, req.AssessedBy, h.d.Clock.Now())
+			req.AdapterRef, req.ContextID, req.SystemRef, req.MaxTier, req.Reason, req.AssessedBy, time.Now().UTC())
 		return err
 	}); err != nil {
 		httpx.Fail(w, h.d.Log, "record source assessment", err)

@@ -12,8 +12,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/theflywheel/crest/pkg/clock"
 )
 
 // An S3-compatible Blobs, written against the protocol rather than against one
@@ -58,10 +56,9 @@ type S3Config struct {
 type S3 struct {
 	cfg  S3Config
 	http *http.Client
-	// now is wall time, deliberately not the domain clock. The signature's
-	// timestamp is replay protection checked by the server against ITS clock,
-	// so a run that drives CREST's clock five months forward must not sign with
-	// it. This is the same mistake pkg/dedi made once and it cost an afternoon.
+	// now is injected only so the signing tests can pin a timestamp. The
+	// signature's timestamp is replay protection the server checks against
+	// its own clock, so it is always real time in a running deployment.
 	now func() time.Time
 }
 
@@ -84,7 +81,7 @@ func NewS3(cfg S3Config) (*S3, error) {
 	return &S3{
 		cfg:  cfg,
 		http: &http.Client{Timeout: 30 * time.Second},
-		now:  clock.System{}.Now,
+		now:  func() time.Time { return time.Now().UTC() },
 	}, nil
 }
 

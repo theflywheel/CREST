@@ -32,6 +32,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 	"unicode/utf8"
 
 	"github.com/theflywheel/crest/pkg/config"
@@ -101,14 +102,14 @@ func (h *handlers) verifyBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	verdicts := make([]Verdict, 0, len(req.Credentials))
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	for _, doc := range req.Credentials {
 		verdict, subjectRef, credID := h.assess1(r.Context(), doc)
 		// One trail entry per worker, unconditionally — including for a
 		// credential that failed to verify, because "somebody tried to check
 		// me with a bad document" is also a fact about the worker's record.
 		if err := h.record(r.Context(), presentation{
-			ID: id.New(h.d.Clock, "presentation"), CredentialID: credID,
+			ID: id.New("presentation"), CredentialID: credID,
 			SubjectRef: subjectRef, RequestedBy: req.RequestedByPartyID,
 			Purpose: req.Purpose, Scope: "scoped", Outcome: outcomeOf(verdict),
 			Tier: verdict.Tier, CreatedAt: now,

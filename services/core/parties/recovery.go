@@ -69,7 +69,7 @@ const confirmationsNeeded = 2
 func registerRecoveryRoutes(mux *http.ServeMux, d service.Deps) {
 	// How long an override stands before it must be looked at. L2 — a pilot
 	// and a national programme can reasonably differ — with an L1 default.
-	reviewAfter, err := config.Duration("CREST_RECOVERY_OVERRIDE_REVIEW", 90*24*time.Hour)
+	reviewAfter, err := config.PositiveDuration("CREST_RECOVERY_OVERRIDE_REVIEW", 90*24*time.Hour)
 	if err != nil {
 		d.Log.Error("CREST_RECOVERY_OVERRIDE_REVIEW is unreadable", "error", err)
 		reviewAfter = 90 * 24 * time.Hour
@@ -173,9 +173,9 @@ func (h *recoveryHandlers) open(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rec := Recovery{
-		ID: id.New(h.d.Clock, "recovery"), PartyID: body.PartyID,
+		ID: id.New("recovery"), PartyID: body.PartyID,
 		OpenedBy: body.OpenedBy, Reason: body.Reason, State: "OPEN",
-		Created: h.d.Clock.Now(), Confirmations: []RecoveryConfirmation{},
+		Created: time.Now().UTC(), Confirmations: []RecoveryConfirmation{},
 	}
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		if _, err := getParty(r.Context(), tx, body.PartyID); err != nil {
@@ -226,7 +226,7 @@ func (h *recoveryHandlers) confirm(w http.ResponseWriter, r *http.Request) {
 		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	var rec Recovery
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		got, err := getRecovery(r.Context(), tx, r.PathValue("id"))
@@ -335,7 +335,7 @@ func (h *recoveryHandlers) refuse(w http.ResponseWriter, r *http.Request) {
 		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	var rec Recovery
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		got, err := getRecovery(r.Context(), tx, r.PathValue("id"))
@@ -405,7 +405,7 @@ func (h *recoveryHandlers) override(w http.ResponseWriter, r *http.Request) {
 		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	permitted, _, err := permits(r.Context(), h.d.DB.Q(),
 		body.ByPartyID, FunctionOverrideRecovery, "", now)
 	if err != nil {
@@ -492,7 +492,7 @@ func (h *recoveryHandlers) complete(w http.ResponseWriter, r *http.Request) {
 			"subjectRef is required: a recovery that binds nothing leaves the worker recovered and still unable to authenticate")
 		return
 	}
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	var rec Recovery
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		got, err := getRecovery(r.Context(), tx, r.PathValue("id"))
@@ -626,7 +626,7 @@ func (h *recoveryHandlers) list(w http.ResponseWriter, r *http.Request) {
 	where, args := ``, []any{}
 	if r.URL.Query().Get("overdue") == "true" {
 		where = `WHERE review_by IS NOT NULL AND review_by < $1`
-		args = append(args, h.d.Clock.Now())
+		args = append(args, time.Now().UTC())
 	}
 	// ?refused=true is w4_3's attention queue: undecided recoveries somebody
 	// said "no" to. The opener is on each record as the owner of the next step.

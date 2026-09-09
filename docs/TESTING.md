@@ -52,7 +52,17 @@ paragraph is the fix.
 5. Assert on observable outcomes: a credential that verifies offline, a payment instruction with the right idempotency key, a dispute that still releases payment.
 6. Tear down, and be re-runnable immediately without manual cleanup.
 
-**Time is a first-class input.** The confirmation window is T=7 days; the harness must be able to advance the clock rather than wait. Services read time through an injectable clock, and the harness drives it. Any test that sleeps for real duration is a bug in the harness.
+**Time is a first-class input: configure short durations, poll with a deadline.** The confirmation window is seven days in the CHW programme. It used to be tested by driving an injected clock through it; that clock was removed on 2026-09-09. Services read `time.Now().UTC()` directly, and every time-bound behaviour — the window, the sweep cadence, a source's expected heartbeat, an override's review date, the clock-skew alert, the outbox retry, the JWKS cache — is a configured duration with a production default.
+
+So the harness brings the stack up with those durations set to **seconds** and then waits real time for the outcome, polling with a bounded deadline. What is proven is the behaviour, not a simulation of it: the window really does close on its own, the scheduled sweep really does find it with nobody posting to `/v1/sweep`, and the length being programme policy is proven by the fact that changing one environment variable is all it took.
+
+Three rules follow, and they are not negotiable:
+
+- **Never `time.Sleep` a fixed guess and then assert.** Use `harness.WaitFor(t, what, within, cond)`, which returns the moment the condition holds and fails at the deadline naming the last thing that was wrong. A fixed sleep is either too short on a loaded runner — a flaky suite, and flakiness is a defect, not something to re-run past — or wasted on a fast one.
+- **Derive every deadline from the cadence the stack is running at**, never from a number typed into the scenario. `harness/durations.go` reads the same environment variables the compose file passes to the services, and `harness.Patience(d)` is ten times a cadence with a five-second floor. Change the Makefile and the scenarios follow.
+- **Asserting that something has *not* happened yet needs a margin the cadence guarantees.** "The window has not auto-confirmed" is only an assertion while the window is provably still open; read the closing instant back and say so.
+
+A deliberate delay that is the scenario's *input* — a row left in the unclear queue so the two instants are apart — is not a sleep-then-assert and is allowed. The outcome that follows it is still polled for.
 
 **Determinism.** Fixed seeds, fixed fixture IDs, no reliance on wall-clock dates or random ordering. A flaky harness gets ignored within a week, and then it is worse than nothing.
 
@@ -69,8 +79,7 @@ Every manual test run costs a person twenty minutes and an agent a few thousand 
 **What the preflight checks**, before any scenario assertion runs (`harness/preflight.go`, wired into `harness/scenarios`' shared `setup(t)`, run once per test binary):
 
 - **Transparency substrate.** Every service's `GET /healthz` reports `"transparency": "dedi"` or `"postgres"` (`pkg/httpx`, reading `DEDI_URL`/`DEDI_PUBLISHER_KEY` the same way `infra/compose/docker-compose.yml` does). This must agree with what the harness process itself expects, from the same two variables in its own environment. This is the exact #79 hazard: a stack pointed at the real DeDi node, run against by an invocation expecting the local fallback (or the reverse).
-- **Clock mode.** Every service's `GET /internal/clock` must report `"ticking": true` — a driveable `Offset` clock (`pkg/clock`). The harness moves time instead of sleeping; a service that cannot be driven fails every window-dependent scenario for a reason that has nothing to do with the scenario.
-- **Clock agreement (#221).** Every process must think it is roughly the same time as every other: `/internal/clock`'s `now` where the service declares the seam, `/healthz`'s `time` where it does not, compared earliest against latest and failing past `harness.ClockSkewThreshold` (5m — the same as the payments application's `CLOCK_SKEW_ALERT` default, so the harness fails on the disagreement a deployment would warn about). Since #221 a confirmation window's opening instant is stamped by `evidence` and honoured by the payments application, which makes "what time do these two processes think it is" a question with a right answer. A skewed stack does not fail loudly: every window-crossing scenario simply asserts a number that is quietly wrong, and usually gets away with it. The threshold is generous because the statuses are gathered one service at a time over HTTP, and a suite that fails on the gathering is a suite people re-run.
+- **Clock agreement (#221).** Every process must think it is roughly the same time as every other, read from each one's `/healthz` `time`, compared earliest against latest and failing past `harness.ClockSkewThreshold` (5m — the same as the payments application's `CLOCK_SKEW_ALERT` *production* default, so the harness fails on the disagreement a deployment would warn about; a harness stack sets that variable to about a second so the detector itself can be exercised, and this threshold is deliberately not that value). Since #221 a confirmation window's opening instant is stamped by `evidence` and honoured by the payments application, which makes "what time do these two processes think it is" a question with a right answer. This matters more since the driveable clock went, not less: nothing realigns the two processes any more, so the host's timekeeping is all that holds them together. A skewed stack does not fail loudly — every window-crossing scenario simply asserts a number that is quietly wrong.
 - **Build revision.** If more than one distinct `revision` comes back across `GET /healthz` calls, that means one service was rebuilt and another was not — the same "which of these is stale" confusion one layer down.
 
 On any mismatch it fails once, with a `StaleEnvironmentError` whose message always contains the literal phrase `stale environment` and names expected vs. actual for every mismatch found — see `harness/preflight_test.go` for the comparison function (`ComparePreflight`) exercised directly, with no Docker.
@@ -84,7 +93,7 @@ At the shell level, `make e2e-up` writes `.e2e/stack.fingerprint` — a hash of 
 ```
 ── e2e run header ──────────────────────────────────────────
 transparency substrate : postgres
-clock mode              : driveable (services take an Offset clock; the harness moves it — see docs/TESTING.md)
+time                   : real; every window is waited out (docs/TESTING.md)
 confirmation window     : 168h (default)
 service revision        : 3f9a21c
 compose project         : crest
@@ -92,7 +101,7 @@ db volume predates run  : no — created 4s ago, by this invocation
 ────────────────────────────────────────────────────────────
 ```
 
-- **transparency substrate / clock mode / confirmation window** — what this invocation itself expects, from its own environment (the same thing the preflight checks the running services against).
+- **transparency substrate / confirmation window / sweep interval / the other cadences** — what this invocation itself expects, from its own environment (the same thing the preflight checks the running services against, and the same variables the stack was brought up with).
 - **service revision** — `git rev-parse --short HEAD` for this checkout, `+dirty` if there are uncommitted changes; a mismatch between this and what a service later reports on `/healthz` is exactly the "stale build" case the preflight names.
 - **compose project** — always `crest` (fixed by `name: crest` in `infra/compose/docker-compose.yml`), so the header does not depend on where the command happens to be run from.
 - **db volume predates run** — whether the compose project's Postgres volume (`crest_pgdata`) already existed before this invocation started it, by comparing the volume's `CreatedAt` against wall-clock now. `test-e2e`'s leading `down -v` means this should always read "no" there; on `e2e-run` a "yes" is the first thing worth reading before treating a failure as a defect.

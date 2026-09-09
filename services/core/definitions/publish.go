@@ -158,6 +158,6 @@ func deliver(d service.Deps) store.Deliverer {
 				"definition", def.ID, "version", def.Version,
 				"consequence", "a verifier can resolve this version only by trusting this deployment")
 		}
-		return recordPublication(ctx, d.DB, def, receipt, d.Clock.Now())
+		return recordPublication(ctx, d.DB, def, receipt, time.Now().UTC())
 	}
 }

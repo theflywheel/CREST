@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/theflywheel/crest/adapters"
 	"github.com/theflywheel/crest/adapters/builtin"
@@ -98,7 +99,7 @@ func (h *draftHandlers) dryRun(w http.ResponseWriter, r *http.Request) {
 		// a draft that may have no definition id, and must not mint one.
 		defID = previewDefinitionID
 	}
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	compiled, problems := compile(draft.Doc, defID, draft.BaseVersion+1, draft.CreatedBy, now)
 	// A dry run against a draft with open evidence rules would judge rows
 	// against rules that do not exist yet; refuse those, allow the rest.

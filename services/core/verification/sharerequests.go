@@ -198,7 +198,7 @@ func registerShareRoutes(mux *http.ServeMux, d service.Deps) {
 	// How long a request stands open. L2 with an L1 default: a market-day
 	// pilot and a national programme can reasonably differ on the number;
 	// that a request expires at all is not configurable away.
-	ttl, err := config.Duration("CREST_PRESENTATION_REQUEST_TTL", 72*time.Hour)
+	ttl, err := config.PositiveDuration("CREST_PRESENTATION_REQUEST_TTL", 72*time.Hour)
 	if err != nil {
 		d.Log.Error("CREST_PRESENTATION_REQUEST_TTL is unreadable", "error", err)
 		ttl = 72 * time.Hour
@@ -284,9 +284,9 @@ func (h *shareHandlers) create(w http.ResponseWriter, r *http.Request) {
 		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
-	req, err := newShareRequest(id.New(h.d.Clock, "share-request"),
+	req, err := newShareRequest(id.New("share-request"),
 		body.SubjectPartyID, body.RequestedBy, body.Purpose,
-		body.CredentialIDs, h.d.Clock.Now(), h.ttl)
+		body.CredentialIDs, time.Now().UTC(), h.ttl)
 	switch {
 	case errors.Is(err, errShareSelfRequest):
 		httpx.WriteError(w, http.StatusUnprocessableEntity, "self_request",
@@ -405,7 +405,7 @@ func (h *shareHandlers) decide(w http.ResponseWriter, r *http.Request) {
 	if !httpx.ReadJSON(w, r, &body) {
 		return
 	}
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	var req shareRequest
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		got, err := h.read(r.Context(), tx, r.PathValue("id"))
@@ -476,7 +476,7 @@ func (h *shareHandlers) decide(w http.ResponseWriter, r *http.Request) {
 // (w1_20), and a second collect is refused because the approval was for one
 // share (w1_15).
 func (h *shareHandlers) collect(w http.ResponseWriter, r *http.Request) {
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	var (
 		req  shareRequest
 		docs []json.RawMessage
@@ -535,7 +535,7 @@ func (h *shareHandlers) collect(w http.ResponseWriter, r *http.Request) {
 				INSERT INTO presentations (id, credential_id, subject_ref, requested_by, purpose,
 				                           scope, outcome, tier, created_at)
 				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-				id.New(h.d.Clock, "presentation"), nullable(cred.ID), nullable(cred.Subject.ID),
+				id.New("presentation"), nullable(cred.ID), nullable(cred.Subject.ID),
 				nullable(collected.RequestedBy), nullable(collected.Purpose),
 				"consented", "shared", nil, now); err != nil {
 				return err
@@ -572,7 +572,7 @@ func (h *shareHandlers) collect(w http.ResponseWriter, r *http.Request) {
 // view is a request plus its resolved disclosure list and derived state — the
 // one shape both faces read.
 func (h *shareHandlers) view(ctx context.Context, s shareRequest) map[string]any {
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	out := map[string]any{"request": s, "state": s.effectiveState(now)}
 	disclosure, err := h.disclosureList(ctx, s)
 	if err != nil {

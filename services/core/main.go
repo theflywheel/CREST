@@ -8,9 +8,11 @@
 // #129) deliberately stays outside — including the confirmation window,
 // which moved out of this process with its attestation member (#127).
 //
-// Nothing here mounts a driveable clock. The only reason a CREST process ever
-// wanted one was to cross a week-long confirmation window, and no window
-// lives here any more.
+// Nothing here reads CONFIRMATION_WINDOW, and nothing here holds a window.
+// This process does have scheduled behaviour of its own — evidence's
+// source-quiet monitor, parties' override review date — and each of those is a
+// configured duration read at start-up rather than a clock anybody can move
+// (ruled 2026-09-09).
 package main
 
 import (

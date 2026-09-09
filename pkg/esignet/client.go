@@ -38,8 +38,6 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
-
-	"github.com/theflywheel/crest/pkg/clock"
 )
 
 // Client is a registered eSignet relying-party client.
@@ -117,10 +115,11 @@ func (c *Client) jwk() map[string]any {
 	}
 }
 
-// The wall clock, deliberately: like token verification (pkg/identity), the
-// login handshake runs on the identity provider's real time, never a
-// driveable clock.
-func nowISO() string { return clock.System{}.Now().UTC().Format("2006-01-02T15:04:05.000Z") }
+// The login handshake runs on the identity provider's real time, like token
+// verification (pkg/identity). Since 2026-09-09 that is the only kind of time
+// there is in CREST, so this is a statement about the format rather than about
+// which clock to read.
+func nowISO() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000Z") }
 
 type envelope struct {
 	Response json.RawMessage `json:"response"`
@@ -284,7 +283,7 @@ func (c *Client) Exchange(ctx context.Context, code, redirectURI, verifier strin
 	if _, err := rand.Read(jti[:]); err != nil {
 		return Tokens{}, err
 	}
-	now := clock.System{}.Now()
+	now := time.Now().UTC()
 	assertion, err := jwt.Signed(signer).Claims(jwt.Claims{
 		Issuer:   c.ClientID,
 		Subject:  c.ClientID,

@@ -9,7 +9,6 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/store"
 )
 
@@ -20,7 +19,7 @@ func TestSimulatorIsDurableAndDoesNotSettleOnSubmit(t *testing.T) {
 	}
 	ctx := context.Background()
 	schemaName := fmt.Sprintf("provider_contract_%d", time.Now().UnixNano())
-	db, err := store.Open(ctx, dsn, schemaName, clock.System{})
+	db, err := store.Open(ctx, dsn, schemaName)
 	if err != nil {
 		t.Fatal(err)
 	}

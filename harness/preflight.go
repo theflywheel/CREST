@@ -2,9 +2,7 @@ package harness
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -24,35 +22,20 @@ import (
 // mismatch.
 
 // ServiceStatus is what one running service reports about itself, gathered
-// from /healthz and /internal/clock.
+// from /healthz.
 type ServiceStatus struct {
 	Transparency string // "dedi" | "postgres", from GET /healthz
 	Revision     string // build/version fingerprint, from GET /healthz
-	ClockTicking bool   // true when the service's clock is a driveable Offset (GET /internal/clock reports "ticking")
 
-	// HasClock is whether this service answers GET /internal/clock at all.
-	//
-	// The seam is opt-in since #213, so a service that declares none has no
-	// route — not one that refuses — and asking it whether its clock is
-	// ticking is asking about a route that does not exist. Both processes in
-	// the fleet do declare it today (#215: payments for the window, core for
-	// evidence's source monitor and parties' override review), so this reads
-	// true for both; it is here because "which processes are running" and
-	// "which processes let the harness move time" stopped being the same
-	// question, and a stack that answered it wrongly would fail every
-	// window-dependent scenario for a reason no scenario names.
-	HasClock bool
-
-	// Now is what this service thinks the time is: /internal/clock's `now`
-	// where the service declares the seam, and /healthz's `time` otherwise.
+	// Now is what this service thinks the time is, from /healthz's `time`.
 	//
 	// It is here because the confirmation window's opening instant is stamped
 	// by one process and honoured by another (#221). Two processes that
-	// disagree about the time move a worker's deadline, and until this the
-	// harness could not tell the difference between a stack whose clocks were
-	// driven together and one whose clocks had drifted apart — every
-	// window-crossing scenario simply asserted something slightly wrong and
-	// usually got away with it.
+	// disagree about the time move a worker's deadline, silently, in a way
+	// that reads as a scenario asserting the wrong number rather than as a
+	// stack that is wrong. It matters more now than it did, not less: with no
+	// clock to align, nothing puts these two processes back in step — the
+	// host's timekeeping is the only thing holding them together.
 	//
 	// Zero means the service reported no time at all, and the skew rule then
 	// says nothing rather than guessing.
@@ -63,10 +46,13 @@ type ServiceStatus struct {
 // stack is stale-environment-class.
 //
 // The same five minutes as the payments application's CLOCK_SKEW_ALERT
-// default, deliberately: the harness should fail on the disagreement a
-// deployment would warn about, not on a tighter or looser one of its own. It is
-// generous on purpose — the statuses are gathered one service at a time over
-// HTTP, so a small difference is the gathering, not the stack.
+// production default, deliberately: the harness should fail on the
+// disagreement a deployment would warn about, not on a tighter or looser one
+// of its own. It is generous on purpose — the statuses are gathered one
+// service at a time over HTTP, so a small difference is the gathering, not the
+// stack. Note that a harness stack sets CLOCK_SKEW_ALERT to about a second so
+// the detector itself can be exercised; this threshold is the harness's own
+// judgement about a broken stack and is deliberately not that value.
 const ClockSkewThreshold = 5 * time.Minute
 
 // ExpectedConfig is what this harness invocation expects of the stack it is
@@ -108,14 +94,7 @@ func (m Mismatch) String() string {
 //   - every service's transparency substrate must agree with what this
 //     harness invocation expects (a stack half-pointed at the deployed DeDi
 //     node is the exact failure mode #79 names);
-//   - every service that HAS a clock route must report a driveable Offset
-//     clock ("ticking"), because the harness moves time rather than sleeping
-//     (docs/TESTING.md) and a service that cannot be driven fails every
-//     window-dependent scenario for a reason that has nothing to do with the
-//     scenario — and at least one service must have one at all, because a
-//     stack where nothing answers /internal/clock is a stack where no window
-//     can be crossed and every T=7 scenario times out instead of failing;
-//   - and every service's build revision must agree with every other
+//   - every service's build revision must agree with every other
 //     service's, because one image rebuilt and another left stale from a
 //     previous run is the same "environment vs. defect" confusion one layer
 //     down;
@@ -137,50 +116,26 @@ func ComparePreflight(expected ExpectedConfig, actual map[string]ServiceStatus) 
 	sort.Strings(names)
 
 	revisions := map[string]bool{}
-	clocks := 0
 	for _, name := range names {
 		st := actual[name]
-		if st.HasClock {
-			clocks++
-		}
 		if expected.Transparency != "" && st.Transparency != "" && st.Transparency != expected.Transparency {
 			out = append(out, Mismatch{
 				Service: name, Field: "transparency substrate",
 				Expected: expected.Transparency, Actual: st.Transparency,
 			})
 		}
-		if st.HasClock && !st.ClockTicking {
-			out = append(out, Mismatch{
-				Service: name, Field: "clock mode",
-				Expected: "driveable (ticking)", Actual: "not driveable",
-			})
-		}
 		if st.Revision != "" {
 			revisions[st.Revision] = true
 		}
 	}
-	// One process must own a driveable clock. Since #127 that is payments and
-	// only payments, so "none of them" is no longer a per-service mismatch —
-	// it is one fact about the stack, and without it every scenario that
-	// crosses a window fails for a reason no scenario names.
-	if len(names) > 0 && clocks == 0 {
-		out = append(out, Mismatch{
-			Service: "stack", Field: "clock seam",
-			Expected: "one process answering /internal/clock (the payments application, #127)",
-			Actual:   "no process answers it, so the harness cannot move time",
-		})
-	}
-
 	// Two processes that disagree about the time (#221). Simple and honest: the
 	// earliest reported time against the latest, one mismatch naming both, and
 	// nothing said at all unless at least two services reported a time.
 	//
-	// The same rule covers both cases the ruling names, because there is only
-	// one thing to check. Driveable clocks are aligned by the harness before
-	// scenarios run, so a difference here is a drive that did not take;
-	// wall-clock services are aligned by whatever keeps the host's time, so a
-	// difference there is drift. Either way the stack cannot be trusted about
-	// when a window closes, and that is what the failure says.
+	// Every process is on real time now, aligned only by whatever keeps the
+	// host's clock, so a difference here is drift and nothing else. The stack
+	// then cannot be trusted about when a window closes, and that is what the
+	// failure says.
 	var earliest, latest string
 	for _, name := range names {
 		if actual[name].Now.IsZero() {
@@ -297,12 +252,6 @@ func (s *Stack) runPreflight(ctx context.Context) error {
 	return nil
 }
 
-// isNotFound reports whether err is this stack saying "no such route".
-func isNotFound(err error) bool {
-	var httpErr *HTTPError
-	return errors.As(err, &httpErr) && httpErr.Code == http.StatusNotFound
-}
-
 func gatherServiceStatus(ctx context.Context, svc *Service) (ServiceStatus, error) {
 	var health struct {
 		Transparency string    `json:"transparency"`
@@ -312,32 +261,11 @@ func gatherServiceStatus(ctx context.Context, svc *Service) (ServiceStatus, erro
 	if err := svc.Get(ctx, "/healthz", &health); err != nil {
 		return ServiceStatus{}, err
 	}
-	// A service that declares no clock seam has no /internal/clock route at
-	// all (#127), so a 404 here is a fact about the deployment rather than a
-	// failure to gather. Distinguishing the two matters: treating it as an
-	// error would drop the whole service from the preflight, and the stale
-	// build revision or wrong transparency substrate that #79 exists to catch
-	// would go unreported on core precisely because core stopped owning a
-	// clock. Anything other than "the route is not there" is still an error.
-	var clk struct {
-		Ticking bool      `json:"ticking"`
-		Now     time.Time `json:"now"`
-	}
-	// /healthz reports the service's own clock, so a service with no seam
-	// still says what time it thinks it is (#221). Where the seam exists,
-	// /internal/clock is the same clock and is preferred only because it is
-	// the one the harness drives.
-	status := ServiceStatus{Transparency: health.Transparency, Revision: health.Revision, Now: health.Time}
-	switch err := svc.Get(ctx, "/internal/clock", &clk); {
-	case err == nil:
-		status.HasClock, status.ClockTicking = true, clk.Ticking
-		if !clk.Now.IsZero() {
-			status.Now = clk.Now
-		}
-	case isNotFound(err):
-		status.HasClock = false
-	default:
-		return ServiceStatus{}, err
-	}
-	return status, nil
+	// /healthz's `time` is the process's own real UTC clock, and it is the
+	// only place the harness asks: there is no /internal/clock any more.
+	return ServiceStatus{
+		Transparency: health.Transparency,
+		Revision:     health.Revision,
+		Now:          health.Time,
+	}, nil
 }

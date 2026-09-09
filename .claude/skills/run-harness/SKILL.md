@@ -1,6 +1,6 @@
 ---
 name: run-harness
-description: Run or extend the CREST end-to-end harness — bring up real services, drive the clock, assert on observable outcomes. Use when testing functionality end to end, debugging a cross-service failure, or adding a new E2E scenario.
+description: Run or extend the CREST end-to-end harness — bring up real services configured with short durations, poll for observable outcomes. Use when testing functionality end to end, debugging a cross-service failure, or adding a new E2E scenario.
 ---
 
 # The E2E harness
@@ -44,18 +44,27 @@ Add it under `tests/e2e/`, named for the situation it covers, then:
 
 1. **Add the manifest row** in `docs/test-manifest.md` — what feature, how proven, which layer. Same change, not later.
 2. Reuse the canonical fixture world. If it genuinely lacks something, extend `world.yaml` rather than building a private world; two fixture worlds become two understandings of the system.
-3. Drive time via the injectable clock. The confirmation window is seven days and the suite must still finish in seconds.
+3. Never sleep a fixed guess. Time-bound behaviour is configured short on the harness stack and polled for with `eventually` / `harness.WaitFor`, and every deadline is derived from the stack's own cadence.
 4. Assert the negative too. "The dispute was recorded" is half a test; "and the payment still released" is the half that matters.
 
 ## Time
 
-Services read time through an injectable clock. The harness advances it:
+There is no clock to drive (ruled 2026-09-09). Services read `time.Now().UTC()`, and every time-bound behaviour is a configured duration. The harness stack is brought up with those durations set to seconds — `CONFIRMATION_WINDOW=30s`, `SWEEP_EVERY=1s`, source cadence `2s`, `CREST_RECOVERY_OVERRIDE_REVIEW=3s`, `CLOCK_SKEW_ALERT=1s` — named once in the `Makefile` and read back by `harness/durations.go`, so the scenarios and the stack cannot disagree.
 
-```
-advance_clock(days=7)   # auto-confirm fires
+A scenario waits for the outcome and never for a guess:
+
+```go
+// the window runs out on its own, and the scheduled sweep finds it —
+// nobody posts to /v1/sweep, because nobody does on a deployment either
+w.waitForTheWindowToRunOut(t, claimID)
+win := w.waitForTheWindowToExit(t, claimID, "auto")
 ```
 
-Any test that waits in real time will be deleted by whoever it blocks first, and rightly.
+`eventually(t, what, within, cond)` is `harness.WaitFor`: it polls, returns the instant the condition holds, and fails at the deadline naming the last thing that was wrong. Derive `within` from the stack's cadence — `harness.Patience(d)` is ten times `d`, floored at five seconds — never from a number typed into the scenario.
+
+Asserting that something has **not** happened yet needs a margin the cadence guarantees: read the window's closing instant back and assert it is still in the future before asserting the window has not exited. There is deliberately no helper for that, because the margin is a judgement each scenario has to make in the open.
+
+`time.Sleep` appears in exactly one shape: a delay that is the scenario's *input* — a row left in the unclear queue so that "arrived" and "became visible" are genuinely apart. The outcome after it is still polled for.
 
 ## When something looks flaky
 

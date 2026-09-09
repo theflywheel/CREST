@@ -164,16 +164,16 @@ func (h *handlers) createParty(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "server_managed_identity", "party IDs and identity bindings cannot be supplied at registration")
 		return
 	}
-	p.ID = id.Party(h.d.Clock)
+	p.ID = id.Party()
 	if caller.PartyID == "" {
 		if p.Kind != schema.PartyKindPerson {
 			httpx.WriteError(w, http.StatusBadRequest, "use_organisation_registration", "organizations register through the organization workflow")
 			return
 		}
-		p.IdentityBindings = []schema.PartyIdentityBindingsItem{{Provider: caller.Issuer, ProviderClass: schema.PartyIdentityBindingsItemProviderClassGenericOidc, SubjectRef: caller.Subject, AssertedAt: h.d.Clock.Now()}}
+		p.IdentityBindings = []schema.PartyIdentityBindingsItem{{Provider: caller.Issuer, ProviderClass: schema.PartyIdentityBindingsItemProviderClassGenericOidc, SubjectRef: caller.Subject, AssertedAt: time.Now().UTC()}}
 	}
 	if p.CreatedAt.IsZero() {
-		p.CreatedAt = h.d.Clock.Now()
+		p.CreatedAt = time.Now().UTC()
 	}
 	// Validated against the schema rather than trusted because it unmarshalled.
 	// The struct cannot express "at least one contact route", and W2 is
@@ -233,7 +233,7 @@ func (h *handlers) getAssurance(w http.ResponseWriter, r *http.Request) {
 		httpx.NotFoundOr(w, h.d.Log, "party", err, store.ErrNotFound)
 		return
 	}
-	level, because := assuranceOf(p, h.d.Clock.Now())
+	level, because := assuranceOf(p, time.Now().UTC())
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"partyId":           p.ID,
 		"identityAssurance": level,
@@ -308,12 +308,12 @@ func (h *handlers) resolve(w http.ResponseWriter, r *http.Request) {
 
 	if len(candidates) > 0 {
 		hold := Hold{
-			ID:         id.New(h.d.Clock, "match-hold"),
+			ID:         id.New("match-hold"),
 			KeyKind:    kind,
 			KeyValue:   value,
 			Candidates: candidates,
 			Reason:     "more than one party carries this identifier",
-			CreatedAt:  h.d.Clock.Now(),
+			CreatedAt:  time.Now().UTC(),
 			ContextID:  contextID,
 		}
 		if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
@@ -409,13 +409,13 @@ func (h *handlers) createTerms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if t.ID == "" {
-		t.ID = id.New(h.d.Clock, "terms")
+		t.ID = id.New("terms")
 	}
 	if t.Version == 0 {
 		t.Version = 1
 	}
 	if t.PublishedAt.IsZero() {
-		t.PublishedAt = h.d.Clock.Now()
+		t.PublishedAt = time.Now().UTC()
 	}
 	if err := schema.Validate(schema.IDTerms, t); err != nil {
 		writeValidation(w, err)
@@ -538,10 +538,10 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.ID == "" {
-		a.ID = id.New(h.d.Clock, "authorization")
+		a.ID = id.New("authorization")
 	}
 	if a.ApprovedAt.IsZero() {
-		a.ApprovedAt = h.d.Clock.Now()
+		a.ApprovedAt = time.Now().UTC()
 	}
 	if a.State == "" {
 		a.State = schema.AuthorizationStateACTIVE
@@ -551,7 +551,7 @@ func (h *handlers) createAuthorization(w http.ResponseWriter, r *http.Request) {
 	// that "have not started yet" on any deployment whose clock it did not
 	// share, and a permits() check reads the start.
 	if a.Period.Start.IsZero() {
-		a.Period.Start = h.d.Clock.Now()
+		a.Period.Start = time.Now().UTC()
 	}
 	if err := schema.Validate(schema.IDAuthorization, a); err != nil {
 		writeValidation(w, err)
@@ -662,7 +662,7 @@ func (h *handlers) myAuthorizations(w http.ResponseWriter, r *http.Request) {
 			"this endpoint answers about a verified caller's own grants")
 		return
 	}
-	list, err := activeAuthorizationsHeldBy(r.Context(), h.d.DB.Q(), caller.PartyID, h.d.Clock.Now())
+	list, err := activeAuthorizationsHeldBy(r.Context(), h.d.DB.Q(), caller.PartyID, time.Now().UTC())
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list own authorizations", err)
 		return
@@ -739,7 +739,7 @@ func (h *handlers) listAuthorizationsBody(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	at := h.d.Clock.Now()
+	at := time.Now().UTC()
 	if s := q.Get("at"); s != "" {
 		parsed, err := time.Parse(time.RFC3339, s)
 		if err != nil {
@@ -768,7 +768,7 @@ func (h *handlers) permits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	at := h.d.Clock.Now()
+	at := time.Now().UTC()
 	if s := q.Get("at"); s != "" {
 		parsed, err := time.Parse(time.RFC3339, s)
 		if err != nil {
@@ -819,7 +819,7 @@ func (h *handlers) createContext(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "server_managed_id", "context ids are assigned by the server")
 		return
 	}
-	c.ID = id.New(h.d.Clock, "context")
+	c.ID = id.New("context")
 	if c.State != "" && c.State != schema.ContextStateDRAFT {
 		httpx.WriteError(w, http.StatusBadRequest, "draft_required", "new contexts start as DRAFT and activate through their project gates")
 		return
@@ -849,7 +849,7 @@ func (h *handlers) overdueAuthorizations(w http.ResponseWriter, r *http.Request)
 	if _, ok := requireRegistryCustodian(w, r, h.d, ""); !ok {
 		return
 	}
-	list, err := overdueAuthorizations(r.Context(), h.d.DB.Q(), h.d.Clock.Now())
+	list, err := overdueAuthorizations(r.Context(), h.d.DB.Q(), time.Now().UTC())
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list overdue authorizations", err)
 		return
@@ -888,7 +888,7 @@ func (h *handlers) revokeAuthorization(w http.ResponseWriter, r *http.Request) {
 	}
 	var out schema.Authorization
 	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
-		a, err := revokeAuthorization(r.Context(), tx, r.PathValue("id"), h.d.Clock.Now())
+		a, err := revokeAuthorization(r.Context(), tx, r.PathValue("id"), time.Now().UTC())
 		if err != nil {
 			return err
 		}

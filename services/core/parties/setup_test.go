@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
@@ -53,7 +52,7 @@ func TestSetupInstanceIsOneTimeAndUsesSetupDecision(t *testing.T) {
 	}
 	ctx := context.Background()
 	schemaName := fmt.Sprintf("setup_%d", time.Now().UnixNano())
-	db, err := store.Open(ctx, dsn, schemaName, clock.System{})
+	db, err := store.Open(ctx, dsn, schemaName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +77,7 @@ func TestSetupInstanceIsOneTimeAndUsesSetupDecision(t *testing.T) {
 	})
 
 	d := service.Deps{
-		Config: config.Base{Env: "local"}, DB: db, Clock: clock.System{},
+		Config: config.Base{Env: "local"}, DB: db,
 		Log: slog.Default(), Authenticating: true,
 	}
 	h := &handlers{d: d}

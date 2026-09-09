@@ -37,7 +37,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/id"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/store"
@@ -59,10 +58,8 @@ func main() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	clk := clock.System{}
-
 	if os.Getenv("BOOTSTRAP_MODE") == "wipe" {
-		if err := wipe(ctx, dsn, clk); err != nil {
+		if err := wipe(ctx, dsn); err != nil {
 			fmt.Fprintln(os.Stderr, "wipe:", err)
 			os.Exit(1)
 		}
@@ -73,7 +70,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "need -name (BOOTSTRAP_NAME), and -email or -phone")
 		os.Exit(2)
 	}
-	db, err := store.Open(ctx, dsn, "parties", clk)
+	db, err := store.Open(ctx, dsn, "parties")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "open registry:", err)
 		os.Exit(1)
@@ -81,10 +78,10 @@ func main() {
 	defer db.Close()
 
 	p := schema.Party{
-		ID:          id.Party(clk),
+		ID:          id.Party(),
 		Kind:        schema.PartyKindOrganisation,
 		DisplayName: *name,
-		CreatedAt:   clk.Now(),
+		CreatedAt:   time.Now().UTC(),
 	}
 	if *email != "" {
 		p.ContactRoutes = append(p.ContactRoutes, schema.PartyContactRoutesItem{Kind: schema.PartyContactRoutesItemKindEmail, Value: *email})
@@ -118,8 +115,8 @@ func main() {
 // wipe drops exactly the five schemas CREST's services own. Each service
 // re-creates its own from embedded migrations on boot, so this is the whole
 // of "start over" — and nothing else in the database is CREST's to drop.
-func wipe(ctx context.Context, dsn string, clk clock.Clock) error {
-	db, err := store.Open(ctx, dsn, "public", clk)
+func wipe(ctx context.Context, dsn string) error {
+	db, err := store.Open(ctx, dsn, "public")
 	if err != nil {
 		return err
 	}

@@ -18,8 +18,6 @@ x-runtime: &runtime
     CONFIRMATION_URL: http://payments:8080
     PAYMENTS_URL: http://payments:8080
     SELF_URL: http://localhost:8080
-    CLOCK_DRIVEABLE: 'false'
-    CLOCK_START: ''
     SWEEP_EVERY: 10s
   healthcheck:
     test: ['CMD', '/crest-healthcheck']

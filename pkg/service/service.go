@@ -1,7 +1,7 @@
 // Package service is the common bootstrap for a CREST service.
 //
-// Every service starts identically: read config, build a logger, take a clock,
-// open the database, migrate its own schema, register routes, drain its outbox,
+// Every service starts identically: read config, build a logger, open the
+// database, migrate its own schema, register routes, drain its outbox,
 // serve, shut down cleanly. Keeping that in one place means a change to how
 // services behave is one edit rather than seven — and it means no service can
 // quietly skip the migration or the outbox relay.
@@ -15,10 +15,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"reflect"
 
 	"github.com/theflywheel/crest/pkg/client"
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/dedi"
 	"github.com/theflywheel/crest/pkg/identity"
@@ -29,7 +27,6 @@ import (
 type Deps struct {
 	Config config.Base
 	Log    *slog.Logger
-	Clock  clock.Clock
 
 	// Ctx is the process lifetime, cancelled when the service is shutting
 	// down. It is here so a service can start its own background work from
@@ -165,20 +162,6 @@ type Options struct {
 	// Only the registry sets it; it owns the parties table.
 	SameParty func(d Deps) SamePartyFunc
 
-	// ClockSeam lets a service ask for a clock the harness can drive, and
-	// mount the route that drives it. Leave it nil — almost everything should
-	// — and the service reads wall-clock time and has no /internal/clock at
-	// all, not even one that refuses.
-	//
-	// It is a hook rather than a setting because the only reason a CREST
-	// process ever wants driveable time is the confirmation window, and the
-	// confirmation window is programme policy of the payments application,
-	// not an infrastructure primitive (ruled 2026-08-28, #127). pkg/service
-	// used to give every service the capability outright; now each mount is a
-	// decision written in that service's own wiring. pkg/clockctl.Seam is the
-	// implementation, and it is the payments application's.
-	ClockSeam ClockSeamFunc
-
 	// Metrics contributes this member's own counters to GET
 	// /internal/metrics, beside the outbox gauges every member already
 	// publishes.
@@ -206,22 +189,6 @@ type Metric struct {
 	Help  string
 	Type  string // "counter" | "gauge"
 	Value float64
-}
-
-// ClockSeamFunc chooses the process clock and, when it is driveable, returns
-// the mount that exposes it. A nil second result means there is nothing to
-// mount. See pkg/clockctl.
-type ClockSeamFunc func(cfg config.Base, log *slog.Logger) (clock.Clock, func(*http.ServeMux))
-
-// sameSeam reports whether two members named the same seam function.
-//
-// Compared by code pointer, which is exactly the question being asked: several
-// members of one process may declare the driveable clock (#215), and that is
-// fine as long as they all mean pkg/clockctl.Seam. Two DIFFERENT seams would
-// make the process's clock depend on member order, which is a wiring mistake
-// worth refusing to start over.
-func sameSeam(a, b ClockSeamFunc) bool {
-	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
 }
 
 // Main is the entire main() of a CREST service.

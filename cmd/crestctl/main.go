@@ -26,7 +26,6 @@ Planned (arrive with the services they drive):
   world seed       Seed the canonical fixture world (#40)
   definition       Author, ratify and publish work definitions (#21)
   evidence submit  Push a CSV batch through the adapter (#22)
-  clock advance    Move the injected clock — how a 7-day window is tested in ms
 `
 
 var version = "dev"

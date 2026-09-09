@@ -96,10 +96,10 @@ func (f *fundersHandlers) assignOwner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a := RateOwnerAssignment{
-		ID:              id.New(f.d.Clock, "rate-owner-assignment"),
+		ID:              id.New("rate-owner-assignment"),
 		DefinitionID:    definitionID,
 		AssigneePartyID: body.AssigneePartyID, AssignedByPartyID: assigner,
-		AssignedAt: f.d.Clock.Now(),
+		AssignedAt: time.Now().UTC(),
 	}
 	if err := f.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		return assignRateOwner(r.Context(), tx, a)
@@ -203,7 +203,7 @@ func (f *fundersHandlers) publishRate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.EffectiveFrom.IsZero() {
-		body.EffectiveFrom = f.d.Clock.Now()
+		body.EffectiveFrom = time.Now().UTC()
 	}
 	payload := schema.PaymentSetupLinkedRecordPayload{
 		RatePerOutcomeUnit: schema.PaymentSetupLinkedRecordPayloadRatePerOutcomeUnit{
@@ -218,14 +218,14 @@ func (f *fundersHandlers) publishRate(w http.ResponseWriter, r *http.Request) {
 		payload.SupersedesVersion = &prev
 	}
 	lr := schema.LinkedRecord{
-		ID:      id.New(f.d.Clock, "linked-record"),
+		ID:      id.New("linked-record"),
 		Type:    "payment-setup",
 		Version: version,
 		State:   "ACTIVE",
 		KeyedTo: schema.LinkedRecordKeyedTo{
 			Kind: schema.LinkedRecordKeyedToKindDefinition, ID: definitionID,
 		},
-		CreatedAt: f.d.Clock.Now(),
+		CreatedAt: time.Now().UTC(),
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -308,7 +308,7 @@ func (f *fundersHandlers) listRates(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, f.d.Log, "read rates", err)
 		return
 	}
-	at := f.d.Clock.Now()
+	at := time.Now().UTC()
 	if s := r.URL.Query().Get("at"); s != "" {
 		parsed, err := time.Parse(time.RFC3339, s)
 		if err != nil {
@@ -393,9 +393,9 @@ func (f *fundersHandlers) createMechanism(w http.ResponseWriter, r *http.Request
 		return
 	}
 	m := Mechanism{
-		ID: id.New(f.d.Clock, "mechanism"), ContextID: body.ContextID,
+		ID: id.New("mechanism"), ContextID: body.ContextID,
 		OwnerPartyID: body.OwnerPartyID, State: mechanismConfigured,
-		Config: body.Config, CreatedByPartyID: creator, CreatedAt: f.d.Clock.Now(),
+		Config: body.Config, CreatedByPartyID: creator, CreatedAt: time.Now().UTC(),
 	}
 	created := false
 	if err := f.d.DB.InTx(r.Context(), func(tx store.Querier) error {
@@ -495,10 +495,10 @@ func (f *fundersHandlers) testDisburse(w http.ResponseWriter, r *http.Request) {
 	}
 
 	t := testDisbursement{
-		ID: id.New(f.d.Clock, "test-disbursement"), MechanismID: m.ID,
+		ID: id.New("test-disbursement"), MechanismID: m.ID,
 		RequestedBy: requester, AmountMinor: body.AmountMinor,
 		Currency: body.Currency, Destination: body.Destination,
-		At: f.d.Clock.Now(),
+		At: time.Now().UTC(),
 	}
 	reply, providerErr := f.h.rail.Submit(r.Context(), providers.Request{
 		IdempotencyKey: t.ID, InstructionID: t.ID, ContextID: m.ContextID, Reference: "test:" + t.ID,
@@ -583,9 +583,9 @@ func (f *fundersHandlers) addRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rec := mechanismRecord{
-		ID: id.New(f.d.Clock, "mechanism-record"), MechanismID: m.ID,
+		ID: id.New("mechanism-record"), MechanismID: m.ID,
 		Kind: body.Kind, ActorPartyID: actor, Payload: body.Payload,
-		At: f.d.Clock.Now(),
+		At: time.Now().UTC(),
 	}
 	if err := f.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		return insertMechanismRecord(r.Context(), tx, rec)
@@ -676,7 +676,7 @@ func (f *fundersHandlers) activate(w http.ResponseWriter, r *http.Request) {
 	released := []string{}
 	err := f.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		var err error
-		out, conds, released, err = activateMechanismAndRelease(r.Context(), tx, r.PathValue("id"), activator, f.d.Clock.Now())
+		out, conds, released, err = activateMechanismAndRelease(r.Context(), tx, r.PathValue("id"), activator, time.Now().UTC())
 		return err
 	})
 	switch {
@@ -779,7 +779,7 @@ func (f *fundersHandlers) statement(w http.ResponseWriter, r *http.Request) {
 		"partyId": ids[0], "month": month,
 		"instructions":          instructions,
 		"totalsMinorByCurrency": totals, "heldCount": heldCount,
-		"generatedAt": f.d.Clock.Now(),
+		"generatedAt": time.Now().UTC(),
 		"limits":      statementLimits(),
 	})
 }

@@ -109,7 +109,7 @@ func (h *recoveryContactHandlers) nominate(w http.ResponseWriter, r *http.Reques
 	}
 	rec := RecoveryContact{
 		PartyID: partyID, ContactPartyID: body.ContactPartyID,
-		NominatedBy: nominatedBy, NominatedAt: h.d.Clock.Now(),
+		NominatedBy: nominatedBy, NominatedAt: time.Now().UTC(),
 	}
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		if _, err := getParty(r.Context(), tx, partyID); err != nil {
@@ -185,7 +185,7 @@ func (h *recoveryContactHandlers) revoke(w http.ResponseWriter, r *http.Request)
 		n, err := tx.Exec(r.Context(), `
 			UPDATE recovery_contacts SET revoked_at = $3
 			WHERE party_id = $1 AND contact_party_id = $2 AND revoked_at IS NULL`,
-			partyID, r.PathValue("contactId"), h.d.Clock.Now())
+			partyID, r.PathValue("contactId"), time.Now().UTC())
 		affected = n
 		return err
 	})

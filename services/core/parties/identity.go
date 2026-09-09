@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/identity"
@@ -110,7 +111,7 @@ func localBinder(d service.Deps) identity.Binder {
 // HTTP, which would deadlock a single-threaded moment and is absurd regardless.
 func localPermits(d service.Deps) identity.PermitsFunc {
 	return func(ctx context.Context, partyID, function, contextID string) (bool, error) {
-		ok, _, err := permits(ctx, d.DB.Q(), partyID, function, contextID, d.Clock.Now())
+		ok, _, err := permits(ctx, d.DB.Q(), partyID, function, contextID, time.Now().UTC())
 		return ok, err
 	}
 }

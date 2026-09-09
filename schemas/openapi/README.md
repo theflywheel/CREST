@@ -16,11 +16,12 @@ Every service also carries `GET /healthz` and `GET /readyz`, added by
 `pkg/httpx.Server` rather than by each service's `routes.go`. They are described
 once per file as a shared path item.
 
-`/internal/clock` is described too, and it is the one path that is not always
-there: it exists only when `CLOCK_DRIVEABLE` is set, which `pkg/service` refuses
-in production. It is documented rather than hidden because a reader who finds it
-in a running stack should be able to learn what it is and why it must not be in
-a live deployment.
+`/internal/clock` used to be described here. There is no such route in CREST
+any more (ruled 2026-09-09): every process reads real time, and every
+time-bound behaviour is a configured duration the harness proves by setting it
+to seconds and waiting. Each file says so where the path used to be, because a
+reader who has seen the old documentation should find out what replaced it
+rather than conclude the route was merely undocumented.
 
 ## They describe the boundary, not the data
 

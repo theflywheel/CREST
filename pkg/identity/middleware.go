@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/theflywheel/crest/pkg/clock"
 )
 
 // HeaderOnBehalfOf is how a caller says they are acting for somebody else.
@@ -67,8 +65,8 @@ type Forget func(subject string)
 // ordinary one. Wiring it here rather than threading a parameter through
 // thirty-odd Authorize call sites keeps the fix in one place. May be nil, and
 // then a request naming an id it did not prove is refused as it was before.
-func Middleware(v TokenVerifier, binder Binder, same SameFunc, clk clock.Clock, log *slog.Logger) (func(http.Handler) http.Handler, Forget) {
-	cache := &bindingCache{ttl: time.Minute, clk: clk, entries: map[string]bindingEntry{}}
+func Middleware(v TokenVerifier, binder Binder, same SameFunc, cacheTTL time.Duration, log *slog.Logger) (func(http.Handler) http.Handler, Forget) {
+	cache := &bindingCache{ttl: cacheTTL, entries: map[string]bindingEntry{}}
 	forget := func(subject string) {
 		cache.mu.Lock()
 		delete(cache.entries, subject)
@@ -156,13 +154,12 @@ type bindingEntry struct {
 // is one registry call.
 type bindingCache struct {
 	ttl     time.Duration
-	clk     clock.Clock
 	mu      sync.Mutex
 	entries map[string]bindingEntry
 }
 
 func (c *bindingCache) get(ctx context.Context, b Binder, subject string) (string, error) {
-	now := c.clk.Now()
+	now := time.Now().UTC()
 	c.mu.Lock()
 	e, ok := c.entries[subject]
 	c.mu.Unlock()

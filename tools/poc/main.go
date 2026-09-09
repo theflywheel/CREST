@@ -187,10 +187,12 @@ func main() {
 	say("confirmation: %d of %d windows opened, each one a worker who was told before it counted",
 		opened, len(ingest.ClaimIDs))
 
-	// 5 ── the seven days. Driven rather than waited for.
-	if err := s.driveClock("2026-03-30T09:00:00Z"); err != nil {
-		say("(clock not driveable: %v — windows will close on their own schedule)", err)
-	}
+	// 5 ── the window running out. Waited for, because there is nothing to
+	// drive: every process is on real time (ruled 2026-09-09), and the window
+	// is CONFIRMATION_WINDOW long on whatever stack this is pointed at. A demo
+	// stack sets it to seconds; a stack left on the programme's seven days
+	// will simply find nothing due, and the sweep below says so.
+	s.waitForWindows()
 	var swept struct {
 		Due           int      `json:"due"`
 		AutoConfirmed []string `json:"autoConfirmed"`
@@ -327,22 +329,29 @@ func (s *stack) registerWorker(phone, contextID, supervisor string) bool {
 	return true
 }
 
-// driveClock moves the clock of the one process that has one to move.
+// waitForWindows waits out the confirmation window this stack is configured
+// with, so the sweep that follows has something to find.
 //
-// It used to name four, because every service carried the driveable clock;
-// then two, while the window still sat in core. Since #127 finished the move
-// it is one: the seam is the payments application's alone, and confirmation
-// and payments are the same process, so this loop names it once. The registry,
-// evidence and verification URLs answer from core, which has no clock route to
-// post to at all.
-func (s *stack) driveClock(at string) error {
-	for _, base := range []string{s.payments} {
-		if err := s.post(base+"/internal/clock", "application/json",
-			[]byte(fmt.Sprintf(`{"now":%q}`, at)), nil); err != nil {
-			return err
+// There used to be a driveable clock here, and this walked it forward a week.
+// The clock is gone (ruled 2026-09-09): the window's length is configuration,
+// so the honest thing for a demonstration to do is read the setting and wait.
+func (s *stack) waitForWindows() {
+	window := time.Minute
+	if v := os.Getenv("CONFIRMATION_WINDOW"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			say("(CONFIRMATION_WINDOW=%q is not a positive duration; waiting %s instead)", v, window)
+		} else {
+			window = d
 		}
 	}
-	return nil
+	if window > 5*time.Minute {
+		say("(this stack's confirmation window is %s; the sweep below will find nothing due, "+
+			"which is the window doing its job rather than a failure)", window)
+		return
+	}
+	say("waiting %s for the confirmation windows to run out", window)
+	time.Sleep(window + 2*time.Second)
 }
 
 func (s *stack) post(u, contentType string, body []byte, out any) error {

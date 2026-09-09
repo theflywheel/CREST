@@ -49,6 +49,12 @@ type Config struct {
 	// stream of requests to the identity provider.
 	MinRefresh time.Duration
 
+	// BindingCacheTTL is how long the middleware reuses a subject→party
+	// answer before asking the registry again. Configuration rather than a
+	// constant because the harness runs against a real clock and has to be
+	// able to see a fresh binding land within a test's lifetime.
+	BindingCacheTTL time.Duration
+
 	// Extra is any additional issuers this deployment accepts (#155): the
 	// migration shape where eSignet authenticates the doors while the dev
 	// issuer still serves the externally-shared PoC. Each entry keeps its own
@@ -103,6 +109,9 @@ func LoadConfig() (Config, bool, error) {
 		return c, true, err
 	}
 	if c.MinRefresh, err = config.Duration("CREST_OIDC_JWKS_MIN_REFRESH", time.Minute); err != nil {
+		return c, true, err
+	}
+	if c.BindingCacheTTL, err = config.PositiveDuration("CREST_BINDING_CACHE_TTL", time.Minute); err != nil {
 		return c, true, err
 	}
 	// "issuer|jwks_url" or "issuer|jwks_url|audience" entries, comma-separated

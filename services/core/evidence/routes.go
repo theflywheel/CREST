@@ -49,7 +49,6 @@ func routes(mux *http.ServeMux, d service.Deps) {
 		in: &ingestor{
 			registry:    client.New(config.Str("PARTIES_URL", "http://parties:8080")),
 			definitions: client.New(config.Str("DEFINITIONS_URL", "http://definitions:8080")),
-			clock:       d.Clock,
 		},
 	}
 
@@ -182,7 +181,7 @@ func (h *handlers) submitBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, rejections, err := adapter.Parse(bytes.NewReader(body), params.Source, h.d.Clock.Now())
+	rows, rejections, err := adapter.Parse(bytes.NewReader(body), params.Source, time.Now().UTC())
 	if err != nil {
 		// A file whose header is unusable is refused whole, and named. There is
 		// nothing to salvage and the sender needs to know which column is missing.
@@ -327,7 +326,7 @@ func (h *handlers) transition(w http.ResponseWriter, r *http.Request) {
 			if body.Route == nil {
 				return
 			}
-			at := h.d.Clock.Now()
+			at := time.Now().UTC()
 			if c.Confirmation == nil {
 				c.Confirmation = &schema.ClaimConfirmation{WindowOpenedAt: c.CreatedAt, WindowClosesAt: at}
 			}
@@ -430,7 +429,7 @@ func (h *handlers) registerSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	src := Source{
-		ID:            id.New(h.d.Clock, "source"),
+		ID:            id.New("source"),
 		AdapterRef:    body.AdapterRef,
 		ContextID:     body.ContextID,
 		SystemRef:     body.SystemRef,
@@ -439,7 +438,7 @@ func (h *handlers) registerSource(w http.ResponseWriter, r *http.Request) {
 		Exposure:      body.SourceExposure,
 		OwnerPartyID:  body.OwnerPartyID,
 		Mapping:       body.Mapping,
-		RegisteredAt:  h.d.Clock.Now(),
+		RegisteredAt:  time.Now().UTC(),
 		expectedEvery: every,
 	}
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
@@ -450,7 +449,7 @@ func (h *handlers) registerSource(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, h.d.Log, "register source", err)
 		return
 	}
-	src.stateAt(h.d.Clock.Now())
+	src.stateAt(time.Now().UTC())
 	httpx.WriteJSON(w, http.StatusCreated, src)
 }
 
@@ -505,7 +504,7 @@ func (h *handlers) listSources(w http.ResponseWriter, r *http.Request) {
 	if !h.authorizeContext(w, r, contextID) {
 		return
 	}
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	sources, err := listSources(r.Context(), h.d.DB.Q(), now, contextID)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list sources", err)
@@ -542,7 +541,7 @@ func (h *handlers) getInternalSource(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "missing_parameter", "contextId is required")
 		return
 	}
-	sources, err := listSources(r.Context(), h.d.DB.Q(), h.d.Clock.Now(), contextID)
+	sources, err := listSources(r.Context(), h.d.DB.Q(), time.Now().UTC(), contextID)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "read registered source", err)
 		return
@@ -570,7 +569,7 @@ func (h *handlers) sweepSources(w http.ResponseWriter, r *http.Request) {
 	if !h.authorizeContext(w, r, contextID) {
 		return
 	}
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	sources, err := listSources(r.Context(), h.d.DB.Q(), now, contextID)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "sweep sources", err)

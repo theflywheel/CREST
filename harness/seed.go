@@ -51,9 +51,6 @@ func (s *Stack) SeedAt(ctx context.Context, epoch time.Time) (*fixtures.World, e
 		s.SetRuntimeID(fixtureID, runtimeID)
 	}
 
-	if err := s.SetClock(ctx, w.Instance.Epoch); err != nil {
-		return nil, fmt.Errorf("set clock: %w", err)
-	}
 	// Mutating reference data and definitions is an authenticated operation.
 	// Keep these callers separate: the definition author and approver must be
 	// real, differently bound identities so the seed exercises separation of

@@ -61,16 +61,24 @@ func deploymentRefusal(env string, get func(string) string) error {
 			}
 		}
 	}
-	if get("CLOCK_DRIVEABLE") != "" && get("CLOCK_DRIVEABLE") != "false" {
-		return fmt.Errorf("driveable time is forbidden in %s", env)
-	}
-	if get("CLOCK_START") != "" {
-		return fmt.Errorf("CLOCK_START must be empty in %s", env)
-	}
-	if v := get("SWEEP_EVERY"); v != "" {
+	// Every time-bound behaviour is a duration now that there is no clock to
+	// drive (ruled 2026-09-09), so what a deployment gets refused for is a
+	// duration that is not a duration, or one that is not positive. A
+	// window of zero is not a short window; it is a worker with no chance to
+	// object at all.
+	for _, key := range []string{
+		"CONFIRMATION_WINDOW", "SWEEP_EVERY", "SOURCE_MONITOR_EVERY",
+		"CLOCK_SKEW_ALERT", "HELD_RETRY_EVERY", "OUTBOX_RETRY_EVERY",
+		"CREST_RECOVERY_OVERRIDE_REVIEW", "CREST_INVITE_TTL",
+		"CREST_PRESENTATION_REQUEST_TTL", "CREST_BINDING_CACHE_TTL",
+	} {
+		v := get(key)
+		if v == "" {
+			continue
+		}
 		d, e := time.ParseDuration(v)
 		if e != nil || d <= 0 {
-			return fmt.Errorf("SWEEP_EVERY must be a positive duration in %s", env)
+			return fmt.Errorf("%s must be a positive duration in %s", key, env)
 		}
 	}
 	return nil

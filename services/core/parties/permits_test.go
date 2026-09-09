@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/store"
 )
 
@@ -18,7 +17,7 @@ func TestPermitsRejectsPhantomContextForInstanceGrant(t *testing.T) {
 	}
 	ctx := context.Background()
 	schemaName := fmt.Sprintf("permits_%d", time.Now().UnixNano())
-	db, err := store.Open(ctx, dsn, schemaName, clock.System{})
+	db, err := store.Open(ctx, dsn, schemaName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +34,7 @@ func TestPermitsRejectsPhantomContextForInstanceGrant(t *testing.T) {
 		phantom  = "crest:project:01ARZ3NDEKTSV4RRFFQ69G5FB0"
 		function = "work-definition-source-owner"
 	)
-	now := clock.System{}.Now()
+	now := time.Now().UTC()
 	if _, err := db.Q().Exec(ctx, `
 		INSERT INTO contexts (id, kind, state, doc) VALUES ($1, 'project', 'ACTIVE', '{}')`, existing); err != nil {
 		t.Fatal(err)

@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/dedi"
 	"github.com/theflywheel/crest/pkg/httpx"
@@ -56,60 +55,15 @@ func Compose(name string, members []Member) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// The process clock. Wall time unless a member asks for the driveable seam.
-	//
-	// One process has one clock, so one member asking is the whole process
-	// asking. Several members asking is not a conflict as long as they ask for
-	// the SAME seam — which they do, because pkg/clockctl.Seam is the only one
-	// and it reads the same deployment configuration whoever calls it. That
-	// matters since #215: `evidence` and `parties` have scheduled behaviour of
-	// their own and both declare it, and refusing to start because two members
-	// of core want the same driveable clock would be a wiring rule inventing a
-	// problem. Two members asking for DIFFERENT seams is still a wiring
-	// mistake, because then which clock the process runs on would depend on
-	// member order.
-	clk := clock.Clock(clock.System{})
-	var mountClock func(*http.ServeMux)
-	var seam ClockSeamFunc
-	var askedBy []string
-	for _, m := range members {
-		if m.Opts.ClockSeam == nil {
-			continue
-		}
-		if seam != nil && !sameSeam(seam, m.Opts.ClockSeam) {
-			log.Error("two members ask for different clock seams; a process has one clock",
-				"first", askedBy[0], "second", m.Name)
-			os.Exit(1)
-		}
-		askedBy = append(askedBy, m.Name)
-		if seam != nil {
-			continue
-		}
-		seam = m.Opts.ClockSeam
-		var c clock.Clock
-		c, mountClock = seam(cfg, log)
-		clk = c
-		if mountClock == nil {
-			// The seam was declared but the deployment did not turn it on.
-			mountClock = func(*http.ServeMux) {}
-		}
-	}
-	if len(askedBy) > 0 {
-		// Named in the log because "which members wanted a driveable clock"
-		// is the question #215 exists about, and a deployment should be able
-		// to answer it from its own startup output rather than from the source.
-		log.Info("the driveable clock seam is declared", "members", askedBy)
-	}
-
 	deps := make([]Deps, len(members))
 	var pings []httpx.ReadyFunc
 	for i, m := range members {
-		d := Deps{Config: cfg, Log: log.With("member", m.Name), Clock: clk, Ctx: ctx}
+		d := Deps{Config: cfg, Log: log.With("member", m.Name), Ctx: ctx}
 		if len(members) == 1 {
 			d.Log = log
 		}
 		if m.Opts.Migrations != nil {
-			db, err := store.Open(ctx, cfg.DatabaseURL, m.Name, clk)
+			db, err := store.Open(ctx, cfg.DatabaseURL, m.Name)
 			if err != nil {
 				log.Error("database unavailable", "member", m.Name, "error", err)
 				os.Exit(1)
@@ -141,7 +95,7 @@ func Compose(name string, members []Member) {
 					log.Error("DEDI_URL is required outside local development; registry fallback is not acceptance evidence", "member", m.Name)
 					os.Exit(1)
 				}
-				pub, err := dedi.New(dcfg, db, clk, log)
+				pub, err := dedi.New(dcfg, db, log)
 				if err != nil {
 					log.Error("registry substrate unusable", "member", m.Name, "error", err)
 					os.Exit(1)
@@ -273,7 +227,7 @@ func Compose(name string, members []Member) {
 		// two (#216). Actor calls it only when a request names an id other
 		// than the one it proved.
 		m, forget = identity.Middleware(identity.NewMultiVerifier(idCfg), binder,
-			identity.SameFunc(sameParty), clk, log)
+			identity.SameFunc(sameParty), idCfg.BindingCacheTTL, log)
 		mw = append(mw, m)
 		log.Info("callers are authenticated", "issuer", idCfg.Issuer, "jwks", idCfg.JWKSURL)
 	} else {
@@ -291,9 +245,17 @@ func Compose(name string, members []Member) {
 		deps[i].ForgetSubject = forget
 	}
 
+	// How often an idle outbox is looked at again. Configuration rather than a
+	// constant for the same reason every other cadence here is: the harness
+	// runs on real time and proves the loop by shortening it.
+	outboxEvery, err := config.PositiveDuration("OUTBOX_RETRY_EVERY", time.Second)
+	if err != nil {
+		log.Error("OUTBOX_RETRY_EVERY unusable; refusing to start", "error", err)
+		os.Exit(1)
+	}
 	for i, m := range members {
 		if m.Opts.Deliver != nil && deps[i].DB != nil {
-			relay := store.NewRelay(deps[i].DB, m.Opts.Deliver(deps[i]), deps[i].Log, clk, time.Second)
+			relay := store.NewRelay(deps[i].DB, m.Opts.Deliver(deps[i]), deps[i].Log, outboxEvery)
 			go relay.Run(ctx)
 		}
 		if m.Opts.OnStart != nil {
@@ -315,9 +277,6 @@ func Compose(name string, members []Member) {
 		metricMembers = append(metricMembers, metricsMember{name: m.Name, db: deps[i].DB, own: m.Opts.Metrics})
 	}
 	mux.Handle("GET /internal/metrics", outboxMetricsHandler(metricMembers))
-	if mountClock != nil {
-		mountClock(mux)
-	}
 
 	// Ready means every member's schema answers: one member's dead store
 	// must fail the whole process's readiness rather than hide behind a
@@ -335,7 +294,7 @@ func Compose(name string, members []Member) {
 		}
 	}
 
-	if err := httpx.New(name, cfg.Addr, mux, clk, log, ready, mw...).Run(); err != nil {
+	if err := httpx.New(name, cfg.Addr, mux, log, ready, mw...).Run(); err != nil {
 		log.Error("server stopped", "error", err)
 		os.Exit(1)
 	}

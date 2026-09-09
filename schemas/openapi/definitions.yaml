@@ -604,9 +604,12 @@ paths:
   /readyz: { $ref: "#/components/pathItems/readyz" }
 
 
-  # No /internal/clock here. The driveable clock is a non-production harness
-  # surface a service declares for itself (#213), and #215 ruled which ones do:
-  # those with scheduled behaviour a test must move time to reach — payments for
-  # the confirmation window, evidence for the source-quiet monitor, parties for
-  # the override review date. This service has none, so it declares no seam and
-  # the route does not exist at all - not a route that refuses.
+  # No /internal/clock anywhere in CREST. The driveable clock was removed on
+  # 2026-09-09: every process reads real time, and every time-bound behaviour
+  # is a configured duration instead — CONFIRMATION_WINDOW, SWEEP_EVERY,
+  # SOURCE_MONITOR_EVERY, CLOCK_SKEW_ALERT, CREST_RECOVERY_OVERRIDE_REVIEW.
+  # The harness proves each of them by bringing the same code up with the
+  # duration set to seconds and waiting real time for the outcome, so there is
+  # nothing left for an HTTP call to move — and therefore no route anybody
+  # could be talked into enabling in a deployment, where a movable clock is a
+  # way to close a worker's confirmation window early on them.

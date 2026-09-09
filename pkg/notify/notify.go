@@ -20,8 +20,6 @@ import (
 	"net/smtp"
 	"strings"
 	"time"
-
-	"github.com/theflywheel/crest/pkg/clock"
 )
 
 // Message is the notification payload sent to a configured transport.
@@ -92,7 +90,7 @@ func (s *SMTP) Send(ctx context.Context, msg Message) (Result, error) {
 		return Result{}, err
 	}
 	defer func() { _ = conn.Close() }()
-	deadline := clock.System{}.Now().Add(30 * time.Second)
+	deadline := time.Now().UTC().Add(30 * time.Second)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}

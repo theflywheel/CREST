@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"time"
-
-	"github.com/theflywheel/crest/pkg/clock"
 )
 
 // Deliverer performs the side effect a message describes. It is a function
@@ -22,15 +20,14 @@ type Relay struct {
 	db      *DB
 	deliver Deliverer
 	log     *slog.Logger
-	clk     clock.Clock
 	every   time.Duration
 	batch   int
 }
 
 // NewRelay builds a relay. every is how often it looks when there is nothing to
 // do; a batch that delivered work is followed immediately by another look.
-func NewRelay(db *DB, deliver Deliverer, log *slog.Logger, clk clock.Clock, every time.Duration) *Relay {
-	return &Relay{db: db, deliver: deliver, log: log, clk: clk, every: every, batch: 1}
+func NewRelay(db *DB, deliver Deliverer, log *slog.Logger, every time.Duration) *Relay {
+	return &Relay{db: db, deliver: deliver, log: log, every: every, batch: 1}
 }
 
 // Run drains until the context is cancelled.

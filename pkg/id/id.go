@@ -5,40 +5,39 @@
 // makes "the first claim of that batch" a query rather than a join, and because
 // a human reading a log can tell two of them apart at a glance.
 //
-// The timestamp comes from the injected clock. That is not pedantry: the
-// harness runs a seven-day window in milliseconds, and identifiers minted from
-// wall-clock time inside it would sort in an order the test never asked for.
+// The timestamp is real time. There is no injected clock anywhere in CREST
+// (ruled 2026-09-09): every time-bound behaviour is a configurable duration,
+// and the harness proves it by configuring short durations and waiting.
 package id
 
 import (
 	"crypto/rand"
 	"fmt"
 	"strings"
-
-	"github.com/theflywheel/crest/pkg/clock"
+	"time"
 )
 
 // Crockford base32: no I, L, O or U, so a ULID cannot be misread aloud or
 // mistyped into a different valid one.
 const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
-// New mints an identifier of the given type: id.New(clk, "unit").
-func New(clk clock.Clock, kind string) string {
-	return "crest:" + kind + ":" + ULID(clk)
+// New mints an identifier of the given type: id.New("unit").
+func New(kind string) string {
+	return "crest:" + kind + ":" + ULID()
 }
 
 // Party mints a Party DID. Separate from New because a Party's identifier is a
 // DID rather than a crest: URI, and because "worker" must never appear in it —
 // worker is a role a Party holds (§2), and an identifier that names a role
 // cannot be reused when the same person is a supervisor.
-func Party(clk clock.Clock) string {
-	return "did:crest:party:" + ULID(clk)
+func Party() string {
+	return "did:crest:party:" + ULID()
 }
 
 // ULID returns a 26-character Crockford base32 ULID: 48 bits of millisecond
 // timestamp then 80 bits of randomness.
-func ULID(clk clock.Clock) string {
-	ms := clk.Now().UTC().UnixMilli()
+func ULID() string {
+	ms := time.Now().UTC().UnixMilli()
 	var raw [16]byte
 	for i := 0; i < 6; i++ {
 		raw[5-i] = byte(ms >> (8 * i))

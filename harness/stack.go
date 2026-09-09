@@ -130,25 +130,6 @@ func (s *Stack) Services() []*Service {
 	return []*Service{s.Parties, s.Payments}
 }
 
-// clockServices are the processes that answer /internal/clock.
-//
-// Both of them, and together on purpose: they compare timestamps with each
-// other, and a stack where evidence is on Tuesday and the window is on Friday
-// produces results that are nobody's design — the seven-days-from-resolution
-// guarantee is exactly that comparison, evidence's `resolvedAt` against the
-// window's `closesAt`.
-//
-// A separate list from Services() even so, because the two questions are no
-// longer the same one. Since #127 the payments process declares the seam for
-// the window, and since #215 core declares it for `evidence`'s source-quiet
-// monitor and `parties`' override review — scheduled infrastructure behaviour
-// that has nothing to do with a window. A process that declared neither would
-// have no clock route at all, and posting to it would 404 rather than move
-// time, so this list must name declarers rather than everything that is up.
-func (s *Stack) clockServices() []*Service {
-	return []*Service{s.Parties, s.Payments}
-}
-
 // WaitReady polls /readyz until every service answers, or gives up.
 //
 // Polling, never sleeping (docs/TESTING.md): a fixed sleep is either too short
@@ -179,59 +160,19 @@ func (s *Stack) WaitReady(ctx context.Context, within time.Duration) error {
 	return nil
 }
 
-// SetClock moves every service's clock to the same instant.
+// Now is what a service thinks the time is, read from its /healthz.
 //
-// Every service, together: they compare timestamps with each other, and a
-// stack where evidence is on Tuesday and confirmation is on Friday produces
-// results that are nobody's design.
-//
-// "Every service" is two processes, and both are here because both declare the
-// seam. #127 moved the window — and the clock that crosses it — to the
-// payments application; #215 then established that core wants driveable time
-// for reasons of its own, the source-quiet monitor and the override review
-// date, neither of which is a window. See clockServices.
-func (s *Stack) SetClock(ctx context.Context, at time.Time) error {
-	for _, svc := range s.clockServices() {
-		if err := svc.Post(ctx, "/internal/clock", map[string]any{"now": at}, nil); err != nil {
-			return fmt.Errorf("%s: %w", svc.Name, err)
-		}
-	}
-	return nil
-}
-
-// LiveClock puts every service back on real time.
-//
-// The counterpart to walking a stack forward: the story seeder shifts the
-// clock a week into the past and steps through a programme week, and this is
-// how it hands the stack back running on the same clock as everyone else. A
-// demo stack left frozen at the seeder's last step is one where no window ever
-// reaches T=7 again.
-func (s *Stack) LiveClock(ctx context.Context) error {
-	for _, svc := range s.clockServices() {
-		if err := svc.Post(ctx, "/internal/clock", map[string]any{"live": true}, nil); err != nil {
-			return fmt.Errorf("%s: %w", svc.Name, err)
-		}
-	}
-	return nil
-}
-
-// Advance moves every clock-owning process forward by d.
-func (s *Stack) Advance(ctx context.Context, d time.Duration) error {
-	for _, svc := range s.clockServices() {
-		if err := svc.Post(ctx, "/internal/clock", map[string]any{"advance": d.String()}, nil); err != nil {
-			return fmt.Errorf("%s: %w", svc.Name, err)
-		}
-	}
-	return nil
-}
-
-// Now reads a service's clock.
+// There is no clock to set and none to read out of band: every process is on
+// real time. This exists because a scenario sometimes needs the stack's own
+// idea of now rather than the test process's — they are two containers and a
+// test binary, and asserting one against the other's watch is how a scenario
+// starts failing for a reason it does not name.
 func (svc *Service) Now(ctx context.Context) (time.Time, error) {
 	var out struct {
-		Now time.Time `json:"now"`
+		Time time.Time `json:"time"`
 	}
-	err := svc.Get(ctx, "/internal/clock", &out)
-	return out.Now, err
+	err := svc.Get(ctx, "/healthz", &out)
+	return out.Time, err
 }
 
 // Reset clears the mocks between scenarios, so one scenario's messages are
