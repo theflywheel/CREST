@@ -389,13 +389,16 @@ func (st *story) waitForWindowToRunOut(claimID string) error {
 	var win struct {
 		ClosesAt time.Time `json:"closesAt"`
 	}
-	cust, err := st.login(fixtures.CustodianID)
+	// The claim's own party, not the custodian: a window read is scoped to the
+	// worker it belongs to, and naming somebody else's is refused as
+	// impersonation whoever is asking.
+	caller, err := st.callerForClaim(claimID)
 	if err != nil {
 		return err
 	}
 	deadline := time.Now().Add(ConfirmationWindow + Patience(SweepEvery))
 	for {
-		if err := st.Confirmation.As(cust).Get(st.ctx,
+		if err := st.Confirmation.As(caller).Get(st.ctx,
 			"/v1/windows/"+url.PathEscape(claimID), &win); err != nil {
 			return fmt.Errorf("read window: %w", err)
 		}
