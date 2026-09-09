@@ -45,15 +45,13 @@ linters:
               desc: "services must not import each other — talk over HTTP, like in production"
 
         # Everything in the payments application, its attestation member
-        # included since #127, reaches core over HTTP. The one exception is
-        # the clock-seam test, which reads the core members' wirings in order
-        # to assert that none of them declares a driveable clock — a test that
-        # proves a boundary is the one place allowed to look across it, and it
-        # imports no core code into anything that runs.
+        # included since #127, reaches core over HTTP. There is no exception
+        # any more: the one file that had one was the clock-seam test, which
+        # read the core members' wirings to assert that none of them declared
+        # a driveable clock, and it went with the seam on 2026-09-09.
         payments-boundary:
           files:
             - "**/services/payments/**"
-            - "!**/services/payments/clockseam_test.go"
           deny:
             - pkg: github.com/theflywheel/crest/services/core
               desc: "payments talks to core over HTTP"
@@ -92,10 +90,10 @@ linters:
               desc: "database/sql belongs in pkg/store — services use the store interface"
 
     forbidigo:
-      # The rule that makes a seven-day confirmation window testable in milliseconds.
+      # time.Now is no longer forbidden. The injected clock is gone (ruled
+      # 2026-09-09): services read real time, and every time-bound behaviour is
+      # a configured duration the harness proves by running it short.
       forbid:
-        - pattern: ^time\.Now$
-          msg: "use a clock.Clock — only pkg/clock may read wall-clock time (W3 depends on this)"
         - pattern: ^fmt\.Print.*$
           msg: "use the injected slog.Logger, not stdout"
       exclude-godoc-examples: true
@@ -107,20 +105,9 @@ linters:
 
   exclusions:
     rules:
-      # Tests may use real time and print; they are not the thing being constrained.
+      # Tests print; they are not the thing being constrained.
       - path: _test\.go
         linters: [forbidigo, bodyclose, noctx]
-      # The clock package is where the permitted time.Now lives.
-      - path: pkg/clock/
-        linters: [forbidigo]
-      # The harness measures how long a container takes to start, which is real
-      # elapsed time and cannot be anything else: the clock it reads for that
-      # would be the clock it is driving, and a deadline on a fake clock that
-      # only the test advances never expires. Domain logic is still forbidden
-      # from wall time — the harness is not domain logic, it is the thing
-      # holding domain logic to the rule.
-      - path: harness/
-        linters: [forbidigo]
       # Mocks, CLIs and the structure linter are command-line tools whose output
       # IS stdout. They have no injected logger to use instead.
       - path: (tools/|cmd/)

@@ -17,8 +17,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/theflywheel/crest/pkg/clock"
 )
 
 // ReplayStore atomically claims a service nonce until expiresAt. Implementations
@@ -134,7 +132,7 @@ func Sign(r *http.Request, id, encodedSeed string) error {
 		return err
 	}
 	r.Header.Set("X-CREST-Service-ID", id)
-	r.Header.Set("X-CREST-Service-Time", strconv.FormatInt(clock.System{}.Now().Unix(), 10))
+	r.Header.Set("X-CREST-Service-Time", strconv.FormatInt(time.Now().UTC().Unix(), 10))
 	r.Header.Set("X-CREST-Service-Nonce", base64.RawURLEncoding.EncodeToString(nonce))
 	r.Header.Set("X-CREST-Service-Signature", base64.StdEncoding.EncodeToString(ed25519.Sign(ed25519.NewKeyFromSeed(seed), canonical(r, body))))
 	return nil
@@ -154,7 +152,7 @@ func (v *Verifier) Middleware(next http.Handler) http.Handler {
 		}
 		peer, ok := v.peers[r.Header.Get("X-CREST-Service-ID")]
 		stamp, err := strconv.ParseInt(r.Header.Get("X-CREST-Service-Time"), 10, 64)
-		now := clock.System{}.Now()
+		now := time.Now().UTC()
 		if !ok || err != nil || now.Sub(time.Unix(stamp, 0)) > 30*time.Second || time.Unix(stamp, 0).Sub(now) > 30*time.Second {
 			http.Error(w, "invalid service identity or timestamp", http.StatusUnauthorized)
 			return
@@ -254,7 +252,7 @@ func ValidateIdentity(id, seedText, peersJSON string) error {
 	if bytes.Equal(public, peer.key) {
 		return nil
 	}
-	now := clock.System{}.Now()
+	now := time.Now().UTC()
 	for _, previous := range peer.previous {
 		if !now.After(previous.notAfter) && bytes.Equal(public, previous.key) {
 			return nil

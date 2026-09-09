@@ -15,7 +15,7 @@ import (
 )
 
 func monitorSources(ctx context.Context, d service.Deps) error {
-	now := d.Clock.Now()
+	now := time.Now().UTC()
 	sources, err := listSources(ctx, d.DB.Q(), now, "")
 	if err != nil {
 		return err
@@ -79,7 +79,7 @@ func notifyQuietSource(ctx context.Context, d service.Deps, parties *client.Clie
 		if !result.Accepted {
 			return fmt.Errorf("notification provider refused source alert")
 		}
-		_, err = d.DB.Q().Exec(ctx, "UPDATE sources SET notified_at=$2 WHERE id=$1", event.SourceID, d.Clock.Now())
+		_, err = d.DB.Q().Exec(ctx, "UPDATE sources SET notified_at=$2 WHERE id=$1", event.SourceID, time.Now().UTC())
 		return err
 	}
 	return fmt.Errorf("source owner has no supported contact route")

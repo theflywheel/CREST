@@ -175,7 +175,7 @@ func (h *projectHandlers) gateProject(w http.ResponseWriter, r *http.Request,
 	// own wizard is supposed to offer. Writes are untouched: configuring stays
 	// with the owner and the acknowledged configurator.
 	if !write && caller.PartyID != "" {
-		held, err := activeAuthorizationsHeldBy(r.Context(), h.d.DB.Q(), caller.PartyID, h.d.Clock.Now())
+		held, err := activeAuthorizationsHeldBy(r.Context(), h.d.DB.Q(), caller.PartyID, time.Now().UTC())
 		if err == nil && grantAdmitsRead(held, c.ID) {
 			return caller.PartyID, true
 		}
@@ -239,7 +239,7 @@ func (h *projectHandlers) createProject(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	c := schema.Context{
 		ID:            body.ID,
 		Kind:          cmpOr(strings.TrimSpace(body.Kind), contextKindProject),
@@ -250,7 +250,7 @@ func (h *projectHandlers) createProject(w http.ResponseWriter, r *http.Request) 
 		State:         schema.ContextStateDRAFT,
 	}
 	if c.ID == "" {
-		c.ID = id.New(h.d.Clock, "context")
+		c.ID = id.New("context")
 	}
 	if body.ParentID != "" {
 		c.ParentID = &body.ParentID
@@ -386,7 +386,7 @@ func (h *projectHandlers) nameConfigurator(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			return err
 		}
-		next, ev := nameConfigurator(fresh, body.ConfiguratorPartyID, actor, h.d.Clock.Now())
+		next, ev := nameConfigurator(fresh, body.ConfiguratorPartyID, actor, time.Now().UTC())
 		if err := schema.Validate(schema.IDContext, next); err != nil {
 			return err
 		}
@@ -450,7 +450,7 @@ func (h *projectHandlers) decideOwnership(w http.ResponseWriter, r *http.Request
 			return err
 		}
 		next, ev, err := decideOwnership(fresh, accept, body.Reason,
-			fresh.Ownership.PartyID, h.d.Clock.Now())
+			fresh.Ownership.PartyID, time.Now().UTC())
 		if err != nil {
 			return err
 		}
@@ -557,7 +557,7 @@ func (h *projectHandlers) activateProject(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			return err
 		}
-		next, _, err := activate(fresh, h.d.Clock.Now())
+		next, _, err := activate(fresh, time.Now().UTC())
 		if err != nil {
 			out = fresh
 			return err
@@ -599,7 +599,7 @@ func (h *projectHandlers) declareGates(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		next, err := declareGates(fresh, body.Gates, h.d.Clock.Now())
+		next, err := declareGates(fresh, body.Gates, time.Now().UTC())
 		if err != nil {
 			return err
 		}
@@ -631,7 +631,7 @@ func (h *projectHandlers) satisfyGate(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		next, err := satisfyGate(fresh, r.PathValue("name"), h.d.Clock.Now())
+		next, err := satisfyGate(fresh, r.PathValue("name"), time.Now().UTC())
 		if err != nil {
 			return err
 		}
@@ -874,7 +874,7 @@ func (h *projectHandlers) writeGrant(w http.ResponseWriter, r *http.Request, c s
 		httpx.WriteError(w, http.StatusForbidden, "caller_identity_required", "a grant must record the authenticated approver")
 		return
 	}
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	terms := body.Terms
 	ownerTerms, ownerTermsErr := acceptedTerms(r.Context(), h.d.DB.Q(), c.OwnerPartyID)
 	if ownerTermsErr != nil {
@@ -912,7 +912,7 @@ func (h *projectHandlers) writeGrant(w http.ResponseWriter, r *http.Request, c s
 	}
 	ctxID := c.ID
 	a := schema.Authorization{
-		ID:      id.New(h.d.Clock, "authorization"),
+		ID:      id.New("authorization"),
 		PartyID: body.PartyID,
 		Terms:   *terms,
 		Scope: schema.AuthorizationScope{
@@ -1071,7 +1071,7 @@ func (h *projectHandlers) record(w http.ResponseWriter, r *http.Request, kind st
 	}
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		return putContextRecord(r.Context(), tx, c.ID, kind,
-			payload, cmpOr(actor, c.OwnerPartyID), h.d.Clock.Now())
+			payload, cmpOr(actor, c.OwnerPartyID), time.Now().UTC())
 	}); err != nil {
 		httpx.Fail(w, h.d.Log, "record "+kind, err)
 		return

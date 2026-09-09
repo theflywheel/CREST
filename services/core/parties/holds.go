@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/identity"
@@ -71,7 +72,7 @@ func (h *handlers) confirmHold(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusForbidden, "worker_identity_required", "a merge confirmation must come from an enrolled worker identity")
 		return
 	}
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	var out map[string]any
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		hold, err := openHold(r.Context(), tx, r.PathValue("id"))
@@ -151,7 +152,7 @@ func (h *handlers) resolveHold(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	var out map[string]any
 	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		hold, err := openHold(r.Context(), tx, r.PathValue("id"))

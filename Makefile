@@ -74,6 +74,28 @@ test-contract: ## Fixture-driven: adapters, OpenAPI shapes, credential shape
 # up, waits on readiness rather than sleeping, runs the spine, and tears down —
 # including volumes, so the next run starts from nothing and cannot pass on
 # yesterday's rows.
+# The durations the e2e stack runs with, in one place.
+#
+# There is no clock to drive (ruled 2026-09-09): a seven-day window is proven
+# by running the same code with a window of seconds and waiting real time for
+# it. These are passed to compose, which passes them to every service, and the
+# scenarios read the same variables back (harness/durations.go) so their
+# deadlines are always derived from the cadence the stack is actually running
+# at. Change one here and the suite follows.
+#
+# They are the compose file's own defaults, repeated here so that the command
+# says what it is running rather than leaving it to be discovered.
+# Exported rather than prefixed onto the recipes that need them: compose reads
+# them, the scenarios read them back, AND the #79 stack fingerprint hashes them,
+# so a stack brought up at one window and run against at another is caught
+# before a single scenario runs rather than halfway through one.
+export CONFIRMATION_WINDOW ?= 30s
+export SWEEP_EVERY ?= 1s
+export SOURCE_MONITOR_EVERY ?= 1s
+export CLOCK_SKEW_ALERT ?= 1s
+export CREST_RECOVERY_OVERRIDE_REVIEW ?= 3s
+export OUTBOX_RETRY_EVERY ?= 1s
+
 test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
 	@# Torn down at BOTH ends, and the leading one is not redundant. The trailing
 	@# teardown only runs if the previous run reached it: an interrupted run, or
@@ -99,7 +121,10 @@ test-e2e: ## Real services: CSV -> unit -> claim -> confirm -> issue -> verify
 	}
 	@$(GO) run ./tools/e2e-fingerprint write >/dev/null
 	@$(GO) run ./tools/e2e-fingerprint header
-	@$(LOCAL_AUTH) run -- $(GO) test -tags=e2e -count=1 -timeout=10m ./harness/... ; \
+	@# Twenty minutes rather than ten: the suite waits real windows out now
+	@# instead of driving a clock through them, which is the cost of the
+	@# behaviour being proven rather than simulated.
+	@$(LOCAL_AUTH) run -- $(GO) test -tags=e2e -count=1 -timeout=20m ./harness/... ; \
 		status=$$? ; \
 		if [ $$status -ne 0 ]; then \
 			echo "── logs from the failing run ──" ; \
@@ -178,24 +203,6 @@ fidelity-sheet: ## Reference frame beside built screen, as PNG pairs for review 
 	@cd tests/e2e-apps && node ../../tools/journey-trace/contact-sheet.mjs
 	@echo "open docs/.fidelity-sheet/index.html"
 
-test-e2e-sweep: ## Prove the auto-confirm sweep runs on its own, with nobody asking
-	@# Its own stack, because the sweeper has to be on and the rest of the
-	@# suite needs it off: every other T=7 scenario advances the clock and then
-	@# posts /v1/sweep, and a background sweeper would take the window first.
-	@$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true
-	PAYMENT_SUBSCRIBER_ENABLED=true SWEEP_EVERY=2s $(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES)
-	SWEEP_EVERY=2s $(LOCAL_AUTH) run -- $(GO) test -tags=e2e -count=1 -timeout=5m -run TestScheduledSweepPaysWithNobodyAsking ./harness/scenarios/
-	@$(COMPOSE) down -v --remove-orphans
-
-test-e2e-short-window: ## Prove the window length is configuration: seconds-long windows pay by real time alone
-	@# Its own stack, for the same reason as the sweep's: every other scenario
-	@# assumes the 168h default, and a seconds-long window would auto-confirm
-	@# claims out from under them.
-	@$(COMPOSE) down -v --remove-orphans >/dev/null 2>&1 || true
-	PAYMENT_SUBSCRIBER_ENABLED=true CONFIRMATION_WINDOW=6s SWEEP_EVERY=2s $(COMPOSE) up -d --build --wait postgres objectstore mock-rail mock-oidc $(SERVICES)
-	CONFIRMATION_WINDOW=6s SWEEP_EVERY=2s $(LOCAL_AUTH) run -- $(GO) test -tags=e2e -count=1 -timeout=5m -run TestAShortWindowPaysByRealTimeAlone ./harness/scenarios/
-	@$(COMPOSE) down -v --remove-orphans
-
 e2e-run: ## Run the spine against an already-running stack (fast iteration)
 	@# Fails once, before any scenario runs, if the running stack's fingerprint
 	@# disagrees with what this invocation expects (#79) — e.g. this stack was
@@ -203,7 +210,7 @@ e2e-run: ## Run the spine against an already-running stack (fast iteration)
 	@# Postgres fallback.
 	@$(GO) run ./tools/e2e-fingerprint check
 	@$(GO) run ./tools/e2e-fingerprint header
-	$(LOCAL_AUTH) run -- $(GO) test -tags=e2e -count=1 -timeout=10m ./harness/...
+	$(LOCAL_AUTH) run -- $(GO) test -tags=e2e -count=1 -timeout=20m ./harness/...
 
 test-invariants: ## W1-W10 as executable acceptance tests
 	@if [ -d harness/invariants ]; then $(GO) test -tags=invariants ./harness/invariants/...; \
@@ -285,7 +292,7 @@ verify-deployed: ## Check every deployed fleet member answers, and verify the lo
 	@echo "── the proxy allowlist and the §16 fence"
 	@code=$$(curl -s -o /dev/null -w '%{http_code}' $(CREST_WEB_URL)/api/crest-not-a-service/healthz); \
 		[ "$$code" = 404 ] || { echo "allowlist let an unknown name through ($$code)"; exit 1; }
-	@code=$$(curl -s -o /dev/null -w '%{http_code}' $(CREST_WEB_URL)/api/crest-registry/internal/clock); \
+	@code=$$(curl -s -o /dev/null -w '%{http_code}' $(CREST_WEB_URL)/api/crest-registry/internal/metrics); \
 		[ "$$code" = 404 ] || { echo "the fence is open: /internal/ answered $$code"; exit 1; }
 	@echo "unknown names 404, /internal/* refused at the door"
 	@echo "── the public doors"

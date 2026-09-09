@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/id"
 )
 
@@ -15,9 +14,8 @@ import (
 var ulid = regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{26}$`)
 
 func TestULIDMatchesTheSchemaPattern(t *testing.T) {
-	clk := clock.NewFake(time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC))
 	for i := 0; i < 200; i++ {
-		got := id.ULID(clk)
+		got := id.ULID()
 		if !ulid.MatchString(got) {
 			t.Fatalf("%q does not match the schema's id pattern", got)
 		}
@@ -25,13 +23,12 @@ func TestULIDMatchesTheSchemaPattern(t *testing.T) {
 }
 
 func TestIdentifiersAreDistinctAtTheSameInstant(t *testing.T) {
-	clk := clock.NewFake(time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC))
 	seen := map[string]bool{}
 	for i := 0; i < 10_000; i++ {
-		got := id.ULID(clk)
+		got := id.ULID()
 		if seen[got] {
-			t.Fatalf("collision at %q — the clock does not advance in the harness, so "+
-				"the randomness is the only thing keeping these apart", got)
+			t.Fatalf("collision at %q — ten thousand mints land inside the same "+
+				"millisecond, so the randomness is the only thing keeping these apart", got)
 		}
 		seen[got] = true
 	}
@@ -40,18 +37,18 @@ func TestIdentifiersAreDistinctAtTheSameInstant(t *testing.T) {
 // Sorting by identifier must sort by mint time, because "the first claim of
 // that batch" should be an ORDER BY rather than a join.
 func TestIdentifiersSortByTime(t *testing.T) {
-	clk := clock.NewFake(time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC))
-	earlier := id.ULID(clk)
-	clk.Advance(time.Second)
-	later := id.ULID(clk)
+	earlier := id.ULID()
+	// A real millisecond, because the timestamp half of a ULID has
+	// millisecond resolution and there is no clock left to move.
+	time.Sleep(2 * time.Millisecond)
+	later := id.ULID()
 	if earlier >= later {
 		t.Errorf("%q should sort before %q", earlier, later)
 	}
 }
 
 func TestPartyIsNeverAWorker(t *testing.T) {
-	clk := clock.NewFake(time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC))
-	got := id.Party(clk)
+	got := id.Party()
 	if !regexp.MustCompile(`^did:crest:party:[0-9A-HJKMNP-TV-Z]{26}$`).MatchString(got) {
 		t.Fatalf("%q is not a Party DID", got)
 	}

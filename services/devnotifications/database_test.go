@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -23,7 +22,7 @@ func TestReceiveIsDurablyIdempotent(t *testing.T) {
 	}
 	ctx := context.Background()
 	schema := fmt.Sprintf("devnotify_contract_%d", time.Now().UnixNano())
-	db, err := store.Open(ctx, dsn, schema, clock.System{})
+	db, err := store.Open(ctx, dsn, schema)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +33,7 @@ func TestReceiveIsDurablyIdempotent(t *testing.T) {
 	if err := db.Migrate(ctx, migrations, "migrations"); err != nil {
 		t.Fatal(err)
 	}
-	h := &handler{d: service.Deps{DB: db, Clock: clock.System{}}, token: "inbox-secret"}
+	h := &handler{d: service.Deps{DB: db}, token: "inbox-secret"}
 	body := `{"to":"worker@example.org","subject":"review","body":"Open the link","acknowledgmentUrl":"https://core/review/token"}`
 	providers := make([]string, 0, 2)
 	for range 2 {

@@ -14,8 +14,6 @@ import (
 	"time"
 
 	jose "github.com/go-jose/go-jose/v4"
-
-	"github.com/theflywheel/crest/pkg/clock"
 )
 
 // issuer is a test OpenID provider: a key, a JWKS endpoint, and a way to mint
@@ -90,17 +88,11 @@ func (i *issuer) config() Config {
 	}
 }
 
-// newTestVerifier drives the verifier from a fake clock.
-//
-// Only tests may do this. NewVerifier reads the wall clock in every
-// environment, on purpose — see its comment for what a movable clock would do
-// to token expiry — and the fake here is how the expiry rules get exercised at
-// all rather than a way for a deployment to acquire one.
-func newTestVerifier(cfg Config, clk clock.Clock) *Verifier {
-	v := NewVerifier(cfg)
-	v.clk = clk
-	return v
-}
+// The verifier reads real time, everywhere, with no seam. Token expiry is
+// exercised by minting claims relative to now — a token whose `exp` is two
+// hours behind the real clock is expired for exactly the reason a real one
+// would be — and the cache rules by configuring the intervals small enough to
+// wait out.
 
 func goodClaims(i *issuer, now time.Time) map[string]any {
 	return map[string]any{
@@ -132,10 +124,10 @@ func TestAJWKSWithAnUnparseableCertChainStillServesItsKeys(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	now := time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	cfg := i.config()
 	cfg.JWKSURL = srv.URL
-	v := newTestVerifier(cfg, clock.NewFake(now))
+	v := NewVerifier(cfg)
 	if _, err := v.Verify(context.Background(), i.mint(t, goodClaims(i, now))); err != nil {
 		t.Fatalf("a key with a broken cert chain must still verify: %v", err)
 	}
@@ -143,9 +135,8 @@ func TestAJWKSWithAnUnparseableCertChainStillServesItsKeys(t *testing.T) {
 
 func TestAValidTokenEstablishesACaller(t *testing.T) {
 	i := newIssuer(t)
-	now := time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC)
-	clk := clock.NewFake(now)
-	v := newTestVerifier(i.config(), clk)
+	now := time.Now().UTC()
+	v := NewVerifier(i.config())
 
 	c, err := v.Verify(context.Background(), i.mint(t, goodClaims(i, now)))
 	if err != nil {
@@ -167,7 +158,7 @@ func TestAValidTokenEstablishesACaller(t *testing.T) {
 
 func TestATokenIsRefusedWhenAnythingAboutItIsWrong(t *testing.T) {
 	i := newIssuer(t)
-	now := time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 
 	other, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -205,8 +196,7 @@ func TestATokenIsRefusedWhenAnythingAboutItIsWrong(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			clk := clock.NewFake(now)
-			v := newTestVerifier(i.config(), clk)
+			v := NewVerifier(i.config())
 			key, kid := i.key, i.kid
 			if tc.key != nil {
 				key, kid = tc.key, tc.kid
@@ -239,9 +229,13 @@ func b64(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s
 
 func TestAKeySetIsCachedAndRefreshedOnAnUnknownKey(t *testing.T) {
 	i := newIssuer(t)
-	now := time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC)
-	clk := clock.NewFake(now)
-	v := newTestVerifier(i.config(), clk)
+	now := time.Now().UTC()
+	// MinRefresh in milliseconds rather than a minute, because the only way
+	// to be past it is to wait it out. It is configuration, so a test may
+	// pick a short one; the behaviour under test is unchanged.
+	cfg := i.config()
+	cfg.MinRefresh = 20 * time.Millisecond
+	v := NewVerifier(cfg)
 	ctx := context.Background()
 
 	if _, err := v.Verify(ctx, i.mint(t, goodClaims(i, now))); err != nil {
@@ -262,7 +256,7 @@ func TestAKeySetIsCachedAndRefreshedOnAnUnknownKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	i.key, i.kid = rotated, "test-key-2"
-	clk.Advance(2 * time.Minute) // past MinRefresh
+	time.Sleep(40 * time.Millisecond) // past the 20ms MinRefresh above
 
 	if _, err := v.Verify(ctx, i.mint(t, goodClaims(i, now))); err != nil {
 		t.Fatalf("a token signed by a rotated key was rejected: %v", err)
@@ -274,9 +268,10 @@ func TestAKeySetIsCachedAndRefreshedOnAnUnknownKey(t *testing.T) {
 
 func TestARefetchIsRateLimited(t *testing.T) {
 	i := newIssuer(t)
-	now := time.Date(2026, 3, 1, 8, 0, 0, 0, time.UTC)
-	clk := clock.NewFake(now)
-	v := newTestVerifier(i.config(), clk)
+	now := time.Now().UTC()
+	// A whole minute of MinRefresh, the production default: twenty forged
+	// tokens arriving back to back are inside it however fast the machine is.
+	v := NewVerifier(i.config())
 	ctx := context.Background()
 
 	if _, err := v.Verify(ctx, i.mint(t, goodClaims(i, now))); err != nil {

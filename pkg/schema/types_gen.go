@@ -10,7 +10,9 @@
 // by the struct. A value of one of these types is well-shaped, not valid.
 package schema
 
-import "time"
+import (
+	"time"
+)
 
 // Party X may exercise functions F, in scope G, for period T, per
 // authority A — evidenced, approved, never transferable. One object at

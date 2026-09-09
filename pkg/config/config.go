@@ -57,6 +57,26 @@ func Duration(key string, def time.Duration) (time.Duration, error) {
 	return d, nil
 }
 
+// PositiveDuration reads a duration that must be greater than zero.
+//
+// Every time-bound behaviour in CREST is a configured duration since the
+// driveable clock was removed (ruled 2026-09-09), and a zero or negative one
+// is not a shorter window — it is a window that closes the instant it opens,
+// or a sweep loop that spins. A deployment that asked for that has made a
+// mistake, and on a system whose records decide whether someone gets paid the
+// mistake must be refused at start-up rather than discovered by a worker whose
+// chance to object lasted no time at all.
+func PositiveDuration(key string, def time.Duration) (time.Duration, error) {
+	d, err := Duration(key, def)
+	if err != nil {
+		return def, err
+	}
+	if d <= 0 {
+		return def, fmt.Errorf("config: %s=%s must be a positive duration", key, d)
+	}
+	return d, nil
+}
+
 // Bool reads a boolean, or returns def.
 func Bool(key string, def bool) (bool, error) {
 	v, ok := os.LookupEnv(key)

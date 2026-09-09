@@ -269,7 +269,7 @@ func (h *handlers) buildCredential(ctx context.Context, req issueRequest) (*issu
 	// name, not a national identifier, not the provider's subject — nothing
 	// that correlates outside this deployment (W8).
 	return &issuedCredential{
-		ID:             id.New(h.d.Clock, "credential"),
+		ID:             id.New("credential"),
 		ClaimID:        req.ClaimID,
 		SubjectRef:     req.PartyID,
 		IssuedAt:       req.At,
@@ -749,7 +749,7 @@ func (h *handlers) transferCustody(w http.ResponseWriter, r *http.Request) {
 			INSERT INTO custody_journal (credential_id, subject_ref, expected_digest, storage_kind, transferred_at)
 			VALUES ($1,$2,$3,$4,$5)
 			ON CONFLICT (credential_id) DO NOTHING`,
-			c.ID, c.SubjectRef, c.Digest, req.Storage, h.d.Clock.Now()); err != nil {
+			c.ID, c.SubjectRef, c.Digest, req.Storage, time.Now().UTC()); err != nil {
 			return err
 		}
 		_, err := tx.Exec(r.Context(), `UPDATE credentials SET doc = NULL WHERE id = $1`, c.ID)
@@ -772,7 +772,7 @@ func (h *handlers) revokeInternal(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) revokeAndAnswer(w http.ResponseWriter, r *http.Request) {
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		idx, err := revokeCredential(r.Context(), tx, r.PathValue("id"), now)
 		if err != nil {
@@ -813,13 +813,13 @@ func (h *handlers) statusList(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, h.d.Log, "load status list", err)
 		return
 	}
-	doc, err := h.issuer.StatusListCredential(h.statusListURL, list, h.d.Clock.Now())
+	doc, err := h.issuer.StatusListCredential(h.statusListURL, list, time.Now().UTC())
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "sign status list", err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-CREST-Status-Generated-At", h.d.Clock.Now().UTC().Format(time.RFC3339))
+	w.Header().Set("X-CREST-Status-Generated-At", time.Now().UTC().UTC().Format(time.RFC3339))
 	httpx.WriteJSON(w, http.StatusOK, doc)
 }
 

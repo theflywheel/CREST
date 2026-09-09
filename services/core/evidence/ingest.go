@@ -41,7 +41,6 @@ import (
 type ingestor struct {
 	registry    *client.Client
 	definitions *client.Client
-	clock       interface{ Now() time.Time }
 }
 
 type ingestParams struct {
@@ -60,7 +59,7 @@ type ingestResult struct {
 
 func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 	rows []adapters.Row, rejections []adapters.Rejection) (ingestResult, error) {
-	now := in.clock.Now()
+	now := time.Now().UTC()
 
 	permitted, err := in.permits(ctx, p)
 	if err != nil {
@@ -89,7 +88,7 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 		adapterRef = rows[0].Record.Provenance.AdapterRef
 	}
 	batch := Batch{
-		ID:                id.New(in.clock, "batch"),
+		ID:                id.New("batch"),
 		ContextID:         p.ContextID,
 		DefinitionID:      def.ID,
 		DefinitionVersion: def.Version,
@@ -116,7 +115,7 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 	// that may well have happened, and the file is the only record of it.
 	for _, rej := range rejections {
 		result.Unclear = append(result.Unclear, UnclearRow{
-			ID: id.New(in.clock, "unclear"), BatchID: batch.ID,
+			ID: id.New("unclear"), BatchID: batch.ID,
 			RowRef: rej.Ref, Kind: unclearRejected, Reason: rej.Reason, CreatedAt: now,
 		})
 	}
@@ -129,7 +128,7 @@ func (in *ingestor) run(ctx context.Context, db *store.DB, p ingestParams,
 				return ingestResult{}, err
 			}
 			result.Unclear = append(result.Unclear, UnclearRow{
-				ID: id.New(in.clock, "unclear"), BatchID: batch.ID,
+				ID: id.New("unclear"), BatchID: batch.ID,
 				RowRef: row.Ref, Kind: kind, Reason: reason, Record: raw, CreatedAt: now,
 			})
 			if kind == unclearUnattributed && unit.ID != "" {
@@ -370,7 +369,7 @@ func (in *ingestor) consider(ctx context.Context, row adapters.Row, def schema.D
 		// The record is sound and only the person is missing, so this is the
 		// one kind a custodian can later re-attribute (0005).
 		unit = schema.Unit{
-			ID: id.New(in.clock, "unit"), Definition: schema.VersionedRef{ID: def.ID, Version: def.Version},
+			ID: id.New("unit"), Definition: schema.VersionedRef{ID: def.ID, Version: def.Version},
 			ContextID: p.ContextID, Outcome: row.Record.Outcome, Period: row.Record.Period,
 			Geography: row.Record.Geography, Enrichment: row.Record.Enrichment,
 			Provenance: row.Record.Provenance, CreatedAt: now,
@@ -402,7 +401,7 @@ func (in *ingestor) consider(ctx context.Context, row adapters.Row, def schema.D
 	}
 
 	unit = schema.Unit{
-		ID:         id.New(in.clock, "unit"),
+		ID:         id.New("unit"),
 		Definition: schema.VersionedRef{ID: def.ID, Version: def.Version},
 		ContextID:  p.ContextID,
 		Outcome:    row.Record.Outcome,
@@ -413,7 +412,7 @@ func (in *ingestor) consider(ctx context.Context, row adapters.Row, def schema.D
 		CreatedAt:  now,
 	}
 	claim = schema.Claim{
-		ID:      id.New(in.clock, "claim"),
+		ID:      id.New("claim"),
 		UnitID:  unit.ID,
 		PartyID: match.PartyID,
 		State:   schema.ClaimStateDRAFT,

@@ -3,6 +3,7 @@
 package scenarios
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -303,24 +304,25 @@ func TestAnOverrideWithoutAReasonCannotBeExpressed(t *testing.T) {
 	}
 
 	// Flagged for review, never silent: past the review date it surfaces.
-	if err := w.Advance(w.ctx, 91*24*time.Hour); err != nil {
-		t.Fatalf("advance the clock: %v", err)
-	}
-	var overdue struct {
-		Recoveries []recoveryView `json:"recoveries"`
-	}
-	if err := w.Parties.As(w.login(t, fixtures.CustodianID)).Get(w.ctx, "/v1/recoveries?overdue=true", &overdue); err != nil {
-		t.Fatalf("list overdue overrides: %v", err)
-	}
-	found := false
-	for _, r := range overdue.Recoveries {
-		if r.ID == rec.ID {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("an override past its review date is not on the review list; "+
-			"\"flagged for review\" only holds if somebody can find the flag (%d listed)",
-			len(overdue.Recoveries))
-	}
+	//
+	// Ninety days in the programme, CREST_RECOVERY_OVERRIDE_REVIEW seconds on
+	// this stack. The rule being proven is that the date is honoured and the
+	// flag is findable, not how far away the date is.
+	eventually(t, "the override appears on the overdue review list",
+		harness.ReviewAfter+harness.Patience(time.Second), func() error {
+			var overdue struct {
+				Recoveries []recoveryView `json:"recoveries"`
+			}
+			if err := w.Parties.As(w.login(t, fixtures.CustodianID)).
+				Get(w.ctx, "/v1/recoveries?overdue=true", &overdue); err != nil {
+				return err
+			}
+			for _, r := range overdue.Recoveries {
+				if r.ID == rec.ID {
+					return nil
+				}
+			}
+			return fmt.Errorf("not on the review list; \"flagged for review\" only holds if "+
+				"somebody can find the flag (%d listed)", len(overdue.Recoveries))
+		})
 }

@@ -25,7 +25,7 @@ Every person in it signs in through the mock issuer locally and through eSignet 
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Every grant reads as inactive; `403 custodian_not_assigned` everywhere | The services' clock is driveable and starts at `CLOCK_START`, before the fixture grants' periods | The seeder hands the clock back to real time at the end; after restarting a service by hand, restart it with `CLOCK_START=$(date -u +%FT%TZ)` |
+| Every grant reads as inactive; `403 custodian_not_assigned` everywhere | The fixture world was seeded on its own fixed dates, which are not around today | Seed with `SEED_LIVE_CLOCK=true` (the default whenever `SEED_STORY` is set), which slides the fixture's dates so the programme's week lands on about now. There is no clock to set: every service reads real time |
 | `payment subscriber disabled; release remains unreleased` | Core was started without `PAYMENT_SUBSCRIBER_ENABLED=true` | `make e2e-up` sets it; a hand restart must too |
 | Seed refuses the instance operator | `CREST_OPERATOR_PARTY_ID` in `infra/compose/.env` points at another party | Override it for the fixture world: `CREST_OPERATOR_PARTY_ID=did:crest:party:01JCREST000000000000000RGN` |
 | Core cannot resolve `dedi` | `.env` names a DeDi node the compose profile did not start | Start it first, or unset `DEDI_URL` to run the announced fallback |

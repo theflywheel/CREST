@@ -11,8 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/theflywheel/crest/pkg/clock"
 )
 
 // Node is a Publisher backed by a real DeDi node.
@@ -22,12 +20,13 @@ import (
 // domain time — it is the real time of day, and the only correct source for it
 // is the system clock.
 //
-// This is not hypothetical tidiness. The harness runs services with a driveable
-// clock set to the fixture epoch so a seven-day confirmation window is
-// arithmetic rather than a wait (pkg/clockctl.Seam). Signing with that
-// clock produced every write failing on the deployed node with "request
-// timestamp outside the accepted window" — five months of skew, from a clock
-// that is doing exactly what it was built to do.
+// This is not hypothetical tidiness. The harness used to run services on a
+// driveable clock set to the fixture epoch, and signing with that clock made
+// every write fail on the deployed node with "request timestamp outside the
+// accepted window" — five months of skew, from a clock doing exactly what it
+// was built to do. That clock is gone (ruled 2026-09-09) and every process
+// reads real time, so the mistake is no longer available to make; the field
+// stays because the distinction it records is real and the tests pin it.
 type Node struct {
 	baseURL string
 	key     Key
@@ -56,7 +55,7 @@ func NewNode(baseURL string, key Key) (*Node, error) {
 		// a node that has stopped answering must fail rather than hold the
 		// connection until something upstream gives up first.
 		http: &http.Client{Timeout: 15 * time.Second},
-		now:  clock.System{}.Now,
+		now:  func() time.Time { return time.Now().UTC() },
 	}, nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/httpx"
@@ -84,7 +85,7 @@ func (h *handlers) resolveUnclear(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rowID := r.PathValue("id")
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 
 	// Read the row and its batch outside the resolving transaction only to
 	// learn the context: the authorisation and consent checks are network calls
@@ -158,7 +159,7 @@ func (h *handlers) resolveUnclear(w http.ResponseWriter, r *http.Request) {
 	}
 
 	unit := schema.Unit{
-		ID:         id.New(h.d.Clock, "unit"),
+		ID:         id.New("unit"),
 		Definition: schema.VersionedRef{ID: batch.DefinitionID, Version: batch.DefinitionVersion},
 		ContextID:  batch.ContextID,
 		Outcome:    rec.Outcome,
@@ -173,7 +174,7 @@ func (h *handlers) resolveUnclear(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: row.CreatedAt,
 	}
 	claim := schema.Claim{
-		ID:      id.New(h.d.Clock, "claim"),
+		ID:      id.New("claim"),
 		UnitID:  unit.ID,
 		PartyID: body.PartyID,
 		State:   schema.ClaimStateDRAFT,

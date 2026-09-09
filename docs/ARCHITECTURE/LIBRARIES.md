@@ -15,7 +15,7 @@ title: Shared libraries
 | `credential` | Signing and verifying the work-event credential | A credential verifies anywhere |
 | `dedi` | The registry substrate's four operations, and the honest fallback when no node is configured | Public facts are witnessed; the absence of a log is announced |
 | `serviceauth` | Signed service identity between core and payments | `/internal/*` answers services, never doors |
-| `clock` | A driveable clock for the harness; a live one everywhere else | A week can be tested in seconds; production never lies about time |
+| ~~`clock`~~ | Removed 2026-09-09. Services read `time.Now().UTC()`; every time-bound behaviour is a configured duration proven at short settings | A week can be tested in seconds; production never lies about time |
 | `notify` | Delivery through a configured sender | The moment and the facts are infrastructure; the wording is configuration |
 | `httpx` | Error shapes, JSON handling, the build revision | An error names its cause in words a caller can act on |
 | `esignet` | The eSignet client for the doors' login | One integration per provider class |

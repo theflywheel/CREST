@@ -67,16 +67,16 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 		httpx.WriteError(w, http.StatusBadRequest, "server_managed_identity", "party IDs and identity bindings cannot be supplied at registration")
 		return
 	}
-	p.ID = id.Party(h.d.Clock)
+	p.ID = id.Party()
 	if byOperator {
 		// Unbound, on purpose: the record exists, and nobody holds it until
 		// the signatory claims the code with their own login.
 		p.IdentityBindings = nil
 	} else {
-		p.IdentityBindings = []schema.PartyIdentityBindingsItem{{Provider: caller.Issuer, ProviderClass: schema.PartyIdentityBindingsItemProviderClassGenericOidc, SubjectRef: caller.Subject, AssertedAt: h.d.Clock.Now()}}
+		p.IdentityBindings = []schema.PartyIdentityBindingsItem{{Provider: caller.Issuer, ProviderClass: schema.PartyIdentityBindingsItemProviderClassGenericOidc, SubjectRef: caller.Subject, AssertedAt: time.Now().UTC()}}
 	}
 	if p.CreatedAt.IsZero() {
-		p.CreatedAt = h.d.Clock.Now()
+		p.CreatedAt = time.Now().UTC()
 	}
 	if p.Kind == "" {
 		p.Kind = schema.PartyKindOrganisation
@@ -106,7 +106,7 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 		if err := insertParty(r.Context(), tx, p); err != nil {
 			return err
 		}
-		if err := insertRegistration(r.Context(), tx, p.ID, h.d.Clock.Now()); err != nil {
+		if err := insertRegistration(r.Context(), tx, p.ID, time.Now().UTC()); err != nil {
 			return err
 		}
 		var err error
@@ -123,8 +123,8 @@ func (h *handlers) registerOrganisation(w http.ResponseWriter, r *http.Request) 
 		// The code is how the named signatory comes back as the organisation
 		// — their own login claims the unbound party. Invited by the operator,
 		// which is the honest record of who addressed the invitation.
-		expiresAt = h.d.Clock.Now().Add(inviteTTL(0))
-		inviteCode, err = mintInvitation(r.Context(), tx, p.ID, caller.PartyID, h.d.Clock.Now(), 0)
+		expiresAt = time.Now().UTC().Add(inviteTTL(0))
+		inviteCode, err = mintInvitation(r.Context(), tx, p.ID, caller.PartyID, time.Now().UTC(), 0)
 		return err
 	})
 	switch {
@@ -282,7 +282,7 @@ func (h *handlers) acceptTerms(w http.ResponseWriter, r *http.Request) {
 		}
 		var err error
 		reg, err = acceptTerms(r.Context(), tx, partyID, body.TermsID, body.TermsVersion,
-			body.AcceptedBy, h.d.Clock.Now())
+			body.AcceptedBy, time.Now().UTC())
 		if err != nil {
 			return err
 		}
@@ -292,7 +292,7 @@ func (h *handlers) acceptTerms(w http.ResponseWriter, r *http.Request) {
 		if h.model == approvalOnTerms {
 			reg, err = decide(r.Context(), tx, partyID, true,
 				approvalByPolicy, "approved automatically on terms acceptance (REGISTRY_ORG_APPROVAL=on-terms-acceptance)",
-				h.d.Clock.Now(), h.model)
+				time.Now().UTC(), h.model)
 			if err != nil {
 				return err
 			}
@@ -363,7 +363,7 @@ func (h *handlers) decideRegistration(w http.ResponseWriter, r *http.Request) {
 	err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		var err error
 		reg, err = decide(r.Context(), tx, partyID, body.Approve, body.DecidedBy, body.Reason,
-			h.d.Clock.Now(), h.model)
+			time.Now().UTC(), h.model)
 		if err != nil {
 			return err
 		}
@@ -469,10 +469,10 @@ func (h *handlers) assistedEnrolment(w http.ResponseWriter, r *http.Request) {
 
 	p := body.Party
 	if p.ID == "" {
-		p.ID = id.Party(h.d.Clock)
+		p.ID = id.Party()
 	}
 	if p.CreatedAt.IsZero() {
-		p.CreatedAt = h.d.Clock.Now()
+		p.CreatedAt = time.Now().UTC()
 	}
 	if p.Kind == "" {
 		p.Kind = schema.PartyKindPerson
@@ -498,7 +498,7 @@ func (h *handlers) assistedEnrolment(w http.ResponseWriter, r *http.Request) {
 		ContextID:  body.ContextID,
 		Method:     body.Method,
 		Note:       body.Note,
-		EnrolledAt: h.d.Clock.Now(),
+		EnrolledAt: time.Now().UTC(),
 	}
 	var replay bool
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
@@ -547,7 +547,7 @@ func (h *handlers) assistedEnrolment(w http.ResponseWriter, r *http.Request) {
 			httpx.Fail(w, h.d.Log, "reconstruct enrolled party", err)
 			return
 		}
-		level, because := assuranceOf(storedParty, h.d.Clock.Now())
+		level, because := assuranceOf(storedParty, time.Now().UTC())
 		httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 			"party": storedParty, "enrolment": stored,
 			"identityAssurance": level, "because": because,
@@ -556,7 +556,7 @@ func (h *handlers) assistedEnrolment(w http.ResponseWriter, r *http.Request) {
 	}
 	// No publication. A worker is personal data and never reaches the node —
 	// this is the "never the reverse" half of §3's placement rule.
-	level, because := assuranceOf(p, h.d.Clock.Now())
+	level, because := assuranceOf(p, time.Now().UTC())
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"party":     p,
 		"enrolment": enrolment,

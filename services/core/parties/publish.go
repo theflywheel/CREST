@@ -233,7 +233,7 @@ func deliver(d service.Deps) store.Deliverer {
 				"kind", msg.Kind, "id", msg.ID,
 				"consequence", "a verifier can check this only by trusting this deployment")
 		}
-		return recordPublication(ctx, d.DB, msg, receipt, d.Clock.Now())
+		return recordPublication(ctx, d.DB, msg, receipt, time.Now().UTC())
 	}
 }
 

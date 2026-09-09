@@ -99,7 +99,7 @@ func (h *handlers) publishSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.PublishedAt.IsZero() {
-		s.PublishedAt = h.d.Clock.Now()
+		s.PublishedAt = time.Now().UTC()
 	}
 	if err := schema.Validate(schema.IDSkill, s); err != nil {
 		writeValidation(w, err)

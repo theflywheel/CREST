@@ -52,13 +52,13 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if def.ID == "" {
-		def.ID = id.New(h.d.Clock, "definition")
+		def.ID = id.New("definition")
 	}
 	if def.Version == 0 {
 		def.Version = 1
 	}
 	if def.CreatedAt.IsZero() {
-		def.CreatedAt = h.d.Clock.Now()
+		def.CreatedAt = time.Now().UTC()
 	}
 
 	// A definition may be created straight into ACTIVE only by a caller that
@@ -285,7 +285,7 @@ func (h *handlers) ratify(w http.ResponseWriter, r *http.Request) {
 
 	var out schema.Definition
 	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
-		now := h.d.Clock.Now()
+		now := time.Now().UTC()
 		var err error
 		out, err = transition(r.Context(), tx, r.PathValue("id"), version,
 			schema.DefinitionStateDRAFT, schema.DefinitionStateRATIFIED,
@@ -377,7 +377,7 @@ func (h *handlers) activate(w http.ResponseWriter, r *http.Request) {
 		out, err = transition(r.Context(), tx, r.PathValue("id"), version,
 			schema.DefinitionStateRATIFIED, schema.DefinitionStateACTIVE,
 			func(d *schema.Definition) error {
-				at := h.d.Clock.Now()
+				at := time.Now().UTC()
 				d.ActivatedAt = &at
 				return nil
 			})
@@ -385,7 +385,7 @@ func (h *handlers) activate(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		if err := appendEvent(r.Context(), tx, out.ID, out.Version,
-			eventActivated, actor, h.d.Clock.Now(), nil); err != nil {
+			eventActivated, actor, time.Now().UTC(), nil); err != nil {
 			return err
 		}
 		// In the same transaction as the state change. A publish attempted
@@ -412,10 +412,10 @@ func (h *handlers) addLinkedRecord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if lr.ID == "" {
-		lr.ID = id.New(h.d.Clock, "linked-record")
+		lr.ID = id.New("linked-record")
 	}
 	if lr.CreatedAt.IsZero() {
-		lr.CreatedAt = h.d.Clock.Now()
+		lr.CreatedAt = time.Now().UTC()
 	}
 	if lr.Version == 0 {
 		lr.Version = 1
@@ -541,7 +541,7 @@ func (h *handlers) paymentHandoff(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	payload := map[string]any{
 		"definitionVersion": def.Version,
 		"invitedByPartyId":  actor,
@@ -558,7 +558,7 @@ func (h *handlers) paymentHandoff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lr := schema.LinkedRecord{
-		ID:        id.New(h.d.Clock, "linked-record"),
+		ID:        id.New("linked-record"),
 		Type:      "payment-handoff",
 		Version:   1,
 		State:     "ACTIVE",

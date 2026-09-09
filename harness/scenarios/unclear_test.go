@@ -109,17 +109,26 @@ func TestAnUnattributedRowBecomesTheClaimOfTheWorkerWhoDidTheWork(t *testing.T) 
 	}
 }
 
-// The decision this scenario exists for: the clock starts when the worker could
-// first have seen the record, not when the file arrived. A row resolved three
-// weeks late would otherwise exit its window the instant it was created —
-// auto-confirmed without the worker ever being asked.
-func TestWorkResolvedWeeksLateStillGetsItsFullSevenDays(t *testing.T) {
+// The decision this scenario exists for: the window starts when the worker
+// could first have seen the record, not when the file arrived. A row resolved
+// long after it arrived would otherwise exit its window the instant it was
+// created — auto-confirmed without the worker ever being asked.
+//
+// "Weeks late" is three weeks in the programme and a few real seconds here.
+// The scale is not what the rule turns on: what turns on it is that the row
+// sat unresolved for longer than nothing, and that the window it eventually
+// got was the whole window rather than what was left of one that had already
+// started. The gap below is deliberate input, not a wait for an outcome — the
+// outcome is polled for, underneath.
+func TestWorkResolvedLateStillGetsItsFullWindow(t *testing.T) {
 	w := setup(t)
 	rowID := w.unattributedRow(t, "HH-902")
 
-	if err := w.Advance(w.ctx, 20*24*time.Hour); err != nil {
-		t.Fatal(err)
-	}
+	// Long enough that a window opened at arrival would be measurably shorter
+	// by now, and long enough to be past CLOCK_SKEW_ALERT, which is what makes
+	// the late opening visible in the detector rather than lost in rounding.
+	lateBy := 3 * harness.SkewAlert
+	time.Sleep(lateBy)
 
 	code, res := w.resolveUnclear(t, rowID, fixtures.WorkerCID, fixtures.CustodianID)
 	if code != http.StatusOK {
@@ -133,10 +142,17 @@ func TestWorkResolvedWeeksLateStillGetsItsFullSevenDays(t *testing.T) {
 		return err
 	})
 
+	// The full window from resolution, not what was left of one that started
+	// when the file arrived. A second of slack for the round trips between
+	// resolving and reading the window back.
 	remaining := win.ClosesAt.Sub(res.ResolvedAt)
-	if remaining < 6*24*time.Hour {
+	if remaining < window-time.Second {
 		t.Errorf("the window closes %s after resolution; a worker shown a record for the first "+
-			"time gets seven days to object to it, not %s", remaining, remaining)
+			"time gets the whole window (%s) to object to it, not %s", remaining, window, remaining)
+	}
+	if late := win.OpenedAt.Sub(res.ResolvedAt); late > time.Second || late < -time.Second {
+		t.Errorf("the window opened %s away from the resolution that made the record visible; "+
+			"it must open at that instant and no other", late)
 	}
 	if win.ExitRoute != nil {
 		t.Errorf("the window had already exited via %q at the moment it opened", *win.ExitRoute)

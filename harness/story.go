@@ -27,12 +27,15 @@ var ErrStoryAlreadySeeded = errors.New("story already seeded")
 // story is better left for `make e2e-up` (a fresh stack) than patched blind.
 const storySourceRef = "riverside-dhis2"
 
-// StoryClockAdvance is how far past the epoch the story ends: one day to the
-// first batch, then seven days and change for the T=7 sweep.
+// StoryClockAdvance is how far the story's own dates run: one day to the first
+// batch, then seven days and change to the sweep.
 //
-// Exported because a demo deployment needs it to work backwards: to leave the
-// story finishing at roughly the present moment, it seeds an epoch this far in
-// the past and walks forward.
+// It slides the fixture world's DATES — the work periods in the evidence rows,
+// which are data a caller supplies — and nothing else. There is no clock to
+// move (ruled 2026-09-09): the records the services stamp themselves are
+// stamped with the real instant they were made. Exported because a demo
+// deployment works backwards from it, seeding an epoch this far in the past so
+// the story's own dates land on about today.
 const StoryClockAdvance = 8*24*time.Hour + 2*time.Hour
 
 // SeedStory populates a freshly Seed()ed stack with one coherent week of the
@@ -71,22 +74,8 @@ func (s *Stack) SeedStory(ctx context.Context, w *fixtures.World) error {
 	}
 	for _, src := range sources.Sources {
 		if src.SystemRef == storySourceRef {
-			// Seed() has just reset every clock to the epoch, which un-tells
-			// the story's timeline: the overdue review date is no longer past
-			// and the open windows are no longer mid-week. Put the clock back
-			// where the story left it before declining to run again.
-			if err := s.SetClock(ctx, w.Instance.Epoch.Add(StoryClockAdvance)); err != nil {
-				return err
-			}
 			return ErrStoryAlreadySeeded
 		}
-	}
-
-	// The clock starts at the world's epoch — Seed() already put it there, but
-	// a re-run after a scenario left the clock weeks ahead should not tell the
-	// story in the wrong month.
-	if err := s.SetClock(ctx, w.Instance.Epoch); err != nil {
-		return err
 	}
 
 	for _, step := range []func() error{
@@ -390,6 +379,41 @@ func (st *story) storyDay(offset time.Duration) string {
 	return st.w.Instance.Epoch.Add(offset).Format("2006-01-02")
 }
 
+// waitForWindowToRunOut polls a claim's window until it is past its closing
+// instant, so the sweep that follows has something to find.
+//
+// Polling with a deadline, never a fixed sleep: how long this takes is
+// CONFIRMATION_WINDOW, which the deployment sets, so the deadline is derived
+// from that setting rather than guessed.
+func (st *story) waitForWindowToRunOut(claimID string) error {
+	var win struct {
+		ClosesAt time.Time `json:"closesAt"`
+	}
+	cust, err := st.login(fixtures.CustodianID)
+	if err != nil {
+		return err
+	}
+	deadline := time.Now().Add(ConfirmationWindow + Patience(SweepEvery))
+	for {
+		if err := st.Confirmation.As(cust).Get(st.ctx,
+			"/v1/windows/"+url.PathEscape(claimID), &win); err != nil {
+			return fmt.Errorf("read window: %w", err)
+		}
+		if time.Now().After(win.ClosesAt) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the window on %s closes at %s and is still open; "+
+				"is CONFIRMATION_WINDOW set short on this stack?", claimID, win.ClosesAt)
+		}
+		select {
+		case <-st.ctx.Done():
+			return st.ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+}
+
 func (st *story) submit(csv []byte) (ingest, error) {
 	sup, err := st.login(fixtures.SupervisorID)
 	if err != nil {
@@ -433,10 +457,6 @@ func (st *story) submitFirstBatch() error {
 		"/v1/parties/"+url.PathEscape(fixtures.WorkerCID)+"/roster-ids",
 		map[string]any{"rosterId": "RIV-STORY-0003", "contextId": fixtures.ProjectID}, nil); err != nil {
 		return fmt.Errorf("register roster id: %w", err)
-	}
-
-	if err := st.Advance(st.ctx, 24*time.Hour); err != nil {
-		return err
 	}
 
 	phoneA, err := PhoneOf(st.w, fixtures.WorkerAID)
@@ -551,10 +571,17 @@ func (st *story) assistedConfirm() error {
 	return nil
 }
 
-// 6. Seven days pass after Bina has acknowledged the review link. The sweep auto-confirms — the
-// fourth exit, and with it all four now exist on this stack.
+// 6. Bina's window runs out after she has acknowledged the review link. The
+// sweep auto-confirms — the fourth exit, and with it all four now exist on
+// this stack.
+//
+// It waits the window out in real time. That is only tolerable because the
+// window is configuration: a demo stack sets CONFIRMATION_WINDOW to seconds
+// (see infra/compose/docker-compose.yml), and a stack left on the programme's
+// seven days would sit here for a week, which is the honest cost of a story
+// that needs a closed window in it.
 func (st *story) autoConfirmSweep() error {
-	if err := st.Advance(st.ctx, 7*24*time.Hour+2*time.Hour); err != nil {
+	if err := st.waitForWindowToRunOut(st.binas); err != nil {
 		return err
 	}
 	var swept struct {

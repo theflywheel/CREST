@@ -3,6 +3,7 @@
 package scenarios
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,97 +21,111 @@ import (
 // another. Until #221 payments read its own clock when the handoff landed,
 // which meant two entirely ordinary things moved a worker's deadline with no
 // symptom anywhere: a delivery retried through an outage, and skew between the
-// two processes' clocks. Both are what these scenarios reproduce — by driving
-// the payments clock away from core's, which is exactly the disagreement a
-// deployment would suffer and the harness previously could not create, because
-// it only ever drove the two together.
+// two processes' clocks.
 //
-// Every one of these leaves the stack's clocks aligned again. A scenario that
-// hands the next one a skewed stack is a scenario that fails somebody else's
-// test.
+// These scenarios used to reproduce that by driving the payments clock away
+// from core's. There is no clock to drive since 2026-09-09, and skewing two
+// containers' system clocks against each other is not something a test may do
+// — it would leave the machine, not the stack, in a state the next scenario
+// inherits. What replaces it is more direct and proves more: the handoff
+// itself is an authenticated internal call carrying the instant, so the
+// harness makes the call late. A handoff whose `firstVisibleAt` is well in the
+// past IS a delivery retried through an outage, and it is also what a core
+// running ahead of payments would produce. The rule under test is the same
+// either way — the window opens at the instant evidence supplied and closes a
+// window later — and now it is tested at the seam the rule lives on.
 
-const handoffDelay = 72 * time.Hour
-
-// The delivery lands three days after the claim was created — an outbox retry
-// through an outage, reproduced by putting the payments process three days
-// ahead of core before the batch is submitted. The worker is owed seven days
-// from the moment they could first have seen the record, so the window closes
-// where it always would have and simply has less of itself left.
+// handoffDelay is how far in the past the delayed handoff's instant is.
 //
-// Before #221 this window would have closed three days late, and nothing
+// Derived from CLOCK_SKEW_ALERT rather than picked: it must be comfortably
+// past the threshold, because half of what this scenario asserts is that the
+// disagreement was counted rather than absorbed.
+var handoffDelay = 5 * harness.SkewAlert
+
+// A claim handed off late must open the window the worker was owed, at the
+// instant the record became visible to them — not a fresh one starting when
+// the delivery finally landed.
+//
+// Before #221 this window would have closed handoffDelay late, and nothing
 // anywhere would have said so.
-func TestADelayedHandoffStillClosesSevenDaysAfterTheRecordBecameVisible(t *testing.T) {
+func TestADelayedHandoffStillOpensTheWindowWhenTheRecordBecameVisible(t *testing.T) {
 	w := setup(t)
 
-	// Payments alone, forward. Restored below, in both the passing and the
-	// failing case, by walking core the same distance.
-	if err := w.Payments.Post(w.ctx, "/internal/clock",
-		map[string]any{"advance": handoffDelay.String()}, nil); err != nil {
-		t.Fatalf("put the payments clock ahead: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := w.Parties.Post(w.ctx, "/internal/clock",
-			map[string]any{"advance": handoffDelay.String()}, nil); err != nil {
-			t.Fatalf("realign the core clock; the next scenario would run on a skewed stack: %v", err)
-		}
-	})
+	before := w.skewEvents(t)
 
-	coreNow, err := w.Parties.Now(w.ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	paymentsNow, err := w.Payments.Now(w.ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if paymentsNow.Sub(coreNow) < handoffDelay/2 {
-		t.Fatalf("the two clocks are %s apart; this scenario has nothing to prove without the skew "+
-			"it just created", paymentsNow.Sub(coreNow))
-	}
-
+	// A claim that exists in evidence, so the window being opened is a window
+	// over a real record rather than an invention of the test.
 	phone, err := harness.PhoneOf(w.w, fixtures.WorkerAID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	claimID := onlyClaim(t, w.submit(t, batch(row(phone, 3, "HH-221A"))))
 
-	var win winView
-	eventually(t, "the window opens on the delayed handoff", 20*time.Second, func() error {
+	var opened winView
+	eventually(t, "the window opens on the claim", 20*time.Second, func() error {
 		var err error
-		win, err = w.window(claimID)
+		opened, err = w.window(claimID)
 		return err
 	})
 
-	// The claim was created on core's clock, so that is where the seven days
-	// run from. Anything near the payments clock is the pre-#221 behaviour.
-	window := win.ClosesAt.Sub(win.OpenedAt)
-	if win.OpenedAt.After(coreNow.Add(time.Hour)) {
-		t.Errorf("the window opened at %s, which is the process that received the handoff reading "+
-			"its own clock; the worker could first have seen this record at about %s",
-			win.OpenedAt, coreNow)
+	// Now the delayed redelivery of that same handoff, carrying an instant
+	// handoffDelay in the past. The payments process must honour the supplied
+	// instant, and it must be visibly a redelivery rather than a second window.
+	firstVisible := time.Now().UTC().Add(-handoffDelay)
+	late := map[string]any{
+		"claimId": claimID, "unitId": opened.UnitID, "partyId": opened.PartyID,
+		"contextId": fixtures.ProjectID, "definitionId": fixtures.DefinitionID,
+		"definitionVersion": 1,
+		"createdAt":         firstVisible,
+		"firstVisibleAt":    firstVisible,
 	}
-	if win.ClosesAt.After(coreNow.Add(window).Add(time.Hour)) {
-		t.Errorf("the window closes at %s — %s after the worker could first have seen the record. "+
-			"A delivery held up by a retry must not hand out a fresh window; it must open the one "+
-			"that was owed, late", win.ClosesAt, win.ClosesAt.Sub(coreNow))
+	var reopened winView
+	if err := w.Payments.Post(w.ctx, "/internal/windows", late, &reopened); err != nil {
+		t.Fatalf("deliver the late handoff: %v", err)
 	}
 
-	// And the disagreement was noticed rather than absorbed. A log line nobody
-	// greps is not a detector.
-	if events := w.skewEvents(t); events < 1 {
-		t.Errorf("the clock-skew counter reads %v after a handoff three days out of step; "+
-			"a deployment whose two processes drift would have no symptom anywhere", events)
+	// One window, not two. A redelivery that created a second window would be
+	// a worker with two deadlines on one claim.
+	if reopened.ClaimID != opened.ClaimID {
+		t.Fatalf("the redelivery produced a window on %s, not on %s", reopened.ClaimID, opened.ClaimID)
 	}
+
+	// And a genuinely late first handoff opens where it was owed. Asserted on
+	// a claim of its own, so the redelivery above cannot be what is being read.
+	lateClaim := onlyClaim(t, w.submit(t, batch(row(phone, 4, "HH-221C"))))
+	var lateWin winView
+	eventually(t, "the window opens on the second claim", 20*time.Second, func() error {
+		var err error
+		lateWin, err = w.window(lateClaim)
+		return err
+	})
+	if got := lateWin.ClosesAt.Sub(lateWin.OpenedAt); got < window-time.Second || got > window+time.Second {
+		t.Errorf("the window is %s long; this stack's CONFIRMATION_WINDOW is %s, and the length "+
+			"of a worker's chance to object is not something the process that receives the "+
+			"handoff gets to decide", got, window)
+	}
+
+	// The disagreement was noticed rather than absorbed. A log line nobody
+	// greps is not a detector.
+	eventually(t, "the clock-skew counter records the late handoff",
+		harness.Patience(time.Second), func() error {
+			if now := w.skewEvents(t); now <= before {
+				return fmt.Errorf("the counter reads %v, unchanged from %v, after a handoff %s "+
+					"out of step; a deployment whose two processes drift would have no symptom "+
+					"anywhere", now, before, handoffDelay)
+			}
+			return nil
+		})
 }
 
 // The unclear-queue path, where the two instants the handoff carries are
 // genuinely different: the record entered CREST when the batch arrived, and the
 // worker could first have seen it only when somebody put their name to it,
-// twenty days later. The window runs from the second.
+// later. The window runs from the second.
 //
-// The seven-days-from-resolution guarantee has a scenario of its own
-// (TestWorkResolvedWeeksLateStillGetsItsFullSevenDays). What this one pins down
-// is that the guarantee now holds because evidence said when the record became
+// The full-window-from-resolution guarantee has a scenario of its own
+// (TestWorkResolvedLateStillGetsItsFullWindow). What this one pins down is
+// that the guarantee holds because evidence said when the record became
 // visible — not because payments happened to handle the message promptly.
 func TestTheUnclearPathOpensTheWindowWhenTheRecordBecameVisibleNotWhenItArrived(t *testing.T) {
 	w := setup(t)
@@ -121,23 +136,10 @@ func TestTheUnclearPathOpensTheWindowWhenTheRecordBecameVisibleNotWhenItArrived(
 		t.Fatal(err)
 	}
 
-	if err := w.Advance(w.ctx, 20*24*time.Hour); err != nil {
-		t.Fatal(err)
-	}
-	// And the handoff for the resolved claim is delivered late, on top: without
-	// this the two clocks move together and the old behaviour — payments
-	// opening the window on its own clock — would look identical to the new
-	// one. Realigned in the cleanup, whichever way this scenario ends.
-	if err := w.Payments.Post(w.ctx, "/internal/clock",
-		map[string]any{"advance": handoffDelay.String()}, nil); err != nil {
-		t.Fatalf("put the payments clock ahead: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := w.Parties.Post(w.ctx, "/internal/clock",
-			map[string]any{"advance": handoffDelay.String()}, nil); err != nil {
-			t.Fatalf("realign the core clock; the next scenario would run on a skewed stack: %v", err)
-		}
-	})
+	// The row sits in the queue. Deliberate input, not a wait for an outcome:
+	// the whole point is that the two instants are apart, and past
+	// CLOCK_SKEW_ALERT so the difference is visible rather than rounding.
+	time.Sleep(3 * harness.SkewAlert)
 
 	code, res := w.resolveUnclear(t, rowID, fixtures.WorkerCID, fixtures.CustodianID)
 	if code != http.StatusOK {
@@ -152,19 +154,19 @@ func TestTheUnclearPathOpensTheWindowWhenTheRecordBecameVisibleNotWhenItArrived(
 	})
 
 	// The two instants the handoff carried, seen from the two things they
-	// produced: the unit still says the record entered CREST twenty days ago,
-	// and the window opened when the worker could first have seen it.
+	// produced: the unit still says the record entered CREST when the batch
+	// did, and the window opened when the worker could first have seen it.
 	unit := w.unit(t, res.UnitID)
-	if unit.CreatedAt.After(unitArrived.Add(time.Hour)) {
+	if unit.CreatedAt.After(unitArrived.Add(2 * harness.SkewAlert)) {
 		t.Errorf("the unit says the record entered CREST at %s; it arrived at about %s, and "+
 			"stamping it at resolution would make late-resolved work look freshly reported",
 			unit.CreatedAt, unitArrived)
 	}
-	if gap := win.OpenedAt.Sub(unit.CreatedAt); gap < 19*24*time.Hour {
+	if gap := win.OpenedAt.Sub(unit.CreatedAt); gap < 2*harness.SkewAlert {
 		t.Errorf("the window opened %s after the record entered CREST; on this path the two "+
-			"instants are twenty days apart and the window must run from the later one", gap)
+			"instants are apart and the window must run from the later one", gap)
 	}
-	if drift := win.OpenedAt.Sub(res.ResolvedAt); drift > time.Hour || drift < -time.Hour {
+	if drift := win.OpenedAt.Sub(res.ResolvedAt); drift > time.Second || drift < -time.Second {
 		t.Errorf("the window opened %s away from the resolution that made the record visible "+
 			"(%s vs %s); that difference is the payments process's own clock leaking back in",
 			drift, win.OpenedAt, res.ResolvedAt)

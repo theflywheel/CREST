@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
@@ -57,7 +56,7 @@ func TestDuplicateLiveEnrolmentConsentIsConflictAndDoesNotReplaceRecording(t *te
 	}
 	ctx := context.Background()
 	schemaName := "consent_duplicate_" + time.Now().UTC().Format("20060102150405.000000000")
-	db, err := store.Open(ctx, dsn, schemaName, clock.System{})
+	db, err := store.Open(ctx, dsn, schemaName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +85,7 @@ func TestDuplicateLiveEnrolmentConsentIsConflictAndDoesNotReplaceRecording(t *te
 	}
 
 	blobs := &consentDuplicateBlobs{}
-	d := service.Deps{Config: config.Base{Env: "local"}, DB: db, Clock: clock.System{}, Log: slog.Default(),
+	d := service.Deps{Config: config.Base{Env: "local"}, DB: db, Log: slog.Default(),
 		Authenticating: true, Blobs: blobs, Permits: func(context.Context, string, string, string) (bool, error) { return true, nil }}
 	h := &handlers{d: d}
 	audio, err := os.ReadFile("../../../harness/fixtures/consent.ogg")

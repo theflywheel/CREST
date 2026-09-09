@@ -168,14 +168,14 @@ func TestEnsureRegistryIsIdempotent(t *testing.T) {
 	}
 }
 
-// A DeDi node rejects a signed request whose timestamp is outside its window,
-// and CREST services run under a driveable clock set to the fixture epoch so a
-// seven-day window is arithmetic rather than a wait. Signing with that clock
-// made every write to the deployed node fail with "request timestamp outside
-// the accepted window" — five months of skew from a clock doing its job.
-//
-// The signing timestamp is wall time, not domain time, and this is the test
-// that keeps it that way.
+// A DeDi node rejects a signed request whose timestamp is outside its window.
+// CREST services once ran under a driveable clock set to the fixture epoch, and
+// signing with it made every write to the deployed node fail with "request
+// timestamp outside the accepted window" — five months of skew from a clock
+// doing its job. That clock is gone (ruled 2026-09-09), which does not retire
+// this test: the signing timestamp must come from the injectable `now` this
+// package holds for its own tests and never from anything domain-shaped, and
+// that is still a thing a future change could get wrong.
 func TestSigningTimestampIsWallTimeNotTheDomainClock(t *testing.T) {
 	f, n := newFake(t)
 	if err := n.EnsureRegistry(context.Background(), "crest", "work-definitions", ""); err != nil {

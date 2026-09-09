@@ -121,9 +121,9 @@ Design decisions:
   and does; that property is the seeder's real acceptance test.
 - **Idempotent by observation, not by flag.** Re-running detects the story's
   registered source (`riverside-dhis2`) and declines with
-  `ErrStoryAlreadySeeded`, then restores the story clock — because `Seed()`
-  resets the driveable clock to epoch on every run, and a demo whose clock
-  forgot the week just told is a demo with vanished open windows.
+  `ErrStoryAlreadySeeded` and changes nothing. There is no clock to restore:
+  every service reads real time (ruled 2026-09-09), so a re-run cannot move
+  the stack's idea of when it is and cannot make a told week vanish.
 - **Every invariant demonstrable, on purpose.** The week is written so each
   absolute rule has a visible instance: all four T=7 exits including a
   dispute whose payment still releases; a zero-outcome claim held as
@@ -133,7 +133,10 @@ Design decisions:
   where a visitor can watch it hold, the demo is not demonstrating CREST.
 - **It ends mid-story.** Three windows are left open so a visitor can
   confirm, dispute, or assist live, and watch the consequence — the demo is
-  driveable, not a museum.
+  something you act on, not a museum. Note that a demo stack must set
+  `CONFIRMATION_WINDOW` short for those windows to be reachable in a sitting;
+  the compose stack does, and one left on the programme's seven days will
+  simply have three windows that stay open for a week.
 
 The seeder is also an instrument: forcing a scripted week through the public
 API is how design finding #117 surfaced (the source heartbeat joins

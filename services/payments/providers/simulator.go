@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/store"
 )
 
@@ -21,7 +21,7 @@ type Simulator struct {
 // NewSimulator returns a durable development payment simulator.
 func NewSimulator(db store.Querier, now Clock) *Simulator {
 	if now == nil {
-		now = clock.System{}.Now
+		now = func() time.Time { return time.Now().UTC() }
 	}
 	return &Simulator{db: db, now: now}
 }

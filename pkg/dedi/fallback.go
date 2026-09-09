@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/credential"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -28,8 +28,7 @@ import (
 // compare-and-swap refuses two concurrent editors. Those are the ones that,
 // once broken, cannot be repaired by moving to a real node later.
 type Fallback struct {
-	db  *store.DB
-	clk clock.Clock
+	db *store.DB
 }
 
 // NewFallback builds the Postgres-backed publisher. The table it uses lives in
@@ -37,8 +36,8 @@ type Fallback struct {
 // — pkg/store is the only place that opens a database, and a package that
 // created its own tables in someone else's schema would break the rule that
 // makes "what could this service have written" answerable.
-func NewFallback(db *store.DB, clk clock.Clock) *Fallback {
-	return &Fallback{db: db, clk: clk}
+func NewFallback(db *store.DB) *Fallback {
+	return &Fallback{db: db}
 }
 
 // Transparent reports false. See the type comment; callers are expected to
@@ -111,7 +110,7 @@ func (f *Fallback) Publish(ctx context.Context, ref Ref, payload any, pre Precon
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO dedi_records (namespace, registry, record, version, digest, state, details, created_at)
 			VALUES ($1, $2, $3, $4, $5, 'live', $6, $7)`,
-			ref.Namespace, ref.Registry, ref.Record, next, digest, canon, f.clk.Now()); err != nil {
+			ref.Namespace, ref.Registry, ref.Record, next, digest, canon, time.Now().UTC()); err != nil {
 			return err
 		}
 		receipt = Receipt{

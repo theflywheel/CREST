@@ -26,7 +26,10 @@ import (
 	"github.com/theflywheel/crest/pkg/schema"
 )
 
-const window = 7 * 24 * time.Hour
+// The window this stack is running with. Seven days in the CHW programme, a
+// few seconds here — it is configuration (#127/#128), and since there is no
+// clock to drive (ruled 2026-09-09) the scenarios wait it out for real.
+var window = harness.ConfirmationWindow
 
 // runID makes one test run's work distinct from the last one's.
 //
@@ -218,23 +221,58 @@ func onlyClaim(t *testing.T, result ingestResult) string {
 	return result.ClaimIDs[0]
 }
 
-// eventually polls for something the outbox relay has to carry across a service
-// boundary. Polling rather than sleeping, and with the last error reported —
-// "eventually failed" with no cause costs twenty minutes.
+// eventually polls for something that takes time to become true — an outbox
+// relay carrying a message across a service boundary, a window running out, a
+// sweep noticing. It is harness.WaitFor under this package's own name; the
+// helper lives in harness/ so the stack's durations and the deadlines derived
+// from them sit in one place.
 func eventually(t *testing.T, what string, within time.Duration, fn func() error) {
 	t.Helper()
-	deadline := time.Now().Add(within)
-	var last error
-	for {
-		last = fn()
-		if last == nil {
-			return
+	harness.WaitFor(t, what, within, fn)
+}
+
+// waitForTheWindowToRunOut blocks until a claim's window is past its closing
+// instant. What happens after that is the sweep's business, and the sweep is
+// running on this stack — nobody posts to /v1/sweep on a real deployment.
+func (w *world) waitForTheWindowToRunOut(t *testing.T, claimID string) {
+	t.Helper()
+	eventually(t, "the window runs out", window+harness.Patience(harness.SweepEvery), func() error {
+		win, err := w.window(claimID)
+		if err != nil {
+			return err
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%s did not happen within %s: %v", what, within, last)
+		if time.Now().UTC().Before(win.ClosesAt) {
+			return fmt.Errorf("the window is open until %s", win.ClosesAt)
 		}
-		time.Sleep(100 * time.Millisecond)
-	}
+		return nil
+	})
+}
+
+// waitForTheWindowToExit blocks until a window has exited by route and has
+// released payment. Every confirmation-window exit releases payment — confirm,
+// dispute, auto-confirm, assisted — so the two are asserted together, always.
+func (w *world) waitForTheWindowToExit(t *testing.T, claimID, route string) winView {
+	t.Helper()
+	var win winView
+	eventually(t, "the window exits by "+route+" and releases payment",
+		window+harness.Patience(harness.SweepEvery), func() error {
+			var err error
+			win, err = w.window(claimID)
+			if err != nil {
+				return err
+			}
+			if win.ExitRoute == nil {
+				return fmt.Errorf("still open")
+			}
+			if *win.ExitRoute != route {
+				return fmt.Errorf("exited by %q, want %s", *win.ExitRoute, route)
+			}
+			if win.PaymentReleasedAt == nil {
+				return fmt.Errorf("exited by %s but released no payment", route)
+			}
+			return nil
+		})
+	return win
 }
 
 func (w *world) window(claimID string) (winView, error) {
@@ -552,40 +590,23 @@ func TestSilenceStillPaysAndStaysDisputable(t *testing.T) {
 	})
 	w.acknowledgeClaim(t, claimID)
 
-	// Seven days, in milliseconds. This is what the injectable clock is for.
-	if err := w.Advance(w.ctx, window+time.Minute); err != nil {
-		t.Fatal(err)
-	}
-	var swept struct {
-		Due           int      `json:"due"`
-		AutoConfirmed []string `json:"autoConfirmed"`
-	}
-	if err := w.Confirmation.As(w.login(t, fixtures.CustodianID)).Post(w.ctx,
-		"/v1/sweep?contextId="+url.QueryEscape(fixtures.ProjectID), nil, &swept); err != nil {
-		t.Fatalf("sweep: %v", err)
-	}
-	if len(swept.AutoConfirmed) == 0 {
-		t.Fatalf("nothing auto-confirmed after the window closed (due=%d)", swept.Due)
-	}
-
-	win, err := w.window(claimID)
+	// The window is still open, and must be: a window that had already exited
+	// this soon after opening would be one nobody could object inside. The
+	// margin is the stack's own window length, which is what makes this an
+	// assertion rather than a hope.
+	open, err := w.window(claimID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if win.ExitRoute == nil || *win.ExitRoute != "auto" {
-		t.Fatalf("exit route is %v, want auto", win.ExitRoute)
+	if open.ExitRoute != nil {
+		t.Fatalf("the window had already exited via %q while it was still open until %s",
+			*open.ExitRoute, open.ClosesAt)
 	}
-	eventually(t, "the auto-confirmed window records payment release", 15*time.Second, func() error {
-		var err error
-		win, err = w.window(claimID)
-		if err != nil {
-			return err
-		}
-		if win.PaymentReleasedAt == nil {
-			return fmt.Errorf("the auto-confirmed window has not recorded payment release")
-		}
-		return nil
-	})
+
+	// Nobody posts to /v1/sweep. The window runs out and the scheduled sweep
+	// finds it — which is what happens on a deployment, where no person ever
+	// asks for a sweep at all.
+	w.waitForTheWindowToExit(t, claimID, "auto")
 
 	var in instructionView
 	eventually(t, "the auto-confirmed payment is released", 15*time.Second, func() error {

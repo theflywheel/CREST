@@ -26,12 +26,12 @@ func sendClaimNotification(ctx context.Context, d service.Deps, sender notify.Se
 	}
 	if sender == nil {
 		return recordNotificationFailure(ctx, d.DB, n.ClaimID,
-			"no notification provider is configured; worker review remains unopened", d.Clock.Now())
+			"no notification provider is configured; worker review remains unopened", time.Now().UTC())
 	}
 	var party schema.Party
 	if err := parties.Get(ctx, "/internal/parties/"+url.PathEscape(n.PartyID), &party); err != nil {
 		return recordNotificationFailure(ctx, d.DB, n.ClaimID,
-			"worker contact could not be read from the parties service", d.Clock.Now())
+			"worker contact could not be read from the parties service", time.Now().UTC())
 	}
 	var email string
 	for _, route := range party.ContactRoutes {
@@ -42,7 +42,7 @@ func sendClaimNotification(ctx context.Context, d service.Deps, sender notify.Se
 	}
 	if email == "" {
 		return recordNotificationFailure(ctx, d.DB, n.ClaimID,
-			"worker has no email contact route configured", d.Clock.Now())
+			"worker has no email contact route configured", time.Now().UTC())
 	}
 	base := strings.TrimRight(config.Str("NOTIFY_ACK_BASE_URL", "http://localhost:8080"), "/")
 	ackURL := base + "/worker/#/review/" + url.PathEscape(n.ClaimID) + "?token=" + url.QueryEscape(n.AcknowledgementToken)
@@ -56,13 +56,13 @@ func sendClaimNotification(ctx context.Context, d service.Deps, sender notify.Se
 		if err != nil {
 			detail = err.Error()
 		}
-		return recordNotificationFailure(ctx, d.DB, n.ClaimID, detail, d.Clock.Now())
+		return recordNotificationFailure(ctx, d.DB, n.ClaimID, detail, time.Now().UTC())
 	}
 	detail := "notification accepted by configured provider; worker acknowledgement is still required"
 	if result.ProviderID != "" {
 		detail += " (provider " + result.ProviderID + ")"
 	}
-	if err := recordNotificationAccepted(ctx, d.DB, n.ClaimID, detail, d.Clock.Now()); err != nil {
+	if err := recordNotificationAccepted(ctx, d.DB, n.ClaimID, detail, time.Now().UTC()); err != nil {
 		return err
 	}
 	// The acknowledgement token is a bearer capability. Once the provider has

@@ -10,7 +10,6 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -44,7 +43,7 @@ func TestConsentUploadRecoveryPreservesCommittedAndRetriesOrphans(t *testing.T) 
 	}
 	ctx := context.Background()
 	name := fmt.Sprintf("upload_contract_%d", time.Now().UnixNano())
-	db, err := store.Open(ctx, dsn, name, clock.System{})
+	db, err := store.Open(ctx, dsn, name)
 	if err != nil {
 		t.Fatal(err)
 	}

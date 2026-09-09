@@ -11,26 +11,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/httpx"
 )
 
-func newTestServer(t *testing.T, clk clock.Clock) http.Handler {
+func newTestServer(t *testing.T) http.Handler {
 	t.Helper()
-	return newTestServerReady(t, clk, nil)
+	return newTestServerReady(t, nil)
 }
 
-func newTestServerReady(t *testing.T, clk clock.Clock, ready httpx.ReadyFunc) http.Handler {
+func newTestServerReady(t *testing.T, ready httpx.ReadyFunc) http.Handler {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return httpx.New("test", ":0", http.NewServeMux(), clk, log, ready).Handler()
+	return httpx.New("test", ":0", http.NewServeMux(), log, ready).Handler()
 }
 
 // The harness polls readiness instead of sleeping, so these endpoints are load
 // bearing: if they lie, every E2E test becomes flaky.
 func TestHealthEndpointsReport(t *testing.T) {
-	epoch := time.Date(2026, 8, 24, 9, 0, 0, 0, time.UTC)
-	h := newTestServer(t, clock.NewFake(epoch))
+	h := newTestServer(t)
 
 	for _, path := range []string{"/healthz", "/readyz"} {
 		rec := httptest.NewRecorder()
@@ -49,11 +47,13 @@ func TestHealthEndpointsReport(t *testing.T) {
 	}
 }
 
-// Health must report the injected clock, not wall time — otherwise a service
-// silently reads real time and the seven-day window becomes untestable.
-func TestHealthUsesInjectedClock(t *testing.T) {
-	epoch := time.Date(2026, 8, 24, 9, 0, 0, 0, time.UTC)
-	h := newTestServer(t, clock.NewFake(epoch))
+// Health must report this process's real time in UTC. The harness compares
+// core's health time against payments' to catch a stack whose two processes
+// disagree about when it is, and a health time that was anything other than
+// real time would make that check meaningless.
+func TestHealthReportsRealUTCTime(t *testing.T) {
+	before := time.Now().UTC().Add(-time.Second)
+	h := newTestServer(t)
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
@@ -64,13 +64,13 @@ func TestHealthUsesInjectedClock(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("body is not JSON: %v", err)
 	}
-	if !body.Time.Equal(epoch) {
-		t.Fatalf("health time = %v, want the injected %v", body.Time, epoch)
+	if body.Time.Before(before) || body.Time.After(time.Now().UTC().Add(time.Second)) {
+		t.Fatalf("health time = %v, want a real instant near now", body.Time)
 	}
 }
 
 func TestUnknownRouteIs404(t *testing.T) {
-	h := newTestServer(t, clock.System{})
+	h := newTestServer(t)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/nope", nil))
 	if rec.Code != http.StatusNotFound {
@@ -82,7 +82,7 @@ func TestUnknownRouteIs404(t *testing.T) {
 // /readyz instead of sleeping, so a readyz that always says yes turns every
 // start-up race into a flaky test rather than a failed one.
 func TestReadinessReportsItsDependency(t *testing.T) {
-	h := newTestServerReady(t, clock.NewFake(time.Now()), func(context.Context) error {
+	h := newTestServerReady(t, func(context.Context) error {
 		return errors.New("the database is not accepting connections")
 	})
 
@@ -102,7 +102,7 @@ func TestReadinessReportsItsDependency(t *testing.T) {
 // Liveness is not readiness: a service whose database is down is still alive,
 // and conflating the two makes an orchestrator restart a healthy process.
 func TestHealthStaysUpWhenTheDependencyIsDown(t *testing.T) {
-	h := newTestServerReady(t, clock.NewFake(time.Now()), func(context.Context) error {
+	h := newTestServerReady(t, func(context.Context) error {
 		return errors.New("down")
 	})
 	rec := httptest.NewRecorder()

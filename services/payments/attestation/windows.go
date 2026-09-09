@@ -30,7 +30,11 @@ const (
 )
 
 func windowRoutes(mux *http.ServeMux, d service.Deps) {
-	window, err := config.Duration("CONFIRMATION_WINDOW", 7*24*time.Hour)
+	// The window's length is programme policy (L2), never a constant here:
+	// seven days is what the CHW programme chose, and the harness proves the
+	// behaviour by running the same code with a window of seconds and waiting
+	// it out in real time (ruled 2026-09-09).
+	window, err := config.PositiveDuration("CONFIRMATION_WINDOW", 7*24*time.Hour)
 	if err != nil {
 		d.Log.Error("confirmation window is unreadable", "error", err)
 		panic(err)
@@ -40,7 +44,7 @@ func windowRoutes(mux *http.ServeMux, d service.Deps) {
 	// should be told (#221). Unreadable rather than absent gets the default and
 	// says so, for the same reason SWEEP_EVERY does below: a typo here would
 	// otherwise silently switch the detector off.
-	skewAlert, err := config.Duration("CLOCK_SKEW_ALERT", 5*time.Minute)
+	skewAlert, err := config.PositiveDuration("CLOCK_SKEW_ALERT", 5*time.Minute)
 	if err != nil {
 		d.Log.Error("CLOCK_SKEW_ALERT unusable; using the default", "error", err, "threshold", skewAlert)
 	}
@@ -61,7 +65,6 @@ func windowRoutes(mux *http.ServeMux, d service.Deps) {
 			// what it already was.
 			verification: client.New(config.Str("VERIFICATION_URL", "http://core:8080")),
 			log:          d.Log,
-			clock:        d.Clock,
 		},
 	}
 
@@ -81,13 +84,13 @@ func windowRoutes(mux *http.ServeMux, d service.Deps) {
 	// ...and the same sweep on a timer, because on a running deployment nobody
 	// posts to that endpoint and a window that goes past T=7 would otherwise
 	// stay open, unpaid, forever.
-	every, err := config.Duration("SWEEP_EVERY", time.Minute)
+	every, err := config.PositiveDuration("SWEEP_EVERY", time.Minute)
 	if err != nil {
 		// Unreadable rather than absent: fall back to the default and say so,
 		// because a typo here would otherwise silently stop auto-confirmation.
 		d.Log.Error("SWEEP_EVERY unusable; using the default", "error", err, "every", every)
 	}
-	if every > 0 && d.DB != nil {
+	if d.DB != nil {
 		d.Log.Info("auto-confirm sweep scheduled", "every", every)
 		go h.sweepLoop(d.Ctx, every)
 	}
@@ -141,7 +144,7 @@ func (h *windowHandlers) openWindow(w http.ResponseWriter, r *http.Request) {
 	if !httpx.ReadJSON(w, r, &req) {
 		return
 	}
-	arrived := h.d.Clock.Now()
+	arrived := time.Now().UTC()
 	open := decideOpening(req.FirstVisibleAt, arrived)
 	windowSkew.observe(open, h.skewAlert)
 	switch {
@@ -385,10 +388,10 @@ func (h *windowHandlers) dispute(w http.ResponseWriter, r *http.Request) {
 
 	claimID := r.PathValue("claimId")
 	contest := schema.Contest{
-		ID:              id.New(h.d.Clock, "contest"),
+		ID:              id.New("contest"),
 		Target:          schema.ContestTarget{Kind: schema.ContestTargetKindClaim, ID: claimID},
 		RaisedByPartyID: raisedBy,
-		RaisedAt:        h.d.Clock.Now(),
+		RaisedAt:        time.Now().UTC(),
 		Reason:          body.Reason,
 		State:           schema.ContestStateOPEN,
 	}
@@ -541,15 +544,15 @@ func (h *windowHandlers) decideContest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	decision := ContestDecision{
-		ID: id.New(h.d.Clock, "contest-decision"), ContestID: contest.ID,
+		ID: id.New("contest-decision"), ContestID: contest.ID,
 		Decision: body.Decision, DecidedBy: reviewer, Reason: body.Reason,
-		Evidence: body.Evidence, DecidedAt: h.d.Clock.Now(),
+		Evidence: body.Evidence, DecidedAt: time.Now().UTC(),
 	}
 	var correction *CorrectionEvent
 	if body.Decision == "CORRECTED" {
 		credentialID := win.CredentialID
 		correction = &CorrectionEvent{
-			ID: id.New(h.d.Clock, "correction-event"), ContestID: contest.ID,
+			ID: id.New("correction-event"), ContestID: contest.ID,
 			DecisionID: decision.ID, ClaimID: contest.Target.ID,
 			CredentialID: credentialID, ReplacementRef: body.ReplacementRef,
 			Reason: body.Reason, Evidence: body.Evidence, EmittedAt: decision.DecidedAt,
@@ -599,7 +602,7 @@ func (h *windowHandlers) sweep(w http.ResponseWriter, r *http.Request) {
 // sweepOnce is one pass: auto-confirm everything due, and name everything due
 // that it deliberately did not touch.
 func (h *windowHandlers) sweepOnce(ctx context.Context, contextID string) (time.Time, int, []string, []string, error) {
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	due, err := dueWindows(ctx, h.d.DB.Q(), now, contextID, 500)
 	if err != nil {
 		return now, 0, nil, nil, fmt.Errorf("find due windows: %w", err)
@@ -660,7 +663,7 @@ func (h *windowHandlers) sweepOnce(ctx context.Context, contextID string) (time.
 // payment" is not a property of the exit routes alone — auto-confirm is one of
 // the four exits, and it is the only one no person triggers.
 func (h *windowHandlers) sweepLoop(ctx context.Context, every time.Duration) {
-	t := time.NewTicker(every) //nolint:forbidigo // a ticker is elapsed time, not a reading of the clock
+	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
 		select {
@@ -724,7 +727,7 @@ func (h *windowHandlers) assist(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		return markEscalated(r.Context(), tx, claimID, h.supportOwner,
-			"worker requires assisted confirmation", h.d.Clock.Now())
+			"worker requires assisted confirmation", time.Now().UTC())
 	}); err != nil {
 		httpx.Fail(w, h.d.Log, "record escalation", err)
 		return
@@ -762,7 +765,7 @@ func (h *windowHandlers) reach(w http.ResponseWriter, r *http.Request) {
 		if win.Reach != nil && *win.Reach == "reached" && body.Reach != "reached" {
 			return fmt.Errorf("reach already recorded as %s", *win.Reach)
 		}
-		return recordReach(r.Context(), tx, claimID, body.Reach, body.Detail, h.d.Clock.Now())
+		return recordReach(r.Context(), tx, claimID, body.Reach, body.Detail, time.Now().UTC())
 	})
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -878,7 +881,7 @@ func (h *windowHandlers) recordAcknowledgement(ctx context.Context, claimID, by,
 		// runs from the instant the worker could first have seen the record,
 		// and here that instant is the acknowledgement this process is
 		// handling.
-		at := h.d.Clock.Now()
+		at := time.Now().UTC()
 		if err := recordAcknowledgement(ctx, tx, claimID, at, by, reason, evidence,
 			closesFrom(at, h.window)); err != nil {
 			return err
@@ -904,7 +907,7 @@ func (h *windowHandlers) unreached(w http.ResponseWriter, r *http.Request) {
 	if !authorizeReviewOperations(w, r, h.d, r.URL.Query().Get("contextId")) {
 		return
 	}
-	rows, err := unreachedWindows(r.Context(), h.d.DB.Q(), h.d.Clock.Now(), r.URL.Query().Get("contextId"))
+	rows, err := unreachedWindows(r.Context(), h.d.DB.Q(), time.Now().UTC(), r.URL.Query().Get("contextId"))
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list unreached", err)
 		return

@@ -43,7 +43,6 @@ type exiter struct {
 	evidence     *client.Client
 	verification *client.Client
 	log          *slog.Logger
-	clock        interface{ Now() time.Time }
 }
 
 type exitResult struct {
@@ -90,7 +89,7 @@ type releaseRequest struct {
 }
 
 func (e *exiter) exit(ctx context.Context, claimID, route string) (exitResult, error) {
-	now := e.clock.Now()
+	now := time.Now().UTC()
 
 	// The whole exit happens under a FOR UPDATE lock on the window row. The
 	// scheduled sweep and a worker's confirmation can arrive at T=7 within the
@@ -117,7 +116,7 @@ func (e *exiter) exit(ctx context.Context, claimID, route string) (exitResult, e
 		// worker acknowledgement or a notification failure may have committed
 		// after the query but before this transaction acquired the lock.
 		if route == routeAuto {
-			checkNow := e.clock.Now()
+			checkNow := time.Now().UTC()
 			if !autoExitEligible(w, checkNow) {
 				return errAutoNotEligible
 			}

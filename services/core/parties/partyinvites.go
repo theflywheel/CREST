@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/schema"
@@ -38,10 +39,30 @@ import (
 // bootstrap already accepts), the claimant still binds only their own
 // subject, and the claim is refused once the party carries any binding.
 
-const (
-	inviteDefaultTTL = 7 * 24 * time.Hour
-	inviteMaxTTL     = 30 * 24 * time.Hour
-)
+// How long an invitation code lives, and the cap nothing may exceed.
+//
+// Configuration rather than constants (ruled 2026-09-09): every time-bound
+// behaviour in CREST is a duration a deployment sets, and the harness proves
+// this one by configuring it in seconds and watching a code actually expire.
+// A week and a month are the CHW programme's settings, not CREST's rule.
+//
+// Read once, at package initialisation, and refused if not positive: an
+// invitation whose TTL is zero is one nobody can ever claim, and one that is
+// negative is already expired when it is minted.
+var inviteDefaultTTL, inviteMaxTTL = func() (time.Duration, time.Duration) {
+	def, err := config.PositiveDuration("CREST_INVITE_TTL", 7*24*time.Hour)
+	if err != nil {
+		panic(err)
+	}
+	max, err := config.PositiveDuration("CREST_INVITE_MAX_TTL", 30*24*time.Hour)
+	if err != nil {
+		panic(err)
+	}
+	if max < def {
+		max = def
+	}
+	return def, max
+}()
 
 var (
 	errInviteUnknown  = errors.New("no such invitation")
@@ -240,7 +261,7 @@ func (h *handlers) createPartyInvitation(w http.ResponseWriter, r *http.Request)
 		if len(p.IdentityBindings) != 0 {
 			return errPartyBound
 		}
-		code, err = mintInvitation(r.Context(), tx, partyID, actor, h.d.Clock.Now(),
+		code, err = mintInvitation(r.Context(), tx, partyID, actor, time.Now().UTC(),
 			time.Duration(body.ExpiresInHours)*time.Hour)
 		return err
 	})
@@ -258,7 +279,7 @@ func (h *handlers) createPartyInvitation(w http.ResponseWriter, r *http.Request)
 			"partyId":    partyID,
 			"inviteCode": code,
 			"invitedBy":  actor,
-			"expiresAt":  h.d.Clock.Now().Add(inviteTTL(time.Duration(body.ExpiresInHours) * time.Hour)),
+			"expiresAt":  time.Now().UTC().Add(inviteTTL(time.Duration(body.ExpiresInHours) * time.Hour)),
 		})
 	}
 }
@@ -295,7 +316,7 @@ func (h *handlers) claimPartyInvitation(w http.ResponseWriter, r *http.Request) 
 		Provider:      body.Provider,
 		ProviderClass: schema.PartyIdentityBindingsItemProviderClass(body.ProviderClass),
 		SubjectRef:    caller.Subject,
-		AssertedAt:    h.d.Clock.Now(),
+		AssertedAt:    time.Now().UTC(),
 	}
 	var (
 		party    schema.Party
@@ -313,14 +334,14 @@ func (h *handlers) claimPartyInvitation(w http.ResponseWriter, r *http.Request) 
 		if err != nil {
 			return err
 		}
-		if err := inviteAdmissible(inv, p, h.d.Clock.Now()); err != nil {
+		if err := inviteAdmissible(inv, p, time.Now().UTC()); err != nil {
 			return err
 		}
 		party, appended, err = appendBinding(r.Context(), tx, inv.PartyID, b)
 		if err != nil {
 			return err
 		}
-		return markClaimed(r.Context(), tx, inv.CodeHash, caller.Subject, h.d.Clock.Now())
+		return markClaimed(r.Context(), tx, inv.CodeHash, caller.Subject, time.Now().UTC())
 	})
 	if err == nil && appended && h.d.ForgetSubject != nil && caller.Subject != "" {
 		h.d.ForgetSubject(caller.Subject)
@@ -347,7 +368,7 @@ func (h *handlers) claimPartyInvitation(w http.ResponseWriter, r *http.Request) 
 		}
 		httpx.Fail(w, h.d.Log, "claim party invitation", err)
 	default:
-		level, because := assuranceOf(party, h.d.Clock.Now())
+		level, because := assuranceOf(party, time.Now().UTC())
 		httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 			"partyId":           party.ID,
 			"bindings":          party.IdentityBindings,

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -43,7 +42,7 @@ func LoadConfig() Config {
 // downgrade to the fallback. A deployment that meant to publish to a log and
 // silently did not is the worst of the three states, because everything appears
 // to work.
-func New(cfg Config, db *store.DB, clk clock.Clock, log *slog.Logger) (Publisher, error) {
+func New(cfg Config, db *store.DB, log *slog.Logger) (Publisher, error) {
 	if cfg.URL == "" {
 		if db == nil {
 			return nil, fmt.Errorf("dedi: no DEDI_URL and no database to fall back to")
@@ -51,7 +50,7 @@ func New(cfg Config, db *store.DB, clk clock.Clock, log *slog.Logger) (Publisher
 		log.Warn("registry substrate is the Postgres fallback",
 			"why", "DEDI_URL is unset",
 			"consequence", "public facts carry no inclusion proof; a verifier can only trust this deployment's word")
-		return NewFallback(db, clk), nil
+		return NewFallback(db), nil
 	}
 	key, err := ParseKey(cfg.KeyID, cfg.Key)
 	if err != nil {

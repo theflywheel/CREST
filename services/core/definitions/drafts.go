@@ -80,9 +80,9 @@ func (h *draftHandlers) createDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	draft := Draft{
-		ID:        id.New(h.d.Clock, "definition-draft"),
+		ID:        id.New("definition-draft"),
 		ContextID: body.ContextID,
 		State:     draftOpen,
 		CreatedBy: actor,
@@ -194,7 +194,7 @@ func (h *draftHandlers) putSection(w http.ResponseWriter, r *http.Request) {
 		if err := setSection(&draft.Doc, section, raw); err != nil {
 			return err
 		}
-		return updateDraftDoc(r.Context(), tx, draft.ID, draft.Doc, h.d.Clock.Now())
+		return updateDraftDoc(r.Context(), tx, draft.ID, draft.Doc, time.Now().UTC())
 	})
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -225,7 +225,7 @@ func (h *draftHandlers) discard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
-		return closeDraft(r.Context(), tx, r.PathValue("id"), draftDiscarded, 0, h.d.Clock.Now())
+		return closeDraft(r.Context(), tx, r.PathValue("id"), draftDiscarded, 0, time.Now().UTC())
 	})
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -256,7 +256,7 @@ func (h *draftHandlers) validate(w http.ResponseWriter, r *http.Request) {
 	if defID == "" {
 		defID = previewDefinitionID
 	}
-	compiled, problems := compile(draft.Doc, defID, draft.BaseVersion+1, draft.CreatedBy, h.d.Clock.Now())
+	compiled, problems := compile(draft.Doc, defID, draft.BaseVersion+1, draft.CreatedBy, time.Now().UTC())
 	ctxID := draft.ContextID
 	if ctxID != "" {
 		compiled.ContextID = &ctxID
@@ -310,14 +310,14 @@ func (h *draftHandlers) submit(w http.ResponseWriter, r *http.Request) {
 
 		defID := draft.DefinitionID
 		if defID == "" {
-			defID = id.New(h.d.Clock, "definition")
+			defID = id.New("definition")
 		}
 		version, err := nextVersion(r.Context(), tx, defID)
 		if err != nil {
 			return err
 		}
 
-		now := h.d.Clock.Now()
+		now := time.Now().UTC()
 		compiled, problems := compile(draft.Doc, defID, version, draft.CreatedBy, now)
 		ctxID := draft.ContextID
 		compiled.ContextID = &ctxID
@@ -396,7 +396,7 @@ func insertImpliedRecords(ctx context.Context, tx store.Querier, d service.Deps,
 				"settings":          c.Settings,
 			}
 			lr := schema.LinkedRecord{
-				ID:        id.New(d.Clock, "linked-record"),
+				ID:        id.New("linked-record"),
 				Type:      "source-binding",
 				Version:   1,
 				State:     "ACTIVE",
@@ -424,7 +424,7 @@ func insertImpliedRecords(ctx context.Context, tx store.Querier, d service.Deps,
 			payload["definitionRef"] = ref
 		}
 		lr := schema.LinkedRecord{
-			ID:        id.New(d.Clock, "linked-record"),
+			ID:        id.New("linked-record"),
 			Type:      "linked-definition",
 			Version:   1,
 			State:     "ACTIVE",
@@ -473,7 +473,7 @@ func insertImpliedRecords(ctx context.Context, tx store.Querier, d service.Deps,
 			return err
 		}
 		lr := schema.LinkedRecord{
-			ID:        id.New(d.Clock, "linked-record"),
+			ID:        id.New("linked-record"),
 			Type:      "payment-structure",
 			Version:   1,
 			State:     "ACTIVE",

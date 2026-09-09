@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/theflywheel/crest/pkg/client"
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/credential"
 	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/service"
@@ -28,7 +27,7 @@ func TestHTTPIssuanceUsesAuthoritativeConfirmationAndStoredEvidenceFields(t *tes
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	db, err := store.Open(ctx, dsn, "verification_http_"+time.Now().Format("20060102150405.000000000"), clock.System{})
+	db, err := store.Open(ctx, dsn, "verification_http_"+time.Now().Format("20060102150405.000000000"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +87,7 @@ func TestHTTPIssuanceUsesAuthoritativeConfirmationAndStoredEvidenceFields(t *tes
 		t.Fatal(err)
 	}
 	h := &handlers{
-		d:        service.Deps{DB: db, Clock: clock.NewFake(claimAt), Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
+		d:        service.Deps{DB: db, Log: slog.New(slog.NewTextHandler(io.Discard, nil))},
 		evidence: evidenceClient(evidence.URL), definitions: client.New(optional.URL), registry: client.New(optional.URL),
 		issuer: issuer, statusListURL: "https://verification.example/status-list",
 	}

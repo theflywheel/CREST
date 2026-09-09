@@ -13,10 +13,6 @@ import (
 	"github.com/theflywheel/crest/pkg/schema"
 )
 
-type consentTestClock time.Time
-
-func (c consentTestClock) Now() time.Time { return time.Time(c) }
-
 func TestConsiderRequiresAffirmativeConsent(t *testing.T) {
 	for _, want := range []struct {
 		name    string
@@ -40,8 +36,8 @@ func TestConsiderRequiresAffirmativeConsent(t *testing.T) {
 			}))
 			defer server.Close()
 
-			now := time.Date(2026, 3, 2, 9, 0, 0, 0, time.UTC)
-			in := &ingestor{registry: client.New(server.URL), clock: consentTestClock(now)}
+			now := time.Now().UTC()
+			in := &ingestor{registry: client.New(server.URL)}
 			sourceRef := "riverside-dhis2"
 			recordRef := "row-1"
 			record := schema.CanonicalWorkEvidenceRecord{

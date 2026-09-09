@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/identity"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
@@ -25,7 +24,7 @@ func TestPresentationsUsesResolvedCallerSubjectForUnfilteredHistory(t *testing.T
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	schemaName := fmt.Sprintf("verification_presentations_%d", time.Now().UnixNano())
-	db, err := store.Open(ctx, dsn, schemaName, clock.System{})
+	db, err := store.Open(ctx, dsn, schemaName)
 	if err != nil {
 		t.Fatal(err)
 	}

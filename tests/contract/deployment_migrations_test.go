@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theflywheel/crest/pkg/clock"
 	"github.com/theflywheel/crest/pkg/store"
 )
 
@@ -30,7 +29,7 @@ func TestEveryServiceMigratesAnEmptyStore(t *testing.T) {
 	} {
 		t.Run(member, func(t *testing.T) {
 			schema := fmt.Sprintf("migrations_contract_%d", time.Now().UnixNano())
-			db, err := store.Open(context.Background(), dsn, schema, clock.System{})
+			db, err := store.Open(context.Background(), dsn, schema)
 			if err != nil {
 				t.Fatal(err)
 			}

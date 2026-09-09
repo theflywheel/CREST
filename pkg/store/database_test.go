@@ -8,8 +8,6 @@ import (
 	"testing"
 	"testing/fstest"
 	"time"
-
-	"github.com/theflywheel/crest/pkg/clock"
 )
 
 func databaseForTest(t *testing.T) *DB {
@@ -19,7 +17,7 @@ func databaseForTest(t *testing.T) *DB {
 		t.Skip("requires isolated CREST_TEST_DATABASE_URL")
 	}
 	name := fmt.Sprintf("contract_%d", time.Now().UnixNano())
-	db, err := Open(context.Background(), dsn, name, clock.System{})
+	db, err := Open(context.Background(), dsn, name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +167,7 @@ func TestAdoptLegacySchemaConcurrentRenameIsSerialized(t *testing.T) {
 		t.Fatal(err)
 	}
 	dsn := os.Getenv("CREST_TEST_DATABASE_URL")
-	db2, err := Open(context.Background(), dsn, db.Schema(), clock.System{})
+	db2, err := Open(context.Background(), dsn, db.Schema())
 	if err != nil {
 		t.Fatal(err)
 	}

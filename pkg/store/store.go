@@ -20,8 +20,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"github.com/theflywheel/crest/pkg/clock"
 )
 
 // ErrNotFound is what every repository returns for a missing row, so callers
@@ -42,7 +40,6 @@ func IsUniqueViolation(err error) bool {
 type DB struct {
 	pool   *pgxpool.Pool
 	schema string
-	clk    clock.Clock
 }
 
 // Row and Rows are this package's own scanning types.
@@ -153,7 +150,7 @@ func CollectOne[T any](rows Rows, scan func(Row) (T, error)) (T, error) {
 // The wait is here rather than in the caller because every service needs it and
 // a service that exits on a database that is three seconds from ready turns a
 // compose start-up into a restart loop.
-func Open(ctx context.Context, dsn, schema string, clk clock.Clock) (*DB, error) {
+func Open(ctx context.Context, dsn, schema string) (*DB, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("parse DATABASE_URL: %w", err)
@@ -167,12 +164,12 @@ func Open(ctx context.Context, dsn, schema string, clk clock.Clock) (*DB, error)
 		return nil, fmt.Errorf("connect: %w", err)
 	}
 
-	deadline := clk.Now().Add(60 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for {
 		if err = pool.Ping(ctx); err == nil {
 			break
 		}
-		if ctx.Err() != nil || clk.Now().After(deadline) {
+		if ctx.Err() != nil || time.Now().After(deadline) {
 			pool.Close()
 			return nil, fmt.Errorf("database not ready after 60s: %w", err)
 		}
@@ -184,7 +181,7 @@ func Open(ctx context.Context, dsn, schema string, clk clock.Clock) (*DB, error)
 		}
 	}
 
-	return &DB{pool: pool, schema: schema, clk: clk}, nil
+	return &DB{pool: pool, schema: schema}, nil
 }
 
 // Close releases the pool.

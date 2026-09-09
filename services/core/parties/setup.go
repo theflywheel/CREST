@@ -3,6 +3,7 @@ package parties
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/httpx"
@@ -44,7 +45,7 @@ func (h *handlers) setupInstance(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "contact_required", "the operating organisation must provide a contact route")
 		return
 	}
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	p := schema.Party{
 		ID: inst.OperatorPartyID, Kind: schema.PartyKindOrganisation,
 		DisplayName: body.DisplayName, ContactRoutes: body.ContactRoutes, CreatedAt: now,

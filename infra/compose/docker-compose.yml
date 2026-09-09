@@ -138,41 +138,48 @@ x-service: &crest-service
     # a deployment names its origins - never a wildcard (#102).
     CREST_CORS_ORIGINS: "${CREST_CORS_ORIGINS:-http://localhost:59100,http://localhost:59110}"
 
-    # The window, and a clock the harness can move through it. Both are the
-    # payments application's, not the substrate's (#127): the window's length
-    # is programme policy (seven days in the CHW programme), and the only
-    # reason a CREST process ever wants driveable time is to cross one.
+    # Every time-bound behaviour, as a duration.
+    #
+    # There is no clock to drive (ruled 2026-09-09): the services read real
+    # time, and a behaviour that takes a week in the programme is proven here
+    # by configuring it to take seconds and waiting. That is what makes these
+    # settings load-bearing rather than decorative — the harness reads the same
+    # variables back (harness/durations.go) and derives its deadlines from
+    # them, so changing one here changes the scenarios with it.
+    #
+    # These are LOCAL values. A deployment sets the programme's: a seven-day
+    # window, a daily source cadence, ninety days to an override review.
     #
     # CONFIRMATION_WINDOW is read in exactly one place: the attestation member
     # inside the payments process. core never reads it — the window is the
     # application's (#127), and that is the layering statement.
-    #
-    # CLOCK_DRIVEABLE is a different kind of thing and #215 (ruled 2026-09-07)
-    # says so: a non-production harness surface, refused outside local/test by
-    # pkg/clockctl and again by pkg/service's deployment refusal. It does
-    # anything only where a service declares the seam
-    # (service.Options.ClockSeam, pkg/clockctl), and the services that declare
-    # it are the ones with scheduled behaviour a test must move time to reach —
-    # payments for the window, evidence for the source-quiet monitor, parties
-    # for the override review date. definitions and verification declare
-    # nothing and have no /internal/clock at all: not a route that refuses, no
-    # route.
-    #
-    # Both are refused in production — see pkg/clockctl.Seam for why a
-    # driveable clock in a live deployment is a way to close a worker's window
-    # early on them.
-    CONFIRMATION_WINDOW: "${CONFIRMATION_WINDOW:-168h}"
-    CLOCK_DRIVEABLE: "${CLOCK_DRIVEABLE:-true}"
-    CLOCK_START: "${CLOCK_START:-2026-03-01T08:00:00Z}"
+    CONFIRMATION_WINDOW: "${CONFIRMATION_WINDOW:-30s}"
 
-    # The scheduled auto-confirm sweep, off by default *here only*. Every
-    # scenario that tests the T=7 exit advances the clock and then asks for the
-    # sweep, and a background sweeper would have already taken the window —
-    # turning a real assertion into a race. A deployment runs the default
-    # (every minute), because there nobody is going to post to /v1/sweep.
-    # `make test-e2e-sweep` brings this stack up with it on, to prove the loop
-    # is actually wired.
-    SWEEP_EVERY: "${SWEEP_EVERY:-0}"
+    # The scheduled auto-confirm sweep. On, always, and short: on a running
+    # deployment nobody posts to /v1/sweep, so a stack where the loop was off
+    # and the scenarios asked for the sweep by hand proved the logic and never
+    # the wiring. Every window-crossing scenario now waits the window out and
+    # lets this find it.
+    SWEEP_EVERY: "${SWEEP_EVERY:-1s}"
+
+    # How often evidence looks for a source that has gone quiet. The cadence
+    # each source is expected to report at is per-source and set at
+    # registration; the harness registers its sources at seconds.
+    SOURCE_MONITOR_EVERY: "${SOURCE_MONITOR_EVERY:-1s}"
+
+    # How far core and payments may disagree about the time before a handoff
+    # is flagged (#221). Five minutes in a deployment; a second here, so the
+    # detector itself can be exercised by a handoff that arrives late.
+    CLOCK_SKEW_ALERT: "${CLOCK_SKEW_ALERT:-1s}"
+
+    # How long after an identity override its mandatory review falls due.
+    # Ninety days in the programme.
+    CREST_RECOVERY_OVERRIDE_REVIEW: "${CREST_RECOVERY_OVERRIDE_REVIEW:-3s}"
+
+    # How often an idle outbox is looked at again, and how often a held
+    # payment is retried.
+    OUTBOX_RETRY_EVERY: "${OUTBOX_RETRY_EVERY:-1s}"
+    HELD_RETRY_EVERY: "${HELD_RETRY_EVERY:-5s}"
 
     # Deployment secrets, with local values that are not pretending to be
     # secrets. A real deployment sets all three; key custody is G1 #7.

@@ -39,6 +39,9 @@ var fingerprintEnv = []string{
 	"DEDI_NAMESPACE",
 	"CONFIRMATION_WINDOW",
 	"SWEEP_EVERY",
+	"SOURCE_MONITOR_EVERY",
+	"CLOCK_SKEW_ALERT",
+	"CREST_RECOVERY_OVERRIDE_REVIEW",
 	"PAYMENT_SUBSCRIBER_ENABLED",
 	"COMPOSE_FILE",
 }
@@ -218,7 +221,7 @@ func staleFail(mismatches []string, hint string) {
 }
 
 // cmdHeader prints the block `make test-e2e`/`make e2e-run` show before any
-// scenario runs: the transparency mode, clock mode, service versions, the
+// scenario runs: the transparency mode, the stack's durations, service versions, the
 // compose project name, and whether the database volume predates this run.
 func cmdHeader() {
 	env := currentEnv()
@@ -231,7 +234,6 @@ func cmdHeader() {
 		window = "168h (default)"
 	}
 	sweep := env["SWEEP_EVERY"]
-	clockMode := "driveable (services take an Offset clock; the harness moves it — see docs/TESTING.md)"
 
 	rev := gitRevision()
 	projectName := composeProjectName()
@@ -239,10 +241,15 @@ func cmdHeader() {
 
 	fmt.Println("── e2e run header ──────────────────────────────────────────")
 	fmt.Printf("transparency substrate : %s\n", transparency)
-	fmt.Printf("clock mode             : %s\n", clockMode)
+	fmt.Printf("time                   : real; every window is waited out (docs/TESTING.md)\n")
 	fmt.Printf("confirmation window    : %s\n", window)
 	if sweep != "" {
-		fmt.Printf("sweep interval          : %s\n", sweep)
+		fmt.Printf("sweep interval         : %s\n", sweep)
+	}
+	for _, k := range []string{"SOURCE_MONITOR_EVERY", "CLOCK_SKEW_ALERT", "CREST_RECOVERY_OVERRIDE_REVIEW"} {
+		if v := env[k]; v != "" {
+			fmt.Printf("%-23s: %s\n", k, v)
+		}
 	}
 	fmt.Printf("service revision       : %s\n", rev)
 	fmt.Printf("compose project        : %s\n", projectName)

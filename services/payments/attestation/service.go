@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/config"
@@ -101,7 +102,7 @@ func Service() service.Options {
 					// The payment service's successful response is the durable
 					// acceptance boundary. Only then can W5–W6's release marker be
 					// exposed as complete to reconciliation and operators.
-					return markPaymentReleased(ctx, d.DB, release.ClaimID, d.Clock.Now())
+					return markPaymentReleased(ctx, d.DB, release.ClaimID, time.Now().UTC())
 				default:
 					return fmt.Errorf("unknown attestation event %q", topic)
 				}

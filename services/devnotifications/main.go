@@ -126,7 +126,7 @@ func (h *handler) receive(w http.ResponseWriter, r *http.Request) {
 	}
 	digest := messageDigest(msg)
 	providerID := "devnotify-" + digest[:24]
-	acceptedAt := h.d.Clock.Now()
+	acceptedAt := time.Now().UTC()
 	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		_, err := tx.Exec(r.Context(), `
 			INSERT INTO inbox_messages

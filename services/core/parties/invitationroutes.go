@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/theflywheel/crest/pkg/httpx"
 	"github.com/theflywheel/crest/pkg/id"
@@ -84,8 +85,8 @@ func (h *g2Handlers) sendInvitation(w http.ResponseWriter, r *http.Request) {
 			"a project invites an organisation; a person joins through a role grant, not an invitation")
 		return
 	}
-	inv, ev, err := newInvitation(id.New(h.d.Clock, "invitation"), c.ID, body.PartyID,
-		body.Functions, body.Period, body.Note, cmpOr(actor, c.OwnerPartyID), h.d.Clock.Now())
+	inv, ev, err := newInvitation(id.New("invitation"), c.ID, body.PartyID,
+		body.Functions, body.Period, body.Note, cmpOr(actor, c.OwnerPartyID), time.Now().UTC())
 	if err != nil {
 		httpx.WriteError(w, http.StatusUnprocessableEntity, "invalid_invitation", "%v", err)
 		return
@@ -239,7 +240,7 @@ func (h *g2Handlers) decideInvitation(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	var out invitation
 	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
 		fresh, err := getInvitation(r.Context(), tx, inv.ID, true)
@@ -255,7 +256,7 @@ func (h *g2Handlers) decideInvitation(w http.ResponseWriter, r *http.Request) {
 			// state in which the org said yes and holds nothing (g2_10).
 			ctxID := next.ContextID
 			a := schema.Authorization{
-				ID:      id.New(h.d.Clock, "authorization"),
+				ID:      id.New("authorization"),
 				PartyID: next.PartyID,
 				Terms:   schema.VersionedRef{ID: terms.ID, Version: terms.Version},
 				Scope: schema.AuthorizationScope{
@@ -357,7 +358,7 @@ func (h *g2Handlers) askInvitationQuestion(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
-	ev, err := askQuestion(inv, cmpOr(actor, body.AskedBy), body.Text, h.d.Clock.Now())
+	ev, err := askQuestion(inv, cmpOr(actor, body.AskedBy), body.Text, time.Now().UTC())
 	if err != nil {
 		if errors.Is(err, errQuestionAfterAnswer) {
 			httpx.WriteError(w, http.StatusConflict, "already_decided", "%v", err)

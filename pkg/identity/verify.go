@@ -12,8 +12,6 @@ import (
 	"time"
 
 	jose "github.com/go-jose/go-jose/v4"
-
-	"github.com/theflywheel/crest/pkg/clock"
 )
 
 // ErrInvalidToken is every reason a token was not accepted, wrapped.
@@ -36,7 +34,6 @@ var allowedAlgs = []jose.SignatureAlgorithm{jose.RS256, jose.ES256, jose.PS256}
 // Verifier checks access tokens against an issuer's published keys.
 type Verifier struct {
 	cfg  Config
-	clk  clock.Clock
 	http *http.Client
 
 	mu        sync.RWMutex
@@ -50,23 +47,21 @@ type Verifier struct {
 //
 // It takes no clock, and that is deliberate rather than an omission.
 //
-// CREST services outside production can be handed their time, because the
-// confirmation window is seven days and a harness that waits one is not a
-// harness (pkg/clockctl.Seam). A token's lifetime is not that kind of
-// time. It is the identity provider's judgement, made in real time, about how
-// long somebody's session should last — and checking it against a clock that
-// something else can move means a clock set to last March makes every expired
-// token valid again. Whoever can drive the clock can then log in as anybody
-// who ever held a token.
+// A token's lifetime is the identity provider's judgement, made in real time,
+// about how long somebody's session should last. CREST used to be able to hand
+// its services a clock an HTTP call could move, and the rule here was that the
+// verifier must never read it: a clock set to last March makes every expired
+// token valid again, and whoever can move it can then log in as anybody who
+// ever held a token.
 //
-// So the verifier reads the wall clock, always, in every environment. The one
-// visible consequence is that a scenario advancing CREST twenty days into the
-// future still holds tokens that have not expired, which is exactly what would
-// happen against a real provider.
+// The clock is gone (ruled 2026-09-09) and every process reads real time, so
+// this is now true by construction rather than by discipline. What remains
+// configurable is the cache posture — CREST_OIDC_JWKS_CACHE and
+// CREST_OIDC_JWKS_MIN_REFRESH — which is how the key-rotation and rate-limit
+// rules are exercised without waiting fifteen minutes.
 func NewVerifier(cfg Config) *Verifier {
 	return &Verifier{
 		cfg:  cfg,
-		clk:  clock.System{},
 		http: &http.Client{Timeout: 10 * time.Second},
 	}
 }
@@ -152,7 +147,7 @@ func (v *Verifier) Verify(ctx context.Context, token string) (Caller, error) {
 		return Caller{}, fmt.Errorf("%w: no subject", ErrInvalidToken)
 	}
 
-	now := v.clk.Now()
+	now := time.Now().UTC()
 	if c.ExpiresAt == 0 {
 		// A token that never expires is a credential somebody keeps. Refused
 		// rather than defaulted to some lifetime of our choosing.
@@ -194,7 +189,7 @@ func (v *Verifier) verifyWith(ctx context.Context, sig *jose.JSONWebSignature, k
 	}
 
 	v.mu.RLock()
-	stale := v.clk.Now().Sub(v.fetchedAt) >= v.cfg.MinRefresh
+	stale := time.Now().UTC().Sub(v.fetchedAt) >= v.cfg.MinRefresh
 	v.mu.RUnlock()
 	if !stale {
 		return nil, fmt.Errorf("%w: no known key signed it", ErrInvalidToken)
@@ -240,7 +235,7 @@ func (v *Verifier) keySet(ctx context.Context, force bool) (*jose.JSONWebKeySet,
 	v.mu.RLock()
 	cached, at := v.keys, v.fetchedAt
 	v.mu.RUnlock()
-	if cached != nil && !force && v.clk.Now().Sub(at) < v.cfg.CacheFor {
+	if cached != nil && !force && time.Now().UTC().Sub(at) < v.cfg.CacheFor {
 		return cached, nil
 	}
 
@@ -255,7 +250,7 @@ func (v *Verifier) keySet(ctx context.Context, force bool) (*jose.JSONWebKeySet,
 		return nil, fmt.Errorf("identity: no signing keys available: %w", err)
 	}
 	v.mu.Lock()
-	v.keys, v.fetchedAt = fetched, v.clk.Now()
+	v.keys, v.fetchedAt = fetched, time.Now().UTC()
 	v.mu.Unlock()
 	return fetched, nil
 }

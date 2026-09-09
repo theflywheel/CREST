@@ -55,7 +55,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	// Dependency holds are retried by the service itself. Otherwise a rate or
 	// evidence outage at the exact release moment would become a permanent
 	// HELD record that nobody can clear after the dependency recovers.
-	every, err := config.Duration("HELD_RETRY_EVERY", time.Minute)
+	every, err := config.PositiveDuration("HELD_RETRY_EVERY", time.Minute)
 	if err != nil {
 		d.Log.Error("HELD_RETRY_EVERY unusable; using the default", "error", err, "every", every)
 	}
@@ -159,9 +159,9 @@ func (h *handlers) release(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := h.d.Clock.Now()
+	now := time.Now().UTC()
 	in := Instruction{
-		ID:         id.New(h.d.Clock, "payment-instruction"),
+		ID:         id.New("payment-instruction"),
 		ClaimID:    req.ClaimID,
 		UnitID:     req.UnitID,
 		PartyID:    req.PartyID,
@@ -601,12 +601,12 @@ func sendToRail(ctx context.Context, d service.Deps, rail providers.Provider, pa
 	var reply railReply
 
 	comp := Compensation{
-		ID:            id.New(d.Clock, "compensation"),
+		ID:            id.New("compensation"),
 		InstructionID: in.ID,
 		UnitID:        in.UnitID,
 		AmountMinor:   in.AmountMinor,
 		Currency:      in.Currency,
-		CreatedAt:     d.Clock.Now(),
+		CreatedAt:     time.Now().UTC(),
 	}
 
 	reply, railErr := rail.Submit(ctx, providers.Request{
@@ -668,7 +668,7 @@ func sendToRail(ctx context.Context, d service.Deps, rail providers.Provider, pa
 		terminalErr = fmt.Errorf("rail payment %s is pending", in.ID)
 	case "confirmed":
 		comp.State, comp.RailRef = "CONFIRMED", &reply.Reference
-		comp.ConfirmedAt = timePtr(d.Clock.Now())
+		comp.ConfirmedAt = timePtr(time.Now().UTC())
 		terminalErr = nil
 		// A confirmation is only a truthful confirmation of the amount the
 		// rail says it settled. Require that value and retain it in the

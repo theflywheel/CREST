@@ -147,12 +147,10 @@ func (p *provider) token(w http.ResponseWriter, r *http.Request) {
 		ttl = d
 	}
 
-	// Wall-clock, not the driveable clock the services run on. A token's
-	// lifetime is the identity provider's judgement and a real one does not
-	// take instructions from a test harness — so a suite that advances CREST's
-	// clock by twenty days must still hold a token that has not expired, which
-	// is why the harness mints tokens with long lifetimes rather than moving
-	// this clock too.
+	// A token's lifetime is the identity provider's judgement, and a real
+	// provider does not take instructions from a test harness. Tokens are
+	// minted with long lifetimes so that a scenario which spends a while
+	// waiting a window out still holds one that has not expired.
 	now := time.Now()
 	claims := map[string]any{
 		"iss": p.issuer,

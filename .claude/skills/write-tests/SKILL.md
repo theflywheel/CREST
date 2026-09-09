@@ -1,6 +1,6 @@
 ---
 name: write-tests
-description: Write tests for CREST the way this project tests — pick the right layer, name fixtures by situation, drive the clock instead of sleeping, and update the test manifest. Use whenever adding or changing tests, or when asked how something should be validated.
+description: Write tests for CREST the way this project tests — pick the right layer, name fixtures by situation, configure short durations and poll instead of sleeping, and update the test manifest. Use whenever adding or changing tests, or when asked how something should be validated.
 ---
 
 # Writing tests for CREST
@@ -20,7 +20,11 @@ Choosing wrong is the common failure. A test that mocks three services to assert
 
 ## Rules that are not negotiable
 
-**Never sleep.** The confirmation window is seven days. Services read time through an injectable clock and tests advance it. A test that waits in real time is a bug in the harness, and it will be deleted by whoever it blocks first.
+**Never sleep a fixed guess and then assert.** The confirmation window is seven days in the CHW programme, and there is no clock to drive through it (ruled 2026-09-09): services read `time.Now().UTC()`, and every time-bound behaviour is a configured duration. So the stack is brought up with the duration set to *seconds* and the test waits real time for the real outcome — polling with a bounded deadline (`harness.WaitFor`, `eventually` in the scenarios), never sleeping a guess.
+
+A unit test that used a fake clock passes `time.Time` values in, or configures a small real duration and waits it out. A `time.Sleep` is only ever the scenario's own input — a gap you are deliberately creating — and never the wait for a result.
+
+Deadlines are derived from the cadence the stack is running at (`harness/durations.go`, `harness.Patience`), and are generous: a tight multiple of the interval is a test that fails on a loaded runner and gets re-run rather than read.
 
 **Never write to the database directly.** Drive the system through its real interfaces — HTTP, CLI. A test that seeds state by INSERT is testing your understanding of the schema, not the system.
 

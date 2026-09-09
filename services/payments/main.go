@@ -35,7 +35,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/theflywheel/crest/pkg/clockctl"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
 	"github.com/theflywheel/crest/services/payments/attestation"
@@ -51,18 +50,6 @@ func paymentsMember() service.Options {
 	return service.Options{
 		Migrations: migrations,
 		Dir:        "migrations",
-		// The driveable clock is this application's harness surface, not the
-		// substrate's (#127) — and since the window moved here, this is the
-		// only declaration of it anywhere in the fleet. A window a week long
-		// cannot be demonstrated or tested in real time, so the application
-		// that owns the window owns the seam that moves time through it; the
-		// infrastructure services, which have no window, no longer carry the
-		// capability at all and have no /internal/clock to refuse. Declared
-		// on this member and not on attestation because a process has one
-		// clock: Compose refuses two declarations rather than picking one.
-		// Refused outside local/test by pkg/clockctl and again by the
-		// deployment refusal in pkg/service.
-		ClockSeam: clockctl.Seam,
 		Routes: func(mux *http.ServeMux, d service.Deps) {
 			routes(mux, d)
 		},
