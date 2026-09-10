@@ -392,6 +392,14 @@ func BootstrapOperator(ctx context.Context, db *store.DB, p schema.Party, ttl ti
 		if err := insertParty(ctx, tx, p); err != nil {
 			return err
 		}
+		// The operator is a public fact like any organisation (§3): a verifier
+		// walking a credential's chain resolves it in the organisations
+		// registry, and an operator written straight into the schema with no
+		// publication is an organisation every credential names and nobody can
+		// find (#232's neighbour, found the same day).
+		if err := enqueueFact(ctx, tx, "organisation", p.ID, 1); err != nil {
+			return err
+		}
 		var err error
 		code, err = mintInvitation(ctx, tx, p.ID, p.ID, p.CreatedAt, ttl)
 		return err
