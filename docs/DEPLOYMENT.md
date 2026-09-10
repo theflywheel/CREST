@@ -342,13 +342,20 @@ cannot arrive through a door, and stand-up writes it (Blueprint §15 G-1,
 "the first screen anyone ever sees" is deploy-time):
 
 ```sh
-DATABASE_URL=<the core database> go run ./tools/bootstrap-operator \
+CREST_INSTANCE_ID=<this deployment's id> DATABASE_URL=<the core database> \
+    go run ./tools/bootstrap-operator \
     -name "CREST production operator" -email ops@example.org \
     -door https://crest-console-production.up.railway.app
 ```
 
 It prints the operator's party id, a one-time claim code, and the console
-link that carries it. Set `CREST_OPERATOR_PARTY_ID` to the id and redeploy
+link that carries it. It also records the deploy-time approval (the same
+`instance_setup` and APPROVED registration rows first-run setup writes, which
+is why it needs `CREST_INSTANCE_ID`): without that record the operator is an
+organisation of the right shape and no authority, and cannot grant anything
+(found on the fleet 2026-09-10). A deployment stood up before that fix gets
+the record written at core's next boot, with a warning in the log, and its
+operator organisation published to the registry the same way. Set `CREST_OPERATOR_PARTY_ID` to the id and redeploy
 `crest-core`; then open the link and sign in with eSignet. That first login
 claims the operator's record — the same append-only identity binding as any
 other, put in front of an invitation instead of the bare first-login

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/httpx"
@@ -167,6 +168,21 @@ func publishInstance(ctx context.Context, d service.Deps) error {
 			return err
 		case p.Kind != schema.PartyKindOrganisation:
 			return fmt.Errorf("the configured operator %s is a %s, not an organisation", p.ID, p.Kind)
+		}
+		// An operator with no registration decision is an organisation of the
+		// right shape and no authority: it cannot grant. That is what an
+		// operator stood up before the bootstrap tool recorded the decision
+		// looks like (the fleet, 2026-09-10). The configured operator IS the
+		// deployment's decision, so boot writes it down — once, and says so.
+		if _, err := getRegistration(ctx, tx, inst.OperatorPartyID); errors.Is(err, store.ErrNotFound) {
+			d.Log.Warn("the configured operator had no registration decision; recording the deploy-time approval",
+				"operator", inst.OperatorPartyID, "instance", inst.ID)
+			if err := recordOperatorSetup(ctx, tx, inst.ID, inst.OperatorPartyID, "boot", "deploy-time",
+				"Instance operator's deploy-time approval recorded at boot (CREST_OPERATOR_PARTY_ID)", time.Now().UTC()); err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
 		}
 		return enqueueFact(ctx, tx, "organisation", inst.OperatorPartyID, 1)
 	})

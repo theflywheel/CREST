@@ -387,9 +387,20 @@ func BootstrapOperator(ctx context.Context, db *store.DB, p schema.Party, ttl ti
 	if p.Kind != schema.PartyKindOrganisation {
 		return "", errors.New("the operator must be an organisation")
 	}
+	instanceID := config.Str("CREST_INSTANCE_ID", "")
+	if instanceID == "" {
+		return "", errors.New("CREST_INSTANCE_ID is required: the operator is approved by the instance it stands up, and that decision names the instance")
+	}
 	var code string
 	err := db.InTx(ctx, func(tx store.Querier) error {
 		if err := insertParty(ctx, tx, p); err != nil {
+			return err
+		}
+		// The deploy-time act is the trust-root decision, the same one the
+		// first-run setup route records: without it the operator is no
+		// authority and cannot grant anything (see recordOperatorSetup).
+		if err := recordOperatorSetup(ctx, tx, instanceID, p.ID, "tools/bootstrap-operator", "deploy-time",
+			"Instance operator stood up at deploy time by tools/bootstrap-operator", p.CreatedAt); err != nil {
 			return err
 		}
 		// The operator is a public fact like any organisation (§3): a verifier
