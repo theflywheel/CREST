@@ -10,3 +10,10 @@ mints — a key that must not be in this repository.
 absent from that list cannot ask this wallet for a presentation, which is the
 point: it is the wallet's own list of who may ask, not the verifier's claim
 about itself.
+
+Since 0.20.0 (#230) the file takes 0.20's shape (`redirect_uris`, plural) and
+names the verify *service*'s DID as the client id — that is what the signed
+request object behind Inji Verify's QR carries (`client_id`
+`did:web:crest-verify-production.up.railway.app:v1:verify`, `response_uri`
+`…/v1/verify/vp-submission/direct-post`). The UI origin stays as a second
+entry for the older unsigned form.
