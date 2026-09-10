@@ -60,7 +60,9 @@ function ConsoleScreen(props: { children: React.ReactNode }) {
   const who =
     s.orgSession && ORG_ROUTES.has(loc.pathname)
       ? (s.orgParty?.displayName || "Signed in institution") + " — onboarded verifier"
-      : "Not signed in — verification does not need an account";
+      : s.pass
+        ? `${s.pass.name} · Verifier · pass ${s.pass.id.slice(-6).toUpperCase()}`
+        : "Not signed in — a pass names you without onboarding you";
   return (
     <ConsoleShell appName="CREST · Checking a credential" who={<span className="who-label">{who}</span>} nav={NAV}>
       <div className="pane-narrow screen" key={loc.pathname}>

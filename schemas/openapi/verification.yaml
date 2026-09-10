@@ -45,6 +45,23 @@ paths:
         identity assurance asked for now, so a worker who anchored their identity
         last week sees it reflected in a credential issued last year. Ask again
         tomorrow and the answer may differ; that is the feature.
+
+        An online check names who is asking (G1 #9): a verifier pass on the
+        X-CREST-Verifier-Pass header, a `requestedByPartyId` the caller may act
+        as, or — with neither — the signed-in caller themselves. Nobody is not an
+        answer: an anonymous online check is refused, because the cap below is
+        counted per requester and the worker's trail must name who looked (W8).
+        The check that needs nobody's permission is the offline one, against the
+        issuer's published key (W7). Every requester is capped at
+        CREST_VERIFY_RATE_CAP checks per CREST_VERIFY_RATE_WINDOW (default 100
+        per hour), counted from the presentation trail; the number is
+        deployment configuration, the cap itself is not.
+      parameters:
+        - name: X-CREST-Verifier-Pass
+          in: header
+          required: false
+          schema: { type: string }
+          description: A verifier pass token from POST /v1/verifier-passes. Not combinable with `requestedByPartyId`.
       requestBody:
         required: true
         content:
@@ -58,19 +75,78 @@ paths:
                 requestedByPartyId:
                   type: string
                   description: >
-                    Who is asking. Supplying this or `purpose` makes the
-                    presentation scoped rather than bare, and either way the
-                    presentation is recorded (§9).
-                purpose: { type: string }
+                    Who is asking, as a party the caller may act as. Absent, a
+                    signed-in caller asks as themselves; a pass-holder asks as
+                    their pass. Either way the presentation is recorded (§9).
+                purpose: { type: string, maxLength: 200, description: Optional; recorded for the worker to read. }
       responses:
         "200":
           description: >
             The verdict - including a negative one. An invalid credential is a 200
             with `valid: false` and reasons, not an HTTP error: the question was
-            answered, and the answer was no.
+            answered, and the answer was no. `X-CREST-Rate-Remaining` says how
+            many checks this requester has left in the window.
           content: { application/json: { schema: { $ref: "#/components/schemas/Verdict" } } }
         "400":
-          description: No credential in the body, or the body was unreadable.
+          description: No credential in the body, the body was unreadable, a purpose over 200 characters, or a pass and a party both named (`one_requester`).
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "401":
+          description: Nobody is asking (`pass_required`), or the pass is not one this deployment issued or has been replaced (`invalid_pass`).
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "429":
+          description: This requester has reached the deployment's rate cap (`rate_cap_exceeded`); `Retry-After` is the window.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "500": { $ref: "#/components/responses/Internal" }
+
+  /v1/verifier-passes:
+    post:
+      operationId: issueVerifierPass
+      summary: Get a pass to check credentials
+      description: >
+        Blueprint J9 L1: "pass issuance — name + reachable contact, no account,
+        no vetting". A pass identifies a stranger without onboarding them. It
+        grants nothing — no accreditation ceiling, no batch checking — and costs
+        one thing: every check made with it is recorded against it, and the
+        worker checked sees the name. One pass per contact: asking again with
+        the same contact rotates the token (the old one stops working) rather
+        than minting a second identity, because a cap per pass would otherwise
+        be a cap per request for a pass. The token is shown once; only its hash
+        is stored. Open by design — it is how a stranger stops being anonymous.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, contact]
+              properties:
+                name: { type: string, minLength: 2, maxLength: 80, description: Shown to every worker checked. }
+                contact: { type: string, minLength: 5, maxLength: 120, description: An email address or a phone number. Kept for accountability, never shown to the worker. }
+      responses:
+        "201":
+          description: The pass and its token.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pass, token, header]
+                properties:
+                  pass:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      name: { type: string }
+                      issuedAt: { type: string, format: date-time }
+                      rotated: { type: boolean, description: True when this contact already held a pass and its token was replaced. }
+                  token: { type: string, description: Present it on the X-CREST-Verifier-Pass header. Shown once. }
+                  header: { type: string, const: X-CREST-Verifier-Pass }
+                  rateCap:
+                    type: object
+                    properties:
+                      checks: { type: integer }
+                      window: { type: string }
+        "400":
+          description: No usable name or contact (`invalid_pass_request`).
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "500": { $ref: "#/components/responses/Internal" }
 
@@ -87,7 +163,11 @@ paths:
         not removed. Per-credential verdicts only, deliberately no aggregate
         answers; every credential writes its own presentation entry, so "who
         checked me" reads the same whether the check arrived alone or among a
-        hundred.
+        hundred. Checking in bulk is a scope an authority grants (G1 #9): the
+        requester must hold an active `verify-credentials-bulk` authorization,
+        and a verifier pass never batches. Every credential in the batch counts
+        against the requester's rate cap; a batch that would cross it is refused
+        whole.
       requestBody:
         required: true
         content:
@@ -115,6 +195,12 @@ paths:
                   count: { type: integer }
         "400":
           description: No purpose, no requester, or no credentials.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "403":
+          description: A pass presented (`pass_cannot_batch`), or the requester holds no `verify-credentials-bulk` authorization (`bulk_scope_required`).
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "429":
+          description: The batch would cross the requester's rate cap (`rate_cap_exceeded`); refused whole.
           content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
         "413":
           description: Over the deployment's cap; the refusal names the number.
@@ -267,9 +353,10 @@ paths:
                         id: { type: string }
                         credentialId: { type: string }
                         subjectRef: { type: string }
-                        requestedByPartyId: { type: string }
+                        requestedByPartyId: { type: string, description: A party id, or a verifier pass id (`crest:pass:…`) when the check was made with a pass. }
+                        requesterName: { type: string, description: The name on the verifier pass, when the check was made with one — so the worker sees who looked, not an id they cannot resolve (W8). }
                         purpose: { type: string }
-                        scope: { type: string, enum: [bare, scoped, consented] }
+                        scope: { type: string, enum: [bare, scoped, consented, pass] }
                         outcome: { type: string, enum: [valid, withdrawn, signature-failed, not-valid, listed, shared] }
                         tier: { type: integer }
                         createdAt: { type: string, format: date-time }

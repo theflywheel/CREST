@@ -132,6 +132,7 @@ terms:
       - act-for-party
       - resolve-unclear-evidence
       - rate-owner
+      - verify-credentials-bulk
       - payment-owner
       - override-recovery
       - claim-review
@@ -250,6 +251,25 @@ authorizations:
     partyId: did:crest:party:01JCREST000000000000000RGN
     scope: { kind: context, contextId: crest:context:01JCREST00000000000000PRJC }
     functions: [attest-work, submit-work-evidence, read-work-evidence, payment-owner, claim-review]
+    authorityPartyId: did:crest:party:01JCREST000000000000000RGN
+    approvedByPartyId: did:crest:party:01JCREST00000000000000SPEC
+    approvedAt: 2026-01-05T09:00:00Z
+    state: ACTIVE
+    period: { start: 2026-01-05T00:00:00Z }
+    terms: { id: crest:terms:01JCREST00000000000000TERM, version: 1 }
+
+  # Checking credentials in bulk is its own scope (G1 #9): acquiring the
+  # ability to sweep a population is a decision somebody makes and can be seen
+  # to have made, never a capacity that comes with a sign-in or a pass. The
+  # organisation holds it here so the batch scenarios can run; nobody else in
+  # the fixture does, so the refusal can be proven too. Its id sorts after
+  # QSCP on purpose — issuance names an organisation's FIRST instance-scoped
+  # authorization as the credential's qualificationRef, and that must stay the
+  # attesting one.
+  - id: crest:authorization:01JCREST00000000000000VBKX
+    partyId: did:crest:party:01JCREST000000000000000RGN
+    scope: { kind: instance }
+    functions: [verify-credentials-bulk]
     authorityPartyId: did:crest:party:01JCREST000000000000000RGN
     approvedByPartyId: did:crest:party:01JCREST00000000000000SPEC
     approvedAt: 2026-01-05T09:00:00Z

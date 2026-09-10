@@ -34,7 +34,15 @@ func CORSFromOrigins(origins string) Middleware {
 				// site a worker's token scope.
 				h.Set("Access-Control-Allow-Origin", origin)
 				h.Set("Vary", "Origin")
-				h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-CREST-On-Behalf-Of, Idempotency-Key")
+				// X-CREST-Verifier-Pass is the verifier pass (#27, G1 #9): a
+				// stranger's check from the verify door carries it, and a
+				// header the preflight does not admit is a door that sees
+				// only "Failed to fetch".
+				h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-CREST-On-Behalf-Of, Idempotency-Key, X-CREST-Verifier-Pass")
+				// What a door may read back: the rate cap's remainder rides
+				// on the verdict, and a header the browser hides is a cap the
+				// verifier cannot see coming.
+				h.Set("Access-Control-Expose-Headers", "X-CREST-Rate-Cap, X-CREST-Rate-Window, X-CREST-Rate-Remaining, Retry-After, X-CREST-Reconciliation-Format")
 				// PUT is here because the J3 configuration endpoints are PUTs
 				// by design (one record per key, idempotent): composition
 				// choices, activation gates, the finance link, the support

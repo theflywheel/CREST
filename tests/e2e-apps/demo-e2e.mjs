@@ -210,9 +210,14 @@ videos.push(await chapter(b, "4-confirm-wallet", async (p, cap) => {
 
 // ── 5. The verifier ─────────────────────────────────────────────────────
 videos.push(await chapter(b, "5-verify", async (p, cap) => {
-  await p.goto(V + "/#/v1_2");
-  await cap("5 · A stranger checks the record",
-    "No account, no permission from CREST — the answer rides the signature.");
+  await p.goto(V + "/#/v1_1");
+  await cap("5 · A stranger gets a pass and checks the record",
+    "A name and a contact, no account, no vetting — the answer still rides the signature; the pass puts a name on the check for the worker.");
+  await p.locator("#passform input").nth(0).fill("Joseph Mwangi");
+  await p.locator("#passform input").nth(1).fill("+254700000412");
+  await p.locator("#passform input").nth(2).fill("Hiring for a private clinic");
+  await p.locator("#passform button.btn").first().click();
+  await p.waitForURL(/v1_2/, { timeout: 20000 });
   await pause(p, 2500);
   // borrow the worker's newest credential by party id? The verifier's
   // load-sample needs a party id; use the demo worker's via the trail…

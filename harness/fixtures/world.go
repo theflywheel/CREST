@@ -44,6 +44,8 @@ const (
 	// a credential's issuerAuthority (#16, #27).
 	OrgQualificationID = "crest:authorization:01JCREST00000000000000QSCP"
 	OrgGrantID         = "crest:authorization:01JCREST00000000000000CSCP"
+	// The organisation's bulk-checking scope (G1 #9); held by nobody else.
+	OrgBulkVerifyID = "crest:authorization:01JCREST00000000000000VBKX"
 
 	ProjectID      = "crest:context:01JCREST00000000000000PRJC"
 	DefinitionID   = "crest:definition:01JCREST00000000000000DEFN"

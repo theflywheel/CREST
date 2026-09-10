@@ -10,10 +10,16 @@ import { FIX } from "./fixtures";
 
 let token: string | null = null;
 let onBehalfOf: string | null = null;
+// A verifier pass (#27, G1 #9): a stranger's name on their checks, carried on
+// its own header because it is deliberately not a signed-in caller.
+let pass: string | null = null;
 
 export function setSession(t: string | null, behalf?: string | null) {
   token = t;
   onBehalfOf = behalf || null;
+}
+export function setPass(t: string | null) {
+  pass = t;
 }
 export function actingFor(partyId: string | null) {
   onBehalfOf = partyId || null;
@@ -41,6 +47,7 @@ async function call(
   if (token) headers["Authorization"] = "Bearer " + token;
   if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
   if (onBehalfOf) headers["X-CREST-On-Behalf-Of"] = onBehalfOf;
+  if (pass && !token) headers["X-CREST-Verifier-Pass"] = pass;
   let payload: BodyInit | undefined;
   if (body !== undefined && body !== null) {
     headers["Content-Type"] = contentType || "application/json";

@@ -40,16 +40,59 @@ export function ChainList(props: { v: Verdict }) {
 }
 
 export function V11() {
+  const s = useVerify();
   const nav = useNavigate();
+  const [name, setName] = useState(s.pass?.name || "");
+  const [contact, setContact] = useState("");
+  const [why, setWhy] = useState(s.pass?.purpose || "");
+  const [busy, setBusy] = useState(false);
+  const submit = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    setBusy(true);
+    try {
+      await s.getPass(name.trim(), contact.trim(), why.trim());
+      nav("/v1_2");
+    } catch (e) {
+      s.fail(e);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <>
       <div className="eyebrow">V-1 · Screen 1 of 3</div>
       <h2 className="scr-title">Get a pass to check credentials</h2>
       <p className="body-2">
         A verifier pass identifies you without onboarding you. It puts a name on your checks — the worker sees{" "}
-        <em>who</em> looked, in their own "who checked me" trail — but it grants nothing: no accreditation ceiling, no
+        <em>who</em> looked, in their own "who checked me" trail — and it grants nothing: no accreditation ceiling, no
         batch rights, no vetting. Identified, not onboarded.
       </p>
+      <div className="card">
+        <form id="passform" onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <label className="body-2">
+            Your name
+            <input required minLength={2} maxLength={80} value={name} onChange={(e) => setName(e.target.value)} placeholder="Joseph Mwangi" style={{ width: "100%", marginTop: 4 }} />
+          </label>
+          <label className="body-2">
+            Email or phone
+            <input required minLength={5} maxLength={120} value={contact} onChange={(e) => setContact(e.target.value)} placeholder="+254 7•• ••• 412" style={{ width: "100%", marginTop: 4 }} />
+            <span className="muted"> Kept by this deployment so somebody can reach you; never shown to the worker.</span>
+          </label>
+          <label className="body-2">
+            Why you are checking
+            <input maxLength={200} value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Hiring for a private clinic" style={{ width: "100%", marginTop: 4 }} />
+            <span className="muted"> Shown to the worker beside your name, on every check you make with this pass.</span>
+          </label>
+          <div className="btn-row">
+            <button className="btn" disabled={busy}>{s.pass ? "Get a fresh pass" : "Get my pass"}</button>
+            {s.pass ? (
+              <button type="button" className="btn secondary" onClick={() => nav("/v1_2")}>
+                Keep the pass I have
+              </button>
+            ) : null}
+          </div>
+        </form>
+      </div>
       <KV
         rows={[
           ["A pass adds", "your name on every check the worker sees"],
@@ -58,16 +101,14 @@ export function V11() {
         ]}
       />
       <OpenNote>
-        <b>Not backed yet.</b> Pass issuance has no endpoint — the services expose verification (
-        <span className="mono">/v1/verify</span>, chain reads) but no <span className="mono">/v1/verifier-passes</span>{" "}
-        or equivalent, and the PoC's verifier face never issues one. This screen is the design's shape only. In this
-        demo the check itself works without a pass: continue to the next screen and check a credential logged out.
+        <b>Not confirmed.</b> The reference sends a code to the contact before the pass is issued. No notification channel
+        exists in this deployment (#150), so the contact you give is recorded as given, not proven reachable. The pass
+        is issued anyway — identified, not vetted — and every check you make with it is on the record against it.
       </OpenNote>
-      <div className="btn-row">
-        <button className="btn" onClick={() => nav("/v1_2")}>
-          Check a credential without a pass
-        </button>
-      </div>
+      <Sidecar>
+        Checking a signature needs no pass at all: the next screen's offline check uses only the issuer's published key
+        and never touches this deployment. A pass is for the <em>online</em> check, which is recorded for the worker.
+      </Sidecar>
     </>
   );
 }
@@ -76,12 +117,11 @@ export function V12() {
   const s = useVerify();
   const nav = useNavigate();
   const [cred, setCred] = useState("");
-  const [who, setWho] = useState("");
-  const [why, setWhy] = useState("");
+  const [why, setWhy] = useState(s.pass?.purpose || "");
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     try {
-      await s.runVerify(parseCredential(cred), who.trim(), why.trim());
+      await s.runVerify(parseCredential(cred), "", why.trim());
       nav("/v1_3");
     } catch (e) {
       s.fail(e);
@@ -107,9 +147,20 @@ export function V12() {
       <div className="eyebrow">V-1 · Screen 2 of 3</div>
       <h2 className="scr-title">Scan or enter the credential</h2>
       <p className="body-2">
-        Paste the credential exactly as scanned from the worker's printed card or wallet. A bare check needs no account
-        and no consent beyond the showing itself.
+        Paste the credential exactly as scanned from the worker's printed card or wallet. The online check is recorded
+        against your pass; the offline check needs nothing from anyone.
       </p>
+      {!s.pass ? (
+        <OpenNote>
+          <b>No pass held.</b> An online check names who is asking — the service refuses one with nobody behind it
+          (G1 #9). <a href="#/v1_1">Get a pass</a> first, or use the offline signature check below.
+        </OpenNote>
+      ) : (
+        <p className="muted">
+          Checking as <b>{s.pass.name}</b> · pass {s.pass.id.slice(-6).toUpperCase()}.{" "}
+          <a href="#/v1_1">Change</a>
+        </p>
+      )}
       <div className="card">
         <form id="verifyform" onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <p className="muted">
@@ -128,10 +179,7 @@ export function V12() {
               style={{ width: "100%", marginTop: 4 }}
             />
           </label>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input placeholder="who is asking (party id, optional)" value={who} onChange={(e) => setWho(e.target.value)} style={{ flex: 1 }} />
-            <input placeholder="why (optional — recorded for the worker)" value={why} onChange={(e) => setWhy(e.target.value)} style={{ flex: 1 }} />
-          </div>
+          <input placeholder="why (recorded for the worker beside your name)" maxLength={200} value={why} onChange={(e) => setWhy(e.target.value)} />
           <div className="btn-row">
             <button className="btn">Check it online</button>
             <button type="button" className="btn secondary" onClick={submitOffline}>Check signature offline</button>
@@ -141,8 +189,9 @@ export function V12() {
         </form>
       </div>
       <Sidecar>
-        Every check — with a purpose or without one — leaves a line in the worker's own trail. That is by design: the
-        record of who looked belongs to the person looked at.
+        Every online check leaves a line in the worker's own trail with your name on it, and no requester gets more
+        than the deployment's cap in a window. That is by design: the record of who looked belongs to the person
+        looked at, and the cap is what makes it a control rather than a receipt.
       </Sidecar>
       <Sidecar>
         You do not have to take CREST's word for the answer: the same credential verifies in{" "}
@@ -227,7 +276,7 @@ export function V13() {
         published key, verifies the same way — no account, no vetting, and nothing here identifies the worker to you.
       </Sidecar>
       <NextBlock
-        happened={v.offline ? "The signature was checked on this device. Offline checks are not sent to CREST's presentation trail." : "The credential was checked and the check was recorded, one line, even for a bare scan."}
+        happened={v.offline ? "The signature was checked on this device. Offline checks are not sent to CREST's presentation trail." : `The credential was checked and the check was recorded, one line${s.pass ? ", against your pass — the worker sees \"" + s.pass.name + "\"" : ""}.`}
         who='Nobody has to. The worker can see this check in their own "who checked me" trail.'
         when={v.offline ? "No trail line exists: this check stayed on this device." : "The trail line exists already — it was written with the verdict."}
         told="You will not be — the answer above is the whole of what a pass-only verifier gets."

@@ -590,15 +590,33 @@ test("verify app: a real check, refusals shown, batch bounded", async ({ page, r
   const workerCredential = ((await workerCreds.json()).credentials || [])[0];
   expect(workerCredential, "the worker read returns a credential to present").toBeTruthy();
 
-  // V-1: verify Grace's credential while logged out.
-  await page.evaluate(() => { location.hash = "#/v1_2"; });
+  // V-1: a stranger with no account. An online check with nobody behind it
+  // is refused by the service (G1 #9), so the door gets a pass first — a
+  // name and a contact, no vetting — and checks with it.
+  await page.evaluate(() => { location.hash = "#/v1_1"; });
   await settle(page);
+  await page.locator("#passform input").nth(0).fill("Joseph Mwangi");
+  await page.locator("#passform input").nth(1).fill("+254700000412");
+  await page.locator("#passform input").nth(2).fill("Hiring for a private clinic");
+  await page.locator("#passform button.btn").first().click();
+  await page.waitForURL(/#\/v1_2/, { timeout: 20000 });
+  await settle(page);
+  await expect(page.locator(".appbar .who-label")).toContainText(/Joseph Mwangi/);
   await page.locator("#verifyform textarea").fill(JSON.stringify(workerCredential));
   await settle(page);
-  await page.locator("#verifyform button.btn").last().click();
+  await page.locator("#verifyform button.btn").first().click();
+  await page.waitForURL(/#\/v1_3/, { timeout: 20000 });
   await settle(page);
-  await expect(page.locator("body")).toContainText(/verified|valid|yes/i);
+  await expect(page.locator("h2.scr-title")).toHaveText(/^Verified$/);
+  await expect(page.locator("body")).toContainText("against your pass");
   await assertAlive(page, errors, "verify v1_3");
+
+  // The worker's trail names the stranger, not an id (W8).
+  const trail = await asPartyOn(request, SVC.verification, FIX.workerA, "GET",
+    `/v1/presentations?subjectRef=${encodeURIComponent(FIX.workerA)}`);
+  expect(trail.status(), "the worker reads their own trail").toBe(200);
+  const named = ((await trail.json()).presentations || []).filter(p => p.requesterName === "Joseph Mwangi" && p.scope === "pass");
+  expect(named.length, "the pass-holder's check is in the worker's trail with the name on it").toBeGreaterThan(0);
 
   // Static + institutional routes all render.
   for (const r of ["#/v1_1", "#/v2_1", "#/v2_2", "#/v2_3", "#/person", "#/w6_1", "#/w6_2"]) {

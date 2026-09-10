@@ -27,15 +27,22 @@ type Caller struct {
 	Token          string
 	OnBehalfOf     string
 	IdempotencyKey string
+	// Pass is a verifier pass token (#27, G1 #9): a stranger checking
+	// credentials without an account. Carried on its own header, never as a
+	// bearer token, because it is deliberately not a signed-in caller.
+	Pass string
 }
 
 func (c Caller) header() http.Header {
-	if c.Token == "" && c.OnBehalfOf == "" {
+	if c.Token == "" && c.OnBehalfOf == "" && c.Pass == "" {
 		return nil
 	}
 	h := http.Header{}
 	if c.Token != "" {
 		h.Set("Authorization", "Bearer "+c.Token)
+	}
+	if c.Pass != "" {
+		h.Set("X-CREST-Verifier-Pass", c.Pass)
 	}
 	if c.OnBehalfOf != "" {
 		h.Set(identity.HeaderOnBehalfOf, c.OnBehalfOf)

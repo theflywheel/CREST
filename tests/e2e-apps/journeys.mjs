@@ -398,10 +398,14 @@ const J9 = async (p, cap) => {
   await go(p, V, 2200);
   await hash(p, "#/v1_1", 1800);
   await cap("J9 · A verifier arrives — identified, not onboarded (v1_1)",
-    "Honest gap: pass issuance has no endpoint yet; the check itself needs no account at all.");
-  await pause(p, 4000);
-  await hash(p, "#/v1_2", 1800);
-  await cap("The check itself (v1_2)", "Load a real credential and verify its signature — no permission from CREST needed. The camera/QR scan UX is the named gap; the verification is real.");
+    "A pass is a name and a contact, no account, no vetting (J9 L1). It grants nothing and costs one thing: every online check is on the record against it, and the worker sees the name.");
+  await p.locator("#passform input").nth(0).fill("Joseph Mwangi");
+  await p.locator("#passform input").nth(1).fill("+254700000412");
+  await p.locator("#passform input").nth(2).fill("Hiring for a private clinic");
+  await p.locator("#passform button.btn").first().click();
+  await p.waitForURL(/v1_2/, { timeout: 20000 });
+  await pause(p, 3000);
+  await cap("The check itself (v1_2)", "Load a real credential and verify its signature — recorded against the pass, and capped per pass (G1 #9). The camera/QR scan UX is the named gap; the verification is real.");
   await pause(p, 3000);
   await p.fill("#verifyform input >> nth=0", FIXWORKER);
   await p.click("#loadsample");

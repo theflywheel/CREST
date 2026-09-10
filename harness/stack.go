@@ -249,18 +249,26 @@ func (svc *Service) StatusRaw(ctx context.Context, method, path, contentType str
 // for the endpoints where a 404 or a 409 is the designed answer rather than a
 // failure — resolve returning a hold, for instance.
 func (svc *Service) Status(ctx context.Context, method, path string, in any) (int, []byte, error) {
+	code, body, _, err := svc.StatusWithHeaders(ctx, method, path, in)
+	return code, body, err
+}
+
+// StatusWithHeaders is Status with the response headers, for the assertions
+// that are about what rode alongside the body — a rate-cap remainder, a
+// Retry-After.
+func (svc *Service) StatusWithHeaders(ctx context.Context, method, path string, in any) (int, []byte, http.Header, error) {
 	var body []byte
 	if in != nil {
 		var err error
 		body, err = json.Marshal(in)
 		if err != nil {
-			return 0, nil, err
+			return 0, nil, nil, err
 		}
 	}
 	path, body = svc.resolveRequest(path, body)
 	req, err := http.NewRequestWithContext(ctx, method, svc.Base+path, bytes.NewReader(body))
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -268,11 +276,11 @@ func (svc *Service) Status(ctx context.Context, method, path string, in any) (in
 	svc.apply(req)
 	resp, err := svc.http.Do(req)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(resp.Body)
-	return resp.StatusCode, raw, err
+	return resp.StatusCode, raw, resp.Header, err
 }
 
 func (svc *Service) do(ctx context.Context, method, path, contentType string, body []byte, out any) error {

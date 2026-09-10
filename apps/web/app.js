@@ -6,7 +6,7 @@
 // cannot serve yet, the face says so and names the issue — a visible "not
 // yet" rather than a silent gap.
 
-import { api, ApiError, loginAs, actingFor, setSession } from "./api.js";
+import { api, ApiError, loginAs, actingFor, setSession, setPass } from "./api.js";
 
 const FIX = {
   org:        "did:crest:party:01JCREST000000000000000RGN",
@@ -405,11 +405,13 @@ async function projectSources(){
 /* ————— verifier face ————— */
 function verifierCheck(){
   return Promise.resolve(`<h2>Scan or enter the credential</h2>
-    <p class="lede">A bare check needs no account and no consent beyond the showing itself. The verdict tells you what you can check without CREST, what you are trusting, and what a green result does <em>not</em> establish.</p>
+    <p class="lede">An online check names who is asking (G1 #9): a verifier pass — your name and a contact, no account, no vetting — or a signed-in party. The verdict tells you what you can check without CREST, what you are trusting, and what a green result does <em>not</em> establish.</p>
     <div class="card"><form class="stack" id="verifyform" style="max-width:none">
       <div class="row"><input name="sampleparty" placeholder="…or borrow one: worker party id" size="34"><button type="button" class="btn small" id="loadsample">Load their newest credential</button></div>
       <label>The credential (JSON, as scanned)<textarea name="cred" rows="8" placeholder='{"@context": …}' required></textarea></label>
-      <div class="row"><input name="who" placeholder="who is asking (party id, optional)" size="30"><input name="why" placeholder="why (optional — recorded for the worker)" size="30"></div>
+      <div class="row"><input name="passname" placeholder="your name (goes on the worker's trail)" size="30" value="${esc(S.pass?.name||"")}"><input name="passcontact" placeholder="your email or phone (kept, never shown)" size="30"></div>
+      <div class="row"><input name="who" placeholder="or: who is asking (party id, if signed in)" size="30"><input name="why" placeholder="why (recorded for the worker)" size="30"></div>
+      ${S.pass?`<p class="note">Checking as <b>${esc(S.pass.name)}</b> · pass <code>${esc(short(S.pass.id))}</code>.</p>`:`<p class="note">No pass yet — one is issued from the name and contact above when you check.</p>`}
       <button class="btn primary">Check it</button>
     </form><div id="verdict"></div></div>`);
 }
@@ -596,6 +598,12 @@ function bindShell(){
   const vf=document.getElementById("verifyform");
   vf && vf.addEventListener("submit",async ev=>{ ev.preventDefault(); clearErr();
     try{ const cred=JSON.parse(vf.cred.value);
+      // A stranger gets a pass first (#27): name + contact, no account. A
+      // signed-in party names itself instead and needs no pass.
+      if(!vf.who.value && !S.pass && vf.passname.value){
+        const out=await api.post("verification","/v1/verifier-passes",{name:vf.passname.value, contact:vf.passcontact.value});
+        S.pass={id:out.pass.id, name:out.pass.name}; setPass(out.token);
+      }
       const v=await api.post("verification","/v1/verify",{credential:cred, requestedByPartyId:vf.who.value||undefined, purpose:vf.why.value||undefined});
       document.getElementById("verdict").innerHTML=renderVerdict(v);
     }catch(err){ fail(err); }});

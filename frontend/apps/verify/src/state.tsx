@@ -2,7 +2,7 @@
 // ported 1:1 from apps/verify/app.js: the last verdict, the credential it
 // was computed for, and whether the institutional session is held.
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { api, ApiError, setSession, startEsignetLogin, whoAmI } from "@crest/api";
+import { api, ApiError, setPass, setSession, startEsignetLogin, whoAmI } from "@crest/api";
 import { readIssuerTrust, refreshIssuerTrust, verifyOffline } from "./offline";
 
 export type Verdict = {
@@ -36,6 +36,20 @@ export type WorkEvent = {
   evidenceFields?: string[];
 };
 
+// A verifier pass (#27, G1 #9): a name and a contact, no account, no vetting.
+// The token is what the deployment handed back once; it rides every online
+// check so the worker sees the name on it.
+export type Pass = { id: string; name: string; token: string; purpose: string; issuedAt?: string };
+const PASS_KEY = "crest.verify.pass";
+const readPass = (): Pass | null => {
+  try {
+    const raw = sessionStorage.getItem(PASS_KEY);
+    return raw ? (JSON.parse(raw) as Pass) : null;
+  } catch {
+    return null;
+  }
+};
+
 type State = {
   err: string | null;
   fail: (e: unknown) => void;
@@ -43,6 +57,9 @@ type State = {
   verdict: Verdict | null;
   credential: Credential | null;
   verifiedAs: string | null; // null = bare check; otherwise the actual caller
+  pass: Pass | null;
+  getPass: (name: string, contact: string, purpose: string) => Promise<Pass>;
+  dropPass: () => void;
   runVerify: (credential: Credential, requestedByPartyId?: string, purpose?: string) => Promise<Verdict>;
   runOfflineVerify: (credential: Credential) => Promise<Verdict>;
   refreshOfflineTrust: () => Promise<void>;
@@ -71,18 +88,48 @@ export function VerifyProvider(props: { children: ReactNode }) {
   const [orgSession, setOrgSession] = useState(false);
   const [orgParty, setOrgParty] = useState<Record<string, string> | null>(null);
   const [orgPartyErr, setOrgPartyErr] = useState<string | null>(null);
+  const [pass, setPassState] = useState<Pass | null>(() => {
+    const held = readPass();
+    if (held) setPass(held.token);
+    return held;
+  });
 
   const fail = (e: unknown) => setErr(errText(e));
 
+  const getPass = async (name: string, contact: string, purpose: string) => {
+    const out = await api.post("verification", "/v1/verifier-passes", { name, contact });
+    const held: Pass = { id: out.pass.id, name: out.pass.name, token: out.token, purpose, issuedAt: out.pass.issuedAt };
+    try {
+      sessionStorage.setItem(PASS_KEY, JSON.stringify(held));
+    } catch {
+      /* a browser that keeps nothing still gets this session */
+    }
+    setPass(held.token);
+    setPassState(held);
+    return held;
+  };
+
+  const dropPass = () => {
+    try {
+      sessionStorage.removeItem(PASS_KEY);
+    } catch {
+      /* nothing held */
+    }
+    setPass(null);
+    setPassState(null);
+  };
+
   const runVerify = async (cred: Credential, requestedByPartyId?: string, purpose?: string) => {
+    // A pass rides the header (see @crest/api); a party is named in the body.
+    // Nobody at all is refused by the service (G1 #9), and the screen says so.
     const v: Verdict = await api.post("verification", "/v1/verify", {
       credential: cred,
       requestedByPartyId: requestedByPartyId || undefined,
-      purpose: purpose || undefined,
+      purpose: purpose || (pass && !requestedByPartyId ? pass.purpose : undefined) || undefined,
     });
     setVerdict(v);
     setCredential(cred);
-    setVerifiedAs(requestedByPartyId || null);
+    setVerifiedAs(requestedByPartyId || (pass ? pass.id : null));
     return v;
   };
 
@@ -162,6 +209,9 @@ export function VerifyProvider(props: { children: ReactNode }) {
         verdict,
         credential,
         verifiedAs,
+        pass,
+        getPass,
+        dropPass,
         runVerify,
         runOfflineVerify,
         refreshOfflineTrust,

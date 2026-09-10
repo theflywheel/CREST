@@ -24,8 +24,11 @@ const defaults = {
 };
 export const services = Object.assign({}, defaults, window.CREST_SERVICES || {});
 
-let token = null, onBehalfOf = null;
+let token = null, onBehalfOf = null, pass = null;
 export function setSession(t, behalf) { token = t; onBehalfOf = behalf || null; }
+// A verifier pass (#27, G1 #9): a stranger's name on their checks, on its own
+// header because it is deliberately not a signed-in caller.
+export function setPass(t) { pass = t || null; }
 export function actingFor(partyId) { onBehalfOf = partyId || null; }
 
 class ApiError extends Error {
@@ -40,6 +43,7 @@ async function call(service, method, path, body, contentType) {
   const headers = {};
   if (token) headers["Authorization"] = "Bearer " + token;
   if (onBehalfOf) headers["X-CREST-On-Behalf-Of"] = onBehalfOf;
+  if (pass && !token) headers["X-CREST-Verifier-Pass"] = pass;
   let payload;
   if (body !== undefined && body !== null) {
     headers["Content-Type"] = contentType || "application/json";
