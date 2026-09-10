@@ -56,3 +56,4 @@ demos/
 docs/assets/*
 !docs/assets/crest-development-validation/
 !docs/assets/journey-gap-assessment/
+infra/certify/plugin/target/

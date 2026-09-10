@@ -1,0 +1,8 @@
+# The Certify door (#203): a pure nginx reverse proxy that serves Certify's
+# OpenID4VCI metadata at the advertised issuer, so a wallet other than Inji's
+# can discover it. Fronts crest-certify the way crest-esignet-ui fronts eSignet.
+FROM nginx:1.27-alpine
+COPY infra/certify/door-nginx.conf /etc/nginx/nginx.conf
+COPY --chmod=0755 infra/certify/certify-door-start.sh /certify-door-start.sh
+EXPOSE 8080
+ENTRYPOINT ["/bin/sh", "/certify-door-start.sh"]

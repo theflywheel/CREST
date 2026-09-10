@@ -306,7 +306,10 @@ services:
       dockerfile: infra/compose/Dockerfile.certify
       args:
         INJI_CERTIFY_IMAGE: ${INJI_CERTIFY_IMAGE:-mosipid/inji-certify-with-plugins:0.14.0}
-    ports: ["${CERTIFY_PORT:-58090}:8090"]
+    # No published port: the Certify door in front of it owns the advertised
+    # host (#203). Reached over the compose network by the door and by
+    # anything server-side; the browser and wallets go through the door.
+    expose: ["8090"]
     environment:
       # did:web maps host and path. Certify serves its own DID document at
       # ${CERTIFY_DOMAIN_URL}/v1/certify/.well-known/did.json, so the issuer
@@ -347,6 +350,21 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    profiles: ["substrate", "full"]
+
+  # The Certify door (#203, P0 C11): serves Certify's OpenID4VCI metadata at
+  # the advertised issuer so any wallet — not just Inji's — can discover it.
+  # It owns the published host; Certify is internal. Fronts Certify the way
+  # esignet-ui fronts eSignet.
+  certify-door:
+    build:
+      context: ../..
+      dockerfile: infra/compose/Dockerfile.certify-door
+    ports: ["${CERTIFY_PORT:-58090}:8080"]
+    environment:
+      CERTIFY_UPSTREAM: http://inji-certify:8090
+    depends_on:
+      - inji-certify
     profiles: ["substrate", "full"]
 
   # Inji Verify is two containers upstream, not one (P0 finding, #1). The tag we
