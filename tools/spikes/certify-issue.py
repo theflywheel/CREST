@@ -185,7 +185,14 @@ def main():
     print(f"certify  {CERTIFY}\nesignet  {ESIGNET}\n")
 
     # 1 ── what the issuer says it will do
-    wk = get_json(f"{CERTIFY}/v1/certify/.well-known/openid-credential-issuer")
+    #
+    # Discovered the way a conformant OpenID4VCI wallet does it (#203): append
+    # /.well-known/openid-credential-issuer to the advertised issuer, not to the
+    # servlet path. Before the Certify door this 404'd — only Inji worked,
+    # because CREST had written the servlet path into its wallet config.
+    wk = get_json(f"{CERTIFY}/.well-known/openid-credential-issuer")
+    check(wk.get("credential_issuer", "").rstrip("/") == CERTIFY.rstrip("/"),
+          "the metadata is served at the issuer it advertises (a wallet can discover it)")
     configs = wk.get("credential_configurations_supported", {})
     check("WorkEventCredential" in configs, "Certify advertises a WorkEventCredential")
     cfg = configs.get("WorkEventCredential", {})

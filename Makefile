@@ -325,11 +325,16 @@ verify-deployed: ## Check every deployed fleet member answers, and verify the lo
 	@# Certify advertises the credential, its DID resolves, Mimoto offers it
 	@# to the wallet, and Inji Verify answers. The full authenticated loop is
 	@# `make certify-issue`; this sweep proves every fixed surface of it.
-	@curl -fsS --max-time 10 $(CERTIFY_URL)/v1/certify/.well-known/openid-credential-issuer \
+	@# Discovered at the advertised issuer, the way a conformant wallet does it
+	@# (#203, the Certify door), not at the servlet path Inji happens to know.
+	@curl -fsS --max-time 10 $(CERTIFY_URL)/.well-known/openid-credential-issuer \
 		| python3 -c "import json,sys; d=json.load(sys.stdin); \
-		  sys.exit(0) if 'WorkEventCredential' in d.get('credential_configurations_supported',{}) \
-		  else sys.exit('Certify no longer advertises the WorkEventCredential')"
-	@echo "certify advertises the WorkEventCredential"
+		  sys.exit('Certify no longer advertises the WorkEventCredential') \
+		    if 'WorkEventCredential' not in d.get('credential_configurations_supported',{}) \
+		  else sys.exit('metadata is not served at the issuer it advertises (#203)') \
+		    if d.get('credential_issuer','').rstrip('/') != '$(CERTIFY_URL)'.rstrip('/') \
+		  else None"
+	@echo "certify advertises the WorkEventCredential at its advertised issuer"
 	@curl -fsS --max-time 10 -o /dev/null $(CERTIFY_URL)/v1/certify/.well-known/did.json && echo "issuer DID resolves"
 	@curl -fsS --max-time 10 https://crest-mimoto-production.up.railway.app/v1/mimoto/issuers \
 		| python3 -c "import json,sys; d=json.load(sys.stdin); \
