@@ -89,6 +89,8 @@ A payload arriving *without* the field is handled the other way: payments falls 
 
 - `crest-payments` takes `CLOCK_SKEW_ALERT` (default `5m`): how far apart core's supplied instant and payments' arrival clock may be before the disagreement is logged at warn and counted in `crest_window_clock_skew_events`. **That counter is the core↔payments clock-skew detector, and it should read zero.** A deployment whose two processes drift moves every worker's confirmation deadline, and before #221 there was no symptom anywhere. Note that a genuinely delayed delivery — an outbox retry through an outage — also raises it, because one message cannot tell the two apart; the log line names both instants so a person can.
 
+**A credential that verified yesterday must verify today (#232, 2026-09-10).** `crest-core` audits the unrevoked credentials on record at boot against the keys it holds and refuses to start — "credentials on record carry verification methods this deployment holds no key for" — if any names a method it cannot answer. The pre-#207 method id `<ISSUER_ID>#key-1` is always answered under the current key; a deployment whose `#key-1` was a different key, or that rotated `ISSUER_SEED`, lists the old method and its public key in `ISSUER_HISTORICAL_KEYS_JSON` (`{"did:…#key-1":"z6Mk…"}`). The fleet carries that entry for the Sep 5 credentials.
+
 **Checking at volume is capped, and the cap is not optional (G1 #9, 2026-09-10).** `crest-core` reads `CREST_VERIFY_RATE_CAP` (default `100`) and `CREST_VERIFY_RATE_WINDOW` (default `1h`): no requester — a verifier pass or a party — gets more online checks than that in any window, counted from the presentation trail, so the cap survives a restart and a second replica. A non-positive cap or a non-positive window falls back to the default with an error in the log, never to "unlimited". `CREST_VERIFY_BATCH_CAP` (default `100`) bounds one batch's size the same way. Bulk checking needs an active `verify-credentials-bulk` authorization on the requesting party; grant it through the console like any other function, and add it to the programme's Terms permissions first. Every online check names who is asking: a stranger gets a pass at `POST /v1/verifier-passes` with a name and a contact (J9 L1 — no account, no vetting), and the worker sees that name in their trail.
 
 `CLOCK_DRIVEABLE` and `CLOCK_START` no longer exist anywhere in CREST (ruled 2026-09-09) — not as a variable a deployment could set, not as a route a process could serve. Every service reads real time. What a deployment configures instead is durations, and `pkg/service`'s deployment refusal rejects any of them that is not a positive duration: `CONFIRMATION_WINDOW` (the programme's window, `168h` for the CHW programme), `SWEEP_EVERY`, `SOURCE_MONITOR_EVERY`, `CLOCK_SKEW_ALERT`, `HELD_RETRY_EVERY`, `OUTBOX_RETRY_EVERY`, `CREST_RECOVERY_OVERRIDE_REVIEW`, `CREST_INVITE_TTL`, `CREST_PRESENTATION_REQUEST_TTL`, `CREST_BINDING_CACHE_TTL`. A window of zero is not a short window; it is a worker with no chance to object at all, which is why it is refused at start-up rather than discovered afterwards.
@@ -342,13 +344,20 @@ cannot arrive through a door, and stand-up writes it (Blueprint §15 G-1,
 "the first screen anyone ever sees" is deploy-time):
 
 ```sh
-DATABASE_URL=<the core database> go run ./tools/bootstrap-operator \
+CREST_INSTANCE_ID=<this deployment's id> DATABASE_URL=<the core database> \
+    go run ./tools/bootstrap-operator \
     -name "CREST production operator" -email ops@example.org \
     -door https://crest-console-production.up.railway.app
 ```
 
 It prints the operator's party id, a one-time claim code, and the console
-link that carries it. Set `CREST_OPERATOR_PARTY_ID` to the id and redeploy
+link that carries it. It also records the deploy-time approval (the same
+`instance_setup` and APPROVED registration rows first-run setup writes, which
+is why it needs `CREST_INSTANCE_ID`): without that record the operator is an
+organisation of the right shape and no authority, and cannot grant anything
+(found on the fleet 2026-09-10). A deployment stood up before that fix gets
+the record written at core's next boot, with a warning in the log, and its
+operator organisation published to the registry the same way. Set `CREST_OPERATOR_PARTY_ID` to the id and redeploy
 `crest-core`; then open the link and sign in with eSignet. That first login
 claims the operator's record — the same append-only identity binding as any
 other, put in front of an invitation instead of the bare first-login

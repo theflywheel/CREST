@@ -1,6 +1,7 @@
 package parties
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -82,15 +83,8 @@ func (h *handlers) setupInstance(w http.ResponseWriter, r *http.Request) {
 		if err := insertParty(r.Context(), tx, p); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(r.Context(), `INSERT INTO instance_setup (instance_id,operator_party_id,administrator_subject,administrator_issuer,completed_at) VALUES ($1,$2,$3,$4,$5)`, inst.ID, p.ID, caller.Subject, caller.Issuer, now); err != nil {
-			return err
-		}
-		// The configured administrator has no Party by design: setup is the
-		// authenticated deployment trust-root decision, not a fabricated second
-		// person. The private instance_setup row is the decision record. The
-		// registration's self pointer is accepted only when this FK links it to
-		// that record; ordinary registry approvals retain non-self approval.
-		if _, err := tx.Exec(r.Context(), `INSERT INTO org_registrations (party_id,state,decided_by,decided_at,reason,applied_at,decision_source,setup_instance_id) VALUES ($1,'APPROVED',$1,$2,'Instance operator established by the configured administrator',$2,'INSTANCE_SETUP',$3)`, p.ID, now, inst.ID); err != nil {
+		if err := recordOperatorSetup(r.Context(), tx, inst.ID, p.ID, caller.Subject, caller.Issuer,
+			"Instance operator established by the configured administrator", now); err != nil {
 			return err
 		}
 		return enqueueFact(r.Context(), tx, "organisation", p.ID, 1)
@@ -107,4 +101,30 @@ func (h *handlers) setupInstance(w http.ResponseWriter, r *http.Request) {
 		h.d.ForgetSubject(caller.Subject)
 	}
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"party": p, "instance": inst, "initialized": true})
+}
+
+// recordOperatorSetup is the deployment's trust-root decision, written down:
+// the instance_setup row names who stood the operator up, and the operator's
+// registration is APPROVED by that record rather than by a second person.
+//
+// The configured administrator has no Party by design — setup is the
+// authenticated deployment trust-root decision, not a fabricated second
+// person. The registration's self pointer is accepted only when its FK links
+// it to the setup record; ordinary registry approvals retain non-self
+// approval (migration 0022). Without this row an operator is an organisation
+// of the right shape and no authority at all: it can publish terms and approve
+// applicants, but createAuthorization refuses every grant it tries to make,
+// including the attest-work ones a credential's chain is walked up to.
+func recordOperatorSetup(ctx context.Context, tx store.Querier, instanceID, operatorID, adminSubject, adminIssuer, reason string, at time.Time) error {
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO instance_setup (instance_id, operator_party_id, administrator_subject, administrator_issuer, completed_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (instance_id) DO NOTHING`, instanceID, operatorID, adminSubject, adminIssuer, at); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, `
+		INSERT INTO org_registrations (party_id, state, decided_by, decided_at, reason, applied_at, decision_source, setup_instance_id)
+		VALUES ($1, 'APPROVED', $1, $2, $3, $2, 'INSTANCE_SETUP', $4)
+		ON CONFLICT (party_id) DO NOTHING`, operatorID, at, reason, instanceID)
+	return err
 }
