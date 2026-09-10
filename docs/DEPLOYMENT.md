@@ -218,6 +218,12 @@ honest state; see the note the verifier demo carries.
 
 The node's **verifier** key is public and meant to be: `./tools/spikes/dedi-verifier-key.py <url>` derives it and cross-checks that the key the node advertises is the key that actually signed the current checkpoint.
 
+### OpenID4VP on Railway (#27 — verifier side proven 2026-09-10)
+
+`crest-verify-ui` carries `VP_SUBMISSION_SUPPORTED=true`, so its "VP Verification" tab creates a request against `crest-verify` (`POST /v1/verify/vp-request`, client id `did:web:crest-verify-production.up.railway.app:v1:verify`), shows a QR of `openid4vp://authorize?client_id=…&request_uri=…`, and polls `/vp-request/{id}/status`. The request object behind the `request_uri` is a JWT signed EdDSA with the CREST-held verify key (`…:verify#key-0`, #65) naming `response_uri https://crest-verify-production.up.railway.app/v1/verify/vp-submission/direct-post`, `response_mode direct_post`, and the presentation definition from `infra/verify/config.json` (`ldp_vc`, `DataIntegrityProof`, type `WorkEventCredential`). A wallet posting an `ldp_vp` holding a Certify-issued Work Event credential gets `200 {"redirect_uri":…}`, the UI's poll flips to `VP_SUBMITTED`, `/vp-result/{txn}` reports the credential valid, and the screen reads "Congratulations, the given credential is valid!" with the credential's fields. `make openid4vp-present REQUEST=… CRED=…` is that wallet; the walk was done against a live UI request on 2026-09-10 with the credential Certify issued the day before.
+
+**The wallet in that walk is a script, not Inji Web.** The deployed Inji Web 0.15.0 has the wallet-side flow, but it talks to Mimoto routes (`/wallets/{id}/presentations/…`, `/wallets/{id}/verifiers/…`) that exist from Mimoto 0.20.0, and `crest-mimoto` is pinned at 0.19.2 with the PDF patch. Upstream's Inji Web 0.15.0 compose ships `mosipid/mimoto:0.20.0`. That upgrade, and a `mimoto-trusted-verifiers.json` naming the verify service's DID client id and `…/vp-submission/direct-post` (the current file names the UI origin and a `vp-direct-post` path the request object never carries), is [#230](https://github.com/theflywheel/CREST/issues/230).
+
 ## What is not set up
 
 Being explicit, so none of this is mistaken for done:

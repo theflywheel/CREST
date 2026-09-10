@@ -14,7 +14,7 @@ GO ?= go
 
 .PHONY: help build test test-all test-unit test-contract test-e2e test-invariants \
         lint fmt structure substrate-up substrate-down harness-up harness-down \
-        harness-logs verify-deploy web-up apps-build apps-dev apps-up e2e-apps clean todo poc poc-batch poc-dhis2 dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed \
+        harness-logs verify-deploy web-up apps-build apps-dev apps-up e2e-apps clean todo poc poc-batch poc-dhis2 dedi-image dedi-keys spike-dedi certify-bind certify-issue printed-card offline-verify-sealed openid4vp-present \
         spike-dedi-deployed spike-esignet deploy-demo verify-deployed verify-registry verify-keystore hooks generate generate-check \
         e2e-up e2e-run e2e-reset journey-spec journey-spec-check fidelity fidelity-check fidelity-sheet
 
@@ -450,6 +450,10 @@ offline-verify-sealed: ## The above's last step in a container with no network a
 	@CGO_ENABLED=0 GOOS=linux $(GO) build -o tools/spikes/card/offlineverify ./tools/spikes/offlineverify
 	docker run --rm --network none -v "$(PWD)/tools/spikes/card":/c -w /c alpine:3.20 \
 		./offlineverify decoded.json issuer-did.json
+
+openid4vp-present: ## Present a WorkEventCredential to a live Inji Verify VP request as the wallet (#27)
+	@test -n "$(REQUEST)" -a -n "$(CRED)" || { echo "usage: make openid4vp-present REQUEST=req_… CRED=path/to/credential.json [TXN=txn_…]"; exit 1; }
+	@VERIFY_URL=$(VERIFY_URL) python3 tools/openid4vp/present.py "$(REQUEST)" "$(CRED)" $(TXN)
 
 certify-issue: ## Issue a WorkEventCredential over OpenID4VCI and verify it (#1)
 	@CERTIFY=$(CERTIFY_URL) ESIGNET=$(CERTIFY_ESIGNET) MOCK_IDENTITY=$(CERTIFY_MOCK_IDENTITY) \
