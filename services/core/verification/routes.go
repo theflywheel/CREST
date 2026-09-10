@@ -55,6 +55,21 @@ func routes(mux *http.ServeMux, d service.Deps) {
 		panic(err)
 	}
 	d.Log.Info("issuer ready", "issuer", issuer.ID(), "key", issuer.PublicKeyMultibase())
+	// Every credential on record must still be answerable (#232). A key that
+	// was renamed or rotated without its old name carried forward turns every
+	// credential issued under it into "not valid" with no revocation anywhere
+	// — the failure the status list exists to make impossible. Refused at
+	// start-up, naming the methods, rather than discovered by a verifier.
+	if unanswered, err := methodsWithoutAKey(context.Background(), d.DB.Q(), issuer.ID(), issuerKeys); err != nil {
+		d.Log.Error("could not audit the credentials on record against the issuer keys", "error", err)
+		panic(err)
+	} else if len(unanswered) > 0 {
+		err := fmt.Errorf("credentials on record carry verification methods this deployment holds no key for: %s; "+
+			"add each to ISSUER_HISTORICAL_KEYS_JSON with the public key it was signed under, or revoke them",
+			strings.Join(unanswered, ", "))
+		d.Log.Error("deployment configuration refused", "error", err)
+		panic(err)
+	}
 
 	h := &handlers{
 		d:              d,
@@ -148,8 +163,19 @@ type trustedIssuer struct {
 	DeDi     string `json:"dedi"`
 }
 
+// legacyVerificationMethod is the id every credential carried before #207
+// derived the id from the key itself: the issuer's DID and "#key-1". A key
+// that did not rotate but was renamed is the same key, and a verifier that
+// forgot the old name would refuse every credential issued under it (#232).
+// The alias points at the current key; a deployment whose "#key-1" really was
+// a different key says so in ISSUER_HISTORICAL_KEYS_JSON, which wins below.
+func legacyVerificationMethod(issuerID string) string { return issuerID + "#key-1" }
+
 func loadIssuerKeys(current *credential.Issuer) (map[string]string, error) {
-	keys := map[string]string{current.VerificationMethod(): current.PublicKeyMultibase()}
+	keys := map[string]string{
+		current.VerificationMethod():           current.PublicKeyMultibase(),
+		legacyVerificationMethod(current.ID()): current.PublicKeyMultibase(),
+	}
 	raw := config.Str("ISSUER_HISTORICAL_KEYS_JSON", "")
 	if raw == "" {
 		return keys, nil
@@ -1309,4 +1335,41 @@ func nullable(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// methodsWithoutAKey lists the verification methods that unrevoked credentials
+// on record carry and the issuer's key set does not answer for.
+func methodsWithoutAKey(ctx context.Context, q store.Querier, issuerID string, keys map[string]string) ([]string, error) {
+	rows, err := q.Query(ctx, `
+		SELECT DISTINCT doc->'proof'->>'verificationMethod'
+		FROM credentials
+		WHERE doc->>'issuer' = $1 AND revoked_at IS NULL
+		ORDER BY 1`, issuerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	methods, err := store.Collect(rows, func(r store.Row) (string, error) {
+		var m *string
+		if err := r.Scan(&m); err != nil {
+			return "", err
+		}
+		if m == nil {
+			return "", nil
+		}
+		return *m, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	var unanswered []string
+	for _, m := range methods {
+		if m == "" {
+			continue
+		}
+		if _, ok := keys[m]; !ok {
+			unanswered = append(unanswered, m)
+		}
+	}
+	return unanswered, nil
 }
