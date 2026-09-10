@@ -39,6 +39,12 @@ const (
 	WorkerBID = "did:crest:party:01JCREST00000000000000WRKB"
 	WorkerCID = "did:crest:party:01JCREST00000000000000WRKC"
 
+	// The organisation's own authorizations at the two scopes §2 collapsed
+	// Qualification and ProjectGrant into: the chain a verifier walks up from
+	// a credential's issuerAuthority (#16, #27).
+	OrgQualificationID = "crest:authorization:01JCREST00000000000000QSCP"
+	OrgGrantID         = "crest:authorization:01JCREST00000000000000CSCP"
+
 	ProjectID      = "crest:context:01JCREST00000000000000PRJC"
 	DefinitionID   = "crest:definition:01JCREST00000000000000DEFN"
 	TermsID        = "crest:terms:01JCREST00000000000000TERM"
