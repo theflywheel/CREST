@@ -74,6 +74,15 @@ func (h *handlers) verifyBatch(w http.ResponseWriter, r *http.Request) {
 	if !httpx.ReadJSON(w, r, &req) {
 		return
 	}
+	// A pass never batches (G1 #9): "if you need more than yes-or-no, your
+	// organisation has to be onboarded". Said first, so a pass-holder is told
+	// the rule rather than asked for a party they do not have.
+	if r.Header.Get(HeaderPass) != "" {
+		httpx.WriteError(w, http.StatusForbidden, "pass_cannot_batch",
+			"a verifier pass checks one credential at a time; checking many is a scope an onboarded "+
+				"organisation holds under a %s authorization", FunctionVerifyBulk)
+		return
+	}
 	if n := utf8.RuneCountInString(req.Purpose); n < purposeMinChars || n > purposeMaxChars {
 		httpx.WriteError(w, http.StatusBadRequest, "purpose_required",
 			"a batch check must say what it is for, in %d-%d characters a worker can read "+
@@ -89,6 +98,9 @@ func (h *handlers) verifyBatch(w http.ResponseWriter, r *http.Request) {
 	if !authorizeParty(w, r, h.d, req.RequestedByPartyID) {
 		return
 	}
+	if !h.bulkAuthorised(w, r, req.RequestedByPartyID) {
+		return
+	}
 	if len(req.Credentials) == 0 {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "no credentials to verify")
 		return
@@ -101,8 +113,13 @@ func (h *handlers) verifyBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	verdicts := make([]Verdict, 0, len(req.Credentials))
 	now := time.Now().UTC()
+	// Every credential in the batch counts against the requester's cap, and
+	// a batch that would cross it is refused whole (see underRateCap).
+	if !h.underRateCap(w, r, requester{ID: req.RequestedByPartyID, Scope: "scoped"}, len(req.Credentials), now) {
+		return
+	}
+	verdicts := make([]Verdict, 0, len(req.Credentials))
 	for _, doc := range req.Credentials {
 		verdict, subjectRef, credID := h.assess1(r.Context(), doc)
 		// One trail entry per worker, unconditionally — including for a

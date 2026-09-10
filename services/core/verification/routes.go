@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/theflywheel/crest/pkg/client"
 	"github.com/theflywheel/crest/pkg/config"
@@ -67,8 +68,13 @@ func routes(mux *http.ServeMux, d service.Deps) {
 		trustedIssuers: trustedIssuers,
 		statusListURL:  config.Str("STATUS_LIST_URL", "http://verification:8080/v1/status-list"),
 	}
+	h.rate = loadRateCap(d.Log)
+	d.Log.Info("verification rate cap", "checks", h.rate.Cap, "window", h.rate.Window)
 	mux.HandleFunc("POST /v1/verify", h.verify)
 	mux.HandleFunc("POST /v1/verify/batch", h.verifyBatch)
+	// The verifier pass (#27, G1 #9): how a stranger stops being anonymous
+	// without being onboarded. See passes.go.
+	mux.HandleFunc("POST /v1/verifier-passes", h.issuePass)
 	mux.HandleFunc("POST /v1/source-assessments", h.assess)
 	mux.HandleFunc("GET /v1/source-assessments", h.assessments)
 	mux.HandleFunc("DELETE /v1/source-assessments/{adapterRef}", h.clearAssessment)
@@ -119,6 +125,9 @@ type handlers struct {
 	issuerKeys     map[string]string
 	trustedIssuers map[string]trustedIssuer
 	statusListURL  string
+
+	// rate is the per-requester cap on online checks (G1 #9). See passes.go.
+	rate rateCap
 }
 
 // trustedIssuer is deployment configuration, never data taken from a
@@ -318,25 +327,35 @@ func (h *handlers) verify(w http.ResponseWriter, r *http.Request) {
 	if !httpx.ReadJSON(w, r, &req) {
 		return
 	}
+	if n := utf8.RuneCountInString(req.Purpose); n > purposeMaxChars {
+		httpx.WriteError(w, http.StatusBadRequest, "purpose_too_long",
+			"a purpose is at most %d characters; the worker reads it in their trail", purposeMaxChars)
+		return
+	}
 	if req.Credential == nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "no credential to verify")
 		return
 	}
 
+	// Who is asking, before anything is assessed: a pass, a named party, or
+	// the signed-in caller. An online check with nobody behind it is refused
+	// (G1 #9) — the offline signature check is the one that needs nobody.
+	who, ok := h.resolveRequester(w, r, req.RequestedByPartyID)
+	if !ok {
+		return
+	}
+	now := time.Now().UTC()
+	if !h.underRateCap(w, r, who, 1, now) {
+		return
+	}
+
 	verdict, subjectRef, credID := h.assess1(r.Context(), req.Credential)
 
-	scope := "bare"
-	if req.RequestedByPartyID != "" || req.Purpose != "" {
-		scope = "scoped"
-		if req.RequestedByPartyID == "" || !authorizeParty(w, r, h.d, req.RequestedByPartyID) {
-			return
-		}
-	}
 	if err := h.record(r.Context(), presentation{
 		ID: id.New("presentation"), CredentialID: credID,
-		SubjectRef: subjectRef, RequestedBy: req.RequestedByPartyID, Purpose: req.Purpose,
-		Scope: scope, Outcome: outcomeOf(verdict), Tier: verdict.Tier,
-		CreatedAt: time.Now().UTC(),
+		SubjectRef: subjectRef, RequestedBy: who.ID, Purpose: req.Purpose,
+		Scope: who.Scope, Outcome: outcomeOf(verdict), Tier: verdict.Tier,
+		CreatedAt: now,
 	}); err != nil {
 		httpx.Fail(w, h.d.Log, "record presentation", err)
 		return
@@ -1231,31 +1250,35 @@ func (h *handlers) presentations(w http.ResponseWriter, r *http.Request) {
 	if !authorizeParty(w, r, h.d, subject) {
 		return
 	}
+	// A pass-holder's name rides along (W8): the worker sees who looked, and
+	// a pass id alone would be an identifier they cannot resolve anywhere.
 	rows, err := h.d.DB.Q().Query(r.Context(), `
-		SELECT id, coalesce(credential_id,''), coalesce(subject_ref,''), coalesce(requested_by,''),
-		       coalesce(purpose,''), scope, outcome, tier, created_at
-		FROM presentations
-		WHERE subject_ref = $1
-		ORDER BY created_at, id`, subject)
+		SELECT p.id, coalesce(p.credential_id,''), coalesce(p.subject_ref,''), coalesce(p.requested_by,''),
+		       coalesce(vp.name,''), coalesce(p.purpose,''), p.scope, p.outcome, p.tier, p.created_at
+		FROM presentations p
+		LEFT JOIN verifier_passes vp ON vp.id = p.requested_by
+		WHERE p.subject_ref = $1
+		ORDER BY p.created_at, p.id`, subject)
 	if err != nil {
 		httpx.Fail(w, h.d.Log, "list presentations", err)
 		return
 	}
 	defer rows.Close()
 	type row struct {
-		ID           string    `json:"id"`
-		CredentialID string    `json:"credentialId"`
-		SubjectRef   string    `json:"subjectRef"`
-		RequestedBy  string    `json:"requestedByPartyId"`
-		Purpose      string    `json:"purpose"`
-		Scope        string    `json:"scope"`
-		Outcome      string    `json:"outcome"`
-		Tier         *int      `json:"tier,omitempty"`
-		CreatedAt    time.Time `json:"createdAt"`
+		ID            string    `json:"id"`
+		CredentialID  string    `json:"credentialId"`
+		SubjectRef    string    `json:"subjectRef"`
+		RequestedBy   string    `json:"requestedByPartyId"`
+		RequesterName string    `json:"requesterName,omitempty"`
+		Purpose       string    `json:"purpose"`
+		Scope         string    `json:"scope"`
+		Outcome       string    `json:"outcome"`
+		Tier          *int      `json:"tier,omitempty"`
+		CreatedAt     time.Time `json:"createdAt"`
 	}
 	out, err := store.Collect(rows, func(r store.Row) (row, error) {
 		var v row
-		return v, r.Scan(&v.ID, &v.CredentialID, &v.SubjectRef, &v.RequestedBy, &v.Purpose,
+		return v, r.Scan(&v.ID, &v.CredentialID, &v.SubjectRef, &v.RequestedBy, &v.RequesterName, &v.Purpose,
 			&v.Scope, &v.Outcome, &v.Tier, &v.CreatedAt)
 	})
 	if err != nil {

@@ -158,7 +158,8 @@ export function Checks() {
           rows={list.map((p) => [
             when(p.createdAt),
             <>
-              {short(p.requestedByPartyId) || "(bare scan)"} · {p.purpose || "no purpose given"} ·{" "}
+              {p.requesterName ? `${p.requesterName} (pass)` : short(p.requestedByPartyId) || "(bare scan)"} ·{" "}
+              {p.purpose || "no purpose given"} ·{" "}
               <Chip sm kind={p.outcome === "valid" ? "ok" : "plain"}>
                 {p.outcome || ""}
               </Chip>
