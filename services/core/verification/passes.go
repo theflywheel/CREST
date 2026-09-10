@@ -226,6 +226,12 @@ var errNoPass = errors.New("no such pass")
 // passFromRequest resolves the pass a request presents, if any. (zero, nil)
 // means no pass header; an unknown or revoked token is an error.
 func (h *handlers) passFromRequest(ctx context.Context, r *http.Request) (verifierPass, bool, error) {
+	return passFromRequest(ctx, h.d.DB.Q(), r)
+}
+
+// passFromRequest is the lookup itself, shared with the share-request handlers:
+// a pass-holder asks a worker to see more the same way an onboarded party does.
+func passFromRequest(ctx context.Context, q store.Querier, r *http.Request) (verifierPass, bool, error) {
 	token := strings.TrimSpace(r.Header.Get(HeaderPass))
 	if token == "" {
 		return verifierPass{}, false, nil
@@ -233,7 +239,7 @@ func (h *handlers) passFromRequest(ctx context.Context, r *http.Request) (verifi
 	want := hashPassToken(token)
 	var p verifierPass
 	var storedHash string
-	err := h.d.DB.Q().QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 		SELECT id, name, contact, token_hash, issued_at, rotated_at
 		FROM verifier_passes WHERE token_hash = $1 AND revoked_at IS NULL`, want).
 		Scan(&p.ID, &p.Name, &p.Contact, &storedHash, &p.IssuedAt, &p.RotatedAt)
@@ -365,3 +371,15 @@ func (h *handlers) bulkAuthorised(w http.ResponseWriter, r *http.Request, partyI
 	}
 	return true
 }
+
+// passNamed reads a pass by id — for the worker's face of a share request,
+// which shows who is asking by name rather than by an id they cannot resolve.
+func passNamed(ctx context.Context, q store.Querier, id string) (verifierPass, error) {
+	var p verifierPass
+	err := q.QueryRow(ctx, `SELECT id, name, contact, issued_at, rotated_at FROM verifier_passes WHERE id = $1`, id).
+		Scan(&p.ID, &p.Name, &p.Contact, &p.IssuedAt, &p.RotatedAt)
+	return p, err
+}
+
+// isPassID says whether a requester id is a pass rather than a party.
+func isPassID(id string) bool { return strings.HasPrefix(id, "crest:pass:") }

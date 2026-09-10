@@ -183,6 +183,11 @@ export function V12() {
           <div className="btn-row">
             <button className="btn">Check it online</button>
             <button type="button" className="btn secondary" onClick={submitOffline}>Check signature offline</button>
+            {s.pass ? (
+              <button type="button" className="btn secondary" onClick={() => nav("/v1_ask")}>
+                Request the check instead
+              </button>
+            ) : null}
           </div>
           <button type="button" className="btn secondary" onClick={refreshTrust}>Refresh trusted issuer keys (online)</button>
           <p className="body-2">Offline checks use only keys refreshed from this deployment. Refresh while online before taking the verifier offline.</p>

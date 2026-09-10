@@ -369,8 +369,12 @@ paths:
       description: >
         §9's disclosure consent as a flow (w1_19): anything beyond the bare QR
         payload requires an explicit, scoped, recorded grant naming who asked
-        and why. The requester is the proven caller; the purpose is 10–200
-        characters because the worker reads it. `credentialIds` narrows the
+        and why. The requester is the proven caller — a party the caller may
+        act as in `requestedByPartyId`, or a verifier pass on the
+        X-CREST-Verifier-Pass header (then `requestedByPartyId` is the pass id
+        and the worker's face carries `requesterName`); naming both is refused
+        (`one_requester`). The purpose is 10–200 characters because the worker
+        reads it. `credentialIds` narrows the
         ask; absent, the whole chain is on the table — either way the worker
         decides against the resolved list, never the raw ask.
       requestBody:

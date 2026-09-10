@@ -279,9 +279,10 @@ func (h *shareHandlers) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The requester is the caller (#102): "who is asking" must be a name that
-	// was proven, or the screen w1_19 exists for shows a fiction.
-	if _, ok := identity.Authorize(w, r, h.d.Log, body.RequestedBy, "",
-		h.d.Authenticating, h.d.Permits); !ok {
+	// was proven, or the screen w1_19 exists for shows a fiction. A verifier
+	// pass is such a name (#27, J9 v1_2 "Request the check"): the worker sees
+	// the pass-holder's name and reason, and decides the same way.
+	if !h.requesterIs(w, r, &body.RequestedBy) {
 		return
 	}
 	req, err := newShareRequest(id.New("share-request"),
@@ -336,6 +337,9 @@ func (h *shareHandlers) partyToThisShare(w http.ResponseWriter, r *http.Request,
 		return true
 	}
 	caller := identity.From(r.Context())
+	if pass, presented, err := passFromRequest(r.Context(), h.d.DB.Q(), r); presented && err == nil && pass.ID == s.RequestedBy {
+		return true
+	}
 	for _, party := range []string{s.SubjectPartyID, s.RequestedBy} {
 		if _, err := identity.Actor(r.Context(), caller, party, "",
 			h.d.Authenticating, h.d.Permits); err == nil {
@@ -364,7 +368,11 @@ func (h *shareHandlers) list(w http.ResponseWriter, r *http.Request) {
 				"parties, never browsed")
 		return
 	}
-	if _, ok := identity.Authorize(w, r, h.d.Log, whose, "",
+	if column == "requested_by" {
+		if !h.requesterIs(w, r, &whose) {
+			return
+		}
+	} else if _, ok := identity.Authorize(w, r, h.d.Log, whose, "",
 		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
@@ -494,8 +502,15 @@ func (h *shareHandlers) collect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The collector is the requester the worker consented to — nobody else,
-	// however authenticated (#102, §9).
-	if _, ok := identity.Authorize(w, r, h.d.Log, req.RequestedBy, "",
+	// however authenticated (#102, §9). A pass collects only what was asked
+	// under that pass; a party collects only its own request.
+	if pass, presented, perr := passFromRequest(r.Context(), h.d.DB.Q(), r); presented {
+		if perr != nil || pass.ID != req.RequestedBy {
+			httpx.WriteError(w, http.StatusForbidden, "not_your_share",
+				"this share request is between its subject and its requester")
+			return
+		}
+	} else if _, ok := identity.Authorize(w, r, h.d.Log, req.RequestedBy, "",
 		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
@@ -574,6 +589,14 @@ func (h *shareHandlers) collect(w http.ResponseWriter, r *http.Request) {
 func (h *shareHandlers) view(ctx context.Context, s shareRequest) map[string]any {
 	now := time.Now().UTC()
 	out := map[string]any{"request": s, "state": s.effectiveState(now)}
+	// A pass-holder asks by name (W8): the worker's face shows who, not an id
+	// they cannot resolve anywhere.
+	if isPassID(s.RequestedBy) {
+		if pass, err := passNamed(ctx, h.d.DB.Q(), s.RequestedBy); err == nil {
+			out["requesterName"] = pass.Name
+			out["requesterKind"] = "pass"
+		}
+	}
 	disclosure, err := h.disclosureList(ctx, s)
 	if err != nil {
 		// The list could not be resolved (the registry is down). Said plainly
@@ -662,4 +685,37 @@ func jsonOrNull(ids []string) (any, error) {
 		return nil, err
 	}
 	return b, nil
+}
+
+// requesterIs resolves who is asking for a share: a verifier pass on its
+// header, or a party the caller may act as. With a pass, *requester is set to
+// the pass id (a body naming a party as well is refused — one asker); without
+// one, the named party must be proven. Writes the refusal and returns false.
+func (h *shareHandlers) requesterIs(w http.ResponseWriter, r *http.Request, requester *string) bool {
+	pass, presented, err := passFromRequest(r.Context(), h.d.DB.Q(), r)
+	switch {
+	case presented && errors.Is(err, errNoPass):
+		httpx.WriteError(w, http.StatusUnauthorized, "invalid_pass",
+			"that verifier pass is not one this deployment issued, or it has been replaced; ask for a new one at POST /v1/verifier-passes")
+		return false
+	case presented && err != nil:
+		httpx.Fail(w, h.d.Log, "read the verifier pass", err)
+		return false
+	case presented:
+		if *requester != "" && *requester != pass.ID {
+			httpx.WriteError(w, http.StatusBadRequest, "one_requester",
+				"a share is asked for by a pass or by a party, not both; drop requestedByPartyId or the pass header")
+			return false
+		}
+		*requester = pass.ID
+		return true
+	}
+	if isPassID(*requester) {
+		// Naming a pass without presenting it is naming somebody else.
+		httpx.WriteError(w, http.StatusUnauthorized, "pass_required",
+			"asking as a verifier pass means presenting it on the %s header", HeaderPass)
+		return false
+	}
+	_, ok := identity.Authorize(w, r, h.d.Log, *requester, "", h.d.Authenticating, h.d.Permits)
+	return ok
 }
