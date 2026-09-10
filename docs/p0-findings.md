@@ -1,10 +1,10 @@
 # P0 findings memo (#4)
 
-Where the substrates differ from what the design assumed. **In progress** — #2 has landed, #1 and #3 are partial. Phase 1 schema decisions stay open until this memo closes.
+Where the substrates differ from what the design assumed. **Landed** — DeDi (#2), Inji (#1) and eSignet (#3) are all spiked and closed, and this memo closed with them (#4). The P0 epic (#34) closed 2026-09-10 against everything except the physical printed-card scan, which is not a substrate question and is carried on #66/#1: a person, a printer and a phone. Phase 1 schema decisions were unblocked by this memo.
 
 Each entry names the blueprint section it touches and the correction it forces. Entries that only cost us operational work are marked as such; entries that change the design are not.
 
-Last updated 2026-08-23.
+Last updated 2026-09-10.
 
 ---
 
@@ -32,7 +32,7 @@ This does not contradict §3, it adds a requirement to it: **CREST's registry in
 
 ---
 
-## Credential substrate — Inji (#1) · Blueprint §5 · **partial**
+## Credential substrate — Inji (#1) · Blueprint §5 · **issuance proven; physical scan on #66**
 
 The image audit is complete and it changed the picture. The issuance demo is not done.
 
