@@ -248,7 +248,7 @@ func (h *handlers) authorityChain(ctx context.Context, issuerID string,
 	walkOne := func(label string, ref *string, want authorizationWant) {
 		if ref == nil {
 			walk.NotEstablished = append(walk.NotEstablished,
-				fmt.Sprintf("that %s held an %s when this work was attested — the credential names none", auth.OrgID, label))
+				fmt.Sprintf("that %s held %s %s when this work was attested — the credential names none", auth.OrgID, article(label), label))
 			return
 		}
 		want.Ref = *ref
@@ -272,12 +272,9 @@ func (h *handlers) authorityChain(ctx context.Context, issuerID string,
 			return
 		}
 		faces = append(faces, face)
-		claim := fmt.Sprintf("%s held an %s when this was attested", auth.OrgID, label)
-		if want.Scope == schema.AuthorizationScopeKindContext {
-			claim = fmt.Sprintf("%s held a %s when this was attested", auth.OrgID, label)
-			if face.Scope.ContextID != nil {
-				claim += " for " + *face.Scope.ContextID
-			}
+		claim := fmt.Sprintf("%s held %s %s when this was attested", auth.OrgID, article(label), label)
+		if want.Scope == schema.AuthorizationScopeKindContext && face.Scope.ContextID != nil {
+			claim += " for " + *face.Scope.ContextID
 		}
 		claim += " (" + *ref + ")"
 		walk.Links = append(walk.Links, reader.factLink(claim, pub))
@@ -358,4 +355,14 @@ func decodeFace(face map[string]any, out any) error {
 		return err
 	}
 	return json.Unmarshal(raw, out)
+}
+
+// article is the indefinite article a label takes, so a sentence about "an
+// instance-wide authorization" and "a context grant" reads as written by
+// someone rather than assembled.
+func article(label string) string {
+	if strings.ContainsAny(label[:1], "aeiouAEIOU") {
+		return "an"
+	}
+	return "a"
 }
