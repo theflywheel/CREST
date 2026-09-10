@@ -75,13 +75,33 @@ func TestTheOperatorIsPublishedByBootstrapAndByBoot(t *testing.T) {
 		ContactRoutes: []schema.PartyContactRoutesItem{{Kind: schema.PartyContactRoutesItemKind("email"), Value: "ops@example.org"}},
 	}
 
-	// The deploy-time act: the bootstrap tool's path.
+	// The deploy-time act: the bootstrap tool's path. It names the instance,
+	// because the approval it records is the instance's decision.
+	t.Setenv("CREST_INSTANCE_ID", "")
+	if _, err := BootstrapOperator(ctx, db, org, time.Hour); err == nil {
+		t.Fatal("bootstrap without an instance id recorded an approval nobody made")
+	}
+	t.Setenv("CREST_INSTANCE_ID", "crest:instance:test")
 	if _, err := BootstrapOperator(ctx, db, org, time.Hour); err != nil {
 		t.Fatal(err)
 	}
 	facts := queuedFacts(t, db)
 	if len(facts) != 1 || facts[0].Kind != "organisation" || facts[0].ID != operator {
 		t.Fatalf("bootstrap did not queue the operator's organisation fact: %+v", facts)
+	}
+	// And it is an APPROVED authority, by the instance's own decision — not
+	// an organisation of the right shape that cannot grant anything.
+	reg, err := getRegistration(ctx, db.Q(), operator)
+	if err != nil || reg.State != stateApproved {
+		t.Fatalf("a bootstrapped operator is not an approved authority: %+v %v", reg, err)
+	}
+	// An operator stood up before the decision was recorded (the fleet,
+	// 2026-09-10): boot writes the decision down.
+	if _, err := db.Q().Exec(ctx, `DELETE FROM org_registrations WHERE party_id = $1`, operator); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Q().Exec(ctx, `DELETE FROM instance_setup WHERE operator_party_id = $1`, operator); err != nil {
+		t.Fatal(err)
 	}
 
 	// Boot: the instance and the operator go together, every time.
@@ -101,6 +121,13 @@ func TestTheOperatorIsPublishedByBootstrapAndByBoot(t *testing.T) {
 	}
 	if kinds["instance:crest:instance:test"] != 1 || kinds["organisation:"+operator] != 2 {
 		t.Fatalf("boot did not queue the instance and the operator: %v", kinds)
+	}
+	if reg, err := getRegistration(ctx, db.Q(), operator); err != nil || reg.State != stateApproved {
+		t.Fatalf("boot did not repair the operator's missing approval: %+v %v", reg, err)
+	}
+	// A second boot changes nothing.
+	if err := publishInstance(ctx, deps); err != nil {
+		t.Fatal(err)
 	}
 
 	// An operator that is not an organisation is refused at boot, not
