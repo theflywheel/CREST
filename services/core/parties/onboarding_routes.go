@@ -601,7 +601,7 @@ func (h *handlers) publication(w http.ResponseWriter, r *http.Request) {
 	kind := r.PathValue("kind")
 	if _, err := registryFor(kind); err != nil {
 		httpx.WriteError(w, http.StatusNotFound, "no_such_kind",
-			"the published kinds are organisation, terms and authorization (§3)")
+			"the published kinds are organisation, terms, authorization, instance and skill (§3)")
 		return
 	}
 	version := 1
@@ -623,7 +623,24 @@ func (h *handlers) publication(w http.ResponseWriter, r *http.Request) {
 		httpx.Fail(w, h.d.Log, "read publication", err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, pub)
+	// The face beside the receipt (#27): what this deployment published, not
+	// only where. A verifier walking the trust chain compares the two — the
+	// face is what the credential's chain must agree with, and the receipt is
+	// where a stranger goes to confirm the face is the one on the log. Public
+	// by construction: it is the exact document that already left for the
+	// registry, so nothing here discloses more than the log does.
+	out := struct {
+		Publication
+		Face map[string]any `json:"face,omitempty"`
+	}{Publication: pub}
+	if face, err := projectFact(r.Context(), h.d,
+		factMessage{Kind: kind, ID: r.PathValue("id"), Version: version}); err == nil {
+		out.Face = face
+	} else {
+		h.d.Log.Warn("a published fact could not be projected for its reader",
+			"kind", kind, "id", r.PathValue("id"), "error", err)
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
 }
 
 // callerIsInstanceOperator says whether the authenticated caller is the

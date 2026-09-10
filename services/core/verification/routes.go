@@ -130,6 +130,13 @@ type trustedIssuer struct {
 	DefinitionURLs []string          `json:"definitionURLs"`
 	StatusList     string            `json:"statusList"`
 	StatusListURLs []string          `json:"statusListURLs"`
+	// Registry is the base URL of the issuing deployment's registry service,
+	// where its publications and self-description are read for the trust-chain
+	// walk (#27). DeDi is its node, so a link can name where to check. Without
+	// Registry the chain above the definition is reported as not established
+	// rather than walked.
+	Registry string `json:"registry"`
+	DeDi     string `json:"dedi"`
 }
 
 func loadIssuerKeys(current *credential.Issuer) (map[string]string, error) {
@@ -169,7 +176,10 @@ func loadTrustedIssuers(current *credential.Issuer, currentKeys map[string]strin
 				return nil, fmt.Errorf("trusted issuer %q has an invalid verification method", issuerID)
 			}
 		}
-		for name, value := range map[string]string{"definitions": item.Definitions, "statusList": item.StatusList} {
+		for name, value := range map[string]string{
+			"definitions": item.Definitions, "statusList": item.StatusList,
+			"registry": item.Registry, "dedi": item.DeDi,
+		} {
 			if value != "" && !trustedResolverURL(value) {
 				return nil, fmt.Errorf("trusted issuer %q has an unsafe %s resolver URL", issuerID, name)
 			}
@@ -183,6 +193,7 @@ func loadTrustedIssuers(current *credential.Issuer, currentKeys map[string]strin
 			merged := trustedIssuer{
 				Keys: currentKeys, Definitions: item.Definitions, DefinitionURLs: item.DefinitionURLs,
 				StatusList: item.StatusList, StatusListURLs: item.StatusListURLs,
+				Registry: item.Registry, DeDi: item.DeDi,
 			}
 			for method, key := range item.Keys {
 				merged.Keys[method] = key
@@ -410,6 +421,18 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 	// that gets published.
 	v.TrustChain = append(v.TrustChain, issuerLink(v.TrustChain, issuerID, def))
 
+	// Above the definition: the organisation the credential says stands behind
+	// it, its authorizations, and the deployment it operates (#27). Every link
+	// the credential names is checked against what the registry published;
+	// one that does not hold makes the verdict not valid, one the credential
+	// did not name is reported as not established. See trustchain.go.
+	walk := h.authorityChain(ctx, issuerID, cred, def)
+	v.TrustChain = append(v.TrustChain, walk.Links...)
+	if len(walk.Broken) > 0 {
+		v.Reasons = append(v.Reasons, walk.Broken...)
+		return v, subjectRef, credID
+	}
+
 	assessment, err := h.assessmentFor(ctx, h.credentialContext(ctx, credID),
 		provenanceSystemRef(cred.CredentialSubject.Provenance), cred.CredentialSubject.Provenance.AdapterRef)
 	if err != nil {
@@ -454,6 +477,7 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 			"a worker's authorization is deliberately not published, because on an "+
 			"append-only log it would be a permanent public record of who works where (#68). "+
 			"This deployment holds that authorization and can attest to it; you cannot check it independently.")
+	v.NotEstablished = append(v.NotEstablished, walk.NotEstablished...)
 	if assurance == schema.IdentityAssuranceIA0 {
 		// Distinct from the above and worth its own sentence: the credential
 		// verifies, and nothing here ties it to a person whose identity was
