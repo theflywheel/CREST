@@ -9,6 +9,7 @@ import (
 
 	"github.com/theflywheel/crest/pkg/config"
 	"github.com/theflywheel/crest/pkg/httpx"
+	"github.com/theflywheel/crest/pkg/schema"
 	"github.com/theflywheel/crest/pkg/service"
 	"github.com/theflywheel/crest/pkg/store"
 )
@@ -148,7 +149,26 @@ func publishInstance(ctx context.Context, d service.Deps) error {
 	// node being reachable and a failed publish is retried rather than lost.
 	// The same reason the rest of §3's publication goes through the outbox.
 	return d.DB.InTx(ctx, func(tx store.Querier) error {
-		return enqueueFact(ctx, tx, "instance", inst.ID, 1)
+		if err := enqueueFact(ctx, tx, "instance", inst.ID, 1); err != nil {
+			return err
+		}
+		// The operator organisation goes with it, every boot. Publication is
+		// idempotent by content, so this is a no-op when the registry already
+		// holds the current face — and the repair when it does not: a
+		// deployment whose operator was stood up before publication existed
+		// (or straight into the schema) otherwise names, on every credential,
+		// an organisation no verifier can resolve.
+		switch p, err := getParty(ctx, tx, inst.OperatorPartyID); {
+		case errors.Is(err, store.ErrNotFound):
+			d.Log.Warn("the configured operator has no party yet; its organisation record is not published",
+				"operator", inst.OperatorPartyID)
+			return nil
+		case err != nil:
+			return err
+		case p.Kind != schema.PartyKindOrganisation:
+			return fmt.Errorf("the configured operator %s is a %s, not an organisation", p.ID, p.Kind)
+		}
+		return enqueueFact(ctx, tx, "organisation", inst.OperatorPartyID, 1)
 	})
 }
 
