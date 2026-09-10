@@ -503,16 +503,15 @@ func (h *shareHandlers) collect(w http.ResponseWriter, r *http.Request) {
 	}
 	// The collector is the requester the worker consented to — nobody else,
 	// however authenticated (#102, §9). A pass collects only what was asked
-	// under that pass.
-	collector := ""
-	if !h.requesterIs(w, r, &collector) {
-		return
-	}
-	if collector != req.RequestedBy {
-		h.d.Log.Info("refused a collect by somebody other than the requester",
-			"share", req.ID, "proved", collector, "requester", req.RequestedBy)
-		httpx.WriteError(w, http.StatusForbidden, "not_your_share",
-			"this share request is between its subject and its requester")
+	// under that pass; a party collects only its own request.
+	if pass, presented, perr := passFromRequest(r.Context(), h.d.DB.Q(), r); presented {
+		if perr != nil || pass.ID != req.RequestedBy {
+			httpx.WriteError(w, http.StatusForbidden, "not_your_share",
+				"this share request is between its subject and its requester")
+			return
+		}
+	} else if _, ok := identity.Authorize(w, r, h.d.Log, req.RequestedBy, "",
+		h.d.Authenticating, h.d.Permits); !ok {
 		return
 	}
 	err = h.d.DB.InTx(r.Context(), func(tx store.Querier) error {
