@@ -19,7 +19,10 @@ RUN git clone --filter=blob:none https://github.com/mosip/mimoto.git /src/mimoto
     && git checkout --detach "${MIMOTO_SOURCE_COMMIT}" \
     && test "$(git rev-parse HEAD)" = "${MIMOTO_SOURCE_COMMIT}"
 COPY infra/mimoto/patches/mimoto-0.20.0-pdf-structured-values.patch /tmp/mimoto-pdf.patch
-RUN --mount=type=cache,id=crest-mimoto-maven,target=/root/.m2 cd /src/mimoto \
+# No BuildKit cache mount: Railway's builder rejects a cache id without its own
+# cacheKey prefix ("dockerfile invalid … missing the cacheKey prefix", 2026-09-10),
+# and a Maven cache that only one builder ever sees saves nothing worth a refused build.
+RUN cd /src/mimoto \
     && git apply --check /tmp/mimoto-pdf.patch \
     && git apply /tmp/mimoto-pdf.patch \
     && mvn -q -B package
