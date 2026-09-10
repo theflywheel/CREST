@@ -20,6 +20,7 @@ const NAV: NavGroup[] = [
       { to: "/v1_1", label: "Get a pass" },
       { to: "/v1_2", label: "Scan or enter" },
       { to: "/v1_3", label: "The answer" },
+      { to: "/v1_ask", label: "Ask to see more" },
     ],
   },
   {
@@ -102,6 +103,7 @@ export function App() {
       <Route path="/v1_1" element={<ConsoleScreen><V11 /></ConsoleScreen>} />
       <Route path="/v1_2" element={<ConsoleScreen><V12 /></ConsoleScreen>} />
       <Route path="/v1_3" element={<ConsoleScreen><V13 /></ConsoleScreen>} />
+      <Route path="/v1_ask" element={<ConsoleScreen><Requests /></ConsoleScreen>} />
       <Route path="/v2_1" element={<ConsoleScreen><V21 /></ConsoleScreen>} />
       <Route path="/v2_2" element={<ConsoleScreen><V22 /></ConsoleScreen>} />
       <Route path="/v2_3" element={<ConsoleScreen><V23 /></ConsoleScreen>} />

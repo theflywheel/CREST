@@ -42,6 +42,8 @@ type ShareView = {
     fulfilledAt?: string;
   };
   state: string;
+  requesterName?: string;
+  requesterKind?: string;
   disclosureList: Disclosed[] | null;
   disclosureListError?: string;
 };
@@ -55,13 +57,18 @@ async function loadShares(me: string): Promise<ShareView[]> {
 
 // The requester's display name, read from the registry — a share decision
 // starts with WHO is asking, and an unresolvable id is said plainly.
-function useRequesterName(partyId?: string): string | null {
+// A pass-holder's name comes with the request itself (the service names the
+// pass); a party's is looked up in the registry.
+function useRequesterName(partyId?: string, given?: string): string | null {
+  const isPass = !!partyId && partyId.startsWith("crest:pass:");
   const out = useLoad(
     async () =>
-      partyId ? api.get("parties", `/v1/parties/${encodeURIComponent(partyId)}`).catch(() => null) : null,
+      partyId && !isPass ? api.get("parties", `/v1/parties/${encodeURIComponent(partyId)}`).catch(() => null) : null,
     [partyId],
   );
-  if (!partyId || out === undefined) return null;
+  if (!partyId) return null;
+  if (given) return given + (isPass ? " (verifier pass)" : "");
+  if (out === undefined) return null;
   return (out && out.displayName) || short(partyId);
 }
 
@@ -116,7 +123,7 @@ export function SharesInbox() {
 }
 
 function ShareRow({ v, pending }: { v: ShareView; pending?: boolean }) {
-  const name = useRequesterName(v.request.requestedByPartyId);
+  const name = useRequesterName(v.request.requestedByPartyId, v.requesterName);
   return (
     <div className="card" data-share={v.request.id}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
@@ -158,7 +165,7 @@ export function ShareDecide() {
     () => api.get("verification", `/v1/presentation-requests/${encodeURIComponent(id)}`).catch(() => null),
     [id, bump],
   );
-  const name = useRequesterName(v?.request?.requestedByPartyId);
+  const name = useRequesterName(v?.request?.requestedByPartyId, v?.requesterName);
   if (v === undefined) return null;
   if (!v)
     return (
@@ -292,7 +299,7 @@ export function ShareSent() {
     api.get("verification", `/v1/presentation-requests/${encodeURIComponent(id)}`).catch(() => null),
   );
   const all = useLoad(() => loadShares(s.me!));
-  const name = useRequesterName(v?.request?.requestedByPartyId);
+  const name = useRequesterName(v?.request?.requestedByPartyId, v?.requesterName);
   if (v === undefined || all === undefined) return null;
   if (!v)
     return (

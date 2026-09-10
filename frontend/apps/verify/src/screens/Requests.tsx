@@ -24,11 +24,18 @@ type ShareView = {
     expiresAt: string;
   };
   state: string;
+  requesterName?: string;
+  requesterKind?: string;
   disclosureList: Array<{ credentialId: string; issuedAt: string; revoked: boolean }> | null;
 };
 
+// Who is asking: the onboarded institution's party on V-2, or the pass on V-1
+// (J9 v1_2 "Request the check"). The service takes either; the worker sees a
+// name either way.
 export function Requests() {
   const s = useVerify();
+  const asPass = !s.orgSession && !!s.pass;
+  const requester = s.orgSession ? s.orgParty?.id || "" : s.pass?.id || "";
   const [subject, setSubject] = useState<string>("");
   const [purpose, setPurpose] = useState("");
   const [list, setList] = useState<ShareView[] | null>(null);
@@ -38,7 +45,7 @@ export function Requests() {
     try {
       const out = await api.get(
         "verification",
-        `/v1/presentation-requests?requestedByPartyId=${encodeURIComponent(s.orgParty?.id || "")}`,
+        `/v1/presentation-requests?requestedByPartyId=${encodeURIComponent(requester)}`,
       );
       setList((out.requests || []).slice().reverse());
     } catch (e) {
@@ -47,9 +54,10 @@ export function Requests() {
   };
   // The org session is established by the shell on entering a V-2 route;
   // poll once it holds so the list read carries the institution's own token.
+  // On V-1 the pass is the requester and rides the header.
   useEffect(() => {
-    if (s.orgSession) void refresh();
-  }, [s.orgSession]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (requester) void refresh();
+  }, [requester]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const create = async (ev: React.FormEvent) => {
     ev.preventDefault();
@@ -57,7 +65,7 @@ export function Requests() {
     try {
       await api.post("verification", "/v1/presentation-requests", {
         subjectPartyId: subject.trim(),
-        requestedByPartyId: s.orgParty?.id,
+        requestedByPartyId: asPass ? undefined : s.orgParty?.id,
         purpose: purpose.trim(),
       });
       setPurpose("");
@@ -85,6 +93,16 @@ export function Requests() {
         The bare QR already proves the work is real. Anything past it needs the worker's say — per share, every time.
         Your ask names you and your purpose, because the worker reads both before deciding.
       </p>
+      {asPass ? (
+        <p className="muted">
+          Asking as <b>{s.pass?.name}</b> · pass {s.pass?.id.slice(-6).toUpperCase()}. The worker sees that name and your reason; what they approve, you collect here.
+        </p>
+      ) : null}
+      {!requester ? (
+        <OpenNote>
+          Nobody is asking yet. <a href="#/v1_1">Get a pass</a> to ask as yourself, or sign in as an onboarded institution on V-2.
+        </OpenNote>
+      ) : null}
       <div className="card">
         <form id="shareform" onSubmit={create} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <label className="body-2">
