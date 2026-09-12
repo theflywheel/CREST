@@ -78,6 +78,7 @@ func routes(mux *http.ServeMux, d service.Deps) {
 		confirmation:   client.New(config.Str("CONFIRMATION_URL", "http://payments:8080")),
 		evidence:       client.New(config.Str("EVIDENCE_URL", "http://evidence:8080")),
 		dediURL:        config.Str("DEDI_URL", ""),
+		witnessURL:     config.Str("DEDI_WITNESS_URL", ""),
 		issuer:         issuer,
 		issuerKeys:     issuerKeys,
 		trustedIssuers: trustedIssuers,
@@ -121,6 +122,17 @@ func routes(mux *http.ServeMux, d service.Deps) {
 	mux.HandleFunc("POST /v1/credentials/{id}/custody-transfer", h.transferCustody)
 	mux.HandleFunc("GET /v1/status-list", h.statusList)
 	mux.HandleFunc("GET /v1/issuer", h.issuerInfo)
+	// Does this deployment's registry log still stand un-rewritten? (#241) A
+	// read a verifier or a monitor can repeat; see registryconsistency.go.
+	mux.HandleFunc("GET /v1/registry-consistency", h.registryConsistency)
+
+	// Pin and check the DeDi checkpoint once at boot, so a history rewrite that
+	// happened while this service was down is caught now, against the pin from
+	// before the downtime — not silently adopted as the new baseline. Off the
+	// request path (a goroutine): a briefly unreachable node at boot must not
+	// hold up start-up, and a detected rewrite is an alarm for a human, not a
+	// reason to take verification offline for every honest credential too.
+	go checkRegistryConsistencyAtBoot(d)
 }
 
 type handlers struct {
@@ -130,6 +142,12 @@ type handlers struct {
 	// verdict can hand the verifier a URL instead of a promise. Empty when the
 	// deployment runs on the Postgres fallback, and the trust chain says so.
 	dediURL string
+
+	// witnessURL is an independent DeDi node that witnesses this deployment's
+	// log (#241). Empty until the witness ring has a second node (#76); a valid
+	// verdict then says the log's append-only history rests on this deployment
+	// operating the only node, rather than implying an independent check exists.
+	witnessURL string
 
 	definitions  *client.Client
 	registry     *client.Client
@@ -523,6 +541,27 @@ func (h *handlers) assess1(ctx context.Context, doc map[string]any) (Verdict, st
 			"append-only log it would be a permanent public record of who works where (#68). "+
 			"This deployment holds that authorization and can attest to it; you cannot check it independently.")
 	v.NotEstablished = append(v.NotEstablished, walk.NotEstablished...)
+	// The registry links above are checkable with an inclusion proof, which
+	// proves the record is in the log at the root the node serves now — not that
+	// the log was never rewritten to produce that root (#241). CREST monitors its
+	// own log for that (GET /v1/registry-consistency), but a verifier checking a
+	// single link should know what an inclusion proof does and does not carry,
+	// and whether an independent witness backs the root.
+	if h.dediURL != "" {
+		if h.witnessURL != "" {
+			v.NotEstablished = append(v.NotEstablished, fmt.Sprintf(
+				"that the registry log was not rewritten to produce the root these links resolve against — "+
+					"an inclusion proof does not carry that. An independent witness cosigns this log's checkpoints; "+
+					"you can confirm its history is append-only at %s/dedi/log/checkpoint and the witness verdict at %s/dedi/witness.",
+				strings.TrimRight(h.dediURL, "/"), strings.TrimRight(h.witnessURL, "/")))
+		} else {
+			v.NotEstablished = append(v.NotEstablished,
+				"that the registry log was not rewritten to produce the root these links resolve against — "+
+					"an inclusion proof does not carry that, and until the witness ring has a second node (#76) "+
+					"no independent party cosigns this log's checkpoints, so its append-only history rests on this "+
+					"deployment operating the only node. This deployment pins and checks its own checkpoints (#241).")
+		}
+	}
 	if assurance == schema.IdentityAssuranceIA0 {
 		// Distinct from the above and worth its own sentence: the credential
 		// verifies, and nothing here ties it to a person whose identity was

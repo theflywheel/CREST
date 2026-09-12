@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/mod/sumdb/note"
 )
 
 // Node is a Publisher backed by a real DeDi node.
@@ -34,6 +36,11 @@ type Node struct {
 	// now is the wall clock, injected only so the signing timestamp is
 	// testable. It is never the service's domain clock.
 	now func() time.Time
+	// cpVerifier authenticates the node's signed checkpoints (#241). Optional:
+	// a nil verifier means checkpoints are read but not authenticated, and the
+	// weaker statement is reported through Checkpoint.Verified rather than
+	// passed off as the stronger one. Set from DEDI_CHECKPOINT_KEY.
+	cpVerifier note.Verifier
 }
 
 // NewNode builds a client. baseURL is the node's root, e.g.
