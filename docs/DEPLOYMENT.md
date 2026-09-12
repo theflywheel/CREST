@@ -280,6 +280,18 @@ and they are read by `registry` and `definitions` only:
 | `DEDI_NAMESPACE` | `crest` — must match the node's `DEDI_WILDCARD_NAMESPACES` |
 | `DEDI_KEY_ID` | `crest-services` |
 | `DEDI_PUBLISHER_KEY` | The Ed25519 private key, base64. A secret |
+| `DEDI_CHECKPOINT_KEY` | The node's checkpoint **verifier** key in note format (`<name>+<hash>+<base64>`). Public — it is what the node hands out so others can check its signed tree heads. Authenticates the checkpoints CREST pins to detect a history rewrite (#241). Empty means checkpoints are read but not authenticated (a weaker baseline, logged at start-up); a configured-but-unparseable key is refused, like the publisher key |
+| `DEDI_WITNESS_URL` | An independent DeDi node that witnesses this deployment's log. Empty until the witness ring has a second node (#76): with no independent witness to ask, "is this log externally witnessed?" is reported as not established, never as sound |
+
+**Consistency and witnessing (#241).** An inclusion proof says a record is in
+the log at the root the node serves now; it does not say the log was not
+rewritten to produce that root. CREST pins the newest checkpoint it has
+authenticated (via `DEDI_CHECKPOINT_KEY`) and refuses any later checkpoint that
+is not an append-only extension of it, verifying a consistency proof with the
+node's own `sumdb/tlog`. The pin is persisted, so a rewrite during downtime is
+caught on the next boot against the pre-downtime baseline. It is checked once at
+boot (non-fatal — an alarm for a human, logged at Error) and on demand at
+`GET /v1/registry-consistency`, which `make verify-deploy` can assert against.
 
 **A URL with no key is refused at start-up**, deliberately. A deployment that
 meant to publish to a transparency log and silently fell back to Postgres is the

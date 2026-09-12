@@ -315,6 +315,12 @@ verify-deployed: ## Check every deployed fleet member answers, and verify the lo
 	@curl -fsS "$(CREST_DEDI_URL)/dedi/lookup/crest/work-definitions/WD-4471?proof=inclusion" \
 		| go run ./tools/spikes/dediproof \
 			-key "$$(./tools/spikes/dedi-verifier-key.py $(CREST_DEDI_URL))"
+	@echo "── the log has not been rewritten (#241): consistency against the pinned checkpoint"
+	@# Read-only: the verification service pins the newest checkpoint and refuses
+	@# any that is not an append-only extension of it. rewritten:true is the alarm.
+	@curl -fsS --max-time 10 $(CREST_WEB_URL)/api/crest-core/v1/registry-consistency \
+		| python3 -c "import json,sys; d=json.load(sys.stdin); \
+		  sys.exit('registry log rewrite detected: %s' % d.get('detail')) if d.get('rewritten') else print('consistent' if d.get('consistent') else 'fallback (no log)')"
 	@echo "── crest-esignet: discovery answers, and its issuer is where we fetched it"
 	@curl -fsS $(CREST_ESIGNET_URL)/v1/esignet/oidc/.well-known/openid-configuration \
 		| python3 -c "import json,sys; d=json.load(sys.stdin); \
